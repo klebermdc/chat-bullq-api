@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import axios from 'axios';
+import { Channel, ChannelType, OrgRole } from '@prisma/client';
 import { WhatsAppPlatformConfigService } from './whatsapp-platform-config.service';
 import { ChannelsService } from '../../channels/channels.service';
 import { ChannelsRepository } from '../../channels/channels.repository';
@@ -45,5 +46,44 @@ export class WhatsAppEmbeddedSignupService {
       headers: { Authorization: `Bearer ${token}` },
     });
     return data;
+  }
+
+  async connect(params: {
+    code: string;
+    phoneNumberId: string;
+    wabaId: string;
+    organizationId: string;
+    creator?: { userOrganizationId: string; role: OrgRole };
+  }): Promise<Channel> {
+    const token = await this.exchangeCodeForToken(params.code);
+    await this.subscribeWaba(params.wabaId, token);
+    const meta = await this.getPhoneMetadata(params.phoneNumberId, token);
+
+    const name = meta.verified_name || meta.display_phone_number || 'WhatsApp';
+    const config = {
+      accessToken: token,
+      phoneNumberId: params.phoneNumberId,
+      businessAccountId: params.wabaId,
+      apiVersion: this.platform.apiVersion,
+    };
+
+    const existing = (
+      await this.channelsRepo.findActiveByTypeAndOrg(
+        ChannelType.WHATSAPP_OFFICIAL,
+        params.organizationId,
+      )
+    ).find((c) => (c.config as Record<string, any>)?.phoneNumberId === params.phoneNumberId);
+
+    if (existing) {
+      this.logger.log(`Embedded Signup: atualizando canal existente ${existing.id} (${params.phoneNumberId})`);
+      return this.channelsRepo.update(existing.id, { name, config });
+    }
+
+    this.logger.log(`Embedded Signup: criando canal novo para ${params.phoneNumberId}`);
+    return this.channelsService.create(
+      params.organizationId,
+      { type: ChannelType.WHATSAPP_OFFICIAL, name, config },
+      params.creator,
+    );
   }
 }
