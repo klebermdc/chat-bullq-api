@@ -13,21 +13,29 @@ describe('WhatsAppOfficialInboundAdapter.validateWebhook', () => {
 
   afterEach(() => { delete process.env.WA_APP_SECRET; });
 
-  it('valida com o app secret da plataforma quando o canal nao tem appSecret', () => {
+  it('usa o app secret da plataforma quando setado', () => {
     process.env.WA_APP_SECRET = 'platform-secret';
     const headers = { 'x-hub-signature-256': sign(body, 'platform-secret') };
     const channel = { id: 'c1', config: {} } as any;
     expect(adapter.validateWebhook(headers, Buffer.from(body), undefined, channel)).toBe(true);
   });
 
-  it('prioriza o appSecret do proprio canal (fallback legado)', () => {
+  it('plataforma tem prioridade sobre o appSecret do canal', () => {
     process.env.WA_APP_SECRET = 'platform-secret';
+    const headers = { 'x-hub-signature-256': sign(body, 'platform-secret') };
+    const channel = { id: 'c1', config: { appSecret: 'canal-secret' } } as any;
+    expect(adapter.validateWebhook(headers, Buffer.from(body), undefined, channel)).toBe(true);
+  });
+
+  it('usa o appSecret do canal como fallback quando a plataforma nao esta setada', () => {
+    delete process.env.WA_APP_SECRET;
     const headers = { 'x-hub-signature-256': sign(body, 'canal-secret') };
     const channel = { id: 'c1', config: { appSecret: 'canal-secret' } } as any;
     expect(adapter.validateWebhook(headers, Buffer.from(body), undefined, channel)).toBe(true);
   });
 
   it('rejeita quando nao ha secret nenhum', () => {
+    delete process.env.WA_APP_SECRET;
     const channel = { id: 'c1', config: {} } as any;
     const headers = { 'x-hub-signature-256': sign(body, 'qualquer') };
     expect(adapter.validateWebhook(headers, Buffer.from(body), undefined, channel)).toBe(false);

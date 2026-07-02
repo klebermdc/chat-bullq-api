@@ -78,7 +78,7 @@ describe('WhatsAppEmbeddedSignupService.connect', () => {
     mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);
     mockedAxios.get.mockResolvedValueOnce({ data: { verified_name: 'NY Fast Pass' } } as any);
 
-    const existing = [{ id: 'exist1', config: { phoneNumberId: 'PN1' } }];
+    const existing = [{ id: 'exist1', config: { phoneNumberId: 'PN1', appSecret: 'legacy-secret' } }];
     const { svc, channelsRepo, channelsService } = makeSvc(existing);
     const res = await svc.connect({ code: 'c', phoneNumberId: 'PN1', wabaId: 'WABA1', organizationId: 'org1', creator: { userOrganizationId: 'uo1', role: 'OWNER' as any } });
 
@@ -86,7 +86,22 @@ describe('WhatsAppEmbeddedSignupService.connect', () => {
     expect(channelsService.create).not.toHaveBeenCalled();
     expect(channelsRepo.update).toHaveBeenCalledWith('exist1', expect.objectContaining({
       name: 'NY Fast Pass',
-      config: { accessToken: 'TKN2', phoneNumberId: 'PN1', businessAccountId: 'WABA1', apiVersion: 'v21.0' },
+      config: expect.objectContaining({
+        accessToken: 'TKN2',
+        phoneNumberId: 'PN1',
+        businessAccountId: 'WABA1',
+        apiVersion: 'v21.0',
+        appSecret: 'legacy-secret',
+      }),
     }));
+  });
+
+  it('lanca BadRequestException com mensagem de etapa quando a inscricao da WABA falha', async () => {
+    mockedAxios.get.mockResolvedValueOnce({ data: { access_token: 'TKN' } } as any); // exchange ok
+    mockedAxios.post.mockRejectedValueOnce(new Error('graph 403')); // subscribe fails
+    const { svc } = makeSvc([]);
+    await expect(
+      svc.connect({ code: 'c', phoneNumberId: 'PN1', wabaId: 'WABA1', organizationId: 'org1', creator: { userOrganizationId: 'uo1', role: 'OWNER' as any } }),
+    ).rejects.toThrow(/WABA/i);
   });
 });

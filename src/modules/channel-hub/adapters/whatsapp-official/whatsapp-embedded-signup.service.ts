@@ -55,9 +55,28 @@ export class WhatsAppEmbeddedSignupService {
     organizationId: string;
     creator?: { userOrganizationId: string; role: OrgRole };
   }): Promise<Channel> {
-    const token = await this.exchangeCodeForToken(params.code);
-    await this.subscribeWaba(params.wabaId, token);
-    const meta = await this.getPhoneMetadata(params.phoneNumberId, token);
+    let token: string;
+    try {
+      token = await this.exchangeCodeForToken(params.code);
+    } catch (err: any) {
+      this.logger.error(`Embedded Signup: falha na troca do code: ${err?.message}`);
+      throw new BadRequestException('Falha ao trocar o code por token (code expirado ou app da plataforma mal configurado).');
+    }
+
+    try {
+      await this.subscribeWaba(params.wabaId, token);
+    } catch (err: any) {
+      this.logger.error(`Embedded Signup: falha ao inscrever a WABA ${params.wabaId}: ${err?.message}`);
+      throw new BadRequestException('Falha ao inscrever a conta (WABA) — verifique a permissao whatsapp_business_management.');
+    }
+
+    let meta: { display_phone_number?: string; verified_name?: string };
+    try {
+      meta = await this.getPhoneMetadata(params.phoneNumberId, token);
+    } catch (err: any) {
+      this.logger.error(`Embedded Signup: falha ao buscar metadados do numero ${params.phoneNumberId}: ${err?.message}`);
+      throw new BadRequestException('Falha ao buscar os dados do numero de telefone.');
+    }
 
     const name = meta.verified_name || meta.display_phone_number || 'WhatsApp';
     const config = {
@@ -76,7 +95,10 @@ export class WhatsAppEmbeddedSignupService {
 
     if (existing) {
       this.logger.log(`Embedded Signup: atualizando canal existente ${existing.id} (${params.phoneNumberId})`);
-      return this.channelsRepo.update(existing.id, { name, config });
+      return this.channelsRepo.update(existing.id, {
+        name,
+        config: { ...(existing.config as Record<string, any>), ...config },
+      });
     }
 
     this.logger.log(`Embedded Signup: criando canal novo para ${params.phoneNumberId}`);

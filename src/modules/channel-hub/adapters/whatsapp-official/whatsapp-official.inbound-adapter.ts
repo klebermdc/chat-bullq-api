@@ -66,8 +66,8 @@ export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
     channel?: Channel,
   ): boolean {
     const appSecret =
-      (channel?.config as Record<string, any> | undefined)?.appSecret ||
-      this.platform.appSecret;
+      this.platform.appSecret ||
+      (channel?.config as Record<string, any> | undefined)?.appSecret;
     if (!appSecret) {
       this.logger.warn(
         `WA Official channel ${channel?.id} sem appSecret (canal nem plataforma) — rejeitando webhook`,
