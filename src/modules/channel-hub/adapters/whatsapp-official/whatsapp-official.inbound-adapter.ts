@@ -7,13 +7,17 @@ import {
 } from '../../ports/inbound-channel.port';
 import { WebhookParseResult, VerificationResponse } from '../../ports/types';
 import { WhatsAppOfficialMessageMapper } from './whatsapp-official.message-mapper';
+import { WhatsAppPlatformConfigService } from './whatsapp-platform-config.service';
 
 @Injectable()
 export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
   readonly channelType = ChannelType.WHATSAPP_OFFICIAL;
   private readonly logger = new Logger(WhatsAppOfficialInboundAdapter.name);
 
-  constructor(private readonly mapper: WhatsAppOfficialMessageMapper) {}
+  constructor(
+    private readonly mapper: WhatsAppOfficialMessageMapper,
+    private readonly platform: WhatsAppPlatformConfigService,
+  ) {}
 
   extractLocators(payload: unknown): ChannelLocator[] {
     const body = (payload ?? {}) as Record<string, any>;
@@ -61,11 +65,12 @@ export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
     _webhookSecret?: string,
     channel?: Channel,
   ): boolean {
-    const appSecret = (channel?.config as Record<string, any> | undefined)
-      ?.appSecret;
+    const appSecret =
+      (channel?.config as Record<string, any> | undefined)?.appSecret ||
+      this.platform.appSecret;
     if (!appSecret) {
       this.logger.warn(
-        `WA Official channel ${channel?.id} missing config.appSecret — rejecting webhook`,
+        `WA Official channel ${channel?.id} sem appSecret (canal nem plataforma) — rejeitando webhook`,
       );
       return false;
     }
@@ -160,6 +165,7 @@ export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
     const token = query['hub.verify_token'];
     const challenge = query['hub.challenge'];
     const verifyToken =
+      this.platform.verifyToken ||
       (channel?.config as Record<string, any> | undefined)?.verifyToken ||
       webhookSecret;
 
