@@ -33,6 +33,12 @@ export class ConversationsController {
   @Get()
   @ApiOperation({ summary: 'List conversations (inbox)' })
   @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({
+    name: 'tab',
+    required: false,
+    description:
+      'Aba de atendimento: waiting (Esperando) | inbox (Caixa de entrada) | closed (Finalizados)',
+  })
   @ApiQuery({ name: 'channelId', required: false })
   @ApiQuery({ name: 'assignedToId', required: false })
   @ApiQuery({ name: 'search', required: false })
@@ -76,6 +82,7 @@ export class ConversationsController {
     @CurrentChannelAccess() access: ChannelAccess,
     @CurrentUserRole() role: OrgRole,
     @Query('status') status?: string,
+    @Query('tab') tab?: string,
     @Query('channelId') channelId?: string,
     @Query('assignedToId') assignedToId?: string,
     @Query('search') search?: string,
@@ -105,10 +112,13 @@ export class ConversationsController {
       ?.split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+    const parsedTab =
+      tab === 'waiting' || tab === 'inbox' || tab === 'closed' ? tab : undefined;
     return this.service.findInbox(
       orgId,
       {
         status,
+        tab: parsedTab,
         channelId,
         assignedToId,
         search,
@@ -192,6 +202,21 @@ export class ConversationsController {
     @CurrentUserRole() role: OrgRole,
   ) {
     return this.service.getStatusCounts(orgId, access, userId, role);
+  }
+
+  @Get('tab-counts')
+  @ApiOperation({
+    summary: 'Contagem das abas de atendimento (Esperando/Caixa de entrada/Finalizados)',
+  })
+  @ApiQuery({ name: 'channelId', required: false })
+  getTabCounts(
+    @CurrentOrg('id') orgId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+    @Query('channelId') channelId?: string,
+  ) {
+    return this.service.getTabCounts(orgId, access, userId, role, channelId);
   }
 
   @Get(':id')

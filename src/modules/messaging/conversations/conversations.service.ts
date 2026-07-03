@@ -98,6 +98,8 @@ export class ConversationsService {
     organizationId: string,
     filters: {
       status?: string;
+      /** Aba de atendimento: waiting | inbox | closed. */
+      tab?: 'waiting' | 'inbox' | 'closed';
       channelId?: string;
       channelIds?: string[];
       conversationIds?: string[];
@@ -126,6 +128,21 @@ export class ConversationsService {
       ?.split(',')
       .map((s) => s.trim() as ConversationStatus)
       .filter((s) => validStatuses.has(s));
+
+    // Aba de atendimento → filtros concretos. `closed` fixa status=CLOSED;
+    // `waiting`/`inbox` excluem fechadas e filtram pelo flag awaitingHumanReply.
+    let tabStatuses: ConversationStatus[] | undefined;
+    let tabAwaitingHumanReply: boolean | undefined;
+    let tabExcludeClosed = false;
+    if (filters.tab === 'closed') {
+      tabStatuses = [ConversationStatus.CLOSED];
+    } else if (filters.tab === 'waiting') {
+      tabAwaitingHumanReply = true;
+      tabExcludeClosed = true;
+    } else if (filters.tab === 'inbox') {
+      tabAwaitingHumanReply = false;
+      tabExcludeClosed = true;
+    }
 
     // Filtros que unificam por grupo POR LEITURA (Segmento ou Projeto): pegam
     // uma conversa representante por grupo (JID) e listam só essas — uma linha
@@ -164,9 +181,16 @@ export class ConversationsService {
       }
     }
 
+    // O status explícito (filtro avançado) tem precedência sobre o da aba.
+    const effectiveStatuses = parsedStatuses?.length
+      ? parsedStatuses
+      : tabStatuses;
+
     const inboxFilters: InboxFilters = {
       organizationId,
-      status: parsedStatuses?.length ? parsedStatuses : undefined,
+      status: effectiveStatuses?.length ? effectiveStatuses : undefined,
+      awaitingHumanReply: tabAwaitingHumanReply,
+      excludeClosed: tabExcludeClosed,
       // Em filtro de grupo (segmento/projeto) o canal vira o conjunto de
       // canais resolvidos (necessário pro plano da query); senão, o do usuário.
       channelId: isGroupResolved ? undefined : filters.channelId,
@@ -593,6 +617,25 @@ export class ConversationsService {
       accessibleIds,
       enforceAssignedToId,
     );
+  }
+
+  /** Contagem das abas de atendimento (Esperando / Caixa de entrada / Finalizados). */
+  async getTabCounts(
+    organizationId: string,
+    access: ChannelAccess = 'ALL',
+    currentUserId?: string,
+    role?: OrgRole,
+    channelId?: string,
+  ) {
+    const accessibleIds = access === 'ALL' ? undefined : [...access];
+    const enforceAssignedToId = currentUserId
+      ? resolveAssignmentScope(role, currentUserId)
+      : undefined;
+    return this.repository.countByTab(organizationId, {
+      accessibleChannelIds: accessibleIds,
+      enforceAssignedToId,
+      channelId,
+    });
   }
 
   /**

@@ -49,7 +49,22 @@ export interface InboxFilters {
   /** Inclusive bounds on lastMessageAt (last activity). Dates already parsed. */
   dateFrom?: Date;
   dateTo?: Date;
+  /**
+   * Aba de atendimento — sinal independente do enum `status`:
+   *   true  → "Esperando" (cliente aguardando resposta humana)
+   *   false → "Caixa de entrada" (já respondido por humano)
+   * Undefined = não filtra por aba.
+   */
+  awaitingHumanReply?: boolean;
+  /**
+   * Quando true, exclui conversas CLOSED (abas Esperando/Caixa de entrada, que
+   * só listam conversas abertas). Só aplicado quando não há filtro `status`
+   * explícito — um status explícito tem precedência.
+   */
+  excludeClosed?: boolean;
 }
+
+export type TabCounts = { waiting: number; inbox: number; closed: number };
 
 @Injectable()
 export class ConversationsRepository {
@@ -89,6 +104,13 @@ export class ConversationsRepository {
       where.status = filters.status.length === 1
         ? filters.status[0]
         : { in: filters.status };
+    } else if (filters.excludeClosed) {
+      // Abas Esperando/Caixa de entrada: só conversas abertas. Status explícito
+      // (se houver) tem precedência — por isso fica no `else`.
+      where.status = { not: ConversationStatus.CLOSED };
+    }
+    if (filters.awaitingHumanReply !== undefined) {
+      where.awaitingHumanReply = filters.awaitingHumanReply;
     }
     // Resolve the effective channel filter:
     //   - filters.channelId  (single, from the topbar dropdown)
@@ -425,5 +447,65 @@ export class ConversationsRepository {
       (acc, c) => ({ ...acc, [c.status]: c._count }),
       {} as Record<string, number>,
     );
+  }
+
+  /**
+   * Contagem por ABA de atendimento (Esperando / Caixa de entrada / Finalizados),
+   * respeitando o mesmo escopo do inbox padrão: org, canais acessíveis (RBAC),
+   * atribuição forçada (RN-05), canal selecionado no topbar e não-arquivadas.
+   * Um único groupBy(status, awaitingHumanReply) alimenta as três abas.
+   */
+  async countByTab(
+    organizationId: string,
+    opts: {
+      accessibleChannelIds?: string[];
+      enforceAssignedToId?: string;
+      channelId?: string;
+    } = {},
+  ): Promise<TabCounts> {
+    const empty: TabCounts = { waiting: 0, inbox: 0, closed: 0 };
+    if (
+      opts.accessibleChannelIds !== undefined &&
+      opts.accessibleChannelIds.length === 0
+    ) {
+      return empty;
+    }
+    // Canal do topbar ∩ canais acessíveis. Conjunto vazio → nada.
+    let channelFilter: Prisma.ConversationWhereInput['channelId'];
+    if (opts.accessibleChannelIds !== undefined) {
+      if (opts.channelId) {
+        if (!opts.accessibleChannelIds.includes(opts.channelId)) return empty;
+        channelFilter = opts.channelId;
+      } else {
+        channelFilter = { in: opts.accessibleChannelIds };
+      }
+    } else if (opts.channelId) {
+      channelFilter = opts.channelId;
+    }
+
+    const rows = await this.prisma.conversation.groupBy({
+      by: ['status', 'awaitingHumanReply'],
+      where: {
+        organizationId,
+        deletedAt: null,
+        isArchived: false,
+        ...(channelFilter !== undefined ? { channelId: channelFilter } : {}),
+        ...(opts.enforceAssignedToId
+          ? { assignedToId: opts.enforceAssignedToId }
+          : {}),
+      },
+      _count: true,
+    });
+
+    return rows.reduce((acc, r) => {
+      if (r.status === ConversationStatus.CLOSED) {
+        acc.closed += r._count;
+      } else if (r.awaitingHumanReply) {
+        acc.waiting += r._count;
+      } else {
+        acc.inbox += r._count;
+      }
+      return acc;
+    }, { ...empty });
   }
 }

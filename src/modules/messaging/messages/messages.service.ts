@@ -175,6 +175,11 @@ export class MessagesService {
       where: { id: conversation.id },
       data: {
         lastMessageAt: new Date(),
+        // Humano respondeu → sai de "Esperando" pra "Caixa de entrada".
+        // Este é o caminho EXCLUSIVO do atendente (senderId é um user); bot/IA
+        // persistem via prisma.message.create e nunca passam por aqui, então o
+        // flag permanece true quando só o bot respondeu.
+        awaitingHumanReply: false,
         ...(shouldAutoAssign ? { assignedToId: senderId } : {}),
         ...(shouldDisableAi
           ? {

@@ -199,7 +199,15 @@ export class InboundMessageProcessor extends WorkerHost {
           );
           await tx.conversation.update({
             where: { id: conversationId },
-            data: { lastMessageAt: new Date() },
+            data: {
+              lastMessageAt: new Date(),
+              // Mensagem genuína do cliente (INBOUND, não-echo) → aba "Esperando".
+              // Echo (msg nossa que volta, OUTBOUND) não mexe no flag: resposta
+              // do bot não pode tirar a conversa de "Esperando".
+              ...(direction === MessageDirection.INBOUND
+                ? { awaitingHumanReply: true }
+                : {}),
+            },
           });
           if (
             result.isNew &&

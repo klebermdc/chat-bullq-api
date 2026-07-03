@@ -502,6 +502,13 @@ model Conversation {
   subject         String?
   protocol        String?
   isGroup         Boolean            @default(false) @map("is_group")
+  // Sinal das ABAS de atendimento (independente do enum `status`, que a FSM
+  // usa). true  = cliente aguardando resposta HUMANA (aba "Esperando").
+  //        false = já respondido por humano (aba "Caixa de entrada").
+  // Setado true em toda inbound do cliente; false quando um humano responde
+  // via MessagesService.send. Resposta do bot/IA NÃO altera este flag.
+  // Conversas CLOSED vão para a aba "Finalizados" independente deste valor.
+  awaitingHumanReply Boolean         @default(false) @map("awaiting_human_reply")
   lastMessageAt   DateTime?          @map("last_message_at")
   firstResponseAt DateTime?          @map("first_response_at")
   closedAt        DateTime?          @map("closed_at")
@@ -563,6 +570,7 @@ model Conversation {
   cards            Card[]                 @relation("CardConversation")
 
   @@index([organizationId, status], name: "idx_conv_org_status")
+  @@index([organizationId, status, awaitingHumanReply], name: "idx_conv_org_status_awaiting")
   @@index([organizationId, assignedToId], name: "idx_conv_org_agent")
   @@index([organizationId, channelId], name: "idx_conv_org_channel")
   @@index([organizationId, isArchived], name: "idx_conv_org_archived")
