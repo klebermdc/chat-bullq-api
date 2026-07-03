@@ -1,7 +1,7 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
-import { OrgRole } from '@prisma/client';
-import { DashboardService } from './dashboard.service';
+import { ConversationStatus, OrgRole } from '@prisma/client';
+import { DashboardService, LeadsFilter } from './dashboard.service';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentOrg, CurrentUser, CurrentUserRole } from '../../common/decorators';
 import { resolveAssignmentScope } from '../messaging/conversations/conversation-scope';
@@ -31,6 +31,24 @@ export class DashboardController {
     return resolveAssignmentScope(role, userId);
   }
 
+  private parseLeadsFilter(
+    from: string | undefined,
+    to: string | undefined,
+    channelId?: string,
+    departmentId?: string,
+    status?: string,
+    assignedToId?: string,
+  ): LeadsFilter {
+    const range = this.parseRange(from, to);
+    return {
+      ...range,
+      channelId: channelId || undefined,
+      departmentId: departmentId || undefined,
+      status: status ? (status as ConversationStatus) : undefined,
+      assignedToId: assignedToId || undefined,
+    };
+  }
+
   @Get('overview')
   @ApiOperation({ summary: 'Get dashboard overview metrics' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
@@ -44,6 +62,29 @@ export class DashboardController {
     return this.service.getOverview(
       orgId,
       this.parseRange(from, to),
+      this.assignmentScope(userId, role),
+    );
+  }
+
+  @Get('leads')
+  @ApiOperation({ summary: 'Relatório de leads (novos, respondidos, por vendedor)' })
+  @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'channelId', required: false }) @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'assignedToId', required: false })
+  getLeads(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+    @Query('assignedToId') assignedToId?: string,
+  ) {
+    return this.service.getLeadsReport(
+      orgId,
+      this.parseLeadsFilter(from, to, channelId, departmentId, status, assignedToId),
       this.assignmentScope(userId, role),
     );
   }
