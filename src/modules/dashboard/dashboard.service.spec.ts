@@ -29,3 +29,73 @@ describe('DashboardService.applyConvFilters', () => {
     expect(where).toEqual({ organizationId: 'org-1' });
   });
 });
+
+describe('DashboardService.getLeadsReport', () => {
+  const range = { from: new Date('2026-07-01'), to: new Date('2026-07-31') };
+
+  const buildPrisma = (convs: any[], msgs: any[]) => ({
+    conversation: { findMany: jest.fn().mockResolvedValue(convs) },
+    message: { findMany: jest.fn().mockResolvedValue(msgs) },
+  });
+
+  it('conta novos leads = conversas criadas no período', async () => {
+    const prisma = buildPrisma(
+      [
+        { id: 'c1', assignedToId: 'v1', status: 'OPEN', createdAt: new Date('2026-07-02'), firstResponseAt: null, assignedTo: { id: 'v1', name: 'Vend 1', avatarUrl: null } },
+        { id: 'c2', assignedToId: null, status: 'PENDING', createdAt: new Date('2026-07-03'), firstResponseAt: null, assignedTo: null },
+      ],
+      [],
+    );
+    const service = new DashboardService(prisma as any);
+    const r = await service.getLeadsReport('org-1', { ...range });
+    expect(r.newLeads).toBe(2);
+  });
+
+  it('proativo = 1ª msg OUTBOUND; respondido = tem INBOUND depois', async () => {
+    const prisma = buildPrisma(
+      [
+        { id: 'c1', assignedToId: 'v1', status: 'OPEN', createdAt: new Date('2026-07-02'), firstResponseAt: new Date('2026-07-02T01:00:00Z'), assignedTo: { id: 'v1', name: 'Vend 1', avatarUrl: null } },
+        { id: 'c2', assignedToId: 'v1', status: 'OPEN', createdAt: new Date('2026-07-02'), firstResponseAt: null, assignedTo: { id: 'v1', name: 'Vend 1', avatarUrl: null } },
+        { id: 'c3', assignedToId: 'v1', status: 'OPEN', createdAt: new Date('2026-07-02'), firstResponseAt: null, assignedTo: { id: 'v1', name: 'Vend 1', avatarUrl: null } },
+      ],
+      [
+        { conversationId: 'c1', direction: 'OUTBOUND', createdAt: new Date('2026-07-02T00:00:00Z') },
+        { conversationId: 'c1', direction: 'INBOUND', createdAt: new Date('2026-07-02T00:30:00Z') },
+        { conversationId: 'c2', direction: 'OUTBOUND', createdAt: new Date('2026-07-02T00:00:00Z') },
+        { conversationId: 'c3', direction: 'INBOUND', createdAt: new Date('2026-07-02T00:00:00Z') },
+      ],
+    );
+    const service = new DashboardService(prisma as any);
+    const r = await service.getLeadsReport('org-1', { ...range });
+    expect(r.proactiveLeads).toBe(2);
+    expect(r.respondedLeads).toBe(1);
+    expect(r.respondedRate).toBe(50);
+  });
+
+  it('bySeller agrupa por assignedToId; não-atribuídos na linha null', async () => {
+    const prisma = buildPrisma(
+      [
+        { id: 'c1', assignedToId: 'v1', status: 'OPEN', createdAt: new Date('2026-07-02'), firstResponseAt: null, assignedTo: { id: 'v1', name: 'Vend 1', avatarUrl: null } },
+        { id: 'c2', assignedToId: 'v1', status: 'CLOSED', createdAt: new Date('2026-07-02'), firstResponseAt: null, assignedTo: { id: 'v1', name: 'Vend 1', avatarUrl: null } },
+        { id: 'c3', assignedToId: null, status: 'PENDING', createdAt: new Date('2026-07-02'), firstResponseAt: null, assignedTo: null },
+      ],
+      [],
+    );
+    const service = new DashboardService(prisma as any);
+    const r = await service.getLeadsReport('org-1', { ...range });
+    const v1 = r.bySeller.find((s) => s.seller?.id === 'v1')!;
+    expect(v1.received).toBe(2);
+    expect(v1.open).toBe(1);
+    expect(v1.closed).toBe(1);
+    const fila = r.bySeller.find((s) => s.seller === null)!;
+    expect(fila.received).toBe(1);
+  });
+
+  it('respondedRate = null quando não há leads proativos', async () => {
+    const prisma = buildPrisma([], []);
+    const service = new DashboardService(prisma as any);
+    const r = await service.getLeadsReport('org-1', { ...range });
+    expect(r.newLeads).toBe(0);
+    expect(r.respondedRate).toBeNull();
+  });
+});

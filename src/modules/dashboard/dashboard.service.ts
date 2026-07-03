@@ -370,6 +370,99 @@ export class DashboardService {
     };
   }
 
+  async getLeadsReport(
+    organizationId: string,
+    filter: LeadsFilter,
+    scope?: string,
+  ) {
+    const where = this.applyConvFilters(
+      { organizationId, createdAt: { gte: filter.from, lte: filter.to } },
+      filter,
+      scope,
+    );
+
+    const conversations = await this.prisma.conversation.findMany({
+      where: where as Prisma.ConversationWhereInput,
+      select: {
+        id: true,
+        assignedToId: true,
+        status: true,
+        createdAt: true,
+        firstResponseAt: true,
+        assignedTo: { select: { id: true, name: true, avatarUrl: true } },
+      },
+    });
+
+    const convIds = conversations.map((c) => c.id);
+    const messages = convIds.length
+      ? await this.prisma.message.findMany({
+          where: { conversationId: { in: convIds } },
+          select: { conversationId: true, direction: true, createdAt: true },
+          orderBy: { createdAt: 'asc' },
+        })
+      : [];
+
+    const firstDir = new Map<string, 'INBOUND' | 'OUTBOUND'>();
+    const hasInbound = new Set<string>();
+    for (const m of messages) {
+      if (!firstDir.has(m.conversationId)) firstDir.set(m.conversationId, m.direction);
+      if (m.direction === 'INBOUND') hasInbound.add(m.conversationId);
+    }
+
+    let proactiveLeads = 0;
+    let respondedLeads = 0;
+
+    type Row = {
+      seller: { id: string; name: string; avatarUrl: string | null } | null;
+      received: number; responded: number; open: number; closed: number;
+      frSum: number; frCount: number;
+    };
+    const rows = new Map<string, Row>();
+
+    for (const c of conversations) {
+      const isProactive = firstDir.get(c.id) === 'OUTBOUND';
+      const responded = isProactive && hasInbound.has(c.id);
+      if (isProactive) proactiveLeads++;
+      if (responded) respondedLeads++;
+
+      const key = c.assignedToId ?? '__none__';
+      if (!rows.has(key)) {
+        rows.set(key, {
+          seller: c.assignedTo ?? null,
+          received: 0, responded: 0, open: 0, closed: 0, frSum: 0, frCount: 0,
+        });
+      }
+      const row = rows.get(key)!;
+      row.received++;
+      if (responded) row.responded++;
+      if (c.status === 'CLOSED') row.closed++;
+      else if (c.status === 'OPEN' || c.status === 'PENDING' || c.status === 'WAITING') row.open++;
+      if (c.firstResponseAt) {
+        row.frSum += (c.firstResponseAt.getTime() - c.createdAt.getTime()) / 60000;
+        row.frCount++;
+      }
+    }
+
+    const bySeller = Array.from(rows.values())
+      .map((r) => ({
+        seller: r.seller,
+        received: r.received,
+        responded: r.responded,
+        open: r.open,
+        closed: r.closed,
+        avgFirstResponseMin: r.frCount ? Math.round(r.frSum / r.frCount) : null,
+      }))
+      .sort((a, b) => b.received - a.received);
+
+    return {
+      newLeads: conversations.length,
+      proactiveLeads,
+      respondedLeads,
+      respondedRate: proactiveLeads > 0 ? Math.round((respondedLeads / proactiveLeads) * 100) : null,
+      bySeller,
+    };
+  }
+
   private eachDay(from: Date, to: Date): string[] {
     const days: string[] = [];
     const cur = new Date(from);
