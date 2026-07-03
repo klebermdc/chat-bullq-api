@@ -17,6 +17,7 @@ import { ConversationFsmService } from './conversations/conversation-fsm.service
 import { ConversationsController } from './conversations/conversations.controller';
 import { ConversationsService } from './conversations/conversations.service';
 import { ConversationsRepository } from './conversations/conversations.repository';
+import { StartConversationService } from './conversations/start-conversation.service';
 import { MessagesController } from './messages/messages.controller';
 import { MessagesService } from './messages/messages.service';
 import { MessagesRepository } from './messages/messages.repository';
@@ -55,6 +56,7 @@ import { ContactsRepository } from './contacts/contacts.repository';
     ConversationFsmService,
     ConversationsService,
     ConversationsRepository,
+    StartConversationService,
     MessagesService,
     MessagesRepository,
     TranscriptionService,

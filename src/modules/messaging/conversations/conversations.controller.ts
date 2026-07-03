@@ -12,6 +12,8 @@ import {
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { ConversationsService } from './conversations.service';
+import { StartConversationService } from './start-conversation.service';
+import { StartConversationDto } from './dto/start-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../../common/guards';
 import {
@@ -28,7 +30,23 @@ import type { ChannelAccess } from '../../iam/channel-access/channel-access.serv
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
 @Controller('conversations')
 export class ConversationsController {
-  constructor(private readonly service: ConversationsService) {}
+  constructor(
+    private readonly service: ConversationsService,
+    private readonly startConversation: StartConversationService,
+  ) {}
+
+  @Post('start')
+  @ApiOperation({ summary: 'Inicia uma conversa proativa (Zappfy): resolve contato/canal e envia a 1a mensagem.' })
+  start(
+    @CurrentOrg() org: { id: string; userOrganizationId: string; userRole: OrgRole },
+    @Body() dto: StartConversationDto,
+    @CurrentChannelAccess() access: ChannelAccess,
+  ) {
+    return this.startConversation.start(org.id, dto, access, {
+      userOrganizationId: org.userOrganizationId,
+      role: org.userRole,
+    });
+  }
 
   @Get()
   @ApiOperation({ summary: 'List conversations (inbox)' })

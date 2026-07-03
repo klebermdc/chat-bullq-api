@@ -6,5 +6,6 @@ module.exports = {
   testRegex: '.*\\.spec\\.ts$',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
+    '^@prisma/client$': '<rootDir>/../node_modules/@prisma/client',
   },
 };

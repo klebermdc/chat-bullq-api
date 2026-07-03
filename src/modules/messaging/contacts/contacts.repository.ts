@@ -73,6 +73,12 @@ export class ContactsRepository {
     });
   }
 
+  async findFirstByOrgPhone(organizationId: string, phone: string) {
+    return this.prisma.contact.findFirst({
+      where: { organizationId, phone, deletedAt: null },
+    });
+  }
+
   async createWithChannel(
     organizationId: string,
     input: { name?: string; phone: string; email?: string; channelId?: string },
@@ -93,5 +99,9 @@ export class ContactsRepository {
         _count: { select: { conversations: true } },
       },
     });
+  }
+
+  async create(data: { organizationId: string; name?: string; phone: string; email?: string }) {
+    return this.prisma.contact.create({ data });
   }
 }
