@@ -99,3 +99,16 @@ describe('DashboardService.getLeadsReport', () => {
     expect(r.respondedRate).toBeNull();
   });
 });
+
+describe('DashboardService filtros nos endpoints existentes', () => {
+  const range = { from: new Date('2026-07-01'), to: new Date('2026-07-31') };
+
+  it('getVolumeByDay aplica channelId/status no where', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = new DashboardService({ conversation: { findMany } } as any);
+    await service.getVolumeByDay('org-1', range, undefined, { channelId: 'ch-1', status: 'CLOSED' } as any);
+    const where = findMany.mock.calls[0][0].where;
+    expect(where.channelId).toBe('ch-1');
+    expect(where.status).toBe('CLOSED');
+  });
+});

@@ -52,17 +52,25 @@ export class DashboardController {
   @Get('overview')
   @ApiOperation({ summary: 'Get dashboard overview metrics' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'channelId', required: false }) @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'assignedToId', required: false })
   getOverview(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentUserRole() role: OrgRole,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+    @Query('assignedToId') assignedToId?: string,
   ) {
+    const f = this.parseLeadsFilter(from, to, channelId, departmentId, status, assignedToId);
     return this.service.getOverview(
       orgId,
       this.parseRange(from, to),
       this.assignmentScope(userId, role),
+      f,
     );
   }
 
@@ -92,180 +100,267 @@ export class DashboardController {
   @Get('volume-by-day')
   @ApiOperation({ summary: 'Conversations volume by day' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'channelId', required: false }) @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'assignedToId', required: false })
   getVolumeByDay(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentUserRole() role: OrgRole,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+    @Query('assignedToId') assignedToId?: string,
   ) {
+    const f = this.parseLeadsFilter(from, to, channelId, departmentId, status, assignedToId);
     return this.service.getVolumeByDay(
       orgId,
       this.parseRange(from, to),
       this.assignmentScope(userId, role),
+      f,
     );
   }
 
   @Get('volume-by-channel')
   @ApiOperation({ summary: 'Conversations volume by channel' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'channelId', required: false }) @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'assignedToId', required: false })
   getVolumeByChannel(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentUserRole() role: OrgRole,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+    @Query('assignedToId') assignedToId?: string,
   ) {
+    const f = this.parseLeadsFilter(from, to, channelId, departmentId, status, assignedToId);
     return this.service.getVolumeByChannel(
       orgId,
       this.parseRange(from, to),
       this.assignmentScope(userId, role),
+      f,
     );
   }
 
   @Get('volume-by-status')
   @ApiOperation({ summary: 'Conversations by status (current)' })
+  @ApiQuery({ name: 'channelId', required: false }) @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'assignedToId', required: false })
   getVolumeByStatus(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentUserRole() role: OrgRole,
+    @Query('channelId') channelId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+    @Query('assignedToId') assignedToId?: string,
   ) {
-    return this.service.getVolumeByStatus(orgId, this.assignmentScope(userId, role));
+    const f = this.parseLeadsFilter(undefined, undefined, channelId, departmentId, status, assignedToId);
+    return this.service.getVolumeByStatus(orgId, this.assignmentScope(userId, role), f);
   }
 
   @Get('kpi-sparklines')
   @ApiOperation({ summary: 'Daily series for hero KPIs (active, TMR, SLA, resolution)' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'channelId', required: false }) @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'assignedToId', required: false })
   getKpiSparklines(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentUserRole() role: OrgRole,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+    @Query('assignedToId') assignedToId?: string,
   ) {
+    const f = this.parseLeadsFilter(from, to, channelId, departmentId, status, assignedToId);
     return this.service.getKpiSparklines(
       orgId,
       this.parseRange(from, to),
       this.assignmentScope(userId, role),
+      f,
     );
   }
 
   @Get('agent-performance')
   @ApiOperation({ summary: 'Agent performance metrics' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'channelId', required: false }) @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'assignedToId', required: false })
   getAgentPerformance(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentUserRole() role: OrgRole,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+    @Query('assignedToId') assignedToId?: string,
   ) {
+    const f = this.parseLeadsFilter(from, to, channelId, departmentId, status, assignedToId);
     return this.service.getAgentPerformance(
       orgId,
       this.parseRange(from, to),
       this.assignmentScope(userId, role),
+      f,
     );
   }
 
   @Get('volume-flow')
   @ApiOperation({ summary: 'Conversations created vs closed per day' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'channelId', required: false }) @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'assignedToId', required: false })
   getVolumeFlow(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentUserRole() role: OrgRole,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+    @Query('assignedToId') assignedToId?: string,
   ) {
+    const f = this.parseLeadsFilter(from, to, channelId, departmentId, status, assignedToId);
     return this.service.getVolumeFlow(
       orgId,
       this.parseRange(from, to),
       this.assignmentScope(userId, role),
+      f,
     );
   }
 
   @Get('peak-hours')
   @ApiOperation({ summary: 'Conversation creation heatmap (day of week × hour)' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'channelId', required: false }) @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'assignedToId', required: false })
   getPeakHours(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentUserRole() role: OrgRole,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+    @Query('assignedToId') assignedToId?: string,
   ) {
+    const f = this.parseLeadsFilter(from, to, channelId, departmentId, status, assignedToId);
     return this.service.getPeakHours(
       orgId,
       this.parseRange(from, to),
       this.assignmentScope(userId, role),
+      f,
     );
   }
 
   @Get('messages-flow')
   @ApiOperation({ summary: 'Inbound vs outbound messages per day' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'channelId', required: false }) @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'assignedToId', required: false })
   getMessagesFlow(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentUserRole() role: OrgRole,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+    @Query('assignedToId') assignedToId?: string,
   ) {
+    const f = this.parseLeadsFilter(from, to, channelId, departmentId, status, assignedToId);
     return this.service.getMessagesFlow(
       orgId,
       this.parseRange(from, to),
       this.assignmentScope(userId, role),
+      f,
     );
   }
 
   @Get('bot-performance')
   @ApiOperation({ summary: 'Bot resolution vs human escalation breakdown' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'channelId', required: false }) @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'assignedToId', required: false })
   getBotPerformance(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentUserRole() role: OrgRole,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+    @Query('assignedToId') assignedToId?: string,
   ) {
+    const f = this.parseLeadsFilter(from, to, channelId, departmentId, status, assignedToId);
     return this.service.getBotPerformance(
       orgId,
       this.parseRange(from, to),
       this.assignmentScope(userId, role),
+      f,
     );
   }
 
   @Get('csat')
   @ApiOperation({ summary: 'CSAT breakdown (avg, distribution, recent comments)' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'channelId', required: false }) @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'assignedToId', required: false })
   getCsat(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentUserRole() role: OrgRole,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+    @Query('assignedToId') assignedToId?: string,
   ) {
+    const f = this.parseLeadsFilter(from, to, channelId, departmentId, status, assignedToId);
     return this.service.getCsatBreakdown(
       orgId,
       this.parseRange(from, to),
       this.assignmentScope(userId, role),
+      f,
     );
   }
 
   @Get('reopens')
   @ApiOperation({ summary: 'Conversation reopen tracking + worst offenders' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'channelId', required: false }) @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'assignedToId', required: false })
   getReopens(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentUserRole() role: OrgRole,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channelId') channelId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+    @Query('assignedToId') assignedToId?: string,
   ) {
+    const f = this.parseLeadsFilter(from, to, channelId, departmentId, status, assignedToId);
     return this.service.getReopens(
       orgId,
       this.parseRange(from, to),
       this.assignmentScope(userId, role),
+      f,
     );
   }
 
@@ -273,6 +368,8 @@ export class DashboardController {
   @ApiOperation({ summary: 'Top tags / conversation reasons' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
   @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'channelId', required: false }) @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'assignedToId', required: false })
   getTopTags(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
@@ -280,11 +377,17 @@ export class DashboardController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('limit') limit?: string,
+    @Query('channelId') channelId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+    @Query('assignedToId') assignedToId?: string,
   ) {
+    const f = this.parseLeadsFilter(from, to, channelId, departmentId, status, assignedToId);
     return this.service.getTopTags(
       orgId,
       this.parseRange(from, to),
       this.assignmentScope(userId, role),
+      f,
       limit ? parseInt(limit, 10) : 5,
     );
   }

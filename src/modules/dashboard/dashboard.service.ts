@@ -24,22 +24,6 @@ export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Barreira de atribuição (RN-05): quando `assignedToId` está setado (AGENT),
-   * o fragmento força `assignedToId = <userId>` na conversa; quando undefined
-   * (OWNER/ADMIN), não adiciona nada e a métrica cobre a org inteira.
-   */
-  private convScope(assignedToId?: string): { assignedToId?: string } {
-    return assignedToId ? { assignedToId } : {};
-  }
-
-  /** Mesma barreira aplicada a queries de Message/Rating/Tag via a relação. */
-  private relScope(
-    assignedToId?: string,
-  ): { assignedToId?: string } {
-    return assignedToId ? { assignedToId } : {};
-  }
-
-  /**
    * Mescla filtros opcionais num `where` de Conversation, respeitando RN-05:
    * quando `scope` (userId do AGENT) está setado, ele sobrepõe qualquer
    * `assignedToId` vindo do filtro (fail-closed — o AGENT não escapa do escopo).
@@ -58,23 +42,39 @@ export class DashboardService {
     return where as T & Record<string, unknown>;
   }
 
+  /**
+   * Versão relacional de `applyConvFilters` para queries de Message/Rating/Tag
+   * que filtram via a relação `conversation: {...}`. Mesma barreira RN-05:
+   * o `scope` sobrepõe qualquer `assignedToId` vindo do filtro.
+   */
+  private applyRelFilters(filters: ConvFilters, scope?: string): Record<string, unknown> {
+    const rel: Record<string, unknown> = {};
+    if (filters.channelId) rel.channelId = filters.channelId;
+    if (filters.departmentId) rel.departmentId = filters.departmentId;
+    if (filters.status) rel.status = filters.status;
+    const assigned = scope ?? filters.assignedToId;
+    if (assigned) rel.assignedToId = assigned;
+    return rel;
+  }
+
   async getOverview(
     organizationId: string,
     range: DateRange,
     assignedToId?: string,
+    filters: ConvFilters = {},
   ) {
-    const scope = this.convScope(assignedToId);
-    const where = {
-      organizationId,
-      ...scope,
-      createdAt: { gte: range.from, lte: range.to },
-    };
+    const rel = this.applyRelFilters(filters, assignedToId);
+    const where = this.applyConvFilters(
+      { organizationId, createdAt: { gte: range.from, lte: range.to } },
+      filters,
+      assignedToId,
+    );
     const prevFrom = new Date(range.from.getTime() - (range.to.getTime() - range.from.getTime()));
-    const prevWhere = {
-      organizationId,
-      ...scope,
-      createdAt: { gte: prevFrom, lte: range.from },
-    };
+    const prevWhere = this.applyConvFilters(
+      { organizationId, createdAt: { gte: prevFrom, lte: range.from } },
+      filters,
+      assignedToId,
+    );
 
     const [
       totalConversations,
@@ -89,50 +89,50 @@ export class DashboardService {
       closedInPeriod,
       prevClosedInPeriod,
     ] = await this.prisma.$transaction([
-      this.prisma.conversation.count({ where }),
-      this.prisma.conversation.count({ where: prevWhere }),
-      this.prisma.conversation.count({ where: { organizationId, ...scope, status: 'OPEN' } }),
-      this.prisma.conversation.count({ where: { organizationId, ...scope, status: 'PENDING' } }),
-      this.prisma.conversation.count({ where: { organizationId, ...scope, status: 'WAITING' } }),
-      this.prisma.conversation.count({ where: { organizationId, ...scope, status: 'BOT' } }),
+      this.prisma.conversation.count({ where: where as Prisma.ConversationWhereInput }),
+      this.prisma.conversation.count({ where: prevWhere as Prisma.ConversationWhereInput }),
+      this.prisma.conversation.count({ where: this.applyConvFilters({ organizationId, status: 'OPEN' }, filters, assignedToId) as Prisma.ConversationWhereInput }),
+      this.prisma.conversation.count({ where: this.applyConvFilters({ organizationId, status: 'PENDING' }, filters, assignedToId) as Prisma.ConversationWhereInput }),
+      this.prisma.conversation.count({ where: this.applyConvFilters({ organizationId, status: 'WAITING' }, filters, assignedToId) as Prisma.ConversationWhereInput }),
+      this.prisma.conversation.count({ where: this.applyConvFilters({ organizationId, status: 'BOT' }, filters, assignedToId) as Prisma.ConversationWhereInput }),
       this.prisma.conversation.count({
-        where: { organizationId, ...scope, isStuck: true, deletedAt: null },
+        where: this.applyConvFilters({ organizationId, isStuck: true, deletedAt: null }, filters, assignedToId) as Prisma.ConversationWhereInput,
       }),
-      this.prisma.message.count({ where: { conversation: { organizationId, ...scope }, createdAt: { gte: range.from, lte: range.to } } }),
-      this.prisma.message.count({ where: { conversation: { organizationId, ...scope }, createdAt: { gte: prevFrom, lte: range.from } } }),
+      this.prisma.message.count({ where: { conversation: { organizationId, ...rel }, createdAt: { gte: range.from, lte: range.to } } }),
+      this.prisma.message.count({ where: { conversation: { organizationId, ...rel }, createdAt: { gte: prevFrom, lte: range.from } } }),
       this.prisma.conversation.count({
-        where: { organizationId, ...scope, status: 'CLOSED', closedAt: { gte: range.from, lte: range.to } },
+        where: this.applyConvFilters({ organizationId, status: 'CLOSED', closedAt: { gte: range.from, lte: range.to } }, filters, assignedToId) as Prisma.ConversationWhereInput,
       }),
       this.prisma.conversation.count({
-        where: { organizationId, ...scope, status: 'CLOSED', closedAt: { gte: prevFrom, lte: range.from } },
+        where: this.applyConvFilters({ organizationId, status: 'CLOSED', closedAt: { gte: prevFrom, lte: range.from } }, filters, assignedToId) as Prisma.ConversationWhereInput,
       }),
     ]);
 
     const [avgFirstResponse, prevAvgFirstResponse] = await Promise.all([
-      this.getAvgFirstResponseTime(organizationId, range, assignedToId),
-      this.getAvgFirstResponseTime(organizationId, { from: prevFrom, to: range.from }, assignedToId),
+      this.getAvgFirstResponseTime(organizationId, range, assignedToId, filters),
+      this.getAvgFirstResponseTime(organizationId, { from: prevFrom, to: range.from }, assignedToId, filters),
     ]);
-    const avgResolution = await this.getAvgResolutionTime(organizationId, range, assignedToId);
+    const avgResolution = await this.getAvgResolutionTime(organizationId, range, assignedToId, filters);
     const [slaCompliance, prevSlaCompliance] = await Promise.all([
-      this.getSlaCompliance(organizationId, range, assignedToId),
-      this.getSlaCompliance(organizationId, { from: prevFrom, to: range.from }, assignedToId),
+      this.getSlaCompliance(organizationId, range, assignedToId, filters),
+      this.getSlaCompliance(organizationId, { from: prevFrom, to: range.from }, assignedToId, filters),
     ]);
 
     const [closedNoReopen, csatAgg, prevCsatAgg] = await Promise.all([
       this.prisma.conversation.count({
-        where: {
-          organizationId, ...scope, status: 'CLOSED',
+        where: this.applyConvFilters({
+          organizationId, status: 'CLOSED',
           closedAt: { gte: range.from, lte: range.to },
           reopenedCount: 0,
-        },
+        }, filters, assignedToId) as Prisma.ConversationWhereInput,
       }),
       this.prisma.conversationRating.aggregate({
-        where: { organizationId, conversation: this.relScope(assignedToId), respondedAt: { gte: range.from, lte: range.to } },
+        where: { organizationId, conversation: rel, respondedAt: { gte: range.from, lte: range.to } },
         _avg: { score: true },
         _count: { _all: true },
       }),
       this.prisma.conversationRating.aggregate({
-        where: { organizationId, conversation: this.relScope(assignedToId), respondedAt: { gte: prevFrom, lte: range.from } },
+        where: { organizationId, conversation: rel, respondedAt: { gte: prevFrom, lte: range.from } },
         _avg: { score: true },
       }),
     ]);
@@ -199,6 +199,7 @@ export class DashboardService {
     organizationId: string,
     range: DateRange,
     assignedToId?: string,
+    filters: ConvFilters = {},
   ) {
     const dept = await this.prisma.department.findFirst({
       where: { organizationId, isDefault: true },
@@ -207,7 +208,11 @@ export class DashboardService {
     const slaMinutes = dept?.slaFirstResponse ?? null;
 
     const conversations = await this.prisma.conversation.findMany({
-      where: { organizationId, ...this.convScope(assignedToId), createdAt: { gte: range.from, lte: range.to } },
+      where: this.applyConvFilters(
+        { organizationId, createdAt: { gte: range.from, lte: range.to } },
+        filters,
+        assignedToId,
+      ) as Prisma.ConversationWhereInput,
       select: { createdAt: true, firstResponseAt: true, closedAt: true, status: true },
     });
 
@@ -260,8 +265,9 @@ export class DashboardService {
     organizationId: string,
     range: DateRange,
     assignedToId?: string,
+    filters: ConvFilters = {},
   ) {
-    const convFilter = this.relScope(assignedToId);
+    const convFilter = this.applyRelFilters(filters, assignedToId);
     const [agg, ratings, recent] = await Promise.all([
       this.prisma.conversationRating.aggregate({
         where: { organizationId, conversation: convFilter, respondedAt: { gte: range.from, lte: range.to } },
@@ -318,15 +324,14 @@ export class DashboardService {
     organizationId: string,
     range: DateRange,
     assignedToId?: string,
+    filters: ConvFilters = {},
   ) {
-    const scope = this.convScope(assignedToId);
     const reopened = await this.prisma.conversation.findMany({
-      where: {
+      where: this.applyConvFilters({
         organizationId,
-        ...scope,
         reopenedCount: { gt: 0 },
         reopenedAt: { gte: range.from, lte: range.to },
-      },
+      }, filters, assignedToId) as Prisma.ConversationWhereInput,
       select: {
         id: true,
         reopenedAt: true,
@@ -337,7 +342,7 @@ export class DashboardService {
     });
 
     const closedInPeriod = await this.prisma.conversation.count({
-      where: { organizationId, ...scope, status: 'CLOSED', closedAt: { gte: range.from, lte: range.to } },
+      where: this.applyConvFilters({ organizationId, status: 'CLOSED', closedAt: { gte: range.from, lte: range.to } }, filters, assignedToId) as Prisma.ConversationWhereInput,
     });
 
     const dayKeys = this.eachDay(range.from, range.to);
@@ -480,9 +485,14 @@ export class DashboardService {
     organizationId: string,
     range: DateRange,
     assignedToId?: string,
+    filters: ConvFilters = {},
   ) {
     const conversations = await this.prisma.conversation.findMany({
-      where: { organizationId, ...this.convScope(assignedToId), createdAt: { gte: range.from, lte: range.to } },
+      where: this.applyConvFilters(
+        { organizationId, createdAt: { gte: range.from, lte: range.to } },
+        filters,
+        assignedToId,
+      ) as Prisma.ConversationWhereInput,
       select: { createdAt: true },
     });
 
@@ -501,10 +511,15 @@ export class DashboardService {
     organizationId: string,
     range: DateRange,
     assignedToId?: string,
+    filters: ConvFilters = {},
   ) {
     const result = await this.prisma.conversation.groupBy({
       by: ['channelId'],
-      where: { organizationId, ...this.convScope(assignedToId), createdAt: { gte: range.from, lte: range.to } },
+      where: this.applyConvFilters(
+        { organizationId, createdAt: { gte: range.from, lte: range.to } },
+        filters,
+        assignedToId,
+      ) as Prisma.ConversationWhereInput,
       _count: true,
     });
 
@@ -519,10 +534,10 @@ export class DashboardService {
     });
   }
 
-  async getVolumeByStatus(organizationId: string, assignedToId?: string) {
+  async getVolumeByStatus(organizationId: string, assignedToId?: string, filters: ConvFilters = {}) {
     const result = await this.prisma.conversation.groupBy({
       by: ['status'],
-      where: { organizationId, ...this.convScope(assignedToId) },
+      where: this.applyConvFilters({ organizationId }, filters, assignedToId) as Prisma.ConversationWhereInput,
       _count: true,
     });
     return result.map((r) => ({ status: r.status, count: r._count }));
@@ -532,18 +547,28 @@ export class DashboardService {
     organizationId: string,
     range: DateRange,
     assignedToId?: string,
+    filters: ConvFilters = {},
   ) {
     // Barreira (RN-05): AGENT só vê a própria linha. `assignedToId: { not: null }`
     // já exclui não-atribuídas; quando escopado, força a igualdade ao userId.
+    // Este método mantém sua própria lógica de `assignedToId` (não usa
+    // applyConvFilters pra não sobrescrevê-la); dos filtros só aproveitamos
+    // channelId/departmentId. `status` é ignorado aqui: o groupBy de carga
+    // atual já filtra por status abertos e a listagem principal precisa de
+    // todos os status pra calcular resolutionRate.
     const assignedFilter: Prisma.StringNullableFilter | string = assignedToId
       ? assignedToId
       : { not: null };
+    const extra: Prisma.ConversationWhereInput = {};
+    if (filters.channelId) extra.channelId = filters.channelId;
+    if (filters.departmentId) extra.departmentId = filters.departmentId;
     const [conversations, currentLoadGroups] = await Promise.all([
       this.prisma.conversation.findMany({
         where: {
           organizationId,
           assignedToId: assignedFilter,
           createdAt: { gte: range.from, lte: range.to },
+          ...extra,
         },
         select: {
           assignedToId: true,
@@ -560,6 +585,7 @@ export class DashboardService {
           organizationId,
           assignedToId: assignedFilter,
           status: { in: ['OPEN', 'PENDING', 'WAITING'] },
+          ...extra,
         },
         _count: true,
       }),
@@ -617,16 +643,16 @@ export class DashboardService {
     organizationId: string,
     range: DateRange,
     assignedToId?: string,
+    filters: ConvFilters = {},
   ) {
     const conversations = await this.prisma.conversation.findMany({
-      where: {
+      where: this.applyConvFilters({
         organizationId,
-        ...this.convScope(assignedToId),
         OR: [
           { createdAt: { gte: range.from, lte: range.to } },
           { closedAt: { gte: range.from, lte: range.to } },
         ],
-      },
+      }, filters, assignedToId) as Prisma.ConversationWhereInput,
       select: { createdAt: true, closedAt: true },
     });
 
@@ -650,9 +676,14 @@ export class DashboardService {
     organizationId: string,
     range: DateRange,
     assignedToId?: string,
+    filters: ConvFilters = {},
   ) {
     const conversations = await this.prisma.conversation.findMany({
-      where: { organizationId, ...this.convScope(assignedToId), createdAt: { gte: range.from, lte: range.to } },
+      where: this.applyConvFilters(
+        { organizationId, createdAt: { gte: range.from, lte: range.to } },
+        filters,
+        assignedToId,
+      ) as Prisma.ConversationWhereInput,
       select: { createdAt: true },
     });
 
@@ -671,10 +702,11 @@ export class DashboardService {
     organizationId: string,
     range: DateRange,
     assignedToId?: string,
+    filters: ConvFilters = {},
   ) {
     const messages = await this.prisma.message.findMany({
       where: {
-        conversation: { organizationId, ...this.relScope(assignedToId) },
+        conversation: { organizationId, ...this.applyRelFilters(filters, assignedToId) },
         createdAt: { gte: range.from, lte: range.to },
       },
       select: { createdAt: true, direction: true },
@@ -699,6 +731,7 @@ export class DashboardService {
     organizationId: string,
     range: DateRange,
     assignedToId?: string,
+    filters: ConvFilters = {},
   ) {
     // Nota: pra um AGENT escopado, "botResolved" (conversas sem assignedTo)
     // será sempre 0 por construção — o AGENT só enxerga as próprias conversas
@@ -706,7 +739,11 @@ export class DashboardService {
     // métricas de bot que abrangem conversas de terceiros. OWNER/ADMIN veem
     // o quadro completo da org.
     const conversations = await this.prisma.conversation.findMany({
-      where: { organizationId, ...this.convScope(assignedToId), createdAt: { gte: range.from, lte: range.to } },
+      where: this.applyConvFilters(
+        { organizationId, createdAt: { gte: range.from, lte: range.to } },
+        filters,
+        assignedToId,
+      ) as Prisma.ConversationWhereInput,
       select: { status: true, assignedToId: true, closedAt: true },
     });
 
@@ -741,13 +778,14 @@ export class DashboardService {
     organizationId: string,
     range: DateRange,
     assignedToId?: string,
+    filters: ConvFilters = {},
     limit = 5,
   ) {
     const tagged = await this.prisma.conversationTag.findMany({
       where: {
         conversation: {
           organizationId,
-          ...this.relScope(assignedToId),
+          ...this.applyRelFilters(filters, assignedToId),
           createdAt: { gte: range.from, lte: range.to },
         },
       },
@@ -766,14 +804,13 @@ export class DashboardService {
       .slice(0, limit);
   }
 
-  private async getAvgFirstResponseTime(organizationId: string, range: DateRange, assignedToId?: string): Promise<number | null> {
+  private async getAvgFirstResponseTime(organizationId: string, range: DateRange, assignedToId?: string, filters: ConvFilters = {}): Promise<number | null> {
     const convs = await this.prisma.conversation.findMany({
-      where: {
+      where: this.applyConvFilters({
         organizationId,
-        ...this.convScope(assignedToId),
         firstResponseAt: { not: null },
         createdAt: { gte: range.from, lte: range.to },
-      },
+      }, filters, assignedToId) as Prisma.ConversationWhereInput,
       select: { createdAt: true, firstResponseAt: true },
     });
     if (convs.length === 0) return null;
@@ -781,14 +818,13 @@ export class DashboardService {
     return Math.round(total / convs.length / 60000);
   }
 
-  private async getAvgResolutionTime(organizationId: string, range: DateRange, assignedToId?: string): Promise<number | null> {
+  private async getAvgResolutionTime(organizationId: string, range: DateRange, assignedToId?: string, filters: ConvFilters = {}): Promise<number | null> {
     const convs = await this.prisma.conversation.findMany({
-      where: {
+      where: this.applyConvFilters({
         organizationId,
-        ...this.convScope(assignedToId),
         closedAt: { not: null },
         createdAt: { gte: range.from, lte: range.to },
-      },
+      }, filters, assignedToId) as Prisma.ConversationWhereInput,
       select: { createdAt: true, closedAt: true },
     });
     if (convs.length === 0) return null;
@@ -796,7 +832,7 @@ export class DashboardService {
     return Math.round(total / convs.length / 60000);
   }
 
-  private async getSlaCompliance(organizationId: string, range: DateRange, assignedToId?: string): Promise<number | null> {
+  private async getSlaCompliance(organizationId: string, range: DateRange, assignedToId?: string, filters: ConvFilters = {}): Promise<number | null> {
     const dept = await this.prisma.department.findFirst({
       where: { organizationId, isDefault: true },
       select: { slaFirstResponse: true },
@@ -805,12 +841,11 @@ export class DashboardService {
 
     const slaMinutes = dept.slaFirstResponse;
     const convs = await this.prisma.conversation.findMany({
-      where: {
+      where: this.applyConvFilters({
         organizationId,
-        ...this.convScope(assignedToId),
         firstResponseAt: { not: null },
         createdAt: { gte: range.from, lte: range.to },
-      },
+      }, filters, assignedToId) as Prisma.ConversationWhereInput,
       select: { createdAt: true, firstResponseAt: true },
     });
     if (convs.length === 0) return null;
