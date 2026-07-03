@@ -68,6 +68,7 @@ describe('DashboardService.getLeadsReport', () => {
     const service = new DashboardService(prisma as any);
     const r = await service.getLeadsReport('org-1', { ...range });
     expect(r.proactiveLeads).toBe(2);
+    expect(r.receptiveLeads).toBe(1); // c3: 1ª msg INBOUND
     expect(r.respondedLeads).toBe(1);
     expect(r.respondedRate).toBe(50);
   });

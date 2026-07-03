@@ -416,6 +416,7 @@ export class DashboardService {
 
     let proactiveLeads = 0;
     let respondedLeads = 0;
+    let receptiveLeads = 0;
 
     type Row = {
       seller: { id: string; name: string; avatarUrl: string | null } | null;
@@ -425,9 +426,12 @@ export class DashboardService {
     const rows = new Map<string, Row>();
 
     for (const c of conversations) {
-      const isProactive = firstDir.get(c.id) === 'OUTBOUND';
+      const firstDirection = firstDir.get(c.id);
+      const isProactive = firstDirection === 'OUTBOUND';
+      const isReceptive = firstDirection === 'INBOUND';
       const responded = isProactive && hasInbound.has(c.id);
       if (isProactive) proactiveLeads++;
+      if (isReceptive) receptiveLeads++;
       if (responded) respondedLeads++;
 
       const key = c.assignedToId ?? '__none__';
@@ -462,6 +466,7 @@ export class DashboardService {
     return {
       newLeads: conversations.length,
       proactiveLeads,
+      receptiveLeads,
       respondedLeads,
       respondedRate: proactiveLeads > 0 ? Math.round((respondedLeads / proactiveLeads) * 100) : null,
       bySeller,
