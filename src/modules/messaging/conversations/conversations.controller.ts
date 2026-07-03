@@ -39,8 +39,9 @@ export class ConversationsController {
   start(
     @CurrentOrg() org: { id: string; userOrganizationId: string; userRole: OrgRole },
     @Body() dto: StartConversationDto,
+    @CurrentChannelAccess() access: ChannelAccess,
   ) {
-    return this.startConversation.start(org.id, dto, {
+    return this.startConversation.start(org.id, dto, access, {
       userOrganizationId: org.userOrganizationId,
       role: org.userRole,
     });

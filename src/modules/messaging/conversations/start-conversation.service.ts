@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import {
@@ -8,6 +8,7 @@ import { PrismaService } from '../../../database/prisma.service';
 import { ConversationResolverService } from '../pipeline/conversation-resolver.service';
 import { normalizePhone } from '../../../common/utils/phone.util';
 import { StartConversationDto } from './dto/start-conversation.dto';
+import type { ChannelAccess } from '../../iam/channel-access/channel-access.service';
 
 @Injectable()
 export class StartConversationService {
@@ -26,12 +27,16 @@ export class StartConversationService {
   async start(
     organizationId: string,
     dto: StartConversationDto,
+    access: ChannelAccess,
     creator?: { userOrganizationId: string; role: OrgRole },
   ): Promise<{ conversationId: string }> {
     const channel = await this.prisma.channel.findFirst({
       where: { id: dto.channelId, organizationId, deletedAt: null },
     });
     if (!channel) throw new BadRequestException('Canal não encontrado.');
+    if (access !== 'ALL' && !access.has(channel.id)) {
+      throw new ForbiddenException('Você não tem acesso a este canal.');
+    }
     if (channel.type === ChannelType.WHATSAPP_OFFICIAL) {
       throw new BadRequestException('Iniciar conversa no canal oficial exige template (HSM) — disponível em breve.');
     }
@@ -70,33 +75,43 @@ export class StartConversationService {
     });
     if (existingCC) return existingCC.contactId;
 
-    if (data.preferContactId) {
-      await this.prisma.contactChannel.create({
-        data: { contactId: data.preferContactId, channelId, externalId: data.externalId, profileName: data.name },
-      });
-      return data.preferContactId;
-    }
+    try {
+      if (data.preferContactId) {
+        await this.prisma.contactChannel.create({
+          data: { contactId: data.preferContactId, channelId, externalId: data.externalId, profileName: data.name },
+        });
+        return data.preferContactId;
+      }
 
-    const existingContact = await this.prisma.contact.findFirst({
-      where: { organizationId, phone: data.phone, deletedAt: null },
-    });
-    if (existingContact) {
-      await this.prisma.contactChannel.create({
-        data: { contactId: existingContact.id, channelId, externalId: data.externalId, profileName: data.name },
+      const existingContact = await this.prisma.contact.findFirst({
+        where: { organizationId, phone: data.phone, deletedAt: null },
       });
-      return existingContact.id;
-    }
+      if (existingContact) {
+        await this.prisma.contactChannel.create({
+          data: { contactId: existingContact.id, channelId, externalId: data.externalId, profileName: data.name },
+        });
+        return existingContact.id;
+      }
 
-    const contact = await this.prisma.contact.create({
-      data: {
-        organizationId,
-        name: data.name,
-        phone: data.phone,
-        channels: { create: { channelId, externalId: data.externalId, profileName: data.name } },
-      },
-    });
-    this.logger.log(`Start-conversation: contato criado ${contact.id} (${data.phone})`);
-    return contact.id;
+      const contact = await this.prisma.contact.create({
+        data: {
+          organizationId,
+          name: data.name,
+          phone: data.phone,
+          channels: { create: { channelId, externalId: data.externalId, profileName: data.name } },
+        },
+      });
+      this.logger.log(`Start-conversation: contato criado ${contact.id} (${data.phone})`);
+      return contact.id;
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const racer = await this.prisma.contactChannel.findUnique({
+          where: { uq_contact_channel_external: { channelId, externalId: data.externalId } },
+        });
+        if (racer) return racer.contactId;
+      }
+      throw err;
+    }
   }
 
   private async enqueue(channelId: string, conversationId: string, externalId: string, text: string) {

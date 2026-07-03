@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ChannelType, MessageContentType, MessageDirection, MessageStatus } from '@prisma/client';
 import { StartConversationService } from './start-conversation.service';
 
@@ -20,21 +20,29 @@ describe('StartConversationService.start', () => {
 
   it('recusa canal WhatsApp Oficial', async () => {
     const { svc } = make({ channelType: ChannelType.WHATSAPP_OFFICIAL });
-    await expect(svc.start('org1', { channelId: 'ch1', phone: '5511982015967', message: 'oi' }, creator)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.start('org1', { channelId: 'ch1', phone: '5511982015967', message: 'oi' }, 'ALL', creator)).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('recusa quando nao ha phone nem contactId', async () => {
     const { svc } = make();
-    await expect(svc.start('org1', { channelId: 'ch1', message: 'oi' } as any, creator)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.start('org1', { channelId: 'ch1', message: 'oi' } as any, 'ALL', creator)).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('cria contato novo, resolve conversa e enfileira a mensagem', async () => {
     const { svc, prisma, resolver, queue } = make({ existingCC: null, existingContact: null });
-    const res = await svc.start('org1', { channelId: 'ch1', phone: '+55 (11) 98201-5967', name: 'João', message: 'Olá!' }, creator);
+    const res = await svc.start('org1', { channelId: 'ch1', phone: '+55 (11) 98201-5967', name: 'João', message: 'Olá!' }, 'ALL', creator);
     expect(res).toEqual({ conversationId: 'conv1' });
     expect(prisma.contact.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ organizationId: 'org1', phone: '5511982015967' }) }));
     expect(resolver.resolve).toHaveBeenCalledWith('org1', 'ch1', 'c-new');
     expect(prisma.message.create).toHaveBeenCalledWith({ data: expect.objectContaining({ conversationId: 'conv1', direction: MessageDirection.OUTBOUND, type: MessageContentType.TEXT, content: { text: 'Olá!' }, status: MessageStatus.QUEUED }) });
     expect(queue.add).toHaveBeenCalledWith('send-outbound', expect.objectContaining({ messageId: 'm1', channelId: 'ch1', contactExternalId: '5511982015967@s.whatsapp.net', message: { type: MessageContentType.TEXT, content: { text: 'Olá!' } } }), expect.any(Object));
+  });
+
+  it('recusa quando o usuario nao tem acesso ao canal (ChannelAccess)', async () => {
+    const { svc } = make();
+    const noAccess = new Set<string>(['outro-canal']);
+    await expect(
+      svc.start('org1', { channelId: 'ch1', phone: '5511982015967', message: 'oi' }, noAccess, creator),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
