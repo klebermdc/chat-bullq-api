@@ -1,8 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { ConversationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
 export interface DateRange {
+  from: Date;
+  to: Date;
+}
+
+export interface ConvFilters {
+  channelId?: string;
+  departmentId?: string;
+  status?: ConversationStatus;
+  assignedToId?: string;
+}
+
+export interface LeadsFilter extends ConvFilters {
   from: Date;
   to: Date;
 }
@@ -25,6 +37,25 @@ export class DashboardService {
     assignedToId?: string,
   ): { assignedToId?: string } {
     return assignedToId ? { assignedToId } : {};
+  }
+
+  /**
+   * Mescla filtros opcionais num `where` de Conversation, respeitando RN-05:
+   * quando `scope` (userId do AGENT) está setado, ele sobrepõe qualquer
+   * `assignedToId` vindo do filtro (fail-closed — o AGENT não escapa do escopo).
+   */
+  private applyConvFilters<T extends Record<string, unknown>>(
+    base: T,
+    filters: ConvFilters,
+    scope?: string,
+  ): T & Record<string, unknown> {
+    const where: Record<string, unknown> = { ...base };
+    if (filters.channelId) where.channelId = filters.channelId;
+    if (filters.departmentId) where.departmentId = filters.departmentId;
+    if (filters.status) where.status = filters.status;
+    const assigned = scope ?? filters.assignedToId;
+    if (assigned) where.assignedToId = assigned;
+    return where as T & Record<string, unknown>;
   }
 
   async getOverview(
