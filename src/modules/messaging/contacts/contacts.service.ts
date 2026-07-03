@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ContactsRepository } from './contacts.repository';
 import { UpdateContactDto } from './dto/update-contact.dto';
+import { CreateContactDto } from './dto/create-contact.dto';
+import { normalizePhone } from '../../../common/utils/phone.util';
 
 @Injectable()
 export class ContactsService {
@@ -13,6 +15,18 @@ export class ContactsService {
       contacts,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
+  }
+
+  async create(organizationId: string, dto: CreateContactDto) {
+    const phone = normalizePhone(dto.phone);
+    const existing = await this.repository.findFirstByOrgPhone(organizationId, phone);
+    if (existing) return existing;
+    return this.repository.create({
+      organizationId,
+      name: dto.name,
+      phone,
+      email: dto.email,
+    });
   }
 
   async findOne(id: string, organizationId: string) {

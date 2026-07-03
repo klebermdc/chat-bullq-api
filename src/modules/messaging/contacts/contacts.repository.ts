@@ -65,4 +65,14 @@ export class ContactsRepository {
   async softDelete(id: string) {
     return this.prisma.contact.update({ where: { id }, data: { deletedAt: new Date() } });
   }
+
+  async findFirstByOrgPhone(organizationId: string, phone: string) {
+    return this.prisma.contact.findFirst({
+      where: { organizationId, phone, deletedAt: null },
+    });
+  }
+
+  async create(data: { organizationId: string; name?: string; phone: string; email?: string }) {
+    return this.prisma.contact.create({ data });
+  }
 }

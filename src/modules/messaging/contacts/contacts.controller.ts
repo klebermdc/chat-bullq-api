@@ -1,8 +1,9 @@
-import { Controller, Get, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { ContactsService } from './contacts.service';
 import { UpdateContactDto } from './dto/update-contact.dto';
+import { CreateContactDto } from './dto/create-contact.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../../common/guards';
 import { CurrentOrg, Roles } from '../../../common/decorators';
 
@@ -12,6 +13,12 @@ import { CurrentOrg, Roles } from '../../../common/decorators';
 @Controller('contacts')
 export class ContactsController {
   constructor(private readonly service: ContactsService) {}
+
+  @Post()
+  @ApiOperation({ summary: 'Create a contact manually (dedups by org + phone)' })
+  create(@CurrentOrg('id') orgId: string, @Body() dto: CreateContactDto) {
+    return this.service.create(orgId, dto);
+  }
 
   @Get()
   @ApiOperation({ summary: 'List contacts with search and pagination' })
