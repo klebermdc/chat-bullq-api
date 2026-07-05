@@ -33,11 +33,25 @@ export class RagIndexerProcessor extends WorkerHost {
     try {
       switch (data.type) {
         case 'index_message':
-          await this.index('message', data.messageId, data.content, data.scope, data.metadata);
+          await this.index(
+            'message',
+            data.messageId,
+            data.content,
+            data.organizationId,
+            data.scope,
+            data.metadata,
+          );
           return { ok: true };
 
         case 'index_fact':
-          await this.index('fact', data.factId, data.content, data.scope, data.metadata);
+          await this.index(
+            'fact',
+            data.factId,
+            data.content,
+            data.organizationId,
+            data.scope,
+            data.metadata,
+          );
           return { ok: true };
 
         case 'index_memory_summary':
@@ -45,6 +59,7 @@ export class RagIndexerProcessor extends WorkerHost {
             'memory_summary',
             data.summaryId,
             data.content,
+            data.organizationId,
             data.scope,
             data.metadata,
           );
@@ -74,6 +89,7 @@ export class RagIndexerProcessor extends WorkerHost {
     ownerType: VectorOwnerType,
     ownerId: string,
     content: string,
+    organizationId: string,
     scope: SearchScope,
     metadata?: Record<string, any>,
   ): Promise<void> {
@@ -82,7 +98,7 @@ export class RagIndexerProcessor extends WorkerHost {
       return;
     }
 
-    const emb = await this.embeddings.embed(content);
+    const emb = await this.embeddings.embed(content, organizationId);
 
     const entry: VectorEntry = {
       id: `${ownerType}:${ownerId}`,

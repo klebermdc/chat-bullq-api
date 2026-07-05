@@ -1,5 +1,5 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ProviderKeyResolverService } from '../../ai-provider-keys/provider-key-resolver.service';
 import type { EmbeddingResult } from './types';
 
 /**
@@ -9,6 +9,10 @@ import type { EmbeddingResult } from './types';
  * The service is stateless: each call is one HTTP request. Batching is
  * supported via `embedBatch` to amortize round-trip latency when indexing
  * many messages at once.
+ *
+ * The API key is resolved per-organization via `ProviderKeyResolverService`
+ * (DB row first, `.env` `OPENAI_API_KEY` fallback) — there is no
+ * boot-time key anymore.
  */
 @Injectable()
 export class EmbeddingsService {
@@ -16,29 +20,26 @@ export class EmbeddingsService {
   private readonly MODEL = 'text-embedding-3-small';
   /** USD cost per 1M tokens for `text-embedding-3-small`. */
   private readonly COST_PER_1M_TOKENS = 0.02;
-  private readonly apiKey: string;
 
-  constructor(config: ConfigService) {
-    const apiKey =
-      config.get<string>('OPENAI_API_KEY') ?? process.env.OPENAI_API_KEY ?? '';
-    if (!apiKey) {
-      this.logger.warn(
-        'No OPENAI_API_KEY set — embeddings will fail at runtime',
-      );
-    }
-    this.apiKey = apiKey;
-  }
+  constructor(private readonly providerKeys: ProviderKeyResolverService) {}
 
   /**
    * Embeds a single string. Returns the vector + cost metadata so the
    * caller can log it against the agent run's budget.
    */
-  async embed(text: string): Promise<EmbeddingResult> {
+  async embed(text: string, organizationId: string): Promise<EmbeddingResult> {
+    const resolved = await this.providerKeys.resolve(organizationId, 'EMBEDDINGS');
+    if (!resolved) {
+      throw new InternalServerErrorException(
+        'Nenhuma chave de embeddings configurada (Configurações > Provedores IA)',
+      );
+    }
+
     const t0 = Date.now();
     const response = await fetch('https://api.openai.com/v1/embeddings', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${this.apiKey}`,
+        Authorization: `Bearer ${resolved.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ model: this.MODEL, input: text }),
@@ -82,14 +83,21 @@ export class EmbeddingsService {
    * across inputs so the caller can attribute cost back to each item
    * (the API itself only returns one aggregate token count).
    */
-  async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
+  async embedBatch(texts: string[], organizationId: string): Promise<EmbeddingResult[]> {
     if (texts.length === 0) return [];
+
+    const resolved = await this.providerKeys.resolve(organizationId, 'EMBEDDINGS');
+    if (!resolved) {
+      throw new InternalServerErrorException(
+        'Nenhuma chave de embeddings configurada (Configurações > Provedores IA)',
+      );
+    }
 
     const t0 = Date.now();
     const response = await fetch('https://api.openai.com/v1/embeddings', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${this.apiKey}`,
+        Authorization: `Bearer ${resolved.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ model: this.MODEL, input: texts }),
