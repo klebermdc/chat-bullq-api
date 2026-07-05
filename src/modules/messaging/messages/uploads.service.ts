@@ -213,58 +213,54 @@ export class UploadsService {
 
     const dateFolder = new Date().toISOString().slice(0, 10);
     const id = crypto.randomBytes(16).toString('hex');
-    const key = `audio/${dateFolder}/${id}.ogg`;
+    const key = `audio/${dateFolder}/${id}.mp3`;
 
-    // WhatsApp voice notes require OGG/Opus. Browsers (esp. Chrome/Firefox)
-    // record in WebM/Opus via MediaRecorder — the codec is compatible but the
-    // container is not, so Zappfy rejects the send (HTTP 500). We also rely on
-    // the re-encode to write proper duration headers (MediaRecorder streams
-    // webm without duration, so the <audio> element shows 0:00).
-    let oggBuffer: Buffer;
-    if (mime === 'audio/ogg') {
-      oggBuffer = file.buffer;
-    } else {
-      const tmpBase = path.join(os.tmpdir(), `aud-${id}`);
-      const srcTmp = `${tmpBase}${this.extFor(mime)}`;
-      const oggTmp = `${tmpBase}.ogg`;
-      await fs.promises.writeFile(srcTmp, file.buffer);
-      try {
-        await execFileAsync(
-          'ffmpeg',
-          [
-            '-hide_banner',
-            '-loglevel', 'error',
-            '-y',
-            '-i', srcTmp,
-            '-vn',
-            '-c:a', 'libopus',
-            '-b:a', '32k',
-            '-ac', '1',
-            '-ar', '48000',
-            '-application', 'voip',
-            oggTmp,
-          ],
-          { timeout: 30_000 },
-        );
-        oggBuffer = await fs.promises.readFile(oggTmp);
-      } catch (err: any) {
-        this.logger.error(`ffmpeg transcode failed: ${err.message}`);
-        throw new BadRequestException('Failed to process audio');
-      } finally {
-        await fs.promises.unlink(srcTmp).catch(() => undefined);
-        await fs.promises.unlink(oggTmp).catch(() => undefined);
-      }
+    // We produce MP3 (not OGG/Opus). The provider (Uazapi) never delivered our
+    // OGG/Opus voice notes to recipients ("áudio não está mais disponível") —
+    // its ptt/audio path chokes on our Opus regardless of type. MP3 is
+    // universally accepted and plays on every WhatsApp client. Sent as
+    // `type: audio`. Browsers record WebM/MP4 via MediaRecorder; we always
+    // re-encode (also fixes the missing-duration header that showed 0:00).
+    const tmpBase = path.join(os.tmpdir(), `aud-${id}`);
+    const srcTmp = `${tmpBase}${this.extFor(mime)}`;
+    const mp3Tmp = `${tmpBase}.mp3`;
+    await fs.promises.writeFile(srcTmp, file.buffer);
+    let mp3Buffer: Buffer;
+    try {
+      await execFileAsync(
+        'ffmpeg',
+        [
+          '-hide_banner',
+          '-loglevel', 'error',
+          '-y',
+          '-i', srcTmp,
+          '-vn',
+          '-c:a', 'libmp3lame',
+          '-b:a', '64k',
+          '-ac', '1',
+          '-ar', '48000',
+          mp3Tmp,
+        ],
+        { timeout: 30_000 },
+      );
+      mp3Buffer = await fs.promises.readFile(mp3Tmp);
+    } catch (err: any) {
+      this.logger.error(`ffmpeg transcode failed: ${err.message}`);
+      throw new BadRequestException('Failed to process audio');
+    } finally {
+      await fs.promises.unlink(srcTmp).catch(() => undefined);
+      await fs.promises.unlink(mp3Tmp).catch(() => undefined);
     }
 
-    await this.storage.put(key, oggBuffer, 'audio/ogg');
+    await this.storage.put(key, mp3Buffer, 'audio/mpeg');
 
     const url = `${this.publicBaseUrl}/${key}`;
     this.logger.log(`Audio saved: ${key} -> ${url}`);
     return {
       url,
-      mimeType: 'audio/ogg',
-      size: oggBuffer.byteLength,
-      filename: `${id}.ogg`,
+      mimeType: 'audio/mpeg',
+      size: mp3Buffer.byteLength,
+      filename: `${id}.mp3`,
     };
   }
 
