@@ -182,10 +182,12 @@ export class ZappfyMessageMapper {
           payload: withReply({
             number,
             file: message.content.mediaUrl,
-            // "ptt" renders as a native voice note on WhatsApp. "audio" would
-            // render as a forwarded audio file, which is wrong UX for a
-            // message the user just recorded in the app.
-            type: 'ptt',
+            // Uazapi's `type: 'ptt'` renders the voice-note bubble but never
+            // delivered playable media to the recipient ("áudio não está mais
+            // disponível") — its server-side ptt re-encode produces a dead
+            // media ref. `type: 'audio'` sends the file as-is (like images,
+            // which work); an OGG/Opus still shows the mic icon on WhatsApp.
+            type: 'audio',
           }),
         };
 
