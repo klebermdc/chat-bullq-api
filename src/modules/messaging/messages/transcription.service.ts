@@ -9,37 +9,37 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../database/prisma.service';
 import { AudioSourceService } from './audio-source.service';
 import { resolveAssignmentScope } from '../conversations/conversation-scope';
+import { ProviderKeyResolverService } from '../../ai-provider-keys/provider-key-resolver.service';
 import axios from 'axios';
 
 export interface TranscriptionResult {
   text: string;
   language?: string;
   durationMs?: number;
-  provider: 'openai-whisper';
+  provider: 'groq-whisper' | 'openai-whisper';
   transcribedAt: string;
 }
 
 /**
- * Transcribes audio messages using OpenAI Whisper.
+ * Transcribes audio messages using Groq Whisper (OpenAI-compatible endpoint).
  *
- * Costs ~$0.006/min — we cache the result in `message.metadata.transcription`
- * so each audio is transcribed at most once. Triggered on-demand from the UI
- * (user clicks "Transcrever") rather than automatically, to keep costs
- * predictable on busy channels.
+ * Much cheaper than OpenAI (~$0.04/hour with whisper-large-v3-turbo) and far
+ * faster. We cache the result in `message.metadata.transcription` so each audio
+ * is transcribed at most once. Triggered on-demand from the UI (user clicks
+ * "Transcrever") rather than automatically, to keep costs predictable on busy
+ * channels.
  */
 @Injectable()
 export class TranscriptionService {
   private readonly logger = new Logger(TranscriptionService.name);
 
-  private static readonly API_URL =
-    'https://api.openai.com/v1/audio/transcriptions';
-  private static readonly MODEL = 'whisper-1';
-  private static readonly MAX_BYTES = 25 * 1024 * 1024; // 25MB OpenAI cap
+  private static readonly MAX_BYTES = 25 * 1024 * 1024; // 25MB Groq cap
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly audioSource: AudioSourceService,
+    private readonly providerKeys: ProviderKeyResolverService,
   ) {}
 
   async transcribe(
@@ -80,12 +80,18 @@ export class TranscriptionService {
       return metadata.transcription as TranscriptionResult;
     }
 
-    const apiKey = this.config.get<string>('OPENAI_API_KEY');
-    if (!apiKey) {
+    const resolved = await this.providerKeys.resolve(organizationId, 'TRANSCRIPTION');
+    if (!resolved) {
       throw new BadRequestException(
-        'OPENAI_API_KEY not configured on the server',
+        'Nenhuma chave de transcrição configurada (cadastre em Configurações > Provedores IA)',
       );
     }
+    const apiKey = resolved.apiKey;
+    const isGroq = resolved.provider === 'GROQ';
+    const apiUrl = isGroq
+      ? 'https://api.groq.com/openai/v1/audio/transcriptions'
+      : 'https://api.openai.com/v1/audio/transcriptions';
+    const model = resolved.model ?? (isGroq ? 'whisper-large-v3-turbo' : 'whisper-1');
 
     const audio = await this.audioSource.resolveBytes(message);
     if (audio.buffer.byteLength > TranscriptionService.MAX_BYTES) {
@@ -103,9 +109,10 @@ export class TranscriptionService {
       type: audio.mimeType || 'audio/mpeg',
     });
     formData.append('file', blob, audio.filename);
-    formData.append('model', TranscriptionService.MODEL);
+    formData.append('model', model);
     formData.append('response_format', 'verbose_json');
-    // Portuguese bias by default — Whisper auto-detects, this just nudges.
+    // Portuguese by default — pinning the language cuts latency and errors.
+    formData.append('language', 'pt');
     formData.append(
       'prompt',
       'Conversa em português do Brasil entre cliente e atendente.',
@@ -113,7 +120,7 @@ export class TranscriptionService {
 
     let response;
     try {
-      response = await axios.post(TranscriptionService.API_URL, formData, {
+      response = await axios.post(apiUrl, formData, {
         headers: { Authorization: `Bearer ${apiKey}` },
         timeout: 120_000,
         maxContentLength: Infinity,
@@ -122,7 +129,7 @@ export class TranscriptionService {
     } catch (err: any) {
       const detail =
         err?.response?.data?.error?.message || err.message || 'unknown';
-      this.logger.error(`Whisper request failed: ${detail}`);
+      this.logger.error(`Groq Whisper request failed: ${detail}`);
       throw new BadRequestException(`Transcrição falhou: ${detail}`);
     }
 
@@ -131,7 +138,7 @@ export class TranscriptionService {
       text: String(data?.text || '').trim(),
       language: data?.language,
       durationMs: data?.duration ? Math.round(Number(data.duration) * 1000) : undefined,
-      provider: 'openai-whisper',
+      provider: isGroq ? 'groq-whisper' : 'openai-whisper',
       transcribedAt: new Date().toISOString(),
     };
 
