@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from './database/prisma.module';
+import { CryptoModule } from './common/crypto/crypto.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
@@ -29,6 +30,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 // ProductsModule removido — catálogo agora vive no Trivapp e é consumido
 // via skill HTTP getProductPitch + CatalogSyncService. Tabela `products`
 // fica órfã no DB (cleanup futuro). Não importar aqui.
+import { StorageModule } from './modules/storage/storage.module';
 import redisConfig from './config/redis.config';
 
 @Module({
@@ -45,6 +47,10 @@ import redisConfig from './config/redis.config';
       }),
     }),
     PrismaModule,
+    CryptoModule,
+    // @Global — object storage (MinIO) for uploads/audio; register early so
+    // MessagingModule (and main.ts) can inject StorageService.
+    StorageModule,
     // AutomationsModule is @Global — register early so every domain
     // module can inject OutboxService without explicit imports.
     AutomationsModule,
