@@ -18,6 +18,7 @@ import {
   LlmUsage,
 } from './llm.types';
 import { SAKANA_DEFAULT_BASE_URL } from './llm.constants';
+import { ProviderKeyResolverService } from '../../ai-provider-keys/provider-key-resolver.service';
 
 type OpenAiMessage = Record<string, unknown>;
 type OpenAiTool = Record<string, unknown>;
@@ -40,33 +41,54 @@ type OpenAiUsage = {
 @Injectable()
 export class LlmService {
   private readonly logger = new Logger(LlmService.name);
-  private readonly client: OpenAI;
-  private readonly hasApiKey: boolean;
+  private readonly timeoutMs: number;
+  private readonly clients = new Map<
+    string,
+    { client: OpenAI; fingerprint: string }
+  >();
 
-  constructor(config: ConfigService) {
-    const apiKey = config.get<string>('SAKANA_API_KEY');
-    const baseURL =
-      config.get<string>('SAKANA_BASE_URL') ?? SAKANA_DEFAULT_BASE_URL;
+  constructor(
+    private readonly config: ConfigService,
+    private readonly providerKeys: ProviderKeyResolverService,
+  ) {
     const timeout = Number(config.get<string>('SAKANA_TIMEOUT_MS') ?? 120_000);
+    this.timeoutMs = Number.isFinite(timeout) && timeout > 0 ? timeout : 120_000;
 
-    this.hasApiKey = !!apiKey;
-    if (!apiKey) {
+    if (!config.get<string>('SAKANA_API_KEY')) {
       this.logger.warn(
-        'SAKANA_API_KEY not set — AI agents will fail at runtime',
+        'SAKANA_API_KEY not set — orgs without a DB LLM key will fail at runtime',
       );
     }
+  }
 
-    this.client = new OpenAI({
-      apiKey: apiKey ?? 'missing',
+  private async clientFor(organizationId: string): Promise<OpenAI> {
+    const resolved = await this.providerKeys.resolve(
+      organizationId,
+      'AGENT_LLM',
+    );
+    if (!resolved) {
+      throw new InternalServerErrorException(
+        'Nenhuma chave de LLM configurada (Configurações > Provedores IA)',
+      );
+    }
+    const baseURL =
+      resolved.baseUrl ??
+      this.config.get<string>('SAKANA_BASE_URL') ??
+      SAKANA_DEFAULT_BASE_URL;
+    const fingerprint = `${resolved.apiKey}|${baseURL}`;
+    const cached = this.clients.get(organizationId);
+    if (cached && cached.fingerprint === fingerprint) return cached.client;
+    const client = new OpenAI({
+      apiKey: resolved.apiKey,
       baseURL,
-      timeout: Number.isFinite(timeout) && timeout > 0 ? timeout : 120_000,
+      timeout: this.timeoutMs,
     });
+    this.clients.set(organizationId, { client, fingerprint });
+    return client;
   }
 
   async complete(req: LlmCompletionRequest): Promise<LlmCompletionResponse> {
-    if (!this.hasApiKey) {
-      throw new InternalServerErrorException('SAKANA_API_KEY not set');
-    }
+    const client = await this.clientFor(req.organizationId);
 
     const modelId = this.normalizeModelId(req.modelId);
     const messages = this.toOpenAiMessages(req.messages);
@@ -79,7 +101,7 @@ export class LlmService {
     >;
 
     try {
-      response = await this.client.chat.completions.create({
+      response = await client.chat.completions.create({
         model: modelId,
         messages: messages as any,
         max_tokens: req.maxTokens ?? 2048,

@@ -44,6 +44,7 @@ export class IntentClassifierService {
 
   async classify(
     message: string,
+    organizationId: string,
     recentMessages?: ClassifierMessage[],
     config?: Partial<ClassifierConfig>,
   ): Promise<ClassificationResult> {
@@ -66,6 +67,7 @@ export class IntentClassifierService {
 
     try {
       const resp = await this.llm.complete({
+        organizationId,
         modelId: model,
         messages,
         temperature: 0,

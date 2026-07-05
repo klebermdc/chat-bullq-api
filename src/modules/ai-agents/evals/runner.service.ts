@@ -74,7 +74,11 @@ export class EvalRunnerService {
    * Roda um caso de teste contra o agent identificado por nome. Retorna o
    * resultado com lista de falhas (vazia se passou) e métricas de custo/duração.
    */
-  async runCase(testCase: EvalCase, agentName: string): Promise<EvalResult> {
+  async runCase(
+    testCase: EvalCase,
+    agentName: string,
+    organizationId: string,
+  ): Promise<EvalResult> {
     const startedAt = Date.now();
 
     this.logger.log({
@@ -88,7 +92,11 @@ export class EvalRunnerService {
     const failures: string[] = [];
 
     try {
-      const invocation = await this.invokeAgent(testCase, agentName);
+      const invocation = await this.invokeAgent(
+        testCase,
+        agentName,
+        organizationId,
+      );
       agentResponse = invocation.response;
       costUsd = invocation.costUsd;
     } catch (err: any) {
@@ -106,7 +114,12 @@ export class EvalRunnerService {
     await this.assertToolCalls(testCase.expect, agentResponse, failures);
     this.assertMessageContent(testCase.expect, agentResponse, failures);
     this.assertFinalAction(testCase.expect, agentResponse, failures);
-    await this.assertJudge(testCase.expect, agentResponse, failures);
+    await this.assertJudge(
+      testCase.expect,
+      agentResponse,
+      failures,
+      organizationId,
+    );
 
     const durationMs = Date.now() - startedAt;
     const passed = failures.length === 0;
@@ -135,10 +148,17 @@ export class EvalRunnerService {
    * Roda um dataset inteiro contra seu agent e devolve o relatório. Usado
    * pelo CLI standalone e pelo controller HTTP.
    */
-  async runDataset(dataset: EvalDataset): Promise<EvalRunReport> {
+  async runDataset(
+    dataset: EvalDataset,
+    organizationId: string,
+  ): Promise<EvalRunReport> {
     const results: EvalResult[] = [];
     for (const testCase of dataset.cases) {
-      const result = await this.runCase(testCase, dataset.agentName);
+      const result = await this.runCase(
+        testCase,
+        dataset.agentName,
+        organizationId,
+      );
       results.push(result);
     }
     return this.reporter.buildReport({
@@ -158,6 +178,7 @@ export class EvalRunnerService {
   private async invokeAgent(
     testCase: EvalCase,
     agentName: string,
+    organizationId: string,
   ): Promise<{ response: EvalAgentResponse; costUsd: number }> {
     // 1. Load agent (active, not soft-deleted)
     const agent = (await this.prisma.aiAgent.findFirst({
@@ -214,6 +235,7 @@ export class EvalRunnerService {
 
     // 7. Call LLM (no tool execution, no retries — we want the FIRST decision)
     const completion = await this.llm.complete({
+      organizationId,
       modelId: agent.modelId,
       messages,
       tools,
@@ -396,6 +418,7 @@ export class EvalRunnerService {
     expect: EvalAssertion,
     response: EvalAgentResponse,
     failures: string[],
+    organizationId: string,
   ): Promise<void> {
     if (!expect.judgeQuestion) return;
 
@@ -403,6 +426,7 @@ export class EvalRunnerService {
     const verdict = await this.judge.evaluate(
       expect.judgeQuestion,
       response.finalMessage ?? '',
+      organizationId,
     );
 
     if (verdict.verdict !== expectedVerdict) {
