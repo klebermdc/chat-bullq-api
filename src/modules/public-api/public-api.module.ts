@@ -5,14 +5,19 @@ import { PublicContactsController } from './controllers/public-contacts.controll
 import { PublicChannelsController } from './controllers/public-channels.controller';
 import { PublicConversationsController } from './controllers/public-conversations.controller';
 import { PublicMessagesController } from './controllers/public-messages.controller';
+import { PublicMembersController } from './controllers/public-members.controller';
+import { PublicOrganizationController } from './controllers/public-organization.controller';
+import { PublicActivityLogsController } from './controllers/public-activity-logs.controller';
 import { ApiKeyThrottleGuard } from './guards/api-key-throttle.guard';
+import { ActivityLogsService } from './activity-logs/activity-logs.service';
 import { DashboardModule } from '../dashboard/dashboard.module';
 import { AuthModule } from '../auth/auth.module';
 import { MessagingModule } from '../messaging/messaging.module';
 import { ChannelHubModule } from '../channel-hub/channel-hub.module';
+import { OrganizationsModule } from '../organizations/organizations.module';
 
 @Module({
-  imports: [AuthModule, DashboardModule, MessagingModule, ChannelHubModule],
+  imports: [AuthModule, DashboardModule, MessagingModule, ChannelHubModule, OrganizationsModule],
   controllers: [
     PublicMeController,
     PublicDashboardController,
@@ -20,7 +25,10 @@ import { ChannelHubModule } from '../channel-hub/channel-hub.module';
     PublicChannelsController,
     PublicConversationsController,
     PublicMessagesController,
+    PublicMembersController,
+    PublicOrganizationController,
+    PublicActivityLogsController,
   ],
-  providers: [ApiKeyThrottleGuard],
+  providers: [ApiKeyThrottleGuard, ActivityLogsService],
 })
 export class PublicApiModule {}
