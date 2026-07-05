@@ -34,7 +34,11 @@ export class JudgeService {
    * @param question - critério/pergunta subjetiva (ex.: "a resposta usa tom empático?")
    * @param response - mensagem final do agent que será avaliada
    */
-  async evaluate(question: string, response: string): Promise<JudgeVerdict> {
+  async evaluate(
+    question: string,
+    response: string,
+    organizationId: string,
+  ): Promise<JudgeVerdict> {
     const userPrompt = [
       'Pergunta de avaliação:',
       question,
@@ -47,6 +51,7 @@ export class JudgeService {
 
     try {
       const completion = await this.llm.complete({
+        organizationId,
         modelId: JUDGE_MODEL,
         temperature: 0,
         maxTokens: 256,

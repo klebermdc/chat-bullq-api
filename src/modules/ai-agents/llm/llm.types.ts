@@ -54,6 +54,8 @@ export interface LlmToolDefinition {
 }
 
 export interface LlmCompletionRequest {
+  /** Organização dona da run — usada para resolver a chave do provedor de LLM. */
+  organizationId: string;
   modelId: string;
   messages: LlmMessage[];
   tools?: LlmToolDefinition[];

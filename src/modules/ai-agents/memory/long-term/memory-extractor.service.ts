@@ -31,6 +31,7 @@ export class MemoryExtractorService {
     let response;
     try {
       response = await this.llm.complete({
+        organizationId: input.organizationId,
         modelId: this.modelId,
         messages: [
           { role: 'system', content: systemPrompt },

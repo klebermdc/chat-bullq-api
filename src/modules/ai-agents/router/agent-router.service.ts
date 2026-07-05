@@ -92,6 +92,7 @@ export class AgentRouterService {
     try {
       classification = await this.classifier.classify(
         latestMessageText,
+        conversation.organizationId,
         recentMessages,
         { threshold },
       );

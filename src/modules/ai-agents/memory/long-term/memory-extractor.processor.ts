@@ -37,7 +37,7 @@ export class MemoryExtractorProcessor extends WorkerHost {
   async process(
     job: Job<MemoryExtractorJobData>,
   ): Promise<{ ok: boolean; factsAdded: number; factsRemoved: number; costUsd: number }> {
-    const { agentId, contactId, conversationId } = job.data;
+    const { organizationId, agentId, contactId, conversationId } = job.data;
 
     // Pull the last 20 messages (most-recent first), then reverse to get
     // chronological order for the extractor prompt.
@@ -74,6 +74,7 @@ export class MemoryExtractorProcessor extends WorkerHost {
     const currentMemory = await this.memory.getOrCreate(agentId, contactId);
 
     const result = await this.extractor.extract({
+      organizationId,
       agentId,
       contactId,
       recentMessages: recent,

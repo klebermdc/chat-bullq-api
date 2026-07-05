@@ -78,7 +78,9 @@ async function main(): Promise<number> {
         `Running ${dataset.cases.length} cases against agent "${agentName}"...`,
       );
 
-      const report = await runner.runDataset(dataset);
+      // CLI offline: sem org real — string vazia mapeia pro fallback de env
+      // (SAKANA_API_KEY) no ProviderKeyResolverService.
+      const report = await runner.runDataset(dataset, '');
       const reportPath = await reporter.writeMarkdown(report);
       reports.push(report);
 

@@ -322,6 +322,7 @@ export class AiAgentRunnerService {
         escalateSynthesis = false;
 
         const response = await this.llm.complete({
+          organizationId: conversation.organizationId,
           modelId: modelForCall,
           messages,
           tools,
@@ -1059,7 +1060,7 @@ export class AiAgentRunnerService {
       try {
         await this.memoryExtractorQueue.add(
           'extract_memory',
-          { agentId, contactId, conversationId },
+          { organizationId, agentId, contactId, conversationId },
           { removeOnComplete: 100, removeOnFail: 50 },
         );
       } catch (err: any) {

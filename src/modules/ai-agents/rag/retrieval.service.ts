@@ -36,7 +36,11 @@ export class RetrievalService {
 
     const shouldRerank = input.rerank ?? DEFAULT_RAG_CONFIG.rerankEnabled;
     if (shouldRerank && results.length > 1) {
-      results = await this.reranker.rerank(input.query, results);
+      results = await this.reranker.rerank(
+        input.query,
+        results,
+        input.organizationId,
+      );
     }
 
     this.logger.log(

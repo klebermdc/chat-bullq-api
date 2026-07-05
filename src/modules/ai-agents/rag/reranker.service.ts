@@ -31,6 +31,7 @@ export class RerankerService {
   async rerank(
     query: string,
     candidates: SearchResult[],
+    organizationId: string,
   ): Promise<SearchResult[]> {
     if (candidates.length <= 1) return candidates;
 
@@ -51,6 +52,7 @@ export class RerankerService {
 
     try {
       const response = await this.llm.complete({
+        organizationId,
         modelId: this.RERANKER_MODEL,
         messages,
         temperature: 0,

@@ -88,7 +88,11 @@ export class EvalsController {
 
     const results = [];
     for (const c of cases) {
-      const result = await this.runner.runCase(c, agent.name);
+      const result = await this.runner.runCase(
+        c,
+        agent.name,
+        agent.organizationId,
+      );
       results.push(result);
     }
 
