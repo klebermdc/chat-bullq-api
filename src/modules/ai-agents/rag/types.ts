@@ -57,6 +57,8 @@ export interface SearchScope {
 export interface SearchQuery {
   /** Natural-language query. We embed this and run cosine similarity. */
   query: string;
+  /** Org whose provider key resolves the query embedding. */
+  organizationId: string;
   scope: SearchScope;
   /** Top-K results to return. Default 5. */
   k?: number;
@@ -89,6 +91,7 @@ export type IndexerJobData =
       type: 'index_message';
       messageId: string;
       content: string;
+      organizationId: string;
       scope: SearchScope;
       metadata?: Record<string, any>;
     }
@@ -96,6 +99,7 @@ export type IndexerJobData =
       type: 'index_fact';
       factId: string;
       content: string;
+      organizationId: string;
       scope: SearchScope;
       metadata?: Record<string, any>;
     }
@@ -103,6 +107,7 @@ export type IndexerJobData =
       type: 'index_memory_summary';
       summaryId: string;
       content: string;
+      organizationId: string;
       scope: SearchScope;
       metadata?: Record<string, any>;
     }
