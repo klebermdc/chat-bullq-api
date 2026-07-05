@@ -8,8 +8,10 @@ import { PublicMessagesController } from './controllers/public-messages.controll
 import { PublicMembersController } from './controllers/public-members.controller';
 import { PublicOrganizationController } from './controllers/public-organization.controller';
 import { PublicActivityLogsController } from './controllers/public-activity-logs.controller';
+import { PublicAiAgentsController } from './controllers/public-ai-agents.controller';
 import { ApiKeyThrottleGuard } from './guards/api-key-throttle.guard';
 import { ActivityLogsService } from './activity-logs/activity-logs.service';
+import { PublicAiAgentsService } from './ai-agents/public-ai-agents.service';
 import { DashboardModule } from '../dashboard/dashboard.module';
 import { AuthModule } from '../auth/auth.module';
 import { MessagingModule } from '../messaging/messaging.module';
@@ -28,7 +30,8 @@ import { OrganizationsModule } from '../organizations/organizations.module';
     PublicMembersController,
     PublicOrganizationController,
     PublicActivityLogsController,
+    PublicAiAgentsController,
   ],
-  providers: [ApiKeyThrottleGuard, ActivityLogsService],
+  providers: [ApiKeyThrottleGuard, ActivityLogsService, PublicAiAgentsService],
 })
 export class PublicApiModule {}
