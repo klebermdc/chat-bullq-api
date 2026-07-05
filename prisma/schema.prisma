@@ -199,6 +199,7 @@ model Organization {
   segments      Segment[]
   projects      Project[]
   webhookSubscriptions WebhookSubscription[]
+  aiProviderKeys AiProviderKey[]
 
   @@map("organizations")
 }
@@ -1752,4 +1753,35 @@ model WebhookDelivery {
 
   @@index([subscriptionId, createdAt(sort: Desc)], name: "idx_delivery_sub_time")
   @@map("webhook_deliveries")
+}
+
+enum AiProvider {
+  GROQ
+  OPENAI
+  SAKANA
+}
+
+enum AiCapability {
+  TRANSCRIPTION
+  EMBEDDINGS
+  AGENT_LLM
+}
+
+model AiProviderKey {
+  id             String         @id @default(cuid())
+  organizationId String         @map("organization_id")
+  name           String
+  provider       AiProvider
+  encryptedKey   String         @map("encrypted_key")
+  keyPreview     String         @map("key_preview")
+  capabilities   AiCapability[]
+  baseUrl        String?        @map("base_url")
+  model          String?
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId], name: "idx_ai_provider_key_org")
+  @@map("ai_provider_keys")
 }
