@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from './database/prisma.module';
+import { StorageModule } from './modules/storage/storage.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
@@ -45,6 +46,9 @@ import redisConfig from './config/redis.config';
       }),
     }),
     PrismaModule,
+    // @Global — object storage (MinIO) for uploads/audio; register early so
+    // MessagingModule/ChannelHubModule (and main.ts) can inject StorageService.
+    StorageModule,
     // AutomationsModule is @Global — register early so every domain
     // module can inject OutboxService without explicit imports.
     AutomationsModule,

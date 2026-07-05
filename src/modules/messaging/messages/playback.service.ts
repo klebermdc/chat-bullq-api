@@ -22,7 +22,7 @@ export interface PlaybackResult {
  *
  * WhatsApp voice notes are OGG/Opus, which Safari/iOS can't decode. The panel
  * calls this on first play to get an M4A rendition that works everywhere. The
- * transcode is cached both on disk (uploads/playback/{id}.m4a) and on
+ * transcode is cached both in object storage (playback/{id}.m4a) and on
  * `message.metadata.playback`, so each audio is transcoded at most once.
  */
 @Injectable()
