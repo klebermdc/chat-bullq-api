@@ -29,7 +29,7 @@ export class StartConversationService {
     dto: StartConversationDto,
     access: ChannelAccess,
     creator?: { userOrganizationId: string; role: OrgRole },
-  ): Promise<{ conversationId: string }> {
+  ): Promise<{ conversationId: string; contactId: string }> {
     const channel = await this.prisma.channel.findFirst({
       where: { id: dto.channelId, organizationId, deletedAt: null },
     });
@@ -57,18 +57,18 @@ export class StartConversationService {
 
     const externalId = this.toExternalId(channel.type, phone);
     const contactId = await this.resolveContact(organizationId, channel.id, {
-      phone, name: dto.name, externalId, preferContactId: dto.contactId,
+      phone, name: dto.name, email: dto.email, notes: dto.notes, externalId, preferContactId: dto.contactId,
     });
 
     const { conversationId } = await this.resolver.resolve(organizationId, channel.id, contactId);
     await this.enqueue(channel.id, conversationId, externalId, dto.message);
-    return { conversationId };
+    return { conversationId, contactId };
   }
 
   private async resolveContact(
     organizationId: string,
     channelId: string,
-    data: { phone: string; name?: string; externalId: string; preferContactId?: string },
+    data: { phone: string; name?: string; email?: string; notes?: string; externalId: string; preferContactId?: string },
   ): Promise<string> {
     const existingCC = await this.prisma.contactChannel.findUnique({
       where: { uq_contact_channel_external: { channelId, externalId: data.externalId } },
@@ -97,6 +97,8 @@ export class StartConversationService {
         data: {
           organizationId,
           name: data.name,
+          email: data.email ?? null,
+          notes: data.notes ?? null,
           phone: data.phone,
           channels: { create: { channelId, externalId: data.externalId, profileName: data.name } },
         },

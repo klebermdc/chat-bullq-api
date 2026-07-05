@@ -1,4 +1,4 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsEmail } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class StartConversationDto {
@@ -16,10 +16,20 @@ export class StartConversationDto {
   @IsString()
   contactId?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Nome do cliente (aplicado só ao criar contato novo)' })
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiPropertyOptional({ description: 'Email (aplicado só ao criar contato novo)' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @ApiPropertyOptional({ description: 'Observações (aplicado só ao criar contato novo)' })
+  @IsOptional()
+  @IsString()
+  notes?: string;
 
   @ApiProperty()
   @IsString()

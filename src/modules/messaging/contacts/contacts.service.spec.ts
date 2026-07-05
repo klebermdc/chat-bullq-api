@@ -13,11 +13,11 @@ describe('ContactsService.create', () => {
   };
 
   // --- cadastro manual (sem canal): dedup por (org, telefone) ---
-  it('cria contato novo com telefone normalizado', async () => {
+  it('cria contato novo com telefone normalizado e notes', async () => {
     const { svc, repo } = make();
-    const res = await svc.create('org1', { name: 'João', phone: '+55 (11) 98201-5967' });
+    const res = await svc.create('org1', { name: 'João', phone: '+55 (11) 98201-5967', notes: 'lead' });
     expect(res).toEqual({ id: 'new-contact' });
-    expect(repo.create).toHaveBeenCalledWith({ organizationId: 'org1', name: 'João', phone: '5511982015967', email: undefined });
+    expect(repo.create).toHaveBeenCalledWith({ organizationId: 'org1', name: 'João', phone: '5511982015967', email: undefined, notes: 'lead' });
   });
 
   it('nao duplica: retorna o existente por (org, phone)', async () => {

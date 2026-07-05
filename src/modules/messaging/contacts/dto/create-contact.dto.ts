@@ -15,4 +15,9 @@ export class CreateContactDto {
   @IsOptional()
   @IsEmail()
   email?: string;
+
+  @ApiPropertyOptional({ description: 'Observações livres sobre o contato' })
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }

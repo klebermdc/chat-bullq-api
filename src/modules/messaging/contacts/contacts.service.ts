@@ -40,6 +40,7 @@ export class ContactsService {
       name: input.name,
       phone,
       email: input.email,
+      notes: input.notes,
     });
   }
 

@@ -81,7 +81,7 @@ export class ContactsRepository {
 
   async createWithChannel(
     organizationId: string,
-    input: { name?: string; phone: string; email?: string; channelId?: string },
+    input: { name?: string; phone: string; email?: string; notes?: string; channelId?: string },
   ) {
     return this.prisma.contact.create({
       data: {
@@ -89,6 +89,7 @@ export class ContactsRepository {
         name: input.name ?? null,
         phone: input.phone,
         email: input.email ?? null,
+        notes: input.notes ?? null,
         channels: input.channelId
           ? { create: { channelId: input.channelId, externalId: input.phone, profileName: input.name ?? null } }
           : undefined,
@@ -101,7 +102,7 @@ export class ContactsRepository {
     });
   }
 
-  async create(data: { organizationId: string; name?: string; phone: string; email?: string }) {
+  async create(data: { organizationId: string; name?: string; phone: string; email?: string; notes?: string }) {
     return this.prisma.contact.create({ data });
   }
 }

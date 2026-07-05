@@ -30,9 +30,9 @@ describe('StartConversationService.start', () => {
 
   it('cria contato novo, resolve conversa e enfileira a mensagem', async () => {
     const { svc, prisma, resolver, queue } = make({ existingCC: null, existingContact: null });
-    const res = await svc.start('org1', { channelId: 'ch1', phone: '+55 (11) 98201-5967', name: 'João', message: 'Olá!' }, 'ALL', creator);
-    expect(res).toEqual({ conversationId: 'conv1' });
-    expect(prisma.contact.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ organizationId: 'org1', phone: '5511982015967' }) }));
+    const res = await svc.start('org1', { channelId: 'ch1', phone: '+55 (11) 98201-5967', name: 'João', email: 'joao@x.com', notes: 'lead quente', message: 'Olá!' }, 'ALL', creator);
+    expect(res).toEqual({ conversationId: 'conv1', contactId: 'c-new' });
+    expect(prisma.contact.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ organizationId: 'org1', phone: '5511982015967', name: 'João', email: 'joao@x.com', notes: 'lead quente' }) }));
     expect(resolver.resolve).toHaveBeenCalledWith('org1', 'ch1', 'c-new');
     expect(prisma.message.create).toHaveBeenCalledWith({ data: expect.objectContaining({ conversationId: 'conv1', direction: MessageDirection.OUTBOUND, type: MessageContentType.TEXT, content: { text: 'Olá!' }, status: MessageStatus.QUEUED }) });
     expect(queue.add).toHaveBeenCalledWith('send-outbound', expect.objectContaining({ messageId: 'm1', channelId: 'ch1', contactExternalId: '5511982015967@s.whatsapp.net', message: { type: MessageContentType.TEXT, content: { text: 'Olá!' } } }), expect.any(Object));
