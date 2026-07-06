@@ -12,6 +12,7 @@ import { CreateChannelDto } from './dto/create-channel.dto';
 import { UpdateChannelDto } from './dto/update-channel.dto';
 import { ChannelAdapterRegistry } from '../channel-adapter.registry';
 import { ZappfyHttpClient } from '../adapters/zappfy/zappfy.http-client';
+import { WasenderHttpClient } from '../adapters/wasender/wasender.http-client';
 import { WhatsAppOfficialHttpClient } from '../adapters/whatsapp-official/whatsapp-official.http-client';
 import { InstagramHttpClient } from '../adapters/instagram/instagram.http-client';
 import { ChannelSyncOrchestrator } from '../sync/channel-sync.orchestrator';
@@ -28,6 +29,7 @@ export class ChannelsService {
     private readonly repository: ChannelsRepository,
     private readonly adapterRegistry: ChannelAdapterRegistry,
     private readonly zappfyHttpClient: ZappfyHttpClient,
+    private readonly wasenderHttpClient: WasenderHttpClient,
     private readonly waOfficialHttpClient: WhatsAppOfficialHttpClient,
     private readonly instagramHttpClient: InstagramHttpClient,
     private readonly syncOrchestrator: ChannelSyncOrchestrator,
@@ -40,6 +42,13 @@ export class ChannelsService {
     dto: CreateChannelDto,
     creator?: { userOrganizationId: string; role: OrgRole },
   ) {
+    // Wasender: provisiona a sessão ANTES de persistir o canal, pra que o
+    // config já nasça com sessionId + sessionApiKey e o webhook aponte pra nós.
+    // Se falhar, lança e o canal não é criado (evita canal quebrado).
+    if (dto.type === ChannelType.WHATSAPP_WASENDER) {
+      await this.provisionWasenderSession(dto);
+    }
+
     let channel = await this.repository.create({
       organizationId,
       type: dto.type,
@@ -158,6 +167,105 @@ export class ChannelsService {
     const webhookUrl = `${appUrl}/api/v1/webhooks/WHATSAPP_ZAPPFY`;
     await this.zappfyHttpClient.configureWebhook(channel, webhookUrl);
     this.logger.log(`Zappfy webhook configured: ${webhookUrl}`);
+  }
+
+  /**
+   * Cria a sessão no Wasender usando o Personal Access Token colado pelo
+   * operador e reescreve `dto.config`/`dto.webhookSecret` com os identificadores
+   * retornados (sessionId, sessionApiKey, webhookSecret). O webhook já é
+   * apontado pra nossa API na criação da sessão (auto-subscribe).
+   */
+  private async provisionWasenderSession(dto: CreateChannelDto): Promise<void> {
+    const config = (dto.config ?? {}) as Record<string, any>;
+    const personalToken = config.personalToken;
+    if (!personalToken) {
+      throw new BadRequestException(
+        'Personal Access Token do Wasender é obrigatório para criar o canal.',
+      );
+    }
+
+    const appUrl = process.env.APP_URL;
+    const webhookUrl = appUrl
+      ? `${appUrl.replace(/\/$/, '')}/api/v1/webhooks/WHATSAPP_WASENDER`
+      : undefined;
+    if (!webhookUrl) {
+      this.logger.warn(
+        'APP_URL não configurado — sessão Wasender criada sem webhook automático',
+      );
+    }
+
+    try {
+      const session = await this.wasenderHttpClient.createSession(personalToken, {
+        name: dto.name,
+        webhookUrl,
+      });
+      dto.config = {
+        personalToken,
+        sessionId: session.id,
+        ...(session.apiKey ? { sessionApiKey: session.apiKey } : {}),
+      };
+      if (session.webhookSecret) {
+        dto.webhookSecret = session.webhookSecret;
+      }
+      this.logger.log(`Wasender session provisioned: ${session.id}`);
+    } catch (err: any) {
+      const detail = err.response?.data?.message || err.message;
+      throw new BadRequestException(
+        `Falha ao criar a sessão no Wasender: ${detail}`,
+      );
+    }
+  }
+
+  /** Busca o QR Code atual da sessão Wasender do canal. */
+  async getWasenderQr(id: string, organizationId: string) {
+    const channel = await this.assertWasenderChannel(id, organizationId);
+    try {
+      const { qr, raw } = await this.wasenderHttpClient.getQrCode(channel);
+      return { success: true, qr, data: raw };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.response?.data?.message || err.message,
+      };
+    }
+  }
+
+  /** Dispara a conexão da sessão Wasender (mostra QR quando desconectada). */
+  async connectWasender(id: string, organizationId: string) {
+    const channel = await this.assertWasenderChannel(id, organizationId);
+    try {
+      const data = await this.wasenderHttpClient.connectSession(channel);
+      return { success: true, data };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.response?.data?.message || err.message,
+      };
+    }
+  }
+
+  /** Estado atual da sessão Wasender (connected / connecting / disconnected). */
+  async getWasenderStatus(id: string, organizationId: string) {
+    const channel = await this.assertWasenderChannel(id, organizationId);
+    try {
+      const data = await this.wasenderHttpClient.getSessionDetails(channel);
+      const status =
+        data?.status || data?.state || data?.connectionStatus || 'unknown';
+      return { success: true, status, data };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.response?.data?.message || err.message,
+      };
+    }
+  }
+
+  private async assertWasenderChannel(id: string, organizationId: string) {
+    const channel = await this.findOne(id, organizationId);
+    if (channel.type !== ChannelType.WHATSAPP_WASENDER) {
+      throw new BadRequestException('Este canal não é do tipo WasenderAPI.');
+    }
+    return channel;
   }
 
   private async subscribeWaOfficialApp(channelId: string): Promise<void> {
@@ -320,6 +428,13 @@ export class ChannelsService {
             status: statusStr,
             data: status,
           };
+        }
+
+        case ChannelType.WHATSAPP_WASENDER: {
+          const details = await this.wasenderHttpClient.getSessionDetails(channel);
+          const status =
+            details?.status || details?.state || details?.connectionStatus || 'unknown';
+          return { success: true, status: String(status), data: details };
         }
 
         case ChannelType.WHATSAPP_OFFICIAL: {

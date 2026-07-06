@@ -123,7 +123,8 @@ export class ContextEnrichmentService {
       channel.type === 'INSTAGRAM'
         ? 'INSTAGRAM'
         : channel.type === 'WHATSAPP_OFFICIAL' ||
-            channel.type === 'WHATSAPP_ZAPPFY'
+            channel.type === 'WHATSAPP_ZAPPFY' ||
+            channel.type === 'WHATSAPP_WASENDER'
           ? 'WHATSAPP'
           : 'WEB';
     return { kind, name: channel.name };

@@ -111,4 +111,26 @@ export class ChannelsController {
   testConnection(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
     return this.service.testConnection(id, orgId);
   }
+
+  // ─── WasenderAPI: pareamento via QR ─────────────────────────────────
+  // Sem @Roles: quem criou o canal (qualquer papel) precisa conseguir
+  // completar o pareamento. O acesso ao canal já é validado no service.
+
+  @Get(':id/wasender/qrcode')
+  @ApiOperation({ summary: 'Get the current WasenderAPI QR code for pairing' })
+  getWasenderQr(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
+    return this.service.getWasenderQr(id, orgId);
+  }
+
+  @Post(':id/wasender/connect')
+  @ApiOperation({ summary: 'Initiate/refresh the WasenderAPI session connection' })
+  connectWasender(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
+    return this.service.connectWasender(id, orgId);
+  }
+
+  @Get(':id/wasender/status')
+  @ApiOperation({ summary: 'Get the WasenderAPI session connection status' })
+  getWasenderStatus(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
+    return this.service.getWasenderStatus(id, orgId);
+  }
 }
