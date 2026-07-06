@@ -7,6 +7,7 @@ import { MessageTemplatesRepository } from './message-templates.repository';
 import { WhatsAppOfficialHttpClient } from '../adapters/whatsapp-official/whatsapp-official.http-client';
 import { ChannelsService } from '../channels/channels.service';
 import { toGraphComponents } from './template-components.mapper';
+import { mapMetaTemplateStatus, normalizeRejectionReason } from './template-status.mapper';
 import {
   validateTemplateName,
   assertExamplesComplete,
@@ -86,7 +87,7 @@ export class MessageTemplatesService {
     };
     const res = await this.http.createTemplate(channel, payload);
     return this.repo.update(id, {
-      status: 'PENDING',
+      status: mapMetaTemplateStatus(res.status),
       metaTemplateId: res.id,
       submittedAt: new Date(),
     });
@@ -96,7 +97,10 @@ export class MessageTemplatesService {
     const channel = await this.requireOfficialChannel(orgId, channelId);
     const remote = await this.http.listTemplates(channel);
     for (const r of remote) {
-      await this.repo.updateByMetaId(r.id, { status: r.status });
+      await this.repo.updateByMetaId(r.id, {
+        status: mapMetaTemplateStatus(r.status),
+        reviewedAt: new Date(),
+      });
     }
     return this.repo.findManyByChannel(orgId, channelId);
   }
@@ -106,9 +110,10 @@ export class MessageTemplatesService {
     status: string,
     rejectionReason?: string,
   ) {
+    const mapped = mapMetaTemplateStatus(status);
     return this.repo.updateByMetaId(metaTemplateId, {
-      status,
-      rejectionReason: rejectionReason ?? null,
+      status: mapped,
+      rejectionReason: normalizeRejectionReason(rejectionReason) ?? null,
       reviewedAt: new Date(),
     });
   }
