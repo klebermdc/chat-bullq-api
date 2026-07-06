@@ -1787,6 +1787,8 @@ model AiProviderKey {
 
   @@index([organizationId], name: "idx_ai_provider_key_org")
   @@map("ai_provider_keys")
+}
+
 model MessageTemplate {
   id               String    @id @default(cuid())
   organizationId   String    @map("organization_id")
