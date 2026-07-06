@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Channel } from '@prisma/client';
 import axios, { AxiosInstance } from 'axios';
+import { GraphCreatePayload } from '../../message-templates/template-components.types';
 
 interface WaOfficialConfig {
   accessToken: string;
@@ -93,5 +94,80 @@ export class WhatsAppOfficialHttpClient {
     const client = this.createClient(channel);
     const { data } = await client.post(`/${cfg.businessAccountId}/subscribed_apps`);
     return data;
+  }
+
+  async createTemplate(
+    channel: Channel,
+    payload: GraphCreatePayload,
+  ): Promise<{ id: string; status: string; category: string }> {
+    const cfg = this.getConfig(channel);
+    if (!cfg.businessAccountId) {
+      throw new Error('businessAccountId required to create template');
+    }
+    const client = this.createClient(channel);
+    try {
+      const { data } = await client.post(
+        `/${cfg.businessAccountId}/message_templates`,
+        payload,
+      );
+      return { id: data.id, status: data.status, category: data.category };
+    } catch (error: any) {
+      this.logger.error(
+        `WA Official create template failed: ${error.response?.data?.error?.message || error.message}`,
+      );
+      throw error;
+    }
+  }
+
+  async listTemplates(channel: Channel): Promise<
+    Array<{
+      id: string;
+      name: string;
+      status: string;
+      category: string;
+      language: string;
+      components: unknown[];
+    }>
+  > {
+    const cfg = this.getConfig(channel);
+    if (!cfg.businessAccountId) {
+      throw new Error('businessAccountId required to list templates');
+    }
+    const client = this.createClient(channel);
+    try {
+      const { data } = await client.get(
+        `/${cfg.businessAccountId}/message_templates?fields=id,name,status,category,language,components&limit=200`,
+      );
+      return data.data ?? [];
+    } catch (error: any) {
+      this.logger.error(
+        `WA Official list templates failed: ${error.response?.data?.error?.message || error.message}`,
+      );
+      throw error;
+    }
+  }
+
+  async deleteTemplate(
+    channel: Channel,
+    name: string,
+    metaTemplateId?: string,
+  ): Promise<void> {
+    const cfg = this.getConfig(channel);
+    if (!cfg.businessAccountId) {
+      throw new Error('businessAccountId required to delete template');
+    }
+    const client = this.createClient(channel);
+    let url = `/${cfg.businessAccountId}/message_templates?name=${encodeURIComponent(name)}`;
+    if (metaTemplateId) {
+      url += `&hsm_id=${metaTemplateId}`;
+    }
+    try {
+      await client.delete(url);
+    } catch (error: any) {
+      this.logger.error(
+        `WA Official delete template failed: ${error.response?.data?.error?.message || error.message}`,
+      );
+      throw error;
+    }
   }
 }
