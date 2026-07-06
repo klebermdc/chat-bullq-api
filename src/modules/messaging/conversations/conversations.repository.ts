@@ -243,6 +243,7 @@ export class ConversationsRepository {
               name: true,
               phone: true,
               avatarUrl: true,
+              notes: true,
               tags: { include: { tag: true } },
               // Canais do contato → deriva o JID do grupo p/ anexar o Projeto.
               channels: { select: { channelId: true, externalId: true } },
