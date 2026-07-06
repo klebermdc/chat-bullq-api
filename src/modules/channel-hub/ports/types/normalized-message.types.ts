@@ -113,6 +113,11 @@ export interface WebhookParseResult {
   messages: NormalizedInboundMessage[];
   statuses: StatusUpdate[];
   errors: WebhookError[];
+  templateStatusUpdates?: Array<{
+    metaTemplateId: string;
+    status: string;
+    reason?: string;
+  }>;
 }
 
 export interface WebhookError {
