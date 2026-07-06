@@ -177,7 +177,12 @@ export class ChannelsService {
    */
   private async provisionWasenderSession(dto: CreateChannelDto): Promise<void> {
     const config = (dto.config ?? {}) as Record<string, any>;
-    const personalToken = config.personalToken;
+    // Trim defensivo: colar do painel costuma trazer espaço/quebra-de-linha,
+    // e o Wasender rejeita o Bearer com "valid personal access token" nesse caso.
+    const personalToken =
+      typeof config.personalToken === 'string'
+        ? config.personalToken.trim()
+        : config.personalToken;
     if (!personalToken) {
       throw new BadRequestException(
         'Personal Access Token do Wasender é obrigatório para criar o canal.',
