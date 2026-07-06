@@ -177,15 +177,26 @@ export class ChannelsService {
    */
   private async provisionWasenderSession(dto: CreateChannelDto): Promise<void> {
     const config = (dto.config ?? {}) as Record<string, any>;
-    // Trim defensivo: colar do painel costuma trazer espaço/quebra-de-linha,
-    // e o Wasender rejeita o Bearer com "valid personal access token" nesse caso.
-    const personalToken =
-      typeof config.personalToken === 'string'
-        ? config.personalToken.trim()
-        : config.personalToken;
+    // Trim defensivo: colar do painel costuma trazer espaço/quebra-de-linha.
+    const trim = (v: any) => (typeof v === 'string' ? v.trim() : v);
+    const sessionApiKey = trim(config.sessionApiKey);
+    const personalToken = trim(config.personalToken);
+
+    // Fluxo PADRÃO: a sessão já foi criada e CONECTADA no painel do Wasender.
+    // O operador cola a "API Access Token" da sessão + o "Webhook Secret" (esse
+    // vira o Channel.webhookSecret via dto). Não há nada a provisionar aqui — o
+    // webhook é apontado manualmente no painel (mostramos a URL na UI) e o
+    // roteamento inbound casa pela assinatura == webhookSecret.
+    if (sessionApiKey) {
+      dto.config = { sessionApiKey };
+      return;
+    }
+
+    // Fluxo HÍBRIDO (opcional): cria a sessão via Personal Access Token e
+    // aponta o webhook automaticamente. Usado só quando não há sessão pronta.
     if (!personalToken) {
       throw new BadRequestException(
-        'Personal Access Token do Wasender é obrigatório para criar o canal.',
+        'Informe a API Access Token da sessão Wasender (ou um Personal Access Token para criar uma nova sessão).',
       );
     }
 
@@ -436,10 +447,13 @@ export class ChannelsService {
         }
 
         case ChannelType.WHATSAPP_WASENDER: {
-          const details = await this.wasenderHttpClient.getSessionDetails(channel);
+          // Usa a Session API Key (GET /status) — funciona no fluxo padrão,
+          // onde não há Personal Access Token nem sessionId no config.
+          const st = await this.wasenderHttpClient.getStatus(channel);
+          const data = st?.data ?? st;
           const status =
-            details?.status || details?.state || details?.connectionStatus || 'unknown';
-          return { success: true, status: String(status), data: details };
+            data?.status || data?.state || data?.connectionStatus || 'connected';
+          return { success: true, status: String(status), data: st };
         }
 
         case ChannelType.WHATSAPP_OFFICIAL: {
