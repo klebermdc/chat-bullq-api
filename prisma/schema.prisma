@@ -201,6 +201,7 @@ model Organization {
   projects      Project[]
   webhookSubscriptions WebhookSubscription[]
   aiProviderKeys AiProviderKey[]
+  messageTemplates MessageTemplate[]
 
   @@map("organizations")
 }
@@ -282,6 +283,7 @@ model Channel {
   aiAgentChannels    AiAgentChannel[]
   segmentMemberships SegmentChannel[]
   primaryOfSegments  Segment[]            @relation("SegmentPrimaryChannel")
+  messageTemplates   MessageTemplate[]
 
   @@index([organizationId, type], name: "idx_channel_org_type")
   @@map("channels")
@@ -1785,4 +1787,28 @@ model AiProviderKey {
 
   @@index([organizationId], name: "idx_ai_provider_key_org")
   @@map("ai_provider_keys")
+model MessageTemplate {
+  id               String    @id @default(cuid())
+  organizationId   String    @map("organization_id")
+  channelId        String    @map("channel_id")
+  name             String
+  displayName      String?   @map("display_name")
+  category         String
+  language         String    @default("pt_BR")
+  status           String    @default("DRAFT")
+  components       Json
+  variableExamples Json      @default("{}") @map("variable_examples")
+  metaTemplateId   String?   @unique @map("meta_template_id")
+  rejectionReason  String?   @map("rejection_reason")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  submittedAt      DateTime? @map("submitted_at")
+  reviewedAt       DateTime? @map("reviewed_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, name])
+  @@index([organizationId, status])
+  @@map("message_templates")
 }
