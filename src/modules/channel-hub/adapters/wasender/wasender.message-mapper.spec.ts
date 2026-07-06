@@ -91,6 +91,29 @@ describe('WasenderMessageMapper', () => {
       expect(r!.replyTo?.externalMessageId).toBe('PARENT1');
     });
 
+    it('resolve o telefone real via senderPn quando remoteJid é @lid', () => {
+      const r = mapper.normalizeInbound({
+        event: 'messages.upsert',
+        data: {
+          messages: {
+            key: {
+              id: 'M9',
+              fromMe: false,
+              remoteJid: '34067764523057@lid',
+              senderPn: '14074218779@s.whatsapp.net',
+              cleanedSenderPn: '14074218779',
+            },
+            message: { conversation: 'oi' },
+            messageTimestamp: 1700000000,
+            pushName: 'Cliente',
+          },
+        },
+      });
+      // externalContactId precisa ser o JID de telefone (enviável), não o @lid
+      expect(r!.externalContactId).toBe('14074218779@s.whatsapp.net');
+      expect(r!.contactPhone).toBe('14074218779');
+    });
+
     it('retorna null sem key', () => {
       expect(mapper.normalizeInbound({ event: 'x', data: {} })).toBeNull();
     });

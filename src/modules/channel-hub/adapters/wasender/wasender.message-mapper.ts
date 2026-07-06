@@ -31,10 +31,32 @@ export class WasenderMessageMapper {
     const msg = this.pickMessage(event);
     if (!msg || !msg.key) return null;
 
-    const remoteJid: string = msg.key.remoteJid || '';
+    const key = msg.key;
+    const remoteJid: string = key.remoteJid || '';
     const isGroup = remoteJid.endsWith('@g.us');
-    const phone = remoteJid.replace(/@s\.whatsapp\.net|@g\.us|@lid/g, '');
-    const isEcho = msg.key.fromMe === true;
+    const isLid = remoteJid.endsWith('@lid');
+    const isEcho = key.fromMe === true;
+
+    // WhatsApp novo entrega o remetente como `@lid` (LinkedID) — que NÃO é um
+    // telefone e NÃO é enviável (o Wasender devolve "JID does not exist" ao
+    // responder). Numa mensagem recebida do cliente (não-echo), o telefone real
+    // vem em `key.senderPn` / `key.cleanedSenderPn`. Usamos o JID de telefone
+    // (@s.whatsapp.net) como identidade do contato pra (a) exibir o número certo,
+    // (b) permitir responder e (c) casar com o externalId gerado ao INICIAR a
+    // conversa pela nossa ponta (<phone>@s.whatsapp.net).
+    const senderPnJid: string | undefined =
+      typeof key.senderPn === 'string' ? key.senderPn : undefined;
+    const cleanedPn: string | undefined =
+      typeof key.cleanedSenderPn === 'string' ? key.cleanedSenderPn : undefined;
+
+    let externalContactId = remoteJid;
+    let phone: string | undefined = isGroup
+      ? undefined
+      : remoteJid.replace(/@s\.whatsapp\.net$|@lid$/, '');
+    if (isLid && !isEcho) {
+      if (senderPnJid) externalContactId = senderPnJid;
+      phone = cleanedPn || senderPnJid?.replace(/@.*/, '') || phone;
+    }
 
     // Nome do contato:
     //  - Grupo: nome do grupo (subject) quando disponível.
@@ -48,10 +70,10 @@ export class WasenderMessageMapper {
         : msg.pushName || undefined;
 
     const result: NormalizedInboundMessage = {
-      externalMessageId: msg.key.id || '',
-      externalContactId: remoteJid,
+      externalMessageId: key.id || '',
+      externalContactId,
       contactName: resolvedContactName,
-      contactPhone: isGroup ? undefined : phone,
+      contactPhone: phone,
       channelType: ChannelType.WHATSAPP_WASENDER,
       timestamp: this.tsToDate(msg.messageTimestamp),
       type: this.resolveContentType(msg.message),
