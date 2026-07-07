@@ -66,7 +66,9 @@ export class ConversationSummaryService {
     const body = {
       model,
       temperature: 0.3,
-      max_tokens: 400,
+      // Alto o bastante para modelos de raciocínio (ex.: MiniMax M-series)
+      // que gastam tokens num bloco <think> antes de emitir o JSON.
+      max_tokens: 2048,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
@@ -96,7 +98,7 @@ export class ConversationSummaryService {
   private parse(raw: string): SummaryResult {
     let obj: any = {};
     try {
-      obj = JSON.parse(raw);
+      obj = JSON.parse(this.extractJson(raw));
     } catch {
       this.logger.warn(`Resposta do LLM não é JSON válido: ${raw.slice(0, 300)}`);
       obj = {};
@@ -116,5 +118,22 @@ export class ConversationSummaryService {
       : 'neutro';
 
     return { summary, sentiment };
+  }
+
+  /**
+   * Extrai o objeto JSON de dentro da resposta bruta. Modelos de raciocínio
+   * (ex.: MiniMax M-series) emitem um bloco `<think>...</think>` antes do JSON,
+   * e alguns embrulham em cercas markdown (```json). Removemos esses ruídos e
+   * recortamos do primeiro `{` até o último `}`.
+   */
+  private extractJson(raw: string): string {
+    const withoutThink = raw.replace(/<think>[\s\S]*?<\/think>/gi, '');
+    const withoutFences = withoutThink.replace(/```(?:json)?/gi, '');
+    const first = withoutFences.indexOf('{');
+    const last = withoutFences.lastIndexOf('}');
+    if (first !== -1 && last > first) {
+      return withoutFences.slice(first, last + 1);
+    }
+    return withoutFences.trim();
   }
 }
