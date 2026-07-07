@@ -98,6 +98,7 @@ export class ConversationSummaryService {
     try {
       obj = JSON.parse(raw);
     } catch {
+      this.logger.warn(`Resposta do LLM não é JSON válido: ${raw.slice(0, 300)}`);
       obj = {};
     }
 
