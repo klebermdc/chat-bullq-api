@@ -277,6 +277,22 @@ export class ConversationsController {
     return this.service.findOne(id, orgId, access, userId, role);
   }
 
+  @Get(':id/ai-summary')
+  @ApiOperation({ summary: 'Resumo IA da conversa (Painel Inteligente) — gera+cacheia' })
+  @ApiQuery({ name: 'refresh', required: false, description: '1 força regenerar' })
+  aiSummary(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+    @Query('refresh') refresh?: string,
+  ) {
+    return this.service.getAiSummary(id, orgId, access, userId, role, {
+      refresh: refresh === '1' || refresh === 'true',
+    });
+  }
+
   @Patch(':id')
   @ApiOperation({ summary: 'Update conversation (assign, change status, department)' })
   update(
