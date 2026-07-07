@@ -202,6 +202,7 @@ model Organization {
   webhookSubscriptions WebhookSubscription[]
   aiProviderKeys AiProviderKey[]
   messageTemplates MessageTemplate[]
+  recoverySettings RecoverySettings?
 
   @@map("organizations")
 }
@@ -1813,4 +1814,19 @@ model MessageTemplate {
   @@unique([channelId, name])
   @@index([organizationId, status])
   @@map("message_templates")
+}
+
+model RecoverySettings {
+  id                   String   @id @default(cuid())
+  organizationId       String   @unique @map("organization_id")
+  outreachChannelId    String?  @map("outreach_channel_id")
+  openerTemplateName   String?  @map("opener_template_name")
+  followUpTemplateName String?  @map("followup_template_name")
+  templateLang         String   @default("pt_BR") @map("template_lang")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("recovery_settings")
 }
