@@ -23,6 +23,10 @@ import { AiAgentRunnerService } from '../../ai-agents/runner/agent-runner.servic
 import { SegmentReadService } from '../../segments/segment-read.service';
 import { ProjectsService } from '../../projects/projects.service';
 import { deriveGroupJid } from '../../segments/group-jid.util';
+import {
+  ConversationSummaryService,
+  SummaryTurn,
+} from '../messages/conversation-summary.service';
 
 const SYNC_MESSAGE_PAGE_SIZE = 50;
 const SYNC_MAX_PAGES = 4;
@@ -49,6 +53,7 @@ export class ConversationsService {
     private readonly agentRunner: AiAgentRunnerService,
     private readonly segmentRead: SegmentReadService,
     private readonly projects: ProjectsService,
+    private readonly summarizer: ConversationSummaryService,
   ) {}
 
   /**
@@ -249,6 +254,112 @@ export class ConversationsService {
     }
     await this.attachProjects(organizationId, [conversation as any]);
     return conversation;
+  }
+
+  /**
+   * Resumo IA do Painel Inteligente. Cache barato: reaproveita `lastMessageAt`
+   * — o resumo é fresco enquanto `aiSummaryUpToAt` for igual ao `lastMessageAt`
+   * atual. Chegou mensagem nova → divergem → regenera. Só gera para conversas
+   * com >= 2 mensagens de texto (nada a resumir antes).
+   */
+  async getAiSummary(
+    id: string,
+    organizationId: string,
+    access: ChannelAccess = 'ALL',
+    currentUserId?: string,
+    role?: OrgRole,
+    opts: { refresh?: boolean } = {},
+  ): Promise<{
+    summary: string | null;
+    sentiment: string | null;
+    generatedAt: string | null;
+    cached: boolean;
+    tooShort?: boolean;
+  }> {
+    const conversation: any = await this.findOne(
+      id,
+      organizationId,
+      access,
+      currentUserId,
+      role,
+    );
+
+    const total = await this.prisma.message.count({ where: { conversationId: id } });
+    if (total < 2) {
+      return { summary: null, sentiment: null, generatedAt: null, cached: false, tooShort: true };
+    }
+
+    const upTo = conversation.aiSummaryUpToAt as Date | null;
+    const last = conversation.lastMessageAt as Date | null;
+    const fresh =
+      !opts.refresh &&
+      conversation.aiSummary &&
+      upTo != null &&
+      last != null &&
+      upTo.getTime() === last.getTime();
+
+    if (fresh) {
+      return {
+        summary: conversation.aiSummary,
+        sentiment: conversation.aiSummarySentiment,
+        generatedAt: conversation.aiSummaryAt
+          ? new Date(conversation.aiSummaryAt).toISOString()
+          : null,
+        cached: true,
+      };
+    }
+
+    // Últimas 40 mensagens em ordem cronológica (asc): skip = total - 40 pula
+    // direto para o final sem precisar buscar em desc + reverter em memória.
+    const MAX_TURNS = 40;
+    const skip = Math.max(total - MAX_TURNS, 0);
+    const rows = await this.prisma.message.findMany({
+      where: { conversationId: id },
+      orderBy: { createdAt: 'asc' },
+      skip,
+      take: MAX_TURNS,
+      select: { direction: true, type: true, content: true },
+    });
+
+    const turns: SummaryTurn[] = rows
+      .map((m) => ({
+        direction: m.direction as 'INBOUND' | 'OUTBOUND',
+        text: this.messageText(m.content),
+      }))
+      .filter((t) => t.text.length > 0);
+
+    if (turns.length < 2) {
+      return { summary: null, sentiment: null, generatedAt: null, cached: false, tooShort: true };
+    }
+
+    const result = await this.summarizer.summarize(organizationId, turns);
+    const generatedAt = new Date();
+
+    await this.prisma.conversation.update({
+      where: { id },
+      data: {
+        aiSummary: result.summary,
+        aiSummarySentiment: result.sentiment,
+        aiSummaryAt: generatedAt,
+        aiSummaryUpToAt: last,
+      },
+    });
+
+    return {
+      summary: result.summary,
+      sentiment: result.sentiment,
+      generatedAt: generatedAt.toISOString(),
+      cached: false,
+    };
+  }
+
+  /** Extrai texto do content JSON de uma mensagem (TEXT tem `content.text`). */
+  private messageText(content: unknown): string {
+    if (content && typeof content === 'object') {
+      const t = (content as Record<string, unknown>).text;
+      if (typeof t === 'string') return t.trim();
+    }
+    return '';
   }
 
   async update(
