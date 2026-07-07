@@ -129,6 +129,16 @@ export class MessageTemplatesService {
     return this.repo.delete(id);
   }
 
+  async uploadHeaderMedia(
+    orgId: string,
+    channelId: string,
+    file: { buffer: Buffer; fileName: string; mimeType: string },
+  ) {
+    const channel = await this.requireOfficialChannel(orgId, channelId);
+    const handle = await this.http.uploadHeaderSample(channel, file);
+    return { handle };
+  }
+
   private async mustFind(orgId: string, id: string) {
     const t = await this.repo.findById(orgId, id);
     if (!t) throw new NotFoundException('Template não encontrado');
