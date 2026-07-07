@@ -541,6 +541,16 @@ model Conversation {
   aiDisabledAt  DateTime? @map("ai_disabled_at")
   activeAgentId String?   @map("active_agent_id")
 
+  // ─── Resumo IA (Painel Inteligente) ─────────────
+  /// Resumo automático da conversa gerado por LLM. null = nunca gerado.
+  aiSummary          String?   @map("ai_summary")
+  /// Sentimento do cliente: "satisfeito" | "neutro" | "irritado".
+  aiSummarySentiment String?   @map("ai_summary_sentiment")
+  /// Quando o resumo foi gerado (para exibir "gerado há X").
+  aiSummaryAt        DateTime? @map("ai_summary_at")
+  /// `lastMessageAt` coberto pelo resumo. Se != lastMessageAt atual, está velho.
+  aiSummaryUpToAt    DateTime? @map("ai_summary_up_to_at")
+
   // ─── Watchdog state ─────────────────────────────
   /// Tentativas de reativação. Cada vez que o watchdog reaciona a IA na
   /// conversa, +1. Resetado pra 0 quando IA/humano responde com sucesso.
