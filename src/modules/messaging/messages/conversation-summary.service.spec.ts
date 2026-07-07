@@ -77,4 +77,24 @@ describe('ConversationSummaryService.summarize', () => {
     mockedAxios.post.mockRejectedValue({ response: { data: { error: { message: 'invalid api key' } } } });
     await expect(svc.summarize('org1', TURNS)).rejects.toThrow(/invalid api key/);
   });
+
+  it('remove barra final da baseUrl (sem barra dupla)', async () => {
+    const { svc } = makeService({
+      provider: 'GROQ',
+      apiKey: 'gsk_x',
+      baseUrl: 'https://x.example.com/v1/',
+    });
+    mockedAxios.post.mockResolvedValue(llmReply('{"resumo":"ok","sentimento":"neutro"}'));
+
+    await svc.summarize('org1', TURNS);
+
+    const [url] = mockedAxios.post.mock.calls[0];
+    expect(url).toBe('https://x.example.com/v1/chat/completions');
+  });
+
+  it('choices ausente lança BadRequest', async () => {
+    const { svc } = makeService({ provider: 'GROQ', apiKey: 'gsk_x' });
+    mockedAxios.post.mockResolvedValue({ data: {} });
+    await expect(svc.summarize('org1', TURNS)).rejects.toBeInstanceOf(BadRequestException);
+  });
 });
