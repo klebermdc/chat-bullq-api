@@ -30,9 +30,12 @@ const DEFAULT_MODEL: Record<AiProvider, string> = {
 
 const SENTIMENTS: readonly Sentiment[] = ['satisfeito', 'neutro', 'irritado'];
 
-const SYSTEM_PROMPT = `Você resume conversas de atendimento ao cliente em português do Brasil.
+const SYSTEM_PROMPT = `Você resume conversas de atendimento ao cliente em português do Brasil, para o atendente se situar rapidamente ao assumir o chat.
 Responda APENAS com um objeto JSON válido, sem markdown e sem texto fora do JSON, no formato:
-{"resumo": "<2 a 3 frases resumindo o que o cliente quer e onde a conversa parou>", "sentimento": "<satisfeito|neutro|irritado>"}
+{"resumo": "<texto>", "sentimento": "<satisfeito|neutro|irritado>"}
+
+No campo "resumo", escreva de 4 a 6 frases claras cobrindo: o que o cliente quer, o contexto/histórico relevante, o que já foi resolvido ou combinado, e onde a conversa parou (pendências ou próximo passo aguardado). Seja específico com nomes, datas e valores citados.
+Termine SEMPRE o resumo com uma última frase iniciada por "Sugestão para o atendente: " recomendando a próxima ação concreta a tomar (ex.: o que responder, o que confirmar, ou como avançar a conversa).
 O campo "sentimento" reflete o humor do CLIENTE. Use exatamente uma das três palavras.`;
 
 /**
