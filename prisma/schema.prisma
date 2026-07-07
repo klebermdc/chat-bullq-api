@@ -550,6 +550,9 @@ model Conversation {
   aiSummaryAt        DateTime? @map("ai_summary_at")
   /// `lastMessageAt` coberto pelo resumo. Se != lastMessageAt atual, está velho.
   aiSummaryUpToAt    DateTime? @map("ai_summary_up_to_at")
+  /// Objeção detectada + 3 respostas rápidas de quebra de objeção (JSON).
+  /// Formato: { "objecao": string|null, "respostas": string[] }. null = não gerado.
+  aiReplies          Json?     @map("ai_replies")
 
   // ─── Watchdog state ─────────────────────────────
   /// Tentativas de reativação. Cada vez que o watchdog reaciona a IA na

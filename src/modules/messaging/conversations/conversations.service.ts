@@ -5,7 +5,7 @@ import {
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
-import { Conversation, ConversationStatus, OrgRole } from '@prisma/client';
+import { Conversation, ConversationStatus, OrgRole, Prisma } from '@prisma/client';
 import { ConversationsRepository, InboxFilters } from './conversations.repository';
 import { resolveAssignmentScope } from './conversation-scope';
 import { ConversationFsmService } from './conversation-fsm.service';
@@ -275,6 +275,8 @@ export class ConversationsService {
     generatedAt: string | null;
     cached: boolean;
     tooShort?: boolean;
+    objection: string | null;
+    replies: string[];
   }> {
     const conversation: any = await this.findOne(
       id,
@@ -286,7 +288,15 @@ export class ConversationsService {
 
     const total = await this.prisma.message.count({ where: { conversationId: id } });
     if (total < 2) {
-      return { summary: null, sentiment: null, generatedAt: null, cached: false, tooShort: true };
+      return {
+        summary: null,
+        sentiment: null,
+        generatedAt: null,
+        cached: false,
+        tooShort: true,
+        objection: null,
+        replies: [],
+      };
     }
 
     const upTo = conversation.aiSummaryUpToAt as Date | null;
@@ -299,6 +309,10 @@ export class ConversationsService {
       upTo.getTime() === last.getTime();
 
     if (fresh) {
+      const savedReplies = (conversation.aiReplies ?? {}) as {
+        objecao?: string | null;
+        respostas?: string[];
+      };
       return {
         summary: conversation.aiSummary,
         sentiment: conversation.aiSummarySentiment,
@@ -306,6 +320,8 @@ export class ConversationsService {
           ? new Date(conversation.aiSummaryAt).toISOString()
           : null,
         cached: true,
+        objection: savedReplies.objecao ?? null,
+        replies: Array.isArray(savedReplies.respostas) ? savedReplies.respostas : [],
       };
     }
 
@@ -332,6 +348,10 @@ export class ConversationsService {
       // Cache estava velho mas não há texto novo suficiente pra regenerar. Se já
       // existe um resumo salvo, devolvê-lo é melhor UX do que apagar o painel.
       if (conversation.aiSummary) {
+        const savedReplies = (conversation.aiReplies ?? {}) as {
+          objecao?: string | null;
+          respostas?: string[];
+        };
         return {
           summary: conversation.aiSummary,
           sentiment: conversation.aiSummarySentiment,
@@ -339,9 +359,19 @@ export class ConversationsService {
             ? new Date(conversation.aiSummaryAt).toISOString()
             : null,
           cached: true,
+          objection: savedReplies.objecao ?? null,
+          replies: Array.isArray(savedReplies.respostas) ? savedReplies.respostas : [],
         };
       }
-      return { summary: null, sentiment: null, generatedAt: null, cached: false, tooShort: true };
+      return {
+        summary: null,
+        sentiment: null,
+        generatedAt: null,
+        cached: false,
+        tooShort: true,
+        objection: null,
+        replies: [],
+      };
     }
 
     const result = await this.summarizer.summarize(organizationId, turns);
@@ -357,6 +387,10 @@ export class ConversationsService {
         aiSummarySentiment: result.sentiment,
         aiSummaryAt: generatedAt,
         aiSummaryUpToAt: last,
+        aiReplies: {
+          objecao: result.objection,
+          respostas: result.replies,
+        } as unknown as Prisma.InputJsonValue,
       },
     });
 
@@ -365,6 +399,8 @@ export class ConversationsService {
       sentiment: result.sentiment,
       generatedAt: generatedAt.toISOString(),
       cached: false,
+      objection: result.objection,
+      replies: result.replies,
     };
   }
 
