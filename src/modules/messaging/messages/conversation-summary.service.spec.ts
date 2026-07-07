@@ -97,4 +97,24 @@ describe('ConversationSummaryService.summarize', () => {
     mockedAxios.post.mockResolvedValue({ data: {} });
     await expect(svc.summarize('org1', TURNS)).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  it('extrai o JSON de modelo de raciocínio que emite <think> antes (ex.: MiniMax)', async () => {
+    const { svc } = makeService({ provider: 'OPENAI', apiKey: 'sk_x' });
+    mockedAxios.post.mockResolvedValue(
+      llmReply(
+        '<think>O cliente quer remarcar. Sentimento parece neutro.</think>\n{"resumo":"Cliente quer remarcar o ingresso.","sentimento":"neutro"}',
+      ),
+    );
+    const res = await svc.summarize('org1', TURNS);
+    expect(res).toEqual({ summary: 'Cliente quer remarcar o ingresso.', sentiment: 'neutro' });
+  });
+
+  it('extrai o JSON de dentro de cercas markdown ```json', async () => {
+    const { svc } = makeService({ provider: 'OPENAI', apiKey: 'sk_x' });
+    mockedAxios.post.mockResolvedValue(
+      llmReply('```json\n{"resumo":"Resumo ok.","sentimento":"satisfeito"}\n```'),
+    );
+    const res = await svc.summarize('org1', TURNS);
+    expect(res).toEqual({ summary: 'Resumo ok.', sentiment: 'satisfeito' });
+  });
 });
