@@ -106,6 +106,15 @@ describe('ConversationsService.getAiSummary', () => {
     });
     expect(res.summary).toBe('resumo fresco');
     expect(res.cached).toBe(false);
+    expect(prisma.message.count).toHaveBeenCalledWith({ where: { conversationId: 'c1' } });
+    expect(prisma.message.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { conversationId: 'c1' },
+        orderBy: { createdAt: 'asc' },
+        take: 40,
+        skip: 0, // max(6 - 40, 0)
+      }),
+    );
   });
 
   it('refresh=true força regenerar mesmo com cache fresco', async () => {
@@ -139,6 +148,33 @@ describe('ConversationsService.getAiSummary', () => {
     });
     const res = await svc.getAiSummary('c1', 'org1', 'ALL', 'u1', 'OWNER' as any, {});
     expect(res.tooShort).toBe(true);
+    expect(summarizer.summarize).not.toHaveBeenCalled();
+  });
+
+  it('mantém o resumo antigo quando o cache está velho mas não há texto novo suficiente', async () => {
+    const NEW = new Date('2026-07-07T11:00:00.000Z');
+    const { svc, summarizer } = makeService({
+      conversation: {
+        id: 'c1',
+        lastMessageAt: NEW,
+        aiSummary: 'resumo antigo',
+        aiSummarySentiment: 'satisfeito',
+        aiSummaryAt: AT,
+        aiSummaryUpToAt: AT,
+      },
+      messageCount: 3,
+      messages: [
+        { direction: 'INBOUND', type: 'AUDIO', content: {} },
+        { direction: 'INBOUND', type: 'IMAGE', content: {} },
+      ],
+    });
+    const res = await svc.getAiSummary('c1', 'org1', 'ALL', 'u1', 'OWNER' as any, {});
+    expect(res).toEqual({
+      summary: 'resumo antigo',
+      sentiment: 'satisfeito',
+      generatedAt: AT.toISOString(),
+      cached: true,
+    });
     expect(summarizer.summarize).not.toHaveBeenCalled();
   });
 });

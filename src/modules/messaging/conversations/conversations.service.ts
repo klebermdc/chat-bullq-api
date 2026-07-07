@@ -324,17 +324,32 @@ export class ConversationsService {
     const turns: SummaryTurn[] = rows
       .map((m) => ({
         direction: m.direction as 'INBOUND' | 'OUTBOUND',
-        text: this.messageText(m.content),
+        text: m.type === 'TEXT' ? this.messageText(m.content) : '',
       }))
       .filter((t) => t.text.length > 0);
 
     if (turns.length < 2) {
+      // Cache estava velho mas não há texto novo suficiente pra regenerar. Se já
+      // existe um resumo salvo, devolvê-lo é melhor UX do que apagar o painel.
+      if (conversation.aiSummary) {
+        return {
+          summary: conversation.aiSummary,
+          sentiment: conversation.aiSummarySentiment,
+          generatedAt: conversation.aiSummaryAt
+            ? new Date(conversation.aiSummaryAt).toISOString()
+            : null,
+          cached: true,
+        };
+      }
       return { summary: null, sentiment: null, generatedAt: null, cached: false, tooShort: true };
     }
 
     const result = await this.summarizer.summarize(organizationId, turns);
     const generatedAt = new Date();
 
+    // Cache se auto-cura: `aiSummaryUpToAt` grava o snapshot pré-LLM (`last`), então
+    // uma mensagem que chegue no meio da geração só dispara um regenerate inofensivo
+    // na próxima abertura.
     await this.prisma.conversation.update({
       where: { id },
       data: {
