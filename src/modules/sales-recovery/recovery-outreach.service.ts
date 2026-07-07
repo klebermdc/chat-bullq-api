@@ -12,6 +12,7 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { RecoveryConfigService } from './recovery-config.service';
+import { RecoverySettingsService } from './recovery-settings.service';
 
 export interface ResolvedRecoveryContact {
   contactId: string;
@@ -42,6 +43,7 @@ export class RecoveryOutreachService {
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
     private readonly config: RecoveryConfigService,
+    private readonly settings: RecoverySettingsService,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
   ) {}
 
@@ -159,6 +161,10 @@ export class RecoveryOutreachService {
       agentId ?? null,
     );
 
+    // Nome/idioma do template vêm da config por org (RecoverySettings) com
+    // fallback pro env (RecoveryConfigService). Só o NOME muda — a convenção
+    // de variáveis ({{1}}=nome, {{2}}=produto) fica no buildTemplate.
+    const settings = await this.settings.getForOrg(organizationId);
     const sent = await this.enqueue({
       organizationId,
       channelId,
@@ -166,7 +172,8 @@ export class RecoveryOutreachService {
       conversationId,
       externalId,
       vars,
-      templateName: this.config.openerTemplateName,
+      templateName: settings.openerTemplateName ?? this.config.openerTemplateName,
+      templateLang: settings.templateLang ?? this.config.templateLang,
       textTemplate: this.config.openerTemplate,
       source: 'sales_recovery_outreach',
     });
@@ -195,6 +202,7 @@ export class RecoveryOutreachService {
         params.agentId ?? null,
       ));
 
+    const settings = await this.settings.getForOrg(params.organizationId);
     const sent = await this.enqueue({
       organizationId: params.organizationId,
       channelId: params.channelId,
@@ -202,7 +210,9 @@ export class RecoveryOutreachService {
       conversationId,
       externalId: params.externalId,
       vars: params.vars,
-      templateName: this.config.followUpTemplateName,
+      templateName:
+        settings.followUpTemplateName ?? this.config.followUpTemplateName,
+      templateLang: settings.templateLang ?? this.config.templateLang,
       textTemplate: this.config.followUpTemplate,
       source: 'sales_recovery_followup',
     });
@@ -224,6 +234,7 @@ export class RecoveryOutreachService {
     externalId: string;
     vars: OpenerVars;
     templateName: string | null;
+    templateLang: string;
     textTemplate: string;
     source: string;
   }): Promise<boolean> {
@@ -234,6 +245,7 @@ export class RecoveryOutreachService {
       externalId,
       vars,
       templateName,
+      templateLang,
       textTemplate,
       source,
     } = params;
@@ -252,7 +264,7 @@ export class RecoveryOutreachService {
         return false;
       }
       type = MessageContentType.TEMPLATE;
-      content = this.buildTemplate(templateName, vars);
+      content = this.buildTemplate(templateName, vars, templateLang);
     } else {
       type = MessageContentType.TEXT;
       content = { text: this.render(textTemplate, vars) };
@@ -312,12 +324,13 @@ export class RecoveryOutreachService {
   private buildTemplate(
     name: string,
     vars: OpenerVars,
+    lang: string,
   ): Prisma.InputJsonValue {
     const param = (v: string) => ({ type: 'text', text: v?.trim() || '-' });
     const firstName = (vars.nome ?? '').trim().split(/\s+/)[0] ?? '';
     return {
       name,
-      language: { code: this.config.templateLang },
+      language: { code: lang },
       components: [
         {
           type: 'body',
