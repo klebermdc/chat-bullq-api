@@ -3,8 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { StorageService } from '../../storage/storage.service';
 
 const execFileAsync = promisify(execFile);
 
@@ -17,12 +19,16 @@ export interface UploadResult {
 
 /**
  * Stores user-uploaded media (agent recordings) and inbound media we
- * mirror locally (e.g., WhatsApp Cloud requires a Bearer token to
- * download — browsers can't load it directly, so we re-host it here).
+ * mirror (e.g., WhatsApp Cloud requires a Bearer token to download —
+ * browsers can't load it directly, so we re-host it).
  *
- * Files are written under `uploads/` and served publicly through
- * `/api/v1/uploads/*`. Swap with S3/R2 when we go multi-instance — the
- * public URL contract stays the same.
+ * Objects live in MinIO (S3-compatible, durable) under keys that match the
+ * public URL contract: `${APP_URL}/api/v1/uploads/<key>` streams the object
+ * back (see main.ts). Previously these were written to the container's local
+ * `uploads/` dir, which was ephemeral and wiped on every redeploy.
+ *
+ * ffmpeg still needs real files, so transcodes run against short-lived temp
+ * files in the OS temp dir; only the finished bytes are persisted to MinIO.
  */
 @Injectable()
 export class UploadsService {
@@ -77,24 +83,19 @@ export class UploadsService {
     'text/csv',
   ]);
 
-  private readonly rootDir: string;
   private readonly publicBaseUrl: string;
 
-  constructor(private readonly config: ConfigService) {
-    this.rootDir = path.resolve(
-      this.config.get<string>('UPLOADS_DIR') ||
-        path.join(process.cwd(), 'uploads'),
-    );
+  constructor(
+    private readonly config: ConfigService,
+    private readonly storage: StorageService,
+  ) {
     const appUrl = this.config.get<string>('APP_URL') || '';
     this.publicBaseUrl = `${appUrl.replace(/\/$/, '')}/api/v1/uploads`;
-    if (!fs.existsSync(this.rootDir)) {
-      fs.mkdirSync(this.rootDir, { recursive: true });
-    }
   }
 
   /**
    * Persists an inbound media buffer (any type — image, video, audio,
-   * document, sticker) under a per-channel/per-day folder and returns a
+   * document, sticker) under a per-channel/per-day key and returns a
    * playable public URL. Used by adapters whose providers deliver media
    * gated behind auth (WhatsApp Cloud) or via short-lived signed URLs we
    * don't want to depend on.
@@ -118,20 +119,23 @@ export class UploadsService {
       );
     }
 
-    const mime = (input.mimeType || 'application/octet-stream').split(';')[0].trim();
+    const mime = (input.mimeType || 'application/octet-stream')
+      .split(';')[0]
+      .trim();
     const dateFolder = new Date().toISOString().slice(0, 10);
-    const safeChannel = (input.channelId || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const dir = path.join(this.rootDir, 'inbound', safeChannel, dateFolder);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
+    const safeChannel = (input.channelId || 'unknown').replace(
+      /[^a-zA-Z0-9_-]/g,
+      '_',
+    );
     const id = crypto.randomBytes(16).toString('hex');
     const ext = this.extFor(mime, input.originalFilename);
     const filename = `${id}${ext}`;
-    const fullPath = path.join(dir, filename);
-    await fs.promises.writeFile(fullPath, input.buffer);
+    const key = `inbound/${safeChannel}/${dateFolder}/${filename}`;
 
-    const url = `${this.publicBaseUrl}/inbound/${safeChannel}/${dateFolder}/${filename}`;
-    this.logger.log(`Inbound media saved: ${fullPath} -> ${url}`);
+    await this.storage.put(key, input.buffer, mime);
+
+    const url = `${this.publicBaseUrl}/${key}`;
+    this.logger.log(`Inbound media saved: ${key} -> ${url}`);
     return {
       url,
       mimeType: mime,
@@ -166,17 +170,15 @@ export class UploadsService {
     }
 
     const dateFolder = new Date().toISOString().slice(0, 10);
-    const dir = path.join(this.rootDir, 'media', dateFolder);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
     const id = crypto.randomBytes(16).toString('hex');
     const ext = this.extFor(mime, file.originalname);
     const filename = `${id}${ext}`;
-    const fullPath = path.join(dir, filename);
-    await fs.promises.writeFile(fullPath, file.buffer);
+    const key = `media/${dateFolder}/${filename}`;
 
-    const url = `${this.publicBaseUrl}/media/${dateFolder}/${filename}`;
-    this.logger.log(`Media saved: ${fullPath} -> ${url}`);
+    await this.storage.put(key, file.buffer, mime);
+
+    const url = `${this.publicBaseUrl}/${key}`;
+    this.logger.log(`Media saved: ${key} -> ${url}`);
     return {
       url,
       mimeType: mime,
@@ -200,28 +202,32 @@ export class UploadsService {
     }
     // Normalise mimetype: browsers sometimes send `audio/webm;codecs=opus`.
     const mime = (file.mimetype || '').split(';')[0].trim() || 'audio/webm';
-    if (!UploadsService.ALLOWED_AUDIO_MIME.has(file.mimetype) && !UploadsService.ALLOWED_AUDIO_MIME.has(mime)) {
-      throw new BadRequestException(`Unsupported audio mime type: ${file.mimetype}`);
+    if (
+      !UploadsService.ALLOWED_AUDIO_MIME.has(file.mimetype) &&
+      !UploadsService.ALLOWED_AUDIO_MIME.has(mime)
+    ) {
+      throw new BadRequestException(
+        `Unsupported audio mime type: ${file.mimetype}`,
+      );
     }
 
     const dateFolder = new Date().toISOString().slice(0, 10);
-    const dir = path.join(this.rootDir, 'audio', dateFolder);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
     const id = crypto.randomBytes(16).toString('hex');
-    const srcExt = this.extFor(mime);
-    const srcPath = path.join(dir, `${id}${srcExt}`);
-    await fs.promises.writeFile(srcPath, file.buffer);
+    const key = `audio/${dateFolder}/${id}.ogg`;
 
     // WhatsApp voice notes require OGG/Opus. Browsers (esp. Chrome/Firefox)
-    // record in WebM/Opus via MediaRecorder — the codec is compatible but
-    // the container is not, so Zappfy rejects the send (HTTP 500). We also
-    // rely on the re-encode to write proper duration headers (MediaRecorder
-    // streams webm without duration, so the <audio> element shows 0:00).
-    let finalPath = srcPath;
-    let finalMime = mime;
-    if (mime !== 'audio/ogg') {
-      const oggPath = path.join(dir, `${id}.ogg`);
+    // record in WebM/Opus via MediaRecorder — the codec is compatible but the
+    // container is not, so Zappfy rejects the send (HTTP 500). We also rely on
+    // the re-encode to write proper duration headers (MediaRecorder streams
+    // webm without duration, so the <audio> element shows 0:00).
+    let oggBuffer: Buffer;
+    if (mime === 'audio/ogg') {
+      oggBuffer = file.buffer;
+    } else {
+      const tmpBase = path.join(os.tmpdir(), `aud-${id}`);
+      const srcTmp = `${tmpBase}${this.extFor(mime)}`;
+      const oggTmp = `${tmpBase}.ogg`;
+      await fs.promises.writeFile(srcTmp, file.buffer);
       try {
         await execFileAsync(
           'ffmpeg',
@@ -229,68 +235,77 @@ export class UploadsService {
             '-hide_banner',
             '-loglevel', 'error',
             '-y',
-            '-i', srcPath,
+            '-i', srcTmp,
             '-vn',
             '-c:a', 'libopus',
             '-b:a', '32k',
             '-ac', '1',
             '-ar', '48000',
             '-application', 'voip',
-            oggPath,
+            oggTmp,
           ],
           { timeout: 30_000 },
         );
-        await fs.promises.unlink(srcPath).catch(() => undefined);
-        finalPath = oggPath;
-        finalMime = 'audio/ogg';
+        oggBuffer = await fs.promises.readFile(oggTmp);
       } catch (err: any) {
         this.logger.error(`ffmpeg transcode failed: ${err.message}`);
         throw new BadRequestException('Failed to process audio');
+      } finally {
+        await fs.promises.unlink(srcTmp).catch(() => undefined);
+        await fs.promises.unlink(oggTmp).catch(() => undefined);
       }
     }
 
-    const finalSize = (await fs.promises.stat(finalPath)).size;
-    const finalName = path.basename(finalPath);
-    const url = `${this.publicBaseUrl}/audio/${dateFolder}/${finalName}`;
-    this.logger.log(`Audio saved: ${finalPath} -> ${url}`);
-    return { url, mimeType: finalMime, size: finalSize, filename: finalName };
+    await this.storage.put(key, oggBuffer, 'audio/ogg');
+
+    const url = `${this.publicBaseUrl}/${key}`;
+    this.logger.log(`Audio saved: ${key} -> ${url}`);
+    return {
+      url,
+      mimeType: 'audio/ogg',
+      size: oggBuffer.byteLength,
+      filename: `${id}.ogg`,
+    };
   }
 
   /**
    * Produces a browser-universal playback rendition (AAC in an MP4/M4A
-   * container) of an audio message and caches it under uploads/playback/{id}.m4a.
+   * container) of an audio message and caches it at `playback/{id}.m4a`.
    *
    * Why: WhatsApp voice notes — both the ones we send (transcoded to OGG/Opus)
    * and the ones customers send — are OGG/Opus, which Safari/iOS cannot decode
    * (the <audio> element loads the header but stays silent). AAC/M4A plays on
    * every browser, so the panel points its player at this instead of the OGG.
    *
-   * Idempotent: returns the cached file if it already exists, so callers can
+   * Idempotent: returns the cached object if it already exists, so callers can
    * safely hit this on every "play" without re-encoding.
    */
   async transcodeToPlayback(
     id: string,
     src: { buffer: Buffer; mimeType?: string },
   ): Promise<UploadResult> {
-    const dir = path.join(this.rootDir, 'playback');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
     const safeId = id.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const outPath = path.join(dir, `${safeId}.m4a`);
-    const url = `${this.publicBaseUrl}/playback/${safeId}.m4a`;
+    const key = `playback/${safeId}.m4a`;
+    const url = `${this.publicBaseUrl}/${key}`;
+    const filename = `${safeId}.m4a`;
 
-    if (fs.existsSync(outPath)) {
-      const size = (await fs.promises.stat(outPath)).size;
-      return { url, mimeType: 'audio/mp4', size, filename: `${safeId}.m4a` };
+    const existing = await this.storage.stat(key);
+    if (existing) {
+      return { url, mimeType: 'audio/mp4', size: existing.size, filename };
     }
 
     if (!src?.buffer?.byteLength) {
       throw new BadRequestException('Empty audio source for playback');
     }
 
-    const srcExt = this.extFor(src.mimeType || 'audio/ogg');
-    const tmpPath = path.join(dir, `${safeId}.src${srcExt}`);
-    await fs.promises.writeFile(tmpPath, src.buffer);
+    const tmpBase = path.join(
+      os.tmpdir(),
+      `pb-${safeId}-${crypto.randomBytes(4).toString('hex')}`,
+    );
+    const srcTmp = `${tmpBase}.src${this.extFor(src.mimeType || 'audio/ogg')}`;
+    const outTmp = `${tmpBase}.m4a`;
+    await fs.promises.writeFile(srcTmp, src.buffer);
+    let outBuffer: Buffer;
     try {
       // -movflags +faststart moves the moov atom to the front so <audio> can
       // begin playing before the whole file downloads.
@@ -300,26 +315,29 @@ export class UploadsService {
           '-hide_banner',
           '-loglevel', 'error',
           '-y',
-          '-i', tmpPath,
+          '-i', srcTmp,
           '-vn',
           '-c:a', 'aac',
           '-b:a', '96k',
           '-ar', '44100',
           '-movflags', '+faststart',
-          outPath,
+          outTmp,
         ],
         { timeout: 60_000 },
       );
+      outBuffer = await fs.promises.readFile(outTmp);
     } catch (err: any) {
       this.logger.error(`ffmpeg playback transcode failed: ${err.message}`);
       throw new BadRequestException('Failed to process audio for playback');
     } finally {
-      await fs.promises.unlink(tmpPath).catch(() => undefined);
+      await fs.promises.unlink(srcTmp).catch(() => undefined);
+      await fs.promises.unlink(outTmp).catch(() => undefined);
     }
 
-    const size = (await fs.promises.stat(outPath)).size;
-    this.logger.log(`Playback transcode: ${outPath} -> ${url}`);
-    return { url, mimeType: 'audio/mp4', size, filename: `${safeId}.m4a` };
+    await this.storage.put(key, outBuffer, 'audio/mp4');
+
+    this.logger.log(`Playback transcode: ${key} -> ${url}`);
+    return { url, mimeType: 'audio/mp4', size: outBuffer.byteLength, filename };
   }
 
   private extFor(mime: string, originalFilename?: string | null): string {

@@ -1,11 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ChannelType, Channel } from '@prisma/client';
 import { OutboundChannelPort } from '../../ports/outbound-channel.port';
 import {
   NormalizedOutboundMessage,
   SendResult,
   RateLimitConfig,
+  MessageContentType,
 } from '../../ports/types';
+import { StorageService } from '../../../storage/storage.service';
 import { ZappfyMessageMapper } from './zappfy.message-mapper';
 import { ZappfyHttpClient } from './zappfy.http-client';
 
@@ -14,9 +17,15 @@ export class ZappfyOutboundAdapter implements OutboundChannelPort {
   readonly channelType = ChannelType.WHATSAPP_ZAPPFY;
   private readonly logger = new Logger(ZappfyOutboundAdapter.name);
 
+  // Voice notes we inline as base64 must fit comfortably in the /send/media
+  // POST body. Voice notes are small (seconds); above this we keep the URL.
+  private static readonly MAX_INLINE_BYTES = 8 * 1024 * 1024;
+
   constructor(
     private readonly mapper: ZappfyMessageMapper,
     private readonly httpClient: ZappfyHttpClient,
+    private readonly storage: StorageService,
+    private readonly config: ConfigService,
   ) {}
 
   async sendMessage(
@@ -29,11 +38,42 @@ export class ZappfyOutboundAdapter implements OutboundChannelPort {
       contactExternalId,
     );
 
-    const response = await this.httpClient.sendRequest(
-      channel,
-      endpoint,
-      payload,
-    );
+    // For voice notes, hand Zappfy the bytes inline (base64) instead of a URL.
+    // Zappfy fetches URLs server-side, so a URL send breaks whenever our api is
+    // momentarily unreachable (deploy/restart) at fetch time → WhatsApp stores a
+    // dead media ref → "áudio não está mais disponível". Inlining removes that
+    // dependency. If the provider rejects base64, we fall back to the URL send.
+    const originalFile =
+      typeof payload.file === 'string' ? payload.file : undefined;
+    let inlinedFromUrl: string | undefined;
+    if (
+      message.type === MessageContentType.AUDIO &&
+      payload.type === 'ptt' &&
+      originalFile
+    ) {
+      const dataUri = await this.tryInlineAudio(originalFile);
+      if (dataUri) {
+        payload.file = dataUri;
+        inlinedFromUrl = originalFile;
+      }
+    }
+
+    let response: any;
+    try {
+      response = await this.httpClient.sendRequest(channel, endpoint, payload);
+    } catch (err: any) {
+      // Graceful degradation: if the inline base64 send failed, retry once with
+      // the plain URL (the previous behaviour). Non-inline sends just rethrow.
+      if (inlinedFromUrl) {
+        this.logger.warn(
+          `Inline audio send failed (${err?.response?.status || err?.message}); retrying with URL`,
+        );
+        payload.file = inlinedFromUrl;
+        response = await this.httpClient.sendRequest(channel, endpoint, payload);
+      } else {
+        throw err;
+      }
+    }
 
     return {
       // Prefer `messageid` — the send response returns `id` as `<owner>:<msgid>`
@@ -47,6 +87,44 @@ export class ZappfyOutboundAdapter implements OutboundChannelPort {
         '',
       providerResponse: response,
     };
+  }
+
+  /**
+   * If `fileUrl` is one of our own public upload URLs, read the object from
+   * storage and return it as a `data:audio/ogg;base64,...` URI. Returns null
+   * (→ caller keeps the URL) for external URLs, oversized files, or any error.
+   */
+  private async tryInlineAudio(fileUrl: string): Promise<string | null> {
+    const key = this.keyFromPublicUrl(fileUrl);
+    if (!key) return null;
+    try {
+      const buf = await this.storage.getBuffer(key);
+      if (!buf.byteLength || buf.byteLength > ZappfyOutboundAdapter.MAX_INLINE_BYTES) {
+        return null;
+      }
+      return `data:audio/ogg;base64,${buf.toString('base64')}`;
+    } catch (err: any) {
+      this.logger.warn(`Failed to inline audio ${key}: ${err?.message ?? err}`);
+      return null;
+    }
+  }
+
+  /** Extracts the storage key from our public upload URL, else null. */
+  private keyFromPublicUrl(url: string): string | null {
+    const marker = '/api/v1/uploads/';
+    const appUrl = (this.config.get<string>('APP_URL') || '').replace(/\/$/, '');
+    // Only inline files we actually host (guards against external mediaUrls).
+    if (appUrl && !url.startsWith(appUrl) && /^https?:\/\//i.test(url)) {
+      return null;
+    }
+    const i = url.indexOf(marker);
+    if (i < 0) return null;
+    const rest = url.slice(i + marker.length).split(/[?#]/)[0];
+    try {
+      return decodeURIComponent(rest) || null;
+    } catch {
+      return rest || null;
+    }
   }
 
   async sendTypingIndicator(
