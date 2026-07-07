@@ -6,6 +6,8 @@ import { RecoveryConfigService } from './recovery-config.service';
 import { RecoveryCardsRepository } from './recovery-cards.repository';
 import { RecoveryOutreachService } from './recovery-outreach.service';
 import { SalesRecoveryService } from './sales-recovery.service';
+import { RecoverySettingsService } from './recovery-settings.service';
+import { RecoverySettingsRepository } from './recovery-settings.repository';
 import { RecoveryWatchdogCron } from './recovery-watchdog.cron';
 import { RecoveryOutreachProcessor } from './recovery-outreach.processor';
 import { KirvanoWebhookController } from './webhooks/kirvano-webhook.controller';
@@ -40,6 +42,8 @@ import {
     RecoveryCardsRepository,
     RecoveryOutreachService,
     SalesRecoveryService,
+    RecoverySettingsService,
+    RecoverySettingsRepository,
     KirvanoEventsService,
     KirvanoEventsProcessor,
     RecoveryWatchdogCron,
