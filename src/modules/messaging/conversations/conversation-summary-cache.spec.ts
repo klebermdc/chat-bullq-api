@@ -15,7 +15,12 @@ function makeService(overrides: {
   } as any;
   const summarizer = {
     summarize: jest.fn().mockResolvedValue(
-      overrides.summarizeResult ?? { summary: 'resumo novo', sentiment: 'neutro' },
+      overrides.summarizeResult ?? {
+        summary: 'resumo novo',
+        sentiment: 'neutro',
+        objection: null,
+        replies: [],
+      },
     ),
   } as any;
 
@@ -46,7 +51,15 @@ describe('ConversationsService.getAiSummary', () => {
       messageCount: 1,
     });
     const res = await svc.getAiSummary('c1', 'org1', 'ALL', 'u1', 'OWNER' as any, {});
-    expect(res).toEqual({ summary: null, sentiment: null, generatedAt: null, cached: false, tooShort: true });
+    expect(res).toEqual({
+      summary: null,
+      sentiment: null,
+      generatedAt: null,
+      cached: false,
+      tooShort: true,
+      objection: null,
+      replies: [],
+    });
     expect(summarizer.summarize).not.toHaveBeenCalled();
   });
 
@@ -59,6 +72,7 @@ describe('ConversationsService.getAiSummary', () => {
         aiSummarySentiment: 'satisfeito',
         aiSummaryAt: AT,
         aiSummaryUpToAt: AT,
+        aiReplies: null,
       },
       messageCount: 5,
     });
@@ -68,7 +82,28 @@ describe('ConversationsService.getAiSummary', () => {
       sentiment: 'satisfeito',
       generatedAt: AT.toISOString(),
       cached: true,
+      objection: null,
+      replies: [],
     });
+    expect(summarizer.summarize).not.toHaveBeenCalled();
+  });
+
+  it('devolve objeção/respostas persistidas no cache-hit', async () => {
+    const { svc, summarizer } = makeService({
+      conversation: {
+        id: 'c1',
+        lastMessageAt: AT,
+        aiSummary: 'resumo salvo',
+        aiSummarySentiment: 'satisfeito',
+        aiSummaryAt: AT,
+        aiSummaryUpToAt: AT,
+        aiReplies: { objecao: 'achou caro', respostas: ['a', 'b', 'c'] },
+      },
+      messageCount: 5,
+    });
+    const res = await svc.getAiSummary('c1', 'org1', 'ALL', 'u1', 'OWNER' as any, {});
+    expect(res.objection).toBe('achou caro');
+    expect(res.replies).toEqual(['a', 'b', 'c']);
     expect(summarizer.summarize).not.toHaveBeenCalled();
   });
 
@@ -88,7 +123,12 @@ describe('ConversationsService.getAiSummary', () => {
         { direction: 'INBOUND', type: 'TEXT', content: { text: 'oi' } },
         { direction: 'OUTBOUND', type: 'TEXT', content: { text: 'olá' } },
       ],
-      summarizeResult: { summary: 'resumo fresco', sentiment: 'irritado' },
+      summarizeResult: {
+        summary: 'resumo fresco',
+        sentiment: 'irritado',
+        objection: 'achou caro',
+        replies: ['a', 'b', 'c'],
+      },
     });
     const res = await svc.getAiSummary('c1', 'org1', 'ALL', 'u1', 'OWNER' as any, {});
     expect(summarizer.summarize).toHaveBeenCalledWith('org1', [
@@ -102,10 +142,13 @@ describe('ConversationsService.getAiSummary', () => {
         aiSummarySentiment: 'irritado',
         aiSummaryAt: expect.any(Date),
         aiSummaryUpToAt: NEW,
+        aiReplies: { objecao: 'achou caro', respostas: ['a', 'b', 'c'] },
       },
     });
     expect(res.summary).toBe('resumo fresco');
     expect(res.cached).toBe(false);
+    expect(res.objection).toBe('achou caro');
+    expect(res.replies).toEqual(['a', 'b', 'c']);
     expect(prisma.message.count).toHaveBeenCalledWith({ where: { conversationId: 'c1' } });
     expect(prisma.message.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -161,6 +204,7 @@ describe('ConversationsService.getAiSummary', () => {
         aiSummarySentiment: 'satisfeito',
         aiSummaryAt: AT,
         aiSummaryUpToAt: AT,
+        aiReplies: null,
       },
       messageCount: 3,
       messages: [
@@ -174,6 +218,8 @@ describe('ConversationsService.getAiSummary', () => {
       sentiment: 'satisfeito',
       generatedAt: AT.toISOString(),
       cached: true,
+      objection: null,
+      replies: [],
     });
     expect(summarizer.summarize).not.toHaveBeenCalled();
   });

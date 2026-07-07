@@ -35,7 +35,12 @@ describe('ConversationSummaryService.summarize', () => {
 
     const res = await svc.summarize('org1', TURNS);
 
-    expect(res).toEqual({ summary: 'Cliente quer remarcar ingresso.', sentiment: 'neutro' });
+    expect(res).toEqual({
+      summary: 'Cliente quer remarcar ingresso.',
+      sentiment: 'neutro',
+      objection: null,
+      replies: [],
+    });
     const [url, body, cfg] = mockedAxios.post.mock.calls[0];
     expect(url).toBe('https://api.groq.com/openai/v1/chat/completions');
     expect((body as any).model).toBe('llama-3.3-70b-versatile');
@@ -106,7 +111,12 @@ describe('ConversationSummaryService.summarize', () => {
       ),
     );
     const res = await svc.summarize('org1', TURNS);
-    expect(res).toEqual({ summary: 'Cliente quer remarcar o ingresso.', sentiment: 'neutro' });
+    expect(res).toEqual({
+      summary: 'Cliente quer remarcar o ingresso.',
+      sentiment: 'neutro',
+      objection: null,
+      replies: [],
+    });
   });
 
   it('extrai o JSON de dentro de cercas markdown ```json', async () => {
@@ -115,6 +125,40 @@ describe('ConversationSummaryService.summarize', () => {
       llmReply('```json\n{"resumo":"Resumo ok.","sentimento":"satisfeito"}\n```'),
     );
     const res = await svc.summarize('org1', TURNS);
-    expect(res).toEqual({ summary: 'Resumo ok.', sentiment: 'satisfeito' });
+    expect(res).toEqual({
+      summary: 'Resumo ok.',
+      sentiment: 'satisfeito',
+      objection: null,
+      replies: [],
+    });
+  });
+
+  it('detecta objeção e gera 3 respostas de quebra de objeção', async () => {
+    const { svc } = makeService({ provider: 'GROQ', apiKey: 'gsk_x' });
+    mockedAxios.post.mockResolvedValue(
+      llmReply(
+        '{"resumo":"Cliente quer remarcar. Sugestão para o atendente: X","sentimento":"neutro","objecao":"achou caro","respostas":["a","b","c"]}',
+      ),
+    );
+
+    const res = await svc.summarize('org1', TURNS);
+
+    expect(res.objection).toBe('achou caro');
+    expect(res.replies).toEqual(['a', 'b', 'c']);
+    expect(res.replies).toHaveLength(3);
+  });
+
+  it('sem objeção retorna objection null e replies vazio', async () => {
+    const { svc } = makeService({ provider: 'GROQ', apiKey: 'gsk_x' });
+    mockedAxios.post.mockResolvedValue(
+      llmReply(
+        '{"resumo":"Tudo certo com o cliente.","sentimento":"neutro","objecao":null,"respostas":[]}',
+      ),
+    );
+
+    const res = await svc.summarize('org1', TURNS);
+
+    expect(res.objection).toBeNull();
+    expect(res.replies).toHaveLength(0);
   });
 });

@@ -14,6 +14,8 @@ export interface SummaryTurn {
 export interface SummaryResult {
   summary: string;
   sentiment: Sentiment;
+  objection: string | null;
+  replies: string[];
 }
 
 const CHAT_BASE_URL: Record<AiProvider, string> = {
@@ -30,12 +32,23 @@ const DEFAULT_MODEL: Record<AiProvider, string> = {
 
 const SENTIMENTS: readonly Sentiment[] = ['satisfeito', 'neutro', 'irritado'];
 
-const SYSTEM_PROMPT = `Você resume conversas de atendimento ao cliente em português do Brasil, para o atendente se situar rapidamente ao assumir o chat.
-Responda APENAS com um objeto JSON válido, sem markdown e sem texto fora do JSON, no formato:
-{"resumo": "<texto>", "sentimento": "<satisfeito|neutro|irritado>"}
+const SYSTEM_PROMPT = `Você é o assistente do time de atendimento da Orlando Fast Pass (viagens a Orlando: Disney, Universal, SeaWorld, ingressos de parques, serviço de fila/fast pass, roteiros personalizados, transfer e extras). Sua tarefa tem DUAS partes.
 
-No campo "resumo", escreva de 4 a 6 frases claras cobrindo: o que o cliente quer, o contexto/histórico relevante, o que já foi resolvido ou combinado, e onde a conversa parou (pendências ou próximo passo aguardado). Seja específico com nomes, datas e valores citados.
-Termine SEMPRE o resumo com uma última frase iniciada por "Sugestão para o atendente: " recomendando a próxima ação concreta a tomar (ex.: o que responder, o que confirmar, ou como avançar a conversa).
+(1) RESUMO — resuma a conversa em 4 a 6 frases claras, em português do Brasil, para o atendente se situar rapidamente: o que o cliente quer, o contexto/histórico relevante, o que já foi resolvido ou combinado, e onde a conversa parou (pendências). Seja específico com nomes, datas e valores citados. Termine SEMPRE o resumo com uma última frase iniciada por "Sugestão para o atendente: " recomendando a próxima ação concreta.
+
+(2) QUEBRA DE OBJEÇÃO — analise a ÚLTIMA fala do CLIENTE e detecte se há uma OBJEÇÃO de vendas (ex.: preço/"tá caro", indecisão/"vou pensar", "tá cedo", desconfiança/"nunca ouvi falar", "faço sozinho", "vou pesquisar", "consigo mais barato").
+- Se houver objeção clara, preencha "objecao" com a objeção em poucas palavras e "respostas" com EXATAMENTE 3 mensagens curtas, prontas para o atendente ENVIAR AO CLIENTE, que quebrem essa objeção. Cada mensagem deve seguir o método: acolher o sentimento do cliente → esclarecer/informar → reposicionar o valor (suporte em português, organização de filas, roteiro sob medida, tranquilidade) → terminar com uma CHAMADA PARA AÇÃO (próximo passo: montar uma cotação sob medida, falar com um consultor, ou enviar material).
+- Se NÃO houver objeção clara, use "objecao": null e "respostas": [].
+
+TOM das mensagens de resposta: caloroso, próximo e consultivo, persuasivo em direção ao fechamento — nunca insistente nem agressivo. No máximo 1 emoji por mensagem.
+
+REGRAS INVIOLÁVEIS nas mensagens de resposta:
+- NUNCA informe preços, valores exatos, faixas de preço ou descontos numéricos. Se o cliente falar de preço, conduza para uma cotação personalizada com um consultor.
+- Nunca prometa disponibilidade, promoções, reembolso ou validade que não pode confirmar; diga que confirma com o time.
+- Nunca fale mal de concorrentes; mostre o diferencial com fatos.
+
+Responda APENAS com um objeto JSON válido, sem markdown e sem texto fora do JSON, no formato:
+{"resumo": "<texto terminando em 'Sugestão para o atendente: ...'>", "sentimento": "satisfeito|neutro|irritado", "objecao": <"texto curto" ou null>, "respostas": ["msg 1", "msg 2", "msg 3"]}
 O campo "sentimento" reflete o humor do CLIENTE. Use exatamente uma das três palavras.`;
 
 /**
@@ -120,7 +133,26 @@ export class ConversationSummaryService {
       ? (rawSent as Sentiment)
       : 'neutro';
 
-    return { summary, sentiment };
+    let objection =
+      typeof obj.objecao === 'string' && obj.objecao.trim()
+        ? obj.objecao.trim()
+        : (typeof obj.objection === 'string' && obj.objection.trim() ? obj.objection.trim() : null);
+
+    const rawReplies = Array.isArray(obj.respostas)
+      ? obj.respostas
+      : Array.isArray(obj.replies)
+        ? obj.replies
+        : [];
+    const replies = rawReplies
+      .filter((r: unknown): r is string => typeof r === 'string' && r.trim().length > 0)
+      .map((r: string) => r.trim())
+      .slice(0, 3);
+
+    if (replies.length === 0) {
+      objection = null;
+    }
+
+    return { summary, sentiment, objection, replies };
   }
 
   /**
