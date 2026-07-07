@@ -10,6 +10,7 @@ import { RecoverySettingsService } from './recovery-settings.service';
 import { RecoverySettingsRepository } from './recovery-settings.repository';
 import { RecoveryWatchdogCron } from './recovery-watchdog.cron';
 import { RecoveryOutreachProcessor } from './recovery-outreach.processor';
+import { RecoverySettingsController } from './recovery-settings.controller';
 import { KirvanoWebhookController } from './webhooks/kirvano-webhook.controller';
 import { KirvanoEventsService } from './webhooks/kirvano-events.service';
 import { KirvanoEventsProcessor } from './webhooks/kirvano-events.processor';
@@ -36,7 +37,7 @@ import {
     PipelinesModule,
     RealtimeModule,
   ],
-  controllers: [KirvanoWebhookController],
+  controllers: [KirvanoWebhookController, RecoverySettingsController],
   providers: [
     RecoveryConfigService,
     RecoveryCardsRepository,
