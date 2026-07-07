@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -7,7 +8,10 @@ import {
   Param,
   Body,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../../common/guards';
@@ -55,6 +59,23 @@ export class MessageTemplatesController {
   @Roles(OrgRole.OWNER, OrgRole.ADMIN)
   submit(@CurrentOrg('id') orgId: string, @Param('id') id: string) {
     return this.service.submit(orgId, id);
+  }
+
+  @Post('upload-media')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @UseInterceptors(FileInterceptor('file'))
+  uploadMedia(
+    @CurrentOrg('id') orgId: string,
+    @Param('channelId') channelId: string,
+    @UploadedFile()
+    file?: { buffer: Buffer; mimetype: string; originalname: string },
+  ) {
+    if (!file) throw new BadRequestException('file is required');
+    return this.service.uploadHeaderMedia(orgId, channelId, {
+      buffer: file.buffer,
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+    });
   }
 
   @Post('sync')
