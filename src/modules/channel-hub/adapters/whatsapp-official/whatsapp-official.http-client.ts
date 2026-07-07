@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Channel } from '@prisma/client';
 import axios, { AxiosInstance } from 'axios';
 import { GraphCreatePayload } from '../../message-templates/template-components.types';
@@ -142,6 +142,46 @@ export class WhatsAppOfficialHttpClient {
     } catch (error: any) {
       this.logger.error(
         `WA Official list templates failed: ${error.response?.data?.error?.message || error.message}`,
+      );
+      throw error;
+    }
+  }
+
+  async uploadHeaderSample(
+    channel: Channel,
+    file: { buffer: Buffer; fileName: string; mimeType: string },
+  ): Promise<string> {
+    const cfg = this.getConfig(channel);
+    const appId = (channel.config as any)?.appId;
+    if (!appId) {
+      throw new BadRequestException(
+        'Canal sem appId (necessário para upload de mídia de template)',
+      );
+    }
+    const base = `https://graph.facebook.com/${cfg.apiVersion}`;
+    try {
+      const start = await axios.post(`${base}/${appId}/uploads`, null, {
+        params: {
+          file_name: file.fileName,
+          file_length: file.buffer.length,
+          file_type: file.mimeType,
+        },
+        headers: { Authorization: `Bearer ${cfg.accessToken}` },
+      });
+      const uploadId = start.data.id;
+      const fin = await axios.post(`${base}/${uploadId}`, file.buffer, {
+        headers: {
+          Authorization: `OAuth ${cfg.accessToken}`,
+          file_offset: '0',
+          'Content-Type': 'application/octet-stream',
+        },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+      });
+      return fin.data.h;
+    } catch (error: any) {
+      this.logger.error(
+        `WA Official upload header sample failed: ${error.response?.data?.error?.message || error.message}`,
       );
       throw error;
     }
