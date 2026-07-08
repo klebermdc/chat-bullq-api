@@ -14,6 +14,7 @@ import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentOrg, Roles } from '../../common/decorators';
 import { CadencesService } from './cadences.service';
 import { CadenceRunner } from './cadence-runner.service';
+import { EnrollmentsRepository } from './enrollments.repository';
 import { UpsertCadenceDto } from './dto/upsert-cadence.dto';
 
 @ApiTags('Cadences')
@@ -24,6 +25,7 @@ export class CadencesController {
   constructor(
     private readonly service: CadencesService,
     private readonly runner: CadenceRunner,
+    private readonly enrollments: EnrollmentsRepository,
   ) {}
 
   @Get()
@@ -38,6 +40,22 @@ export class CadencesController {
   })
   getDefaultTemplate(@CurrentOrg('id') orgId: string) {
     return this.service.getDefaultTemplate(orgId);
+  }
+
+  @Get('enrollments/active/:conversationId')
+  async activeEnrollment(
+    @Param('conversationId') conversationId: string,
+    @CurrentOrg('id') orgId: string,
+  ) {
+    const e = await this.enrollments.findActiveWithCadence(conversationId);
+    if (!e || e.organizationId !== orgId) return { active: false };
+    return {
+      active: true,
+      enrollmentId: e.id,
+      currentStep: e.currentStep,
+      totalSteps: e.cadence.steps.length,
+      cadenceName: e.cadence.name,
+    };
   }
 
   @Get(':id')
