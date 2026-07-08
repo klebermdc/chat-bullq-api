@@ -63,6 +63,9 @@ describe('ScheduledMessagesService.create', () => {
     expect(repo.create).toHaveBeenCalled();
     expect(queue.add).toHaveBeenCalled();
     expect(repo.update).toHaveBeenCalledWith(result.id, { jobId: expect.any(String) });
+    // Regressão: BullMQ rejeita custom jobId com ':' ("Custom Id cannot contain :").
+    const jobOpts = (queue.add.mock.calls[0] as any[])[2];
+    expect(String(jobOpts.jobId)).not.toContain(':');
   });
 
   it('rejeita horário no passado', async () => {

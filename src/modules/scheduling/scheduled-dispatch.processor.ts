@@ -102,7 +102,7 @@ export class ScheduledDispatchProcessor extends WorkerHost {
           { scheduledMessageId: next.id },
           {
             delay: Math.max(0, nextAt.getTime() - Date.now()),
-            jobId: `sched:${next.id}`,
+            jobId: `sched-${next.id}`,
             removeOnComplete: 100,
             removeOnFail: 100,
           },

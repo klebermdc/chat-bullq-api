@@ -69,7 +69,7 @@ export class ScheduledMessagesService {
       { scheduledMessageId: created.id },
       {
         delay: Math.max(0, when.getTime() - Date.now()),
-        jobId: `sched:${created.id}`,
+        jobId: `sched-${created.id}`,
         removeOnComplete: 100,
         removeOnFail: 100,
       },
@@ -180,7 +180,7 @@ export class ScheduledMessagesService {
       { scheduledMessageId: row.id },
       {
         delay: Math.max(0, scheduledAt.getTime() - Date.now()),
-        jobId: `sched:${row.id}:${scheduledAt.getTime()}`,
+        jobId: `sched-${row.id}-${scheduledAt.getTime()}`,
         removeOnComplete: 100,
         removeOnFail: 100,
       },
