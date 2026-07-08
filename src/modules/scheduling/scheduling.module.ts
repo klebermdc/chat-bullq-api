@@ -6,6 +6,7 @@ import { SCHEDULED_DISPATCH_QUEUE } from './scheduling.constants';
 import { ScheduledMessagesRepository } from './scheduled-messages.repository';
 import { ScheduledMessagesService } from './scheduled-messages.service';
 import { ScheduledDispatchProcessor } from './scheduled-dispatch.processor';
+import { ScheduledMessagesController } from './scheduled-messages.controller';
 
 @Module({
   imports: [
@@ -13,7 +14,7 @@ import { ScheduledDispatchProcessor } from './scheduled-dispatch.processor';
     RealtimeModule,
     MessagingModule,
   ],
-  controllers: [],
+  controllers: [ScheduledMessagesController],
   providers: [
     ScheduledMessagesRepository,
     ScheduledMessagesService,
