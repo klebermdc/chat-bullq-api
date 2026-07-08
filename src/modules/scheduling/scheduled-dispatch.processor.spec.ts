@@ -8,7 +8,12 @@ function makeDeps(row: any) {
   };
   const prisma = {
     conversation: {
-      findUnique: jest.fn(async () => ({ id: 'c1', status: 'OPEN', isArchived: false })),
+      findUnique: jest.fn(async () => ({
+        id: 'c1',
+        status: 'OPEN',
+        isArchived: false,
+        lastInboundAt: null,
+      })),
     },
   };
   const messages = { send: jest.fn(async () => ({ id: 'm1' })) };
@@ -21,6 +26,7 @@ describe('ScheduledDispatchProcessor', () => {
     id: 's1', status: 'PENDING', conversationId: 'c1', organizationId: 'org1',
     createdById: 'user1', contentType: 'TEXT', content: { text: 'oi' },
     origin: 'MANUAL', attempt: 1, maxAttempts: 1,
+    createdAt: new Date('2020-01-01T00:00:00.000Z'),
   };
 
   it('envia e marca SENT', async () => {
@@ -44,6 +50,34 @@ describe('ScheduledDispatchProcessor', () => {
     expect(repo.update).not.toHaveBeenCalledWith(
       's1',
       expect.objectContaining({ status: 'SENT' }),
+    );
+  });
+
+  it('backstop: cancela (client_replied) quando o cliente respondeu após criar o agendamento', async () => {
+    const row = { ...base, origin: 'AUTO_REENGAGE' };
+    const repo = {
+      findById: jest.fn(async () => row),
+      update: jest.fn(async (id: string, d: any) => ({ ...row, ...d })),
+      claimForDispatch: jest.fn(async () => true),
+    };
+    const prisma = {
+      conversation: {
+        findUnique: jest.fn(async () => ({
+          id: 'c1',
+          status: 'OPEN',
+          isArchived: false,
+          lastInboundAt: new Date('2021-01-01T00:00:00.000Z'),
+        })),
+      },
+    };
+    const messages = { send: jest.fn() };
+    const processor = new ScheduledDispatchProcessor(repo as any, prisma as any, messages as any);
+    await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+    expect(messages.send).not.toHaveBeenCalled();
+    expect(repo.claimForDispatch).not.toHaveBeenCalled();
+    expect(repo.update).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ status: 'CANCELED', cancelReason: 'client_replied' }),
     );
   });
 

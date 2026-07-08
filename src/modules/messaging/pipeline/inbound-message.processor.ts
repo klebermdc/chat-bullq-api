@@ -318,10 +318,18 @@ export class InboundMessageProcessor extends WorkerHost {
         // agendamentos manuais marcados com cancelOnReply.
         this.scheduled
           .cancelPendingForConversation(conversationId, 'client_replied', 'AUTO_REENGAGE')
-          .catch(() => undefined);
+          .catch((e) =>
+            this.logger.warn(
+              `scheduled_autocancel_failed conv=${conversationId}: ${(e as Error).message}`,
+            ),
+          );
         this.scheduled
           .cancelPendingForConversationIfCancelOnReply(conversationId)
-          .catch(() => undefined);
+          .catch((e) =>
+            this.logger.warn(
+              `scheduled_autocancel_failed conv=${conversationId}: ${(e as Error).message}`,
+            ),
+          );
       } else if (isEcho) {
         // Echo de msg nossa que finalmente voltou — cancela timer existente
         // (pode ter sido enviada por outro path que não passou pelo cancel).

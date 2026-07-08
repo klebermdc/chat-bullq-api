@@ -24,7 +24,7 @@ export class ScheduledDispatchProcessor extends WorkerHost {
 
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: row.conversationId },
-      select: { id: true, status: true, isArchived: true },
+      select: { id: true, status: true, isArchived: true, lastInboundAt: true },
     });
     if (!conversation || conversation.status === 'CLOSED' || conversation.isArchived) {
       await this.repo.update(row.id, {
@@ -36,6 +36,24 @@ export class ScheduledDispatchProcessor extends WorkerHost {
 
     if (!row.createdById) {
       await this.repo.update(row.id, { status: 'FAILED', failedReason: 'no_sender' });
+      return;
+    }
+
+    // Backstop: se o agendamento é cancelável ao responder e o cliente já
+    // respondeu depois que ele foi criado, não envia (o auto-cancel pode ter
+    // falhado). Cancela idempotentemente antes de reivindicar o envio.
+    const replyCancelable = row.origin === 'AUTO_REENGAGE' || row.cancelOnReply === true;
+    if (
+      replyCancelable &&
+      conversation.lastInboundAt &&
+      row.createdAt &&
+      conversation.lastInboundAt > row.createdAt
+    ) {
+      await this.repo.update(row.id, {
+        status: 'CANCELED',
+        canceledAt: new Date(),
+        cancelReason: 'client_replied',
+      });
       return;
     }
 
