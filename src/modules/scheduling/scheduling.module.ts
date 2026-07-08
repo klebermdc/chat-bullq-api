@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { MessagingModule } from '../messaging/messaging.module';
@@ -12,7 +12,7 @@ import { ScheduledMessagesController } from './scheduled-messages.controller';
   imports: [
     BullModule.registerQueue({ name: SCHEDULED_DISPATCH_QUEUE }),
     RealtimeModule,
-    MessagingModule,
+    forwardRef(() => MessagingModule),
   ],
   controllers: [ScheduledMessagesController],
   providers: [

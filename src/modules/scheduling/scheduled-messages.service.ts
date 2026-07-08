@@ -115,6 +115,21 @@ export class ScheduledMessagesService {
     return pending.length;
   }
 
+  async cancelPendingForConversationIfCancelOnReply(conversationId: string): Promise<number> {
+    const pending = await this.repo.findPending(conversationId, 'MANUAL');
+    const toCancel = pending.filter((p) => p.cancelOnReply);
+    for (const row of toCancel) {
+      if (row.jobId) await this.queue.remove(row.jobId).catch(() => undefined);
+      const updated = await this.repo.update(row.id, {
+        status: 'CANCELED',
+        canceledAt: new Date(),
+        cancelReason: 'client_replied',
+      });
+      this.realtime.emitToConversation(conversationId, 'scheduled:canceled', updated);
+    }
+    return toCancel.length;
+  }
+
   async reschedule(
     id: string,
     dto: UpdateScheduledMessageDto,

@@ -100,4 +100,15 @@ describe('ScheduledMessagesService.cancel', () => {
     expect(n).toBe(1);
     expect(repo.update).toHaveBeenCalledWith('s1', expect.objectContaining({ status: 'CANCELED', cancelReason: 'client_replied' }));
   });
+
+  it('cancelPendingForConversationIfCancelOnReply só cancela manuais com cancelOnReply', async () => {
+    const { service, repo } = makeDeps();
+    repo.findPending.mockResolvedValueOnce([
+      { id: 's1', jobId: 'j1', status: 'PENDING', cancelOnReply: true },
+      { id: 's2', jobId: 'j2', status: 'PENDING', cancelOnReply: false },
+    ]);
+    const n = await service.cancelPendingForConversationIfCancelOnReply('c1');
+    expect(n).toBe(1);
+    expect(repo.update).toHaveBeenCalledWith('s1', expect.objectContaining({ status: 'CANCELED' }));
+  });
 });

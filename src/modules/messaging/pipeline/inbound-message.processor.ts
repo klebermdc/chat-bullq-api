@@ -1,6 +1,7 @@
 import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
+import { ScheduledMessagesService } from '../../scheduling/scheduled-messages.service';
 import { PrismaService } from '../../../database/prisma.service';
 import { IdempotencyService } from './idempotency.service';
 import { ContactResolverService } from './contact-resolver.service';
@@ -98,6 +99,8 @@ export class InboundMessageProcessor extends WorkerHost {
     private readonly outbox: OutboxService,
     private readonly watchdog: WatchdogService,
     private readonly salesRecovery: SalesRecoveryService,
+    @Inject(forwardRef(() => ScheduledMessagesService))
+    private readonly scheduled: ScheduledMessagesService,
     @InjectQueue('chatbot-processor') private readonly chatbotQueue: Queue,
   ) {
     super();
@@ -311,6 +314,14 @@ export class InboundMessageProcessor extends WorkerHost {
             `Recovery onInboundReply failed for conv ${conversationId}: ${err?.message ?? err}`,
           ),
         );
+        // Cliente respondeu → cancela reengajamentos automáticos pendentes e
+        // agendamentos manuais marcados com cancelOnReply.
+        this.scheduled
+          .cancelPendingForConversation(conversationId, 'client_replied', 'AUTO_REENGAGE')
+          .catch(() => undefined);
+        this.scheduled
+          .cancelPendingForConversationIfCancelOnReply(conversationId)
+          .catch(() => undefined);
       } else if (isEcho) {
         // Echo de msg nossa que finalmente voltou — cancela timer existente
         // (pode ter sido enviada por outro path que não passou pelo cancel).

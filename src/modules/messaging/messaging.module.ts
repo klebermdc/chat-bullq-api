@@ -8,6 +8,7 @@ import { SegmentsModule } from '../segments/segments.module';
 import { ProjectsModule } from '../projects/projects.module';
 import { SalesRecoveryModule } from '../sales-recovery/sales-recovery.module';
 import { AiProviderKeysModule } from '../ai-provider-keys/ai-provider-keys.module';
+import { SchedulingModule } from '../scheduling/scheduling.module';
 import { IdempotencyService } from './pipeline/idempotency.service';
 import { ContactResolverService } from './pipeline/contact-resolver.service';
 import { ConversationResolverService } from './pipeline/conversation-resolver.service';
@@ -46,6 +47,7 @@ import { ContactsRepository } from './contacts/contacts.repository';
     ProjectsModule,
     SalesRecoveryModule,
     AiProviderKeysModule,
+    forwardRef(() => SchedulingModule),
   ],
   controllers: [ConversationsController, MessagesController, ContactsController],
   providers: [
