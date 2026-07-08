@@ -7,6 +7,9 @@ import { ScheduledMessagesRepository } from './scheduled-messages.repository';
 import { ScheduledMessagesService } from './scheduled-messages.service';
 import { ScheduledDispatchProcessor } from './scheduled-dispatch.processor';
 import { ScheduledMessagesController } from './scheduled-messages.controller';
+import { InactivitySettingsRepository } from './inactivity/inactivity-settings.repository';
+import { InactivitySettingsService } from './inactivity/inactivity-settings.service';
+import { InactivitySettingsController } from './inactivity/inactivity-settings.controller';
 
 @Module({
   imports: [
@@ -14,11 +17,13 @@ import { ScheduledMessagesController } from './scheduled-messages.controller';
     RealtimeModule,
     forwardRef(() => MessagingModule),
   ],
-  controllers: [ScheduledMessagesController],
+  controllers: [ScheduledMessagesController, InactivitySettingsController],
   providers: [
     ScheduledMessagesRepository,
     ScheduledMessagesService,
     ScheduledDispatchProcessor,
+    InactivitySettingsRepository,
+    InactivitySettingsService,
   ],
   exports: [ScheduledMessagesService],
 })
