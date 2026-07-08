@@ -4,6 +4,7 @@ function makeDeps(row: any) {
   const repo = {
     findById: jest.fn(async () => row),
     update: jest.fn(async (id: string, data: any) => ({ ...row, ...data })),
+    claimForDispatch: jest.fn(async () => true),
   };
   const prisma = {
     conversation: {
@@ -33,6 +34,17 @@ describe('ScheduledDispatchProcessor', () => {
     const { processor, messages } = makeDeps({ ...base, status: 'CANCELED' });
     await processor.process({ data: { scheduledMessageId: 's1' } } as any);
     expect(messages.send).not.toHaveBeenCalled();
+  });
+
+  it('não envia quando o claim atômico falha (cancelado entre leitura e envio)', async () => {
+    const { processor, repo, messages } = makeDeps(base);
+    repo.claimForDispatch.mockResolvedValueOnce(false);
+    await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+    expect(messages.send).not.toHaveBeenCalled();
+    expect(repo.update).not.toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ status: 'SENT' }),
+    );
   });
 
   it('marca FAILED quando a conversa está fechada', async () => {

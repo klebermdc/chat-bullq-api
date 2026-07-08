@@ -39,6 +39,9 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       return;
     }
 
+    const claimed = await this.repo.claimForDispatch(row.id);
+    if (!claimed) return; // canceled or already picked up between read and now
+
     try {
       const sent = await this.messages.send(
         {

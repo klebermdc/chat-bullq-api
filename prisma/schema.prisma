@@ -1799,6 +1799,7 @@ model AiProviderKey {
 
 enum ScheduledMessageStatus {
   PENDING
+  SENDING
   SENT
   CANCELED
   FAILED

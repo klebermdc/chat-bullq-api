@@ -28,6 +28,15 @@ export class ScheduledMessagesRepository {
     return this.prisma.scheduledMessage.update({ where: { id }, data });
   }
 
+  /** Atomic claim: only succeeds if still PENDING. Returns true if claimed. */
+  async claimForDispatch(id: string): Promise<boolean> {
+    const res = await this.prisma.scheduledMessage.updateMany({
+      where: { id, status: 'PENDING' },
+      data: { status: 'SENDING' },
+    });
+    return res.count === 1;
+  }
+
   /** Pendentes de uma conversa, opcionalmente filtrando por origin. */
   findPending(conversationId: string, origin?: string): Promise<ScheduledMessage[]> {
     return this.prisma.scheduledMessage.findMany({
