@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { MessagingModule } from '../messaging/messaging.module';
+import { CadencesModule } from '../cadences/cadences.module';
 import { LlmModule } from '../ai-agents/llm/llm.module';
 import {
   SCHEDULED_DISPATCH_QUEUE,
@@ -28,6 +29,9 @@ import { ReengageSuggestionController } from './inactivity/reengage-suggestion.c
     BullModule.registerQueue({ name: INACTIVITY_WATCHDOG_QUEUE }),
     RealtimeModule,
     forwardRef(() => MessagingModule),
+    // Task 8: dispatch processor chama CadenceRunner.onStepSent → ciclo
+    // scheduling↔cadences → forwardRef nos dois lados.
+    forwardRef(() => CadencesModule),
     LlmModule,
   ],
   controllers: [
@@ -48,6 +52,6 @@ import { ReengageSuggestionController } from './inactivity/reengage-suggestion.c
     InactivityWatchdogCron,
     InactivityReportService,
   ],
-  exports: [ScheduledMessagesService],
+  exports: [ScheduledMessagesService, ScheduledMessagesRepository],
 })
 export class SchedulingModule {}

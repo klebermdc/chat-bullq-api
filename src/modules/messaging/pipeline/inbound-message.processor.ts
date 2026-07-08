@@ -2,6 +2,7 @@ import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
 import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
 import { ScheduledMessagesService } from '../../scheduling/scheduled-messages.service';
+import { CadenceInboundService } from '../../cadences/cadence-inbound.service';
 import { PrismaService } from '../../../database/prisma.service';
 import { IdempotencyService } from './idempotency.service';
 import { ContactResolverService } from './contact-resolver.service';
@@ -101,6 +102,8 @@ export class InboundMessageProcessor extends WorkerHost {
     private readonly salesRecovery: SalesRecoveryService,
     @Inject(forwardRef(() => ScheduledMessagesService))
     private readonly scheduled: ScheduledMessagesService,
+    @Inject(forwardRef(() => CadenceInboundService))
+    private readonly cadenceInbound: CadenceInboundService,
     @InjectQueue('chatbot-processor') private readonly chatbotQueue: Queue,
   ) {
     super();
@@ -329,6 +332,25 @@ export class InboundMessageProcessor extends WorkerHost {
           .catch((e) =>
             this.logger.warn(
               `scheduled_autocancel_failed conv=${conversationId}: ${(e as Error).message}`,
+            ),
+          );
+        // Toques de cadência (origin CADENCE) são cancelados imediatamente em
+        // QUALQUER resposta do cliente — independente do path de classificação/
+        // transição, para não disparar um toque após o cliente já ter falado.
+        this.scheduled
+          .cancelPendingForConversation(conversationId, 'client_replied', 'CADENCE')
+          .catch((e) =>
+            this.logger.warn(
+              `scheduled_autocancel_failed conv=${conversationId}: ${(e as Error).message}`,
+            ),
+          );
+        // Cadência: se a conversa tem enrollment ACTIVE, classifica a resposta
+        // e aplica a transição (Sim/Não/Descadastrar/engajou). No-op fora disso.
+        this.cadenceInbound
+          .handleInbound(conversationId, savedMessage)
+          .catch((err) =>
+            this.logger.warn(
+              `cadence_inbound_failed conv=${conversationId}: ${(err as Error).message}`,
             ),
           );
       } else if (isEcho) {
