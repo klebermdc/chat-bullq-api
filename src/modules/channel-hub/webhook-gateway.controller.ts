@@ -10,6 +10,8 @@ import {
   HttpCode,
   RawBodyRequest,
   UseGuards,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { Channel, ChannelType } from '@prisma/client';
@@ -21,6 +23,7 @@ import { ChannelAdapterRegistry } from './channel-adapter.registry';
 import { ChannelsService } from './channels/channels.service';
 import { WebhookEventsService } from './webhook-events.service';
 import { WebhookThrottleGuard } from './webhook-throttle.guard';
+import { MessageTemplatesService } from './message-templates/message-templates.service';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
@@ -33,6 +36,8 @@ export class WebhookGatewayController {
     private readonly channelsService: ChannelsService,
     private readonly webhookEvents: WebhookEventsService,
     @InjectQueue('inbound-messages') private readonly inboundQueue: Queue,
+    @Inject(forwardRef(() => MessageTemplatesService))
+    private readonly messageTemplatesService: MessageTemplatesService,
   ) {}
 
   @Post(':channelType')
@@ -153,6 +158,15 @@ export class WebhookGatewayController {
             removeOnFail: false,
           },
         );
+      }
+
+      for (const upd of parseResult.templateStatusUpdates ?? []) {
+        await this.messageTemplatesService.applyStatusUpdate(
+          upd.metaTemplateId,
+          upd.status,
+          upd.reason,
+        );
+        this.logger.log(`Template ${upd.metaTemplateId} → ${upd.status}`);
       }
     }
 
