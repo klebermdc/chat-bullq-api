@@ -65,15 +65,20 @@ export class OfpSyncService {
     this.running = true;
     try {
       const orders = await this.ofp.getOrders();
-      // Sequential upsert of the full set (~8500 rows). If interrupted mid-loop,
-      // the next run self-heals since every row is upserted by externalId.
-      for (const o of orders) {
-        const row = this.toRow(o);
-        await this.prisma.ofpSalesOrder.upsert({
-          where: { externalId: row.externalId },
-          create: row,
-          update: row,
-        });
+      // Upsert em lotes paralelos (~8500 linhas) — bem mais rápido que sequencial.
+      // Se interromper no meio, o próximo run se auto-corrige (upsert por externalId).
+      const rows = orders.map((o) => this.toRow(o));
+      const CHUNK = 20;
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        await Promise.all(
+          rows.slice(i, i + CHUNK).map((row) =>
+            this.prisma.ofpSalesOrder.upsert({
+              where: { externalId: row.externalId },
+              create: row,
+              update: row,
+            }),
+          ),
+        );
       }
       // Reconcile deletions: drop local rows no longer present upstream.
       // Guard: never wipe the table if the fetch came back empty (transient failure).
