@@ -1,4 +1,4 @@
-import { parseOfpDate, aggregate } from './report-aggregator';
+import { parseOfpDate, aggregate, filterOrders } from './report-aggregator';
 import type { OfpOrder } from './ofp-report.service';
 
 const o = (over: Partial<OfpOrder>): OfpOrder =>
@@ -61,5 +61,42 @@ describe('aggregate', () => {
   it('omits raw orders unless includeOrders', () => {
     expect(aggregate(orders, { scope: 'all', seller: null }).orders).toBeUndefined();
     expect(aggregate(orders, { scope: 'all', seller: null, includeOrders: true }).orders?.length).toBe(3);
+  });
+});
+
+describe('parseOfpDate padding', () => {
+  it('accepts non-zero-padded day/month', () => {
+    expect(parseOfpDate('7/7/2026')).toBe('2026-07');
+    expect(parseOfpDate('1/2/2025')).toBe('2025-02');
+  });
+});
+
+describe('filterOrders', () => {
+  const orders: OfpOrder[] = [
+    o({ vendedor: 'Pedro', data: '07/07/2026' }),
+    o({ vendedor: 'Rafael', data: '07/07/2026' }),
+    o({ vendedor: 'Pedro', data: '10/06/2026' }),
+    o({ vendedor: 'Pedro', data: null }),
+  ];
+  it('filters by vendedor (exact match)', () => {
+    expect(filterOrders(orders, { vendedor: 'Pedro' }).length).toBe(3);
+  });
+  it('filters by month+year, dropping unparseable dates', () => {
+    expect(filterOrders(orders, { month: 7, year: 2026 }).length).toBe(2);
+    expect(filterOrders(orders, { vendedor: 'Pedro', month: 7, year: 2026 }).length).toBe(1);
+  });
+  it('no filter returns all', () => {
+    expect(filterOrders(orders, {}).length).toBe(4);
+  });
+});
+
+describe('includeOrders PII projection', () => {
+  it('drops email_cliente/telefone_cliente but keeps cliente', () => {
+    const withPii = [o({ cliente: 'Ana', email_cliente: 'a@x.com', telefone_cliente: '11999', venda: 10 })];
+    const r = aggregate(withPii, { scope: 'seller', seller: 'Pedro', includeOrders: true });
+    const row = r.orders![0];
+    expect(row.cliente).toBe('Ana');
+    expect(row.email_cliente).toBeUndefined();
+    expect(row.telefone_cliente).toBeUndefined();
   });
 });

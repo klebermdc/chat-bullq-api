@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { OfpReportService } from './ofp-report.service';
-import { aggregate, SalesReport } from './report-aggregator';
+import { aggregate, filterOrders, SalesReport } from './report-aggregator';
 
 export interface GetReportInput {
   role: OrgRole;
@@ -53,7 +53,8 @@ export class SalesReportsService {
       scope = 'all';
     }
 
-    const orders = await this.ofp.getOrders({ vendedor, month: input.month, year: input.year });
+    const raw = await this.ofp.getOrders({ vendedor, month: input.month, year: input.year });
+    const orders = filterOrders(raw, { vendedor, month: input.month, year: input.year });
     return aggregate(orders, {
       scope,
       seller: vendedor ?? null,
