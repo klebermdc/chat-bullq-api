@@ -31,12 +31,19 @@ export class InactivityReportController {
     @Query('pageSize') pageSize?: string,
   ) {
     const assignedToId = resolveAssignmentScope(role, userId);
+    // Coerção defensiva: nunca deixa NaN/negativos chegarem no Prisma.
+    const bandNum = band !== undefined ? parseInt(band, 10) : NaN;
+    const pageNum = Math.max(1, parseInt(page ?? '', 10) || 1);
+    const pageSizeParsed = parseInt(pageSize ?? '', 10);
+    const pageSizeNum = Number.isNaN(pageSizeParsed)
+      ? 20
+      : Math.min(200, Math.max(1, pageSizeParsed));
     return this.service.report({
       organizationId: orgId,
       assignedToId,
-      band: band !== undefined ? Number(band) : undefined,
-      page: page ? Number(page) : 1,
-      pageSize: pageSize ? Number(pageSize) : 20,
+      band: Number.isNaN(bandNum) ? undefined : bandNum,
+      page: pageNum,
+      pageSize: pageSizeNum,
     });
   }
 
