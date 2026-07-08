@@ -30,8 +30,17 @@ export class SalesReportsController {
       vendedor: q.vendedor,
       month: q.month,
       year: q.year,
+      status: q.status,
+      produto: q.produto,
+      fornecedor: q.fornecedor,
+      search: q.search,
       includeOrders: q.includeOrders === 'true',
     });
+  }
+
+  @Get('facets')
+  getFacets(@CurrentUser('email') email: string, @CurrentUserRole() role: OrgRole) {
+    return this.service.getFacets({ role, email });
   }
 
   @Get('vendedores')

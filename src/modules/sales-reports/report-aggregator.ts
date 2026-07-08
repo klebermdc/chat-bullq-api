@@ -26,16 +26,28 @@ export function parseOfpDate(data: string | null): string | null {
 
 export function filterOrders(
   orders: OfpOrder[],
-  f: { vendedor?: string; month?: number; year?: number },
+  f: {
+    vendedor?: string; month?: number; year?: number;
+    status?: string; produto?: string; fornecedor?: string; search?: string;
+  },
 ): OfpOrder[] {
+  const q = f.search?.trim().toLowerCase();
   return orders.filter((o) => {
     if (f.vendedor && o.vendedor !== f.vendedor) return false;
+    if (f.status && o.status !== f.status) return false;
+    if (f.produto && o.produto !== f.produto) return false;
+    if (f.fornecedor && o.fornecedor !== f.fornecedor) return false;
     if (f.month || f.year) {
       const ym = parseOfpDate(o.data);
       if (!ym) return false;
       const [yStr, mStr] = ym.split('-');
       if (f.year && Number(yStr) !== f.year) return false;
       if (f.month && Number(mStr) !== f.month) return false;
+    }
+    if (q) {
+      const hay = [o.cliente, o.pedido, o.email_cliente, o.telefone_cliente]
+        .map((x) => (x ?? '').toString().toLowerCase());
+      if (!hay.some((h) => h.includes(q))) return false;
     }
     return true;
   });
@@ -127,5 +139,32 @@ export function aggregate(orders: OfpOrder[], opts: AggregateOpts): SalesReport 
     byFornecedor: [...byFornecedor.entries()].map(([fornecedor, v]) => ({ fornecedor, ...r2obj(v) })).sort((a, b) => b.venda - a.venda),
     bySeller: [...bySeller.entries()].map(([vendedor, v]) => ({ vendedor, ...r2obj(v) })).sort((a, b) => b.venda - a.venda),
     orders: opts.includeOrders ? orders.map(projectOrder) : undefined,
+  };
+}
+
+export interface ReportFacets {
+  statuses: string[];
+  produtos: string[];
+  fornecedores: string[];
+  anos: number[];
+  meses: number[];
+}
+
+export function computeFacets(orders: OfpOrder[]): ReportFacets {
+  const st = new Set<string>(), pr = new Set<string>(), fo = new Set<string>();
+  const an = new Set<number>(), me = new Set<number>();
+  for (const o of orders) {
+    if (o.status) st.add(o.status);
+    if (o.produto) pr.add(o.produto);
+    if (o.fornecedor) fo.add(o.fornecedor);
+    const ym = parseOfpDate(o.data);
+    if (ym) { const [y, m] = ym.split('-'); an.add(Number(y)); me.add(Number(m)); }
+  }
+  return {
+    statuses: [...st].sort(),
+    produtos: [...pr].sort(),
+    fornecedores: [...fo].sort(),
+    anos: [...an].filter((y) => y >= 2015 && y <= 2035).sort((a, b) => b - a),
+    meses: [...me].sort((a, b) => a - b),
   };
 }

@@ -66,6 +66,15 @@ describe('SalesReportsService', () => {
     expect(r.scope).toBe('seller');
     expect(r.seller).toBe('Pedro');
   });
+
+  it('getFacets returns distinct values for admin', async () => {
+    const r = await service.getFacets({ role: OrgRole.ADMIN, email: 'kleber@orlandofastpass.com.br' });
+    expect(Array.isArray(r.statuses)).toBe(true);
+  });
+
+  it('getFacets forbids unmapped agent', async () => {
+    await expect(service.getFacets({ role: OrgRole.AGENT, email: 'stranger@nope.com' })).rejects.toBeTruthy();
+  });
 });
 
 describe('SalesReportsService db source', () => {
