@@ -63,11 +63,20 @@ describe('ResponseClassifierService', () => {
       );
     });
 
-    it("'Não obrigado' → NAO (normaliza acento)", async () => {
+    it("'sim' → SIM (token único de palavra-chave)", async () => {
+      const llm = makeLlm();
+      const svc = new ResponseClassifierService(llm);
+      expect(await svc.classify(msg({ content: { text: 'sim' } }), STEP_SIM_NAO)).toBe(
+        'SIM',
+      );
+      expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it("'Não' → NAO (token único, normaliza acento)", async () => {
       const llm = makeLlm();
       const svc = new ResponseClassifierService(llm);
       expect(
-        await svc.classify(msg({ content: { text: 'Não obrigado' } }), STEP_SIM_NAO),
+        await svc.classify(msg({ content: { text: 'Não' } }), STEP_SIM_NAO),
       ).toBe('NAO');
       expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -77,6 +86,46 @@ describe('ResponseClassifierService', () => {
       expect(await svc.classify(msg({ content: { text: 'sair' } }), STEP_FULL)).toBe(
         'DESCADASTRAR',
       );
+    });
+  });
+
+  // FIX 2: um dígito/palavra-chave no MEIO de uma frase NÃO pode disparar o
+  // ramo numérico/keyword — deve cair para o LLM (aqui não mockado → AMBIGUO).
+  describe('false-positives — dígito/keyword dentro de frase (não casa)', () => {
+    it("'somos 3 pessoas' → NÃO vira DESCADASTRAR (vai ao LLM → AMBIGUO)", async () => {
+      const complete = jest.fn().mockResolvedValue({ message: { content: '' } });
+      const svc = new ResponseClassifierService(makeLlm(complete));
+      const out = await svc.classify(
+        msg({ content: { text: 'somos 3 pessoas' } }),
+        STEP_FULL,
+      );
+      expect(out).not.toBe('DESCADASTRAR');
+      expect(out).toBe('AMBIGUO');
+      expect(complete).toHaveBeenCalledTimes(1);
+    });
+
+    it("'nao sei, pode ser 2 pessoas' → NÃO vira NAO (vai ao LLM → AMBIGUO)", async () => {
+      const complete = jest.fn().mockResolvedValue({ message: { content: '' } });
+      const svc = new ResponseClassifierService(makeLlm(complete));
+      const out = await svc.classify(
+        msg({ content: { text: 'nao sei, pode ser 2 pessoas' } }),
+        STEP_SIM_NAO,
+      );
+      expect(out).not.toBe('NAO');
+      expect(out).not.toBe('DESCADASTRAR');
+      expect(out).toBe('AMBIGUO');
+      expect(complete).toHaveBeenCalledTimes(1);
+    });
+
+    it("'quero saber o preço para 1 diária' → texto → LLM (não SIM automático)", async () => {
+      const complete = jest.fn().mockResolvedValue({ message: { content: '' } });
+      const svc = new ResponseClassifierService(makeLlm(complete));
+      const out = await svc.classify(
+        msg({ content: { text: 'quero saber o preço para 1 diária' } }),
+        STEP_SIM_NAO,
+      );
+      expect(out).toBe('AMBIGUO');
+      expect(complete).toHaveBeenCalledTimes(1);
     });
   });
 

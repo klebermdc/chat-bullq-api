@@ -76,22 +76,30 @@ export class ResponseClassifierService {
 
   private keyword(normalized: string): ClassifyOutcome | null {
     if (!normalized) return null;
+
+    // FIX 2: o ramo numerado só dispara quando a mensagem é ESSENCIALMENTE
+    // apenas o número — texto trimado exatamente "1"/"2"/"3". Isso evita o
+    // falso-positivo de um dígito no meio de uma frase (ex.: "somos 3 pessoas").
+    if (/^[123]$/.test(normalized)) {
+      if (normalized === '1') return 'SIM';
+      if (normalized === '2') return 'NAO';
+      return 'DESCADASTRAR';
+    }
+
+    // Palavra-chave: só quando a mensagem inteira é UM único token curto que é
+    // uma palavra-chave conhecida (sim/nao/quero/sair/parar/...). Frases como
+    // "nao sei, pode ser 2 pessoas" caem para o LLM (não casam aqui).
     const tokens = normalized
       .replace(/[^\p{L}\p{N}\s]/gu, ' ')
       .split(/\s+/)
       .filter(Boolean);
-    if (tokens.length === 0) return null;
+    if (tokens.length !== 1) return null;
 
-    if (tokens.includes('1')) return 'SIM';
-    if (tokens.includes('2')) return 'NAO';
-    if (tokens.includes('3')) return 'DESCADASTRAR';
-
-    const has = (set: Set<string>) => tokens.some((t) => set.has(t));
-    // Ordem: opt-out primeiro (mais crítico), depois NAO antes de SIM
-    // ("nao quero" deve resolver como NAO, não SIM).
-    if (has(KW_DESCADASTRAR)) return 'DESCADASTRAR';
-    if (has(KW_NAO)) return 'NAO';
-    if (has(KW_SIM)) return 'SIM';
+    const t = tokens[0];
+    // Ordem: opt-out primeiro (mais crítico), depois NAO antes de SIM.
+    if (KW_DESCADASTRAR.has(t)) return 'DESCADASTRAR';
+    if (KW_NAO.has(t)) return 'NAO';
+    if (KW_SIM.has(t)) return 'SIM';
     return null;
   }
 
