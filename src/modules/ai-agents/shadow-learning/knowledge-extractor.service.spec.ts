@@ -42,12 +42,26 @@ describe('KnowledgeExtractorService.extract', () => {
   });
 
   it('tolera JSON embrulhado em cercas ```json e devolve items vazio em lixo', async () => {
-    const { svc } = make('```json\n{"items":[],"reasoning":null}\n```');
-    const r = await svc.extract({ organizationId: 'o', agentId: 'a', conversationId: 'c', messages: [] });
-    expect(r.items).toEqual([]);
+    const msgs = [
+      { role: 'operator' as const, content: 'oi', createdAt: '2026-07-08T10:00:00Z' },
+    ];
+
+    const { svc } = make(
+      '```json\n{"items":[{"kind":"qa","category":"x","question":"q","content":"resposta"}],"reasoning":null}\n```',
+    );
+    const r = await svc.extract({ organizationId: 'o', agentId: 'a', conversationId: 'c', messages: msgs });
+    expect(r.items).toHaveLength(1);
+    expect(r.items[0]).toMatchObject({ kind: 'qa', category: 'x', content: 'resposta' });
 
     const { svc: svc2 } = make('desculpa, não entendi');
-    const r2 = await svc2.extract({ organizationId: 'o', agentId: 'a', conversationId: 'c', messages: [] });
+    const r2 = await svc2.extract({ organizationId: 'o', agentId: 'a', conversationId: 'c', messages: msgs });
     expect(r2.items).toEqual([]);
+  });
+
+  it('não chama o LLM quando não há mensagens (guarda de janela vazia)', async () => {
+    const { svc, llm } = make('irrelevante');
+    const r = await svc.extract({ organizationId: 'o', agentId: 'a', conversationId: 'c', messages: [] });
+    expect(llm.complete).not.toHaveBeenCalled();
+    expect(r.items).toEqual([]);
   });
 });
