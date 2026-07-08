@@ -32,7 +32,9 @@ describe('InboundMessageProcessor — observação SHADOW independe do gate', ()
       overrides.agentRunner, // 10 agentRunner
       {} as any, // 11 transcription
       {} as any, // 12 outbox
-      {} as any, // 13 watchdog
+      // 13 watchdog — fireAgentRun chama watchdog.cancelCheck().catch() após
+      // um run bem-sucedido; stub que resolve pra não gerar ERROR no log.
+      { cancelCheck: jest.fn().mockResolvedValue(undefined) } as any,
       {} as any, // 14 salesRecovery
       {} as any, // 15 scheduled
       {} as any, // 16 chatbotQueue
