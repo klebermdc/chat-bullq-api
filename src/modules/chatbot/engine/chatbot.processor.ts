@@ -5,6 +5,7 @@ import { Job, Queue } from 'bullmq';
 import { ConversationStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { ChatbotEngineService } from './chatbot-engine.service';
+import { ChatbotSessionService } from '../session/chatbot-session.service';
 
 interface ChatbotJobData {
   conversationId: string;
@@ -21,12 +22,23 @@ export class ChatbotProcessor extends WorkerHost {
   constructor(
     private readonly engine: ChatbotEngineService,
     private readonly prisma: PrismaService,
+    private readonly sessionService: ChatbotSessionService,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
   ) {
     super();
   }
 
   async process(job: Job<ChatbotJobData>): Promise<any> {
+    // Serializa o processamento por conversa. Sem a trava, o concurrency:5
+    // rodava 2 mensagens do mesmo contato em paralelo → reenvio de nós do fluxo
+    // e double-advance da sessão (get→setex não-atômico). O job tem attempts:3,
+    // então se a trava expirar por timeout a mensagem é reprocessada.
+    return this.sessionService.withConversationLock(job.data.conversationId, () =>
+      this.handle(job),
+    );
+  }
+
+  private async handle(job: Job<ChatbotJobData>): Promise<any> {
     const { conversationId, channelId, contactExternalId, organizationId, messageText } = job.data;
 
     const result = await this.engine.processMessage(
