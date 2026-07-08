@@ -48,6 +48,15 @@ export class InactivityRepository {
     });
   }
 
+  /** Fuso da org (para resolver quiet hours). Fallback America/Sao_Paulo. */
+  async orgTimezone(organizationId: string): Promise<string> {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { aiTimezone: true },
+    });
+    return org?.aiTimezone ?? 'America/Sao_Paulo';
+  }
+
   /** Contagem por faixa. assignedToId opcional (RN-05 AGENT scope). */
   async countByBand(organizationId: string, assignedToId?: string) {
     const rows = await this.prisma.conversation.groupBy({

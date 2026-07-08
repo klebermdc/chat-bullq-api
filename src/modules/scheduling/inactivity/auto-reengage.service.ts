@@ -56,7 +56,13 @@ export class AutoReengageService {
     const draft = await this.draftService.draft(organizationId, conv.id);
     if (!draft) return; // sem rascunho, não auto-dispara
 
-    const scheduledAt = this.nextAllowedTime(new Date(), cfg.quietHoursStart, cfg.quietHoursEnd);
+    const timeZone = await this.inactivityRepo.orgTimezone(organizationId);
+    const scheduledAt = this.nextAllowedTime(
+      new Date(),
+      cfg.quietHoursStart,
+      cfg.quietHoursEnd,
+      timeZone,
+    );
 
     const created = await this.schedRepo.create({
       organizationId,
@@ -93,16 +99,47 @@ export class AutoReengageService {
     );
   }
 
-  /** Se estamos dentro do quiet window, empurra para o quietHoursEnd; senão agora. */
-  nextAllowedTime(now: Date, startHour: number | null, endHour: number | null): Date {
+  /**
+   * Se estamos dentro do quiet window (resolvido no fuso `timeZone`), empurra
+   * para o próximo `endHour` naquele fuso; senão agora. Função pura (tz e now
+   * injetados) para ficar testável.
+   */
+  nextAllowedTime(
+    now: Date,
+    startHour: number | null,
+    endHour: number | null,
+    timeZone: string,
+  ): Date {
     if (startHour === null || endHour === null) return now;
-    const h = now.getHours();
+    const { hour, minute, second } = this.wallClock(now, timeZone);
     const inQuiet =
-      startHour <= endHour ? h >= startHour && h < endHour : h >= startHour || h < endHour;
+      startHour <= endHour
+        ? hour >= startHour && hour < endHour
+        : hour >= startHour || hour < endHour;
     if (!inQuiet) return now;
-    const next = new Date(now);
-    next.setHours(endHour, 0, 0, 0);
-    if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
-    return next;
+    // Distância (em horas de relógio no fuso) até o próximo `endHour`.
+    const deltaHours = (endHour - hour + 24) % 24;
+    const msUntilEnd =
+      deltaHours * 3_600_000 - minute * 60_000 - second * 1000 - now.getMilliseconds();
+    return new Date(now.getTime() + msUntilEnd);
+  }
+
+  /** Hora/min/seg de relógio (0-23) do instante `date` no fuso `timeZone`. */
+  private wallClock(
+    date: Date,
+    timeZone: string,
+  ): { hour: number; minute: number; second: number } {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: false,
+    }).formatToParts(date);
+    const get = (t: string) =>
+      parseInt(parts.find((p) => p.type === t)?.value ?? '0', 10);
+    // Intl pode emitir "24" para meia-noite com hour12:false; normaliza pra 0.
+    const hour = get('hour') % 24;
+    return { hour, minute: get('minute'), second: get('second') };
   }
 }
