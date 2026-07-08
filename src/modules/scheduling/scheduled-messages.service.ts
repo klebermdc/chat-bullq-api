@@ -80,6 +80,23 @@ export class ScheduledMessagesService {
     return updated;
   }
 
+  async listForConversation(
+    conversationId: string,
+    organizationId: string,
+    access: ChannelAccess = 'ALL',
+    status?: string,
+  ): Promise<ScheduledMessage[]> {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conversation) throw new NotFoundException('Conversation not found');
+    if (conversation.organizationId !== organizationId) throw new ForbiddenException();
+    if (access !== 'ALL' && !access.has(conversation.channelId)) {
+      throw new ForbiddenException();
+    }
+    return this.repo.listByConversation(conversationId, status);
+  }
+
   async cancel(id: string, organizationId: string, reason: string): Promise<ScheduledMessage> {
     const row = await this.repo.findById(id);
     if (!row) throw new NotFoundException('Scheduled message not found');

@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ScheduledMessagesService } from './scheduled-messages.service';
 
 function makeDeps() {
@@ -75,6 +75,37 @@ describe('ScheduledMessagesService.create', () => {
         'ALL',
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('ScheduledMessagesService.listForConversation', () => {
+  it('rejeita quando a conversa é de outra org', async () => {
+    const { service, prisma } = makeDeps();
+    prisma.conversation.findUnique.mockResolvedValueOnce({
+      id: 'c1',
+      organizationId: 'orgB',
+      channelId: 'ch1',
+      contactId: 'ct1',
+      status: 'OPEN',
+    } as any);
+    await expect(
+      service.listForConversation('c1', 'orgA', 'ALL'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rejeita quando o canal está fora do acesso', async () => {
+    const { service } = makeDeps();
+    await expect(
+      service.listForConversation('c1', 'org1', new Set(['outra-ch'])),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('retorna as linhas quando org e canal batem', async () => {
+    const { service, repo } = makeDeps();
+    repo.listByConversation.mockResolvedValueOnce([{ id: 's1' }] as any);
+    const rows = await service.listForConversation('c1', 'org1', new Set(['ch1']));
+    expect(rows).toEqual([{ id: 's1' }]);
+    expect(repo.listByConversation).toHaveBeenCalledWith('c1', undefined);
   });
 });
 

@@ -14,7 +14,6 @@ import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentUser, CurrentOrg, CurrentChannelAccess } from '../../common/decorators';
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { ScheduledMessagesService } from './scheduled-messages.service';
-import { ScheduledMessagesRepository } from './scheduled-messages.repository';
 import { CreateScheduledMessageDto } from './dto/create-scheduled-message.dto';
 import { UpdateScheduledMessageDto } from './dto/update-scheduled-message.dto';
 
@@ -23,10 +22,7 @@ import { UpdateScheduledMessageDto } from './dto/update-scheduled-message.dto';
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
 @Controller('scheduled-messages')
 export class ScheduledMessagesController {
-  constructor(
-    private readonly service: ScheduledMessagesService,
-    private readonly repo: ScheduledMessagesRepository,
-  ) {}
+  constructor(private readonly service: ScheduledMessagesService) {}
 
   @Post()
   create(
@@ -41,9 +37,11 @@ export class ScheduledMessagesController {
   @Get('conversation/:conversationId')
   listByConversation(
     @Param('conversationId') conversationId: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
     @Query('status') status?: string,
   ) {
-    return this.repo.listByConversation(conversationId, status);
+    return this.service.listForConversation(conversationId, orgId, access, status);
   }
 
   @Patch(':id')
