@@ -4,6 +4,8 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { Conversation, ConversationStatus, OrgRole } from '@prisma/client';
 import { ConversationsRepository, InboxFilters } from './conversations.repository';
@@ -23,6 +25,7 @@ import { AiAgentRunnerService } from '../../ai-agents/runner/agent-runner.servic
 import { SegmentReadService } from '../../segments/segment-read.service';
 import { ProjectsService } from '../../projects/projects.service';
 import { deriveGroupJid } from '../../segments/group-jid.util';
+import { ScheduledMessagesService } from '../../scheduling/scheduled-messages.service';
 
 const SYNC_MESSAGE_PAGE_SIZE = 50;
 const SYNC_MAX_PAGES = 4;
@@ -49,6 +52,8 @@ export class ConversationsService {
     private readonly agentRunner: AiAgentRunnerService,
     private readonly segmentRead: SegmentReadService,
     private readonly projects: ProjectsService,
+    @Inject(forwardRef(() => ScheduledMessagesService))
+    private readonly scheduled: ScheduledMessagesService,
   ) {}
 
   /**
@@ -501,6 +506,9 @@ export class ConversationsService {
     await this.findOne(id, organizationId, access);
     await this.fsm.transition(id, ConversationStatus.CLOSED, actorId);
     const updated = await this.repository.findById(id);
+    this.scheduled
+      .cancelPendingForConversation(id, 'conversation_closed')
+      .catch(() => undefined);
     this.broadcastUpdate(updated as Conversation | null);
     return updated;
   }
@@ -584,6 +592,12 @@ export class ConversationsService {
         metadata: {},
       },
     });
+
+    if (archived) {
+      this.scheduled
+        .cancelPendingForConversation(id, 'conversation_closed')
+        .catch(() => undefined);
+    }
 
     this.broadcastUpdate(updated as Conversation);
     return updated;
