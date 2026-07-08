@@ -40,6 +40,15 @@ export class InactivityRepository {
     });
   }
 
+  /** UPDATE em lote da faixa para várias conversas (watchdog). */
+  setBandBulk(ids: string[], band: number | null): Promise<unknown> {
+    if (ids.length === 0) return Promise.resolve(null);
+    return this.prisma.conversation.updateMany({
+      where: { id: { in: ids } },
+      data: { inactivityBand: band },
+    });
+  }
+
   /** Marca que a conversa já recebeu um burst de reengajamento nesta streak. */
   markReengaged(conversationId: string): Promise<unknown> {
     return this.prisma.conversation.update({

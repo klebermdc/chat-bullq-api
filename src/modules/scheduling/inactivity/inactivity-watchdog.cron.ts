@@ -76,6 +76,10 @@ export class InactivityWatchdogCron
       if (!cfg.enabled) continue;
 
       const candidates = await this.repo.scanCandidates(organizationId);
+      // Agrupa as mudanças de faixa por faixa-alvo (band pode ser null) para
+      // emitir um único updateMany por faixa distinta ao fim do org.
+      const byTargetBand = new Map<number | null, string[]>();
+
       for (const c of candidates) {
         scanned++;
         const band = computeBand({
@@ -86,7 +90,9 @@ export class InactivityWatchdogCron
         });
 
         if (band !== c.inactivityBand) {
-          await this.repo.setBand(c.id, band);
+          const ids = byTargetBand.get(band) ?? [];
+          ids.push(c.id);
+          byTargetBand.set(band, ids);
           changed++;
           this.realtime.emitToConversation(c.id, 'inactivity:updated', {
             conversationId: c.id,
@@ -106,6 +112,11 @@ export class InactivityWatchdogCron
               ),
             );
         }
+      }
+
+      // Um UPDATE em lote por faixa distinta (em vez de N updates sequenciais).
+      for (const [band, ids] of byTargetBand) {
+        await this.repo.setBandBulk(ids, band);
       }
     }
 
