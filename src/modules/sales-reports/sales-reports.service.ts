@@ -1,6 +1,8 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { OrgRole } from '@prisma/client';
-import { OfpReportService } from './ofp-report.service';
+import { PrismaService } from '../../database/prisma.service';
+import { OfpReportService, OfpOrder } from './ofp-report.service';
 import { aggregate, filterOrders, SalesReport } from './report-aggregator';
 
 export interface GetReportInput {
@@ -14,7 +16,11 @@ export interface GetReportInput {
 
 @Injectable()
 export class SalesReportsService {
-  constructor(private readonly ofp: OfpReportService) {}
+  constructor(
+    private readonly ofp: OfpReportService,
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   private async vendedorMap(): Promise<Map<string, string>> {
     const [profiles, roles] = await Promise.all([this.ofp.getProfiles(), this.ofp.getRoles()]);
@@ -32,6 +38,47 @@ export class SalesReportsService {
   async resolveVendedor(email: string): Promise<string | null> {
     const map = await this.vendedorMap();
     return map.get(email.toLowerCase()) ?? null;
+  }
+
+  private async loadOrders(filters: { vendedor?: string; month?: number; year?: number }): Promise<OfpOrder[]> {
+    const source = this.config.get<string>('OFP_REPORTS_SOURCE') ?? 'db';
+    if (source === 'db') {
+      const count = await this.prisma.ofpSalesOrder.count();
+      if (count > 0) {
+        const where: any = {};
+        if (filters.vendedor) where.vendedor = filters.vendedor;
+        if (filters.year && filters.month) {
+          const start = new Date(filters.year, filters.month - 1, 1);
+          const end = new Date(filters.year, filters.month, 1);
+          where.data = { gte: start, lt: end };
+        }
+        const rows = await this.prisma.ofpSalesOrder.findMany({ where });
+        return rows.map((r) => ({
+          id: r.externalId,
+          user_id: null,
+          pedido: r.pedido,
+          cliente: r.cliente,
+          email_cliente: r.emailCliente,
+          telefone_cliente: r.telefoneCliente,
+          vendedor: r.vendedor,
+          venda: r.venda == null ? null : Number(r.venda),
+          comissao: r.comissao == null ? null : Number(r.comissao),
+          comissao_total: r.comissaoTotal == null ? null : Number(r.comissaoTotal),
+          porcentagem_vendedor: r.porcentagemVendedor == null ? null : Number(r.porcentagemVendedor),
+          comissao_vendedor: r.comissaoVendedor == null ? null : Number(r.comissaoVendedor),
+          fornecedor: r.fornecedor,
+          produto: r.produto,
+          data: r.dataRaw,
+          status: r.status,
+          enviado: r.enviado,
+          guia: r.guia,
+          comissao_guia: r.comissaoGuia == null ? null : Number(r.comissaoGuia),
+          created_at: r.createdAtExt ? r.createdAtExt.toISOString() : null,
+          updated_at: r.updatedAtExt ? r.updatedAtExt.toISOString() : null,
+        })) as OfpOrder[];
+      }
+    }
+    return this.ofp.getOrders(filters);
   }
 
   async getReport(input: GetReportInput): Promise<SalesReport> {
@@ -53,7 +100,7 @@ export class SalesReportsService {
       scope = 'all';
     }
 
-    const raw = await this.ofp.getOrders({ vendedor, month: input.month, year: input.year });
+    const raw = await this.loadOrders({ vendedor, month: input.month, year: input.year });
     const orders = filterOrders(raw, { vendedor, month: input.month, year: input.year });
     return aggregate(orders, {
       scope,
