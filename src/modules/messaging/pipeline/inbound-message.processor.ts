@@ -334,6 +334,16 @@ export class InboundMessageProcessor extends WorkerHost {
               `scheduled_autocancel_failed conv=${conversationId}: ${(e as Error).message}`,
             ),
           );
+        // Toques de cadência (origin CADENCE) são cancelados imediatamente em
+        // QUALQUER resposta do cliente — independente do path de classificação/
+        // transição, para não disparar um toque após o cliente já ter falado.
+        this.scheduled
+          .cancelPendingForConversation(conversationId, 'client_replied', 'CADENCE')
+          .catch((e) =>
+            this.logger.warn(
+              `scheduled_autocancel_failed conv=${conversationId}: ${(e as Error).message}`,
+            ),
+          );
         // Cadência: se a conversa tem enrollment ACTIVE, classifica a resposta
         // e aplica a transição (Sim/Não/Descadastrar/engajou). No-op fora disso.
         this.cadenceInbound

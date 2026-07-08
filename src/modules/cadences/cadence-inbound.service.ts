@@ -35,6 +35,12 @@ export class CadenceInboundService {
     conversationId: string,
     message: ClassifierMessage,
   ): Promise<void> {
+    // FIX 6: inbound não-acionável não deve forçar handoff. Reação/sistema ou
+    // uma mensagem sem botão nativo e sem texto significativo é no-op aqui — os
+    // toques pendentes já foram cancelados no inbound (FIX 5), então futuros
+    // toques param sem descartar/entregar o lead ao humano por engano.
+    if (!this.isActionable(message)) return;
+
     const enrollment =
       await this.enrollments.findActiveByConversation(conversationId);
     if (!enrollment) return; // sem cadência ativa → no-op
@@ -58,6 +64,25 @@ export class CadenceInboundService {
       this.toTransitionOutcome(outcome),
       cadence as TransitionCadence,
     );
+  }
+
+  /**
+   * Só um botão nativo OU texto genuíno pode dirigir uma transição. Reações,
+   * eventos de sistema e mensagens vazias (só whitespace) são não-acionáveis.
+   */
+  private isActionable(message: ClassifierMessage): boolean {
+    const type = (message as { type?: unknown }).type;
+    if (type === 'REACTION' || type === 'SYSTEM') return false;
+
+    const md = (message?.metadata ?? {}) as Record<string, unknown>;
+    const hasButton =
+      typeof md.buttonId === 'string' && md.buttonId.trim().length > 0;
+    if (hasButton) return true;
+
+    const content = (message?.content ?? {}) as Record<string, unknown>;
+    const hasText =
+      typeof content.text === 'string' && content.text.trim().length > 0;
+    return hasText;
   }
 
   /** AMBIGUO nunca descarta o lead → trata como engajou (regra de ouro). */

@@ -46,7 +46,10 @@ export class ScheduledDispatchProcessor extends WorkerHost {
     // Backstop: se o agendamento é cancelável ao responder e o cliente já
     // respondeu depois que ele foi criado, não envia (o auto-cancel pode ter
     // falhado). Cancela idempotentemente antes de reivindicar o envio.
-    const replyCancelable = row.origin === 'AUTO_REENGAGE' || row.cancelOnReply === true;
+    const replyCancelable =
+      row.origin === 'AUTO_REENGAGE' ||
+      row.origin === 'CADENCE' ||
+      row.cancelOnReply === true;
     if (
       replyCancelable &&
       conversation.lastInboundAt &&
