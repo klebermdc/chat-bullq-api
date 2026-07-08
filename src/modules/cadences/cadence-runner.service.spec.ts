@@ -12,7 +12,7 @@ function makeCadence(overrides: any = {}) {
       {
         id: 'st1',
         order: 1,
-        delayHours: 24,
+        delayMinutes: 24,
         contentType: 'TEXT',
         content: { text: 'Oi, {nome}! Tudo bem?' },
         options: ['SIM', 'NAO'],
@@ -21,7 +21,7 @@ function makeCadence(overrides: any = {}) {
       {
         id: 'st2',
         order: 2,
-        delayHours: 72,
+        delayMinutes: 72,
         contentType: 'TEXT',
         content: { text: 'Oi de novo, {nome}!' },
         options: ['SIM', 'NAO'],

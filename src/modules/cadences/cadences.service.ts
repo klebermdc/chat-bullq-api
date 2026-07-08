@@ -33,7 +33,7 @@ export class CadencesService {
       isTemplate: true,
       steps: CADENCE_DEFAULT_STEPS.map((s) => ({
         order: s.order,
-        delayHours: s.delayHours,
+        delayMinutes: s.delayMinutes,
         content: { text: s.text },
         options: [...s.options],
         templateId: null as string | null,
@@ -102,8 +102,8 @@ export class CadencesService {
 
     const orders = new Set<number>();
     for (const step of steps) {
-      if (step.delayHours <= 0) {
-        throw new BadRequestException('delayHours deve ser maior que 0');
+      if (step.delayMinutes <= 0) {
+        throw new BadRequestException('delayMinutes deve ser maior que 0');
       }
       if (orders.has(step.order)) {
         throw new BadRequestException(`order duplicado: ${step.order}`);

@@ -71,7 +71,7 @@ export class CadencesRepository {
             (step): Prisma.CadenceStepUncheckedCreateInput => ({
               cadenceId: cadence.id,
               order: step.order,
-              delayHours: step.delayHours,
+              delayMinutes: step.delayMinutes,
               content: step.content as Prisma.InputJsonValue,
               options: step.options,
               templateId: step.templateId ?? null,

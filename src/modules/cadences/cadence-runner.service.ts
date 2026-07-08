@@ -29,7 +29,7 @@ export type CadenceStartSource = 'MANUAL' | 'STAGE_ENTER';
 /** Um passo da cadência como devolvido pelo repositório (`findById`). */
 interface CadenceStepLike {
   order: number;
-  delayHours: number;
+  delayMinutes: number;
   contentType: MessageContentType;
   content: unknown;
   templateId?: string | null;
@@ -59,7 +59,7 @@ interface CadenceLike {
  * Os toques são `ScheduledMessage(origin=CADENCE)` — reusa o dispatch + o
  * auto-cancel-no-reply já existentes no módulo `scheduling`.
  *
- * Fatia 1A: agenda em `now + delayHours` (sem deferir quiet hours). O util
+ * Fatia 1A: agenda em `now + delayMinutes` (sem deferir quiet hours). O util
  * `nextAllowedTime` (auto-reengage.service) fica reservado para a 1B.
  */
 @Injectable()
@@ -280,7 +280,7 @@ export class CadenceRunner {
     contact: { name?: string | null } | null,
     step: CadenceStepLike,
   ): Promise<void> {
-    const scheduledAt = new Date(Date.now() + step.delayHours * 3_600_000);
+    const scheduledAt = new Date(Date.now() + step.delayMinutes * 60_000);
     const content = this.resolveContent(step.content, contact?.name ?? null);
 
     const sm = await this.schedRepo.create({
