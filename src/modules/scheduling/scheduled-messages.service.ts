@@ -97,10 +97,16 @@ export class ScheduledMessagesService {
     return this.repo.listByConversation(conversationId, status);
   }
 
-  async cancel(id: string, organizationId: string, reason: string): Promise<ScheduledMessage> {
+  async cancel(
+    id: string,
+    organizationId: string,
+    reason: string,
+    access: ChannelAccess = 'ALL',
+  ): Promise<ScheduledMessage> {
     const row = await this.repo.findById(id);
     if (!row) throw new NotFoundException('Scheduled message not found');
     if (row.organizationId !== organizationId) throw new ForbiddenException();
+    if (access !== 'ALL' && !access.has(row.channelId)) throw new ForbiddenException();
     if (row.status !== 'PENDING') return row; // idempotente
 
     if (row.jobId) await this.queue.remove(row.jobId).catch(() => undefined);
@@ -151,10 +157,12 @@ export class ScheduledMessagesService {
     id: string,
     dto: UpdateScheduledMessageDto,
     organizationId: string,
+    access: ChannelAccess = 'ALL',
   ): Promise<ScheduledMessage> {
     const row = await this.repo.findById(id);
     if (!row) throw new NotFoundException('Scheduled message not found');
     if (row.organizationId !== organizationId) throw new ForbiddenException();
+    if (access !== 'ALL' && !access.has(row.channelId)) throw new ForbiddenException();
     if (row.status !== 'PENDING') throw new BadRequestException('Só agendamentos pendentes podem ser editados');
 
     let scheduledAt = row.scheduledAt;

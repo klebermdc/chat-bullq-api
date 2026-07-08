@@ -49,12 +49,17 @@ export class ScheduledMessagesController {
     @Param('id') id: string,
     @Body() dto: UpdateScheduledMessageDto,
     @CurrentOrg('id') orgId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
   ) {
-    return this.service.reschedule(id, dto, orgId);
+    return this.service.reschedule(id, dto, orgId, access);
   }
 
   @Delete(':id')
-  cancel(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
-    return this.service.cancel(id, orgId, 'manual');
+  cancel(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
+  ) {
+    return this.service.cancel(id, orgId, 'manual', access);
   }
 }

@@ -124,6 +124,17 @@ describe('ScheduledMessagesService.cancel', () => {
     expect(queue.remove).toHaveBeenCalledWith(created.jobId);
   });
 
+  it('rejeita cancel quando o canal está fora do acesso', async () => {
+    const { service } = makeDeps();
+    const created = await service.create(
+      { conversationId: 'c1', type: 'TEXT', content: { text: 'oi' }, scheduledAt: future },
+      'user1', 'org1', 'ALL',
+    );
+    await expect(
+      service.cancel(created.id, 'org1', 'manual', new Set(['outra-ch'])),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   it('cancelPendingForConversation cancela pendentes com o motivo dado', async () => {
     const { service, repo } = makeDeps();
     repo.findPending.mockResolvedValueOnce([{ id: 's1', jobId: 'j1', status: 'PENDING' }]);
