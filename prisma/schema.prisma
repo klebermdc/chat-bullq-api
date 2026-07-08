@@ -521,6 +521,7 @@ model Conversation {
   lastOutboundAt      DateTime? @map("last_outbound_at")
   inactivityBand      Int?      @map("inactivity_band")
   reengageDismissedAt DateTime? @map("reengage_dismissed_at")
+  reengagedAt         DateTime? @map("reengaged_at")
   firstResponseAt DateTime?          @map("first_response_at")
   closedAt        DateTime?          @map("closed_at")
   reopenedAt      DateTime?          @map("reopened_at")

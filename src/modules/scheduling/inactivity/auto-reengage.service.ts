@@ -32,6 +32,7 @@ export class AutoReengageService {
       id: string;
       assignedToId: string | null;
       reengageDismissedAt: Date | null;
+      reengagedAt: Date | null;
       contactId: string;
       channelId: string;
     },
@@ -39,6 +40,9 @@ export class AutoReengageService {
     cfg: ResolvedInactivitySettings,
   ): Promise<void> {
     if (conv.reengageDismissedAt) return;
+    // Já disparamos um burst nesta streak de silêncio; só volta a valer quando
+    // o cliente responder (inbound limpa `reengagedAt`).
+    if (conv.reengagedAt) return;
 
     const pending = await this.schedRepo.findPending(conv.id);
     if (pending.length > 0) return; // já tem agendamento
@@ -80,6 +84,9 @@ export class AutoReengageService {
       },
     );
     await this.schedRepo.update(created.id, { jobId: String(job.id) });
+
+    // Marca a conversa para não re-disparar até o cliente responder.
+    await this.inactivityRepo.markReengaged(conv.id);
 
     this.logger.log(
       `auto_reengage_created conv=${conv.id} band=${band} at=${scheduledAt.toISOString()}`,

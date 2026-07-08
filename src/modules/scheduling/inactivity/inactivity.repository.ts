@@ -28,6 +28,7 @@ export class InactivityRepository {
         inactivityBand: true,
         assignedToId: true,
         reengageDismissedAt: true,
+        reengagedAt: true,
       },
     });
   }
@@ -36,6 +37,14 @@ export class InactivityRepository {
     return this.prisma.conversation.update({
       where: { id: conversationId },
       data: { inactivityBand: band },
+    });
+  }
+
+  /** Marca que a conversa já recebeu um burst de reengajamento nesta streak. */
+  markReengaged(conversationId: string): Promise<unknown> {
+    return this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { reengagedAt: new Date() },
     });
   }
 

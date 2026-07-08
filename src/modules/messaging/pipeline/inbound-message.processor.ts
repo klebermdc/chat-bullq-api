@@ -206,6 +206,7 @@ export class InboundMessageProcessor extends WorkerHost {
               lastMessageAt: new Date(),
               lastInboundAt: new Date(),
               inactivityBand: null,
+              reengagedAt: null,
               // Mensagem genuína do cliente (INBOUND, não-echo) → aba "Esperando".
               // Echo (msg nossa que volta, OUTBOUND) não mexe no flag: resposta
               // do bot não pode tirar a conversa de "Esperando".

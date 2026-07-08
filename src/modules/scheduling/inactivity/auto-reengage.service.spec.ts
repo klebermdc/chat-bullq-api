@@ -8,6 +8,7 @@ function makeDeps(opts: { pending?: any[]; sender?: string | null; draft?: strin
   };
   const inactivityRepo = {
     resolveSystemSender: jest.fn(async () => (opts.sender === undefined ? 'u1' : opts.sender)),
+    markReengaged: jest.fn(async () => ({})),
   };
   const draftService = { draft: jest.fn(async () => (opts.draft === undefined ? 'Oi!' : opts.draft)) };
   const queue = { add: jest.fn(async () => ({ id: 'job1' })) };
@@ -17,7 +18,7 @@ function makeDeps(opts: { pending?: any[]; sender?: string | null; draft?: strin
     draftService as any,
     queue as any,
   );
-  return { service, schedRepo, queue };
+  return { service, schedRepo, queue, inactivityRepo };
 }
 
 const cfg: any = {
@@ -33,12 +34,13 @@ describe('AutoReengageService.maybeCreate', () => {
     id: 'c1',
     assignedToId: null,
     reengageDismissedAt: null,
+    reengagedAt: null,
     contactId: 'ct1',
     channelId: 'ch1',
   };
 
   it('cria agendamento AUTO_REENGAGE quando elegível', async () => {
-    const { service, schedRepo, queue } = makeDeps();
+    const { service, schedRepo, queue, inactivityRepo } = makeDeps();
     await service.maybeCreate('org1', conv, 2, cfg);
     expect(schedRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -54,6 +56,15 @@ describe('AutoReengageService.maybeCreate', () => {
     );
     expect(queue.add).toHaveBeenCalled();
     expect(schedRepo.update).toHaveBeenCalledWith('s1', { jobId: 'job1' });
+    // Marca a conversa como já reengajada nesta streak.
+    expect(inactivityRepo.markReengaged).toHaveBeenCalledWith('c1');
+  });
+
+  it('pula quando já reengajado nesta streak (reengagedAt setado)', async () => {
+    const { service, schedRepo, inactivityRepo } = makeDeps();
+    await service.maybeCreate('org1', { ...conv, reengagedAt: new Date() }, 2, cfg);
+    expect(schedRepo.create).not.toHaveBeenCalled();
+    expect(inactivityRepo.markReengaged).not.toHaveBeenCalled();
   });
 
   it('pula quando já há pendente', async () => {
