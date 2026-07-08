@@ -3,7 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { OrgRole } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { OfpReportService, OfpOrder } from './ofp-report.service';
-import { aggregate, computeFacets, filterOrders, ReportFacets, SalesReport } from './report-aggregator';
+import { aggregate, computeFacets, filterOrders, projectOrder, ReportFacets, SalesReport } from './report-aggregator';
+
+function dateKey(d: string | null): number {
+  const m = d ? /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(d.trim()) : null;
+  if (!m) return 0;
+  return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).getTime();
+}
 
 export interface GetReportInput {
   role: OrgRole;
@@ -116,6 +122,36 @@ export class SalesReportsService {
       year: input.year,
       includeOrders: input.includeOrders,
     });
+  }
+
+  async getOrdersPage(input: {
+    role: OrgRole; email: string;
+    vendedor?: string; month?: number; year?: number;
+    status?: string; produto?: string; fornecedor?: string; search?: string;
+    page?: number; perPage?: number;
+  }): Promise<{ data: Record<string, unknown>[]; page: number; perPage: number; total: number; totalPages: number }> {
+    const isAdmin = input.role === OrgRole.OWNER || input.role === OrgRole.ADMIN;
+    let vendedor = input.vendedor;
+    if (!isAdmin) {
+      const own = await this.resolveVendedor(input.email);
+      if (!own) throw new ForbiddenException('Sua conta não está vinculada a um vendedor no OFP Hub.');
+      vendedor = own; // force: ignore any client-supplied vendedor
+    }
+    const raw = await this.loadOrders({
+      vendedor, month: input.month, year: input.year,
+      status: input.status, produto: input.produto, fornecedor: input.fornecedor,
+    });
+    const filtered = filterOrders(raw, {
+      vendedor, month: input.month, year: input.year,
+      status: input.status, produto: input.produto, fornecedor: input.fornecedor, search: input.search,
+    });
+    filtered.sort((a, b) => dateKey(b.data) - dateKey(a.data)); // mais recentes primeiro
+    const total = filtered.length;
+    const perPage = Math.min(200, Math.max(1, input.perPage ?? 50));
+    const page = Math.max(1, input.page ?? 1);
+    const start = (page - 1) * perPage;
+    const data = filtered.slice(start, start + perPage).map(projectOrder);
+    return { data, page, perPage, total, totalPages: Math.max(1, Math.ceil(total / perPage)) };
   }
 
   async getFacets(input: { role: OrgRole; email: string }): Promise<ReportFacets> {

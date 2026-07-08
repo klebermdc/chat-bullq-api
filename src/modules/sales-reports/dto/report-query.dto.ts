@@ -25,4 +25,10 @@ export class ReportQueryDto {
 
   @IsOptional() @IsBooleanString()
   includeOrders?: string;
+
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1)
+  page?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(200)
+  per_page?: number;
 }

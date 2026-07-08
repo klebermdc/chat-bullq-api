@@ -8,7 +8,7 @@ const PUBLIC_ORDER_FIELDS = [
   'venda', 'comissao_vendedor', 'comissao_total', 'status', 'enviado', 'guia', 'data', 'created_at',
 ] as const;
 
-function projectOrder(o: OfpOrder): Record<string, unknown> {
+export function projectOrder(o: OfpOrder): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const k of PUBLIC_ORDER_FIELDS) out[k] = o[k];
   return out;
