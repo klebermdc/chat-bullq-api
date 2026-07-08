@@ -59,7 +59,17 @@ export class MediaResolverService {
 
     const content = (message.content ?? {}) as Record<string, any>;
 
-    if (typeof content.mediaUrl === 'string' && content.mediaUrl) {
+    // Só reusa o cache se a URL for de fato tocável. Canais Baileys
+    // (Zappfy/Uazapi, WasenderAPI) gravam no inbound a URL `.enc` crua em
+    // mmg.whatsapp.net — criptografada, que o navegador não abre. Devolvê-la
+    // aqui fazia imagem/sticker/vídeo nunca carregarem: o front pedia resolve
+    // e recebia de volta a mesma URL imprestável. Nesse caso caímos no
+    // `resolveInboundMediaUrl` (decrypt-media) e cacheamos a URL tocável.
+    if (
+      typeof content.mediaUrl === 'string' &&
+      content.mediaUrl &&
+      !isUnplayableUrl(content.mediaUrl)
+    ) {
       return { url: content.mediaUrl, mimeType: content.mimeType };
     }
 
@@ -99,4 +109,14 @@ export class MediaResolverService {
 
     return { url: fileUrl, mimeType: mimeType || content.mimeType };
   }
+}
+
+/**
+ * Uma URL `.enc` em mmg.whatsapp.net é o payload criptografado que o WhatsApp
+ * entrega no webhook; o navegador não consegue decodificá-la. Espelha o guard
+ * `looksUnplayable` do front (use-resolved-media.ts) para o backend não devolver
+ * de volta a URL que o cliente já sabe que não abre.
+ */
+function isUnplayableUrl(u: string): boolean {
+  return /\.enc(\?|$)/i.test(u) || /mmg\.whatsapp\.net/i.test(u);
 }
