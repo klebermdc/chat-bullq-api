@@ -84,7 +84,7 @@ export class AutoReengageService {
       { scheduledMessageId: created.id },
       {
         delay: Math.max(0, scheduledAt.getTime() - Date.now()),
-        jobId: `sched:${created.id}`,
+        jobId: `sched-${created.id}`,
         removeOnComplete: 100,
         removeOnFail: 100,
       },
