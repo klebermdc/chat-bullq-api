@@ -74,8 +74,11 @@ export class CadencesController {
   @Post('enrollments/:enrollmentId/stop')
   @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.AGENT)
   @ApiOperation({ summary: 'Encerra manualmente um enrollment (handoff)' })
-  stopEnrollment(@Param('enrollmentId') enrollmentId: string) {
-    return this.runner.stop(enrollmentId, 'manual_handoff');
+  stopEnrollment(
+    @Param('enrollmentId') enrollmentId: string,
+    @CurrentOrg('id') orgId: string,
+  ) {
+    return this.runner.stop(enrollmentId, 'manual_handoff', orgId);
   }
 
   @Post(':id/start')
@@ -84,8 +87,8 @@ export class CadencesController {
   start(
     @Param('id') id: string,
     @Body('conversationId') conversationId: string,
-    @CurrentOrg('id') _orgId: string,
+    @CurrentOrg('id') orgId: string,
   ) {
-    return this.runner.start(conversationId, id, 'MANUAL');
+    return this.runner.start(conversationId, id, 'MANUAL', orgId);
   }
 }

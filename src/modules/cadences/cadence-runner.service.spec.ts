@@ -55,6 +55,13 @@ function makeDeps(opts: any = {}) {
       Object.assign(e, data);
       return e;
     }),
+    // FIX 4: compare-and-set — só "vence" se ainda ACTIVE.
+    finishIfActive: jest.fn(async (id: string, data: any) => {
+      const e = enrollmentsStore.find((x) => x.id === id);
+      if (!e || e.status !== 'ACTIVE') return false;
+      Object.assign(e, data);
+      return true;
+    }),
   };
 
   const theCadence = opts.cadence ?? makeCadence();
@@ -183,6 +190,59 @@ describe('CadenceRunner.start', () => {
     expect(schedRepo.create).not.toHaveBeenCalled();
   });
 
+  it('FIX 3: já existe enrollment ACTIVE de OUTRA cadência → devolve o existente, não cria', async () => {
+    const { runner, enrollments, enrollmentsStore, schedRepo } = makeDeps();
+    enrollmentsStore.push({
+      id: 'enr-other',
+      conversationId: 'conv1',
+      cadenceId: 'cad-outra',
+      status: 'ACTIVE',
+    });
+
+    const result = await runner.start('conv1', 'cad1', 'MANUAL');
+
+    expect(result!.id).toBe('enr-other');
+    expect(enrollments.create).not.toHaveBeenCalled();
+    expect(schedRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('FIX 1: orgId não bate com a cadência → ForbiddenException', async () => {
+    const { runner, enrollments } = makeDeps();
+    await expect(
+      runner.start('conv1', 'cad1', 'MANUAL', 'org-outra'),
+    ).rejects.toThrow('cadence_not_in_org');
+    expect(enrollments.create).not.toHaveBeenCalled();
+  });
+
+  it('FIX 1: MANUAL com allowManual=false → BadRequestException', async () => {
+    const { runner, enrollments } = makeDeps({
+      cadence: makeCadence({ allowManual: false }),
+    });
+    await expect(
+      runner.start('conv1', 'cad1', 'MANUAL', 'org1'),
+    ).rejects.toThrow('cadence_manual_not_allowed');
+    expect(enrollments.create).not.toHaveBeenCalled();
+  });
+
+  it('FIX 1: cadência desabilitada via endpoint manual → BadRequestException', async () => {
+    const { runner, enrollments } = makeDeps({
+      cadence: makeCadence({ enabled: false }),
+    });
+    await expect(
+      runner.start('conv1', 'cad1', 'MANUAL', 'org1'),
+    ).rejects.toThrow('cadence_disabled');
+    expect(enrollments.create).not.toHaveBeenCalled();
+  });
+
+  it('FIX 1: MANUAL válido com org + allowManual + enabled → cria', async () => {
+    const { runner, enrollments } = makeDeps({
+      cadence: makeCadence({ allowManual: true, enabled: true }),
+    });
+    const enrollment = await runner.start('conv1', 'cad1', 'MANUAL', 'org1');
+    expect(enrollment).toBeTruthy();
+    expect(enrollments.create).toHaveBeenCalledTimes(1);
+  });
+
   it('opt-out: contato tem a tag de opt-out → pula (retorna null)', async () => {
     const { runner, enrollments, schedRepo } = makeDeps({
       cadence: makeCadence({ optOutTagId: 'opt1' }),
@@ -246,7 +306,7 @@ describe('CadenceRunner.onStepSent', () => {
     await runner.onStepSent('enr1', 2);
 
     expect(schedRepo.create).not.toHaveBeenCalled();
-    expect(enrollments.update).toHaveBeenCalledWith(
+    expect(enrollments.finishIfActive).toHaveBeenCalledWith(
       'enr1',
       expect.objectContaining({ status: 'COMPLETED_NO_REPLY' }),
     );
@@ -292,7 +352,7 @@ describe('CadenceRunner.stop', () => {
 
     await runner.stop('enr1', 'said_no');
 
-    expect(enrollments.update).toHaveBeenCalledWith(
+    expect(enrollments.finishIfActive).toHaveBeenCalledWith(
       'enr1',
       expect.objectContaining({ status: 'MOVED_LOST', endReason: 'said_no' }),
     );
@@ -306,6 +366,35 @@ describe('CadenceRunner.stop', () => {
       'cadence:stopped',
       expect.anything(),
     );
+  });
+
+  it('FIX 1: stop com orgId de outro tenant → ForbiddenException', async () => {
+    const { runner, enrollments, enrollmentsStore } = makeDeps();
+    enrollmentsStore.push({
+      id: 'enr1',
+      organizationId: 'org1',
+      conversationId: 'conv1',
+      currentStep: 1,
+      status: 'ACTIVE',
+    });
+    await expect(runner.stop('enr1', 'manual_handoff', 'org-outra')).rejects.toThrow(
+      'enrollment_not_in_org',
+    );
+    expect(enrollments.finishIfActive).not.toHaveBeenCalled();
+  });
+
+  it('FIX 4: enrollment já não-ACTIVE → não reivindica nem cancela pendentes', async () => {
+    const { runner, enrollments, enrollmentsStore, scheduledMessages } = makeDeps();
+    enrollmentsStore.push({
+      id: 'enr1',
+      organizationId: 'org1',
+      conversationId: 'conv1',
+      currentStep: 1,
+      status: 'HANDED_OFF',
+    });
+    await runner.stop('enr1', 'said_no');
+    expect(enrollments.finishIfActive).not.toHaveBeenCalled();
+    expect(scheduledMessages.cancelPendingForConversation).not.toHaveBeenCalled();
   });
 
   it('mapeia reason → status (replied_yes/manual_handoff → HANDED_OFF, opt_out → STOPPED_OPTOUT)', async () => {
@@ -324,7 +413,7 @@ describe('CadenceRunner.stop', () => {
         status: 'ACTIVE',
       });
       await runner.stop('enr1', reason);
-      expect(enrollments.update).toHaveBeenCalledWith(
+      expect(enrollments.finishIfActive).toHaveBeenCalledWith(
         'enr1',
         expect.objectContaining({ status }),
       );

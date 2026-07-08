@@ -14,9 +14,14 @@ import { NotificationsService } from '../notifications/notifications.service';
  */
 export const CADENCE_RUNNER = 'CADENCE_RUNNER';
 
-/** Superfície do runner usada aqui — só `stop`. */
+/**
+ * Superfície do runner usada aqui — só `stop`. Contrato: devolve o enrollment
+ * (truthy) SOMENTE quando este caminho venceu o compare-and-set atômico em
+ * ACTIVE; devolve `null` quando não encontrou / já não estava ACTIVE / perdeu a
+ * corrida. Os efeitos colaterais aqui só ocorrem quando o claim vence.
+ */
 export interface CadenceRunnerPort {
-  stop(enrollmentId: string, reason: string): Promise<unknown>;
+  stop(enrollmentId: string, reason: string): Promise<CadenceEnrollment | null>;
 }
 
 export type TransitionOutcome =
@@ -65,8 +70,10 @@ export class CadenceTransitionService {
     if (enrollment.status !== 'ACTIVE') return;
 
     switch (outcome) {
-      case 'SIM':
-        await this.runner.stop(enrollment.id, 'replied_yes');
+      case 'SIM': {
+        // FIX 4: só aplica efeitos se venceu o compare-and-set atômico.
+        const claimed = await this.runner.stop(enrollment.id, 'replied_yes');
+        if (!claimed) break;
         if (cadence.hotTagId) {
           await this.addConversationTag(
             enrollment.conversationId,
@@ -75,27 +82,34 @@ export class CadenceTransitionService {
         }
         await this.handoff(enrollment);
         break;
+      }
 
       case 'ENGAGED':
-      case 'AMBIGUO':
+      case 'AMBIGUO': {
         // Regra de ouro: na dúvida nunca descarta o lead → trata como engajou.
-        await this.runner.stop(enrollment.id, 'engaged');
+        const claimed = await this.runner.stop(enrollment.id, 'engaged');
+        if (!claimed) break;
         await this.handoff(enrollment);
         break;
+      }
 
-      case 'NAO':
-        await this.runner.stop(enrollment.id, 'said_no');
+      case 'NAO': {
+        const claimed = await this.runner.stop(enrollment.id, 'said_no');
+        if (!claimed) break;
         if (cadence.lostStageId) {
           await this.moveCardToStage(enrollment, cadence.lostStageId);
         }
         break;
+      }
 
-      case 'DESCADASTRAR':
-        await this.runner.stop(enrollment.id, 'opt_out');
+      case 'DESCADASTRAR': {
+        const claimed = await this.runner.stop(enrollment.id, 'opt_out');
+        if (!claimed) break;
         if (cadence.optOutTagId) {
           await this.addContactTag(enrollment.contactId, cadence.optOutTagId);
         }
         break;
+      }
 
       case 'EXHAUSTED':
         // O runner já marcou COMPLETED_NO_REPLY e chamou aqui; só move o card.

@@ -13,7 +13,9 @@ function makePrisma(conversation: any = { id: 'conv1', assignedToId: 'seller1' }
 }
 
 function makeDeps(conversation?: any) {
-  const runner = { stop: jest.fn(async () => undefined) };
+  // FIX 4: stop devolve o enrollment (truthy) quando venceu o compare-and-set;
+  // os efeitos da transição só rodam quando o claim vence.
+  const runner = { stop: jest.fn(async () => ({ id: 'enr1' })) };
   const prisma = makePrisma(conversation);
   const notifications = {
     notify: jest.fn(async () => ({})),
@@ -148,6 +150,17 @@ describe('CadenceTransitionService', () => {
     expect(prisma.card.update).not.toHaveBeenCalled();
     expect(notifications.notify).not.toHaveBeenCalled();
     expect(notifications.notifyOrgAgents).not.toHaveBeenCalled();
+  });
+
+  it('FIX 4: claim perdido (stop devolve null) → nenhum efeito colateral', async () => {
+    const { runner, prisma, notifications, service } = makeDeps();
+    runner.stop.mockResolvedValueOnce(null as any); // outro caminho já finalizou
+    await service.apply(enrollment(), 'SIM', cadence());
+
+    expect(runner.stop).toHaveBeenCalledWith('enr1', 'replied_yes');
+    expect(prisma.conversationTag.create).not.toHaveBeenCalled();
+    expect(notifications.notify).not.toHaveBeenCalled();
+    expect(prisma.conversation.update).not.toHaveBeenCalled();
   });
 
   it('tag já aplicada (P2002) não propaga erro', async () => {

@@ -1,4 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import {
@@ -36,6 +41,7 @@ interface CadenceLike {
   organizationId: string;
   trigger: string;
   enabled: boolean;
+  allowManual?: boolean;
   lostStageId?: string | null;
   optOutTagId?: string | null;
   steps: CadenceStepLike[];
@@ -74,21 +80,39 @@ export class CadenceRunner {
     conversationId: string,
     cadenceId: string,
     source: CadenceStartSource,
+    orgId?: string,
   ): Promise<CadenceEnrollment | null> {
-    // Idempotência: já há um enrollment ACTIVE desta cadência → não duplica.
+    // Idempotência: qualquer enrollment ACTIVE na conversa → não duplica
+    // (independe da cadência: uma conversa só tem uma cadência viva por vez).
     const existing =
       await this.enrollments.findActiveByConversation(conversationId);
-    if (existing && existing.cadenceId === cadenceId) return existing;
+    if (existing) return existing;
 
     const cadence = (await this.cadences.findById(
       cadenceId,
     )) as CadenceLike | null;
     if (!cadence || cadence.steps.length === 0) return null;
 
+    // FIX 1: no caminho manual (orgId presente) exige posse + habilitada +
+    // permissão de start manual. Callers internos (orgId ausente) seguem.
+    if (orgId && cadence.organizationId !== orgId) {
+      throw new ForbiddenException('cadence_not_in_org');
+    }
+    if (!cadence.enabled) {
+      if (orgId) throw new BadRequestException('cadence_disabled');
+      return null; // segurança: cadência desabilitada nunca inicia
+    }
+    if (source === 'MANUAL' && orgId && !cadence.allowManual) {
+      throw new BadRequestException('cadence_manual_not_allowed');
+    }
+
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
     });
     if (!conversation) return null;
+    if (orgId && conversation.organizationId !== orgId) {
+      throw new ForbiddenException('conversation_not_in_org');
+    }
 
     // Guarda de opt-out: contato marcado como descadastrado → não matricula.
     if (cadence.optOutTagId) {
@@ -170,12 +194,16 @@ export class CadenceRunner {
       return;
     }
 
-    // Sem próximo passo → esgotou sem resposta.
-    await this.enrollments.update(enrollment.id, {
+    // Sem próximo passo → esgotou sem resposta. Reivindica o encerramento de
+    // forma atômica (compare-and-set em ACTIVE): se outro caminho já finalizou
+    // (ex.: resposta do cliente em paralelo), não aplica efeitos colaterais.
+    const claimed = await this.enrollments.finishIfActive(enrollment.id, {
       status: 'COMPLETED_NO_REPLY',
       endedAt: new Date(),
       endReason: 'exhausted',
     });
+    if (!claimed) return;
+
     if (cadence.lostStageId && enrollment.cardId) {
       await this.moveCardToStage(enrollment.cardId, cadence.lostStageId);
     }
@@ -189,15 +217,27 @@ export class CadenceRunner {
   async stop(
     enrollmentId: string,
     reason: string,
+    orgId?: string,
   ): Promise<CadenceEnrollment | null> {
     const enrollment = await this.enrollments.findById(enrollmentId);
     if (!enrollment) return null;
 
-    const updated = await this.enrollments.update(enrollment.id, {
+    // FIX 1: endpoint manual passa orgId → bloqueia acesso cross-tenant.
+    if (orgId && enrollment.organizationId !== orgId) {
+      throw new ForbiddenException('enrollment_not_in_org');
+    }
+
+    // Pré-check barato em memória; a porta autoritativa é o write condicional.
+    if (enrollment.status !== 'ACTIVE') return enrollment;
+
+    // FIX 4: reivindica o encerramento atomicamente (compare-and-set em
+    // ACTIVE). Só cancela toques/emite evento se este caminho venceu a corrida.
+    const claimed = await this.enrollments.finishIfActive(enrollment.id, {
       status: this.statusForReason(reason),
       endedAt: new Date(),
       endReason: reason,
     });
+    if (!claimed) return enrollment;
 
     // Cancela os toques CADENCE ainda pendentes desta conversa.
     await this.scheduledMessages.cancelPendingForConversation(
@@ -211,7 +251,7 @@ export class CadenceRunner {
       'cadence:stopped',
       { enrollmentId: enrollment.id, reason },
     );
-    return updated;
+    return this.enrollments.findById(enrollment.id);
   }
 
   async maybeStartForStage(
