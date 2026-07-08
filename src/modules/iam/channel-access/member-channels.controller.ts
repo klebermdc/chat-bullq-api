@@ -25,7 +25,8 @@ export class MemberChannelsController {
   ) {}
 
   @Get(':memberId/channels')
-  @ApiOperation({ summary: 'List channels a member can access.' })
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({ summary: 'List channels a member can access. (Gestão — só OWNER/ADMIN.)' })
   list(
     @CurrentOrg('id') orgId: string,
     @Param('memberId') memberId: string,

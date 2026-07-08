@@ -26,7 +26,8 @@ export class ChannelAgentsController {
   ) {}
 
   @Get(':channelId/agents')
-  @ApiOperation({ summary: 'List AGENTs explicitly granted access to this channel.' })
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({ summary: 'List AGENTs explicitly granted access to this channel. (Gestão — só OWNER/ADMIN.)' })
   list(
     @CurrentOrg('id') orgId: string,
     @Param('channelId') channelId: string,
