@@ -48,6 +48,6 @@ import { ReengageSuggestionController } from './inactivity/reengage-suggestion.c
     InactivityWatchdogCron,
     InactivityReportService,
   ],
-  exports: [ScheduledMessagesService],
+  exports: [ScheduledMessagesService, ScheduledMessagesRepository],
 })
 export class SchedulingModule {}
