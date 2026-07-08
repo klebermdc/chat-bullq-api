@@ -164,7 +164,7 @@ export function computeFacets(orders: OfpOrder[]): ReportFacets {
     statuses: [...st].sort(),
     produtos: [...pr].sort(),
     fornecedores: [...fo].sort(),
-    anos: [...an].sort((a, b) => b - a),
+    anos: [...an].filter((y) => y >= 2015 && y <= 2035).sort((a, b) => b - a),
     meses: [...me].sort((a, b) => a - b),
   };
 }
