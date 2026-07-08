@@ -60,10 +60,14 @@ export class AgentRouterService {
     latestMessageText: string,
     recentMessages: ClassifierMessage[] = [],
   ): Promise<AgentSelection | null> {
-    // 1. Conversa em andamento — mantém o agent atual
+    // 1. Conversa em andamento — mantém o agent atual, DESDE QUE ainda esteja
+    // ativo. Se o activeAgent foi desativado/removido, não o retornamos: caímos
+    // no classificador/orchestrator (steps 2-3) em vez de deixar a conversa
+    // muda. Sem o filtro isActive/deletedAt, o runner re-resolvia com esse mesmo
+    // filtro, achava null e abortava sem fallback — cliente ficava sem resposta.
     if (conversation.activeAgentId) {
-      const agent = await this.prisma.aiAgent.findUnique({
-        where: { id: conversation.activeAgentId },
+      const agent = await this.prisma.aiAgent.findFirst({
+        where: { id: conversation.activeAgentId, isActive: true, deletedAt: null },
         select: { id: true, name: true },
       });
       if (agent) {
@@ -306,7 +310,10 @@ export class AgentRouterService {
       ?.value.toLowerCase() ?? '';
     const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
     const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
-    const nowMinutes = parseInt(hour, 10) * 60 + parseInt(minute, 10);
+    // Alguns builds ICU emitem "24" para a meia-noite com hour12:false; o `% 24`
+    // normaliza para 0 e impede que nowMinutes (24*60=1440) estoure toda janela
+    // cujo fim é ≤ 23:59 (1439), o que faria a IA calar dentro do horário.
+    const nowMinutes = (parseInt(hour, 10) % 24) * 60 + parseInt(minute, 10);
 
     if (!DAY_KEYS.includes(weekday as (typeof DAY_KEYS)[number])) {
       return true;

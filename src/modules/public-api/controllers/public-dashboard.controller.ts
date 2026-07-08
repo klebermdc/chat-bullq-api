@@ -2,6 +2,7 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { DashboardService } from '../../dashboard/dashboard.service';
 import { ApiKeyAuthGuard } from '../../../common/guards';
+import { ApiKeyThrottleGuard } from '../guards/api-key-throttle.guard';
 import { CurrentOrg } from '../../../common/decorators';
 
 function parseRange(from?: string, to?: string) {
@@ -14,7 +15,7 @@ function parseRange(from?: string, to?: string) {
 
 @ApiTags('Public API · Dashboard')
 @ApiSecurity('api-key')
-@UseGuards(ApiKeyAuthGuard)
+@UseGuards(ApiKeyAuthGuard, ApiKeyThrottleGuard)
 @Controller('public/dashboard')
 export class PublicDashboardController {
   constructor(private readonly service: DashboardService) {}

@@ -72,7 +72,8 @@ export class ChatbotEngineService {
         const edges = firstNode.edges as any[];
         const nextId = edges[0]?.targetNodeId;
         if (nextId) {
-          session = (await this.sessionService.update(conversationId, { currentNodeId: nextId }))!;
+          const advanced = await this.sessionService.update(conversationId, { currentNodeId: nextId });
+          if (advanced) session = advanced;
         }
       }
     }
@@ -139,11 +140,23 @@ export class ChatbotEngineService {
 
       currentNodeId = result.nextNodeId;
       if (currentNodeId) {
-        session = (await this.sessionService.update(conversationId, {
+        const advanced = await this.sessionService.update(conversationId, {
           currentNodeId,
           waitingForInput: false,
           variables: session.variables,
-        }))!;
+        });
+        // update() retorna null quando a sessão foi destruída concorrentemente
+        // (outra mensagem do mesmo contato encerrou o fluxo — o processor roda
+        // com concurrency:5 sem trava por conversa). Sem esta guarda, o `!`
+        // deixava `session` null e a próxima iteração crashava em
+        // `session.variables`. Aborta o loop graciosamente.
+        if (!advanced) {
+          this.logger.warn(
+            `Sessão do chatbot sumiu durante o avanço (conv ${conversationId}); abortando loop.`,
+          );
+          break;
+        }
+        session = advanced;
       }
     }
 

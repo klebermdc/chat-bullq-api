@@ -27,6 +27,18 @@ export class WebhookDispatchService {
 
     const data = mapWebhookData(event.trigger, event.payload);
     for (const sub of subs) {
+      // Idempotência por (subscription, outbox event): o AutomationEventProcessor
+      // chama dispatch() no topo de process() e re-executa em cada retry do BullMQ
+      // (ex.: contenção de lock por contato re-lança). Sem esta guarda, cada retry
+      // criava uma WebhookDelivery nova e re-disparava o POST (o jobId é liberado
+      // após removeOnComplete) → entrega duplicada, ou deixava a linha presa em
+      // PENDING quando o dedup do jobId derrubava o re-enqueue.
+      const existing = await this.prisma.webhookDelivery.findFirst({
+        where: { subscriptionId: sub.id, outboxEventId: event.outboxEventId },
+        select: { id: true },
+      });
+      if (existing) continue;
+
       const delivery = await this.prisma.webhookDelivery.create({
         data: {
           subscriptionId: sub.id,

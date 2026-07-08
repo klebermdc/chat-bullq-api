@@ -4,7 +4,10 @@ describe('WebhookDispatchService', () => {
   const build = () => {
     const prisma = {
       webhookSubscription: { findMany: jest.fn().mockResolvedValue([{ id: 'sub1' }, { id: 'sub2' }]) },
-      webhookDelivery: { create: jest.fn().mockImplementation(({ data }) => ({ id: `del-${data.subscriptionId}`, ...data })) },
+      webhookDelivery: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockImplementation(({ data }) => ({ id: `del-${data.subscriptionId}`, ...data })),
+      },
     };
     const queue = { add: jest.fn().mockResolvedValue(undefined) };
     return { prisma, queue, service: new WebhookDispatchService(prisma as any, queue as any) };
@@ -34,5 +37,21 @@ describe('WebhookDispatchService', () => {
     prisma.webhookSubscription.findMany.mockResolvedValue([]);
     await service.dispatch(event as any);
     expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('é idempotente: pula subscription que já tem delivery para o mesmo outbox event', async () => {
+    const { prisma, queue, service } = build();
+    // sub1 já entregou este outbox event (retry do automation job); sub2 não.
+    prisma.webhookDelivery.findFirst.mockImplementation(({ where }: any) =>
+      where.subscriptionId === 'sub1' ? { id: 'del-existente' } : null,
+    );
+    await service.dispatch(event as any);
+    // Só sub2 gera nova delivery + job; sub1 é pulada (sem POST duplicado).
+    expect(prisma.webhookDelivery.create).toHaveBeenCalledTimes(1);
+    expect(prisma.webhookDelivery.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ subscriptionId: 'sub2' }) }),
+    );
+    expect(queue.add).toHaveBeenCalledTimes(1);
+    expect(queue.add.mock.calls[0][2].jobId).toBe('sub2:evt1');
   });
 });
