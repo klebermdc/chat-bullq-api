@@ -1786,3 +1786,46 @@ model AiProviderKey {
   @@index([organizationId], name: "idx_ai_provider_key_org")
   @@map("ai_provider_keys")
 }
+
+// ─── OFP Hub (Relatórios de Vendas) ───────────────
+
+model OfpSalesOrder {
+  id                  String    @id @default(cuid())
+  externalId          String    @unique @map("external_id")
+  pedido              String?
+  cliente             String?
+  emailCliente        String?   @map("email_cliente")
+  telefoneCliente     String?   @map("telefone_cliente")
+  vendedor            String?
+  fornecedor          String?
+  produto             String?
+  status              String?
+  venda               Decimal?  @db.Decimal(14, 2)
+  comissao            Decimal?  @db.Decimal(14, 2)
+  comissaoTotal       Decimal?  @map("comissao_total") @db.Decimal(14, 2)
+  porcentagemVendedor Decimal?  @map("porcentagem_vendedor") @db.Decimal(9, 2)
+  comissaoVendedor    Decimal?  @map("comissao_vendedor") @db.Decimal(14, 2)
+  comissaoGuia        Decimal?  @map("comissao_guia") @db.Decimal(14, 2)
+  enviado             Boolean?
+  guia                String?
+  data                DateTime?
+  dataRaw             String?   @map("data_raw")
+  createdAtExt        DateTime? @map("created_at_ext")
+  updatedAtExt        DateTime? @map("updated_at_ext")
+  syncedAt            DateTime  @default(now()) @map("synced_at")
+
+  @@index([vendedor])
+  @@index([data])
+  @@index([status])
+  @@map("ofp_sales_orders")
+}
+
+model OfpSyncState {
+  id         Int       @id @default(1)
+  lastSyncAt DateTime? @map("last_sync_at")
+  lastCount  Int?      @map("last_count")
+  lastError  String?   @map("last_error")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@map("ofp_sync_state")
+}
