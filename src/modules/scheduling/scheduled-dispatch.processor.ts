@@ -1,10 +1,10 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { Job } from 'bullmq';
+import { Job, Queue } from 'bullmq';
 import { PrismaService } from '../../database/prisma.service';
 import { MessagesService } from '../messaging/messages/messages.service';
 import { ScheduledMessagesRepository } from './scheduled-messages.repository';
-import { SCHEDULED_DISPATCH_QUEUE } from './scheduling.constants';
+import { SCHEDULED_DISPATCH_QUEUE, SCHEDULED_DISPATCH_JOB } from './scheduling.constants';
 
 @Processor(SCHEDULED_DISPATCH_QUEUE, { concurrency: 5 })
 export class ScheduledDispatchProcessor extends WorkerHost {
@@ -14,6 +14,7 @@ export class ScheduledDispatchProcessor extends WorkerHost {
     private readonly repo: ScheduledMessagesRepository,
     private readonly prisma: PrismaService,
     private readonly messages: MessagesService,
+    @InjectQueue(SCHEDULED_DISPATCH_QUEUE) private readonly queue: Queue,
   ) {
     super();
   }
@@ -76,6 +77,38 @@ export class ScheduledDispatchProcessor extends WorkerHost {
         sentMessageId: (sent as { id: string }).id,
         sentAt: new Date(),
       });
+
+      // Auto-retry (só AUTO_REENGAGE): agenda o próximo disparo se ainda há
+      // tentativas. O auto-cancel no inbound (Fase 1) cancela esse próximo se
+      // o cliente responder antes.
+      if (row.origin === 'AUTO_REENGAGE' && row.attempt < row.maxAttempts) {
+        const nextAt = new Date(Date.now() + (row.retryEveryHours ?? 48) * 3600_000);
+        const next = await this.repo.create({
+          organizationId: row.organizationId,
+          conversationId: row.conversationId,
+          contactId: row.contactId,
+          channelId: row.channelId,
+          createdById: row.createdById,
+          origin: 'AUTO_REENGAGE',
+          contentType: row.contentType,
+          content: row.content as any,
+          scheduledAt: nextAt,
+          attempt: row.attempt + 1,
+          maxAttempts: row.maxAttempts,
+          retryEveryHours: row.retryEveryHours,
+        });
+        const job = await this.queue.add(
+          SCHEDULED_DISPATCH_JOB,
+          { scheduledMessageId: next.id },
+          {
+            delay: Math.max(0, nextAt.getTime() - Date.now()),
+            jobId: `sched:${next.id}`,
+            removeOnComplete: 100,
+            removeOnFail: 100,
+          },
+        );
+        await this.repo.update(next.id, { jobId: String(job.id) });
+      }
     } catch (err) {
       this.logger.error(`scheduled_dispatch_failed id=${row.id}: ${(err as Error).message}`);
       await this.repo.update(row.id, {

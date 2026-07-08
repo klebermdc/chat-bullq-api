@@ -3,6 +3,7 @@ import { ScheduledDispatchProcessor } from './scheduled-dispatch.processor';
 function makeDeps(row: any) {
   const repo = {
     findById: jest.fn(async () => row),
+    create: jest.fn(async (d: any) => ({ id: 's2', ...d })),
     update: jest.fn(async (id: string, data: any) => ({ ...row, ...data })),
     claimForDispatch: jest.fn(async () => true),
   };
@@ -17,8 +18,14 @@ function makeDeps(row: any) {
     },
   };
   const messages = { send: jest.fn(async () => ({ id: 'm1' })) };
-  const processor = new ScheduledDispatchProcessor(repo as any, prisma as any, messages as any);
-  return { processor, repo, messages };
+  const queue = { add: jest.fn(async () => ({ id: 'j' })) };
+  const processor = new ScheduledDispatchProcessor(
+    repo as any,
+    prisma as any,
+    messages as any,
+    queue as any,
+  );
+  return { processor, repo, messages, queue };
 }
 
 describe('ScheduledDispatchProcessor', () => {
@@ -71,7 +78,13 @@ describe('ScheduledDispatchProcessor', () => {
       },
     };
     const messages = { send: jest.fn() };
-    const processor = new ScheduledDispatchProcessor(repo as any, prisma as any, messages as any);
+    const queue = { add: jest.fn(async () => ({ id: 'j' })) };
+    const processor = new ScheduledDispatchProcessor(
+      repo as any,
+      prisma as any,
+      messages as any,
+      queue as any,
+    );
     await processor.process({ data: { scheduledMessageId: 's1' } } as any);
     expect(messages.send).not.toHaveBeenCalled();
     expect(repo.claimForDispatch).not.toHaveBeenCalled();
@@ -86,9 +99,53 @@ describe('ScheduledDispatchProcessor', () => {
     const repo = { findById: jest.fn(async () => row), update: jest.fn(async (id, d) => ({ ...row, ...d })) };
     const prisma = { conversation: { findUnique: jest.fn(async () => ({ id: 'c1', status: 'CLOSED', isArchived: false })) } };
     const messages = { send: jest.fn() };
-    const processor = new ScheduledDispatchProcessor(repo as any, prisma as any, messages as any);
+    const queue = { add: jest.fn(async () => ({ id: 'j' })) };
+    const processor = new ScheduledDispatchProcessor(
+      repo as any,
+      prisma as any,
+      messages as any,
+      queue as any,
+    );
     await processor.process({ data: { scheduledMessageId: 's1' } } as any);
     expect(messages.send).not.toHaveBeenCalled();
     expect(repo.update).toHaveBeenCalledWith('s1', expect.objectContaining({ status: 'FAILED' }));
+  });
+
+  it('AUTO_REENGAGE com tentativas restantes: agenda o próximo (attempt+1) após SENT', async () => {
+    const row = {
+      ...base,
+      origin: 'AUTO_REENGAGE',
+      attempt: 1,
+      maxAttempts: 2,
+      retryEveryHours: 48,
+      contactId: 'ct1',
+      channelId: 'ch1',
+    };
+    const { processor, repo, queue } = makeDeps(row);
+    await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        origin: 'AUTO_REENGAGE',
+        attempt: 2,
+        maxAttempts: 2,
+        contactId: 'ct1',
+        channelId: 'ch1',
+      }),
+    );
+    expect(queue.add).toHaveBeenCalled();
+    expect(repo.update).toHaveBeenCalledWith('s2', { jobId: 'j' });
+  });
+
+  it('AUTO_REENGAGE na última tentativa: NÃO agenda próximo', async () => {
+    const row = {
+      ...base,
+      origin: 'AUTO_REENGAGE',
+      attempt: 2,
+      maxAttempts: 2,
+      retryEveryHours: 48,
+    };
+    const { processor, repo } = makeDeps(row);
+    await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+    expect(repo.create).not.toHaveBeenCalled();
   });
 });
