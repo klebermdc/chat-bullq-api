@@ -59,7 +59,14 @@ export class OrganizationsService {
     return this.repository.findMembers(orgId);
   }
 
-  async inviteMember(orgId: string, dto: InviteMemberDto, inviterId: string) {
+  async inviteMember(orgId: string, dto: InviteMemberDto, inviterId: string, actorRole?: OrgRole) {
+    // Só OWNER pode conceder o papel OWNER. Sem esta barreira, um ADMIN podia
+    // convidar (auto-aceitando, se o e-mail já existir) alguém como OWNER e
+    // escalar privilégio — o mesmo bloqueio já existe em updateMemberRole.
+    if (actorRole === 'ADMIN' && dto.role === 'OWNER') {
+      throw new ForbiddenException('Only owners can assign the owner role');
+    }
+
     // Check if user already exists and is already a member
     const existingUser = await this.repository.findUserByEmail(dto.email);
     if (existingUser) {
@@ -145,7 +152,11 @@ export class OrganizationsService {
       throw new ForbiddenException('Cannot remove the organization owner');
     }
 
-    if (memberId === actorId) {
+    // Compara pelo userId REAL do membership, não pelo memberId da URL: como
+    // findMembership resolve por id de membership primeiro, `memberId` costuma
+    // ser o id da userOrganization (≠ actorId, que é o id do user), então a
+    // comparação antiga nunca batia e a trava de auto-remoção não funcionava.
+    if (membership.userId === actorId) {
       throw new BadRequestException('Cannot remove yourself. Transfer ownership first.');
     }
 
