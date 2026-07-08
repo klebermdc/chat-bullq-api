@@ -54,14 +54,19 @@ export class OfpSyncService {
     };
   }
 
-  async sync(): Promise<{ count: number; lastSyncAt: Date }> {
+  // NOTE: `running` is an in-process guard only. On a multi-replica deploy with the
+  // cron enabled, replicas could sync concurrently — safe because upsert is idempotent,
+  // but it is not a global lock. Single-instance deploy today.
+  async sync(): Promise<{ count: number; lastSyncAt: Date; skipped?: boolean }> {
     if (this.running) {
       this.logger.warn('Sync já em andamento — ignorando chamada concorrente');
-      return { count: 0, lastSyncAt: new Date() };
+      return { count: 0, lastSyncAt: new Date(), skipped: true };
     }
     this.running = true;
     try {
       const orders = await this.ofp.getOrders();
+      // Sequential upsert of the full set (~8500 rows). If interrupted mid-loop,
+      // the next run self-heals since every row is upserted by externalId.
       for (const o of orders) {
         const row = this.toRow(o);
         await this.prisma.ofpSalesOrder.upsert({
@@ -69,6 +74,12 @@ export class OfpSyncService {
           create: row,
           update: row,
         });
+      }
+      // Reconcile deletions: drop local rows no longer present upstream.
+      // Guard: never wipe the table if the fetch came back empty (transient failure).
+      const seen = orders.map((o) => o.id).filter(Boolean);
+      if (seen.length > 0) {
+        await this.prisma.ofpSalesOrder.deleteMany({ where: { externalId: { notIn: seen } } });
       }
       const lastSyncAt = new Date();
       await this.prisma.ofpSyncState.upsert({

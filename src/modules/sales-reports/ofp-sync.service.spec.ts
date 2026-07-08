@@ -9,8 +9,9 @@ describe('OfpSyncService', () => {
   ];
   const upsert = jest.fn().mockResolvedValue({});
   const stateUpsert = jest.fn().mockResolvedValue({});
+  const deleteMany = jest.fn().mockResolvedValue({ count: 0 });
   const prisma = {
-    ofpSalesOrder: { upsert },
+    ofpSalesOrder: { upsert, deleteMany },
     ofpSyncState: { upsert: stateUpsert },
   } as any;
   const ofp = { getOrders: jest.fn().mockResolvedValue(orders) } as any;
@@ -50,5 +51,16 @@ describe('OfpSyncService', () => {
   it('is idempotent: running twice resolves with count again', async () => {
     await service.sync();
     await expect(service.sync()).resolves.toEqual(expect.objectContaining({ count: 1 }));
+  });
+
+  it('reconciles deletions: removes rows whose externalId is not in the fetched set', async () => {
+    await service.sync();
+    expect(deleteMany).toHaveBeenCalledWith({ where: { externalId: { notIn: ['o1'] } } });
+  });
+
+  it('does NOT delete when the fetch returns zero orders (guard against wipe)', async () => {
+    ofp.getOrders.mockResolvedValueOnce([]);
+    await service.sync();
+    expect(deleteMany).not.toHaveBeenCalled();
   });
 });
