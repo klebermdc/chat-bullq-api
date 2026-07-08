@@ -40,6 +40,13 @@ export class EnrollmentsRepository {
     });
   }
 
+  findActiveWithCadence(conversationId: string) {
+    return this.prisma.cadenceEnrollment.findFirst({
+      where: { conversationId, status: 'ACTIVE' },
+      include: { cadence: { include: { steps: { orderBy: { order: 'asc' } } } } },
+    });
+  }
+
   update(
     id: string,
     data: Prisma.CadenceEnrollmentUncheckedUpdateInput,
