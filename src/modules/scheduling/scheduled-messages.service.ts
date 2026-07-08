@@ -79,4 +79,80 @@ export class ScheduledMessagesService {
     this.realtime.emitToConversation(conversation.id, 'scheduled:created', updated);
     return updated;
   }
+
+  async cancel(id: string, organizationId: string, reason: string): Promise<ScheduledMessage> {
+    const row = await this.repo.findById(id);
+    if (!row) throw new NotFoundException('Scheduled message not found');
+    if (row.organizationId !== organizationId) throw new ForbiddenException();
+    if (row.status !== 'PENDING') return row; // idempotente
+
+    if (row.jobId) await this.queue.remove(row.jobId).catch(() => undefined);
+    const updated = await this.repo.update(id, {
+      status: 'CANCELED',
+      canceledAt: new Date(),
+      cancelReason: reason,
+    });
+    this.realtime.emitToConversation(row.conversationId, 'scheduled:canceled', updated);
+    return updated;
+  }
+
+  /** Cancela todos os pendentes de uma conversa (usado no auto-cancel/fechamento). */
+  async cancelPendingForConversation(
+    conversationId: string,
+    reason: string,
+    origin?: string,
+  ): Promise<number> {
+    const pending = await this.repo.findPending(conversationId, origin);
+    for (const row of pending) {
+      if (row.jobId) await this.queue.remove(row.jobId).catch(() => undefined);
+      const updated = await this.repo.update(row.id, {
+        status: 'CANCELED',
+        canceledAt: new Date(),
+        cancelReason: reason,
+      });
+      this.realtime.emitToConversation(conversationId, 'scheduled:canceled', updated);
+    }
+    return pending.length;
+  }
+
+  async reschedule(
+    id: string,
+    dto: UpdateScheduledMessageDto,
+    organizationId: string,
+  ): Promise<ScheduledMessage> {
+    const row = await this.repo.findById(id);
+    if (!row) throw new NotFoundException('Scheduled message not found');
+    if (row.organizationId !== organizationId) throw new ForbiddenException();
+    if (row.status !== 'PENDING') throw new BadRequestException('Só agendamentos pendentes podem ser editados');
+
+    let scheduledAt = row.scheduledAt;
+    if (dto.scheduledAt) {
+      const when = new Date(dto.scheduledAt);
+      if (isNaN(when.getTime()) || when.getTime() <= Date.now()) {
+        throw new BadRequestException('scheduledAt deve ser uma data futura');
+      }
+      scheduledAt = when;
+    }
+
+    if (row.jobId) await this.queue.remove(row.jobId).catch(() => undefined);
+    const job = await this.queue.add(
+      SCHEDULED_DISPATCH_JOB,
+      { scheduledMessageId: row.id },
+      {
+        delay: Math.max(0, scheduledAt.getTime() - Date.now()),
+        jobId: `sched:${row.id}:${scheduledAt.getTime()}`,
+        removeOnComplete: 100,
+        removeOnFail: 100,
+      },
+    );
+
+    const updated = await this.repo.update(id, {
+      scheduledAt,
+      contentType: (dto.type as MessageContentType) ?? row.contentType,
+      content: dto.content ?? (row.content as any),
+      jobId: String(job.id),
+    });
+    this.realtime.emitToConversation(row.conversationId, 'scheduled:updated', updated);
+    return updated;
+  }
 }

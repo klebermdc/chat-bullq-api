@@ -12,11 +12,15 @@ function makeDeps() {
     }),
     findById: jest.fn(async (id: string) => rows.find((r) => r.id === id) ?? null),
     update: jest.fn(async (id: string, data: any) => {
-      const row = rows.find((r) => r.id === id);
+      let row = rows.find((r) => r.id === id);
+      if (!row) {
+        row = { id };
+        rows.push(row);
+      }
       Object.assign(row, data);
       return row;
     }),
-    findPending: jest.fn(async () => []),
+    findPending: jest.fn(async (): Promise<any[]> => []),
     listByConversation: jest.fn(async () => rows),
   };
   const prisma = {
@@ -71,5 +75,29 @@ describe('ScheduledMessagesService.create', () => {
         'ALL',
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('ScheduledMessagesService.cancel', () => {
+  const future = '2999-01-01T00:00:00.000Z';
+
+  it('marca CANCELED, remove o job e emite evento', async () => {
+    const { service, repo, queue } = makeDeps();
+    const created = await service.create(
+      { conversationId: 'c1', type: 'TEXT', content: { text: 'oi' }, scheduledAt: future },
+      'user1', 'org1', 'ALL',
+    );
+    const canceled = await service.cancel(created.id, 'org1', 'manual');
+    expect(canceled.status).toBe('CANCELED');
+    expect(canceled.cancelReason).toBe('manual');
+    expect(queue.remove).toHaveBeenCalledWith(created.jobId);
+  });
+
+  it('cancelPendingForConversation cancela pendentes com o motivo dado', async () => {
+    const { service, repo } = makeDeps();
+    repo.findPending.mockResolvedValueOnce([{ id: 's1', jobId: 'j1', status: 'PENDING' }]);
+    const n = await service.cancelPendingForConversation('c1', 'client_replied', 'AUTO_REENGAGE');
+    expect(n).toBe(1);
+    expect(repo.update).toHaveBeenCalledWith('s1', expect.objectContaining({ status: 'CANCELED', cancelReason: 'client_replied' }));
   });
 });
