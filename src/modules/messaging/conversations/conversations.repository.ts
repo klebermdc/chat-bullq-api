@@ -267,7 +267,13 @@ export class ConversationsRepository {
             },
           },
           tags: { include: { tag: true } },
-          _count: { select: { messages: true } },
+          _count: {
+            select: {
+              messages: true,
+              // Agendamentos pendentes → selo "⏰ msg agendada" no card da lista.
+              scheduledMessages: { where: { status: 'PENDING' } },
+            },
+          },
         },
         orderBy: { lastMessageAt: { sort: 'desc', nulls: 'last' } },
         skip,
