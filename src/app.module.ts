@@ -26,6 +26,7 @@ import { PipelinesModule } from './modules/pipelines/pipelines.module';
 import { SegmentsModule } from './modules/segments/segments.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { SalesRecoveryModule } from './modules/sales-recovery/sales-recovery.module';
+import { SchedulingModule } from './modules/scheduling/scheduling.module';
 import { AutomationsModule } from './modules/automations/automations.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { SalesReportsModule } from './modules/sales-reports/sales-reports.module';
@@ -79,6 +80,7 @@ import redisConfig from './config/redis.config';
     SegmentsModule,
     ProjectsModule,
     SalesRecoveryModule,
+    SchedulingModule,
     WebhooksModule,
     SalesReportsModule,
   ],

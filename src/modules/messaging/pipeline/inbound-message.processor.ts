@@ -1,6 +1,7 @@
 import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
+import { ScheduledMessagesService } from '../../scheduling/scheduled-messages.service';
 import { PrismaService } from '../../../database/prisma.service';
 import { IdempotencyService } from './idempotency.service';
 import { ContactResolverService } from './contact-resolver.service';
@@ -98,6 +99,8 @@ export class InboundMessageProcessor extends WorkerHost {
     private readonly outbox: OutboxService,
     private readonly watchdog: WatchdogService,
     private readonly salesRecovery: SalesRecoveryService,
+    @Inject(forwardRef(() => ScheduledMessagesService))
+    private readonly scheduled: ScheduledMessagesService,
     @InjectQueue('chatbot-processor') private readonly chatbotQueue: Queue,
   ) {
     super();
@@ -201,6 +204,9 @@ export class InboundMessageProcessor extends WorkerHost {
             where: { id: conversationId },
             data: {
               lastMessageAt: new Date(),
+              lastInboundAt: new Date(),
+              inactivityBand: null,
+              reengagedAt: null,
               // Mensagem genuína do cliente (INBOUND, não-echo) → aba "Esperando".
               // Echo (msg nossa que volta, OUTBOUND) não mexe no flag: resposta
               // do bot não pode tirar a conversa de "Esperando".
@@ -309,6 +315,22 @@ export class InboundMessageProcessor extends WorkerHost {
             `Recovery onInboundReply failed for conv ${conversationId}: ${err?.message ?? err}`,
           ),
         );
+        // Cliente respondeu → cancela reengajamentos automáticos pendentes e
+        // agendamentos manuais marcados com cancelOnReply.
+        this.scheduled
+          .cancelPendingForConversation(conversationId, 'client_replied', 'AUTO_REENGAGE')
+          .catch((e) =>
+            this.logger.warn(
+              `scheduled_autocancel_failed conv=${conversationId}: ${(e as Error).message}`,
+            ),
+          );
+        this.scheduled
+          .cancelPendingForConversationIfCancelOnReply(conversationId)
+          .catch((e) =>
+            this.logger.warn(
+              `scheduled_autocancel_failed conv=${conversationId}: ${(e as Error).message}`,
+            ),
+          );
       } else if (isEcho) {
         // Echo de msg nossa que finalmente voltou — cancela timer existente
         // (pode ter sido enviada por outro path que não passou pelo cancel).

@@ -123,6 +123,7 @@ model User {
   inboxViews            InboxView[]
   conversationReads     ConversationRead[]
   assignedCards         Card[]             @relation("CardAssignee")
+  scheduledMessages     ScheduledMessage[] @relation("ScheduledMessageCreator")
 
   @@map("users")
 }
@@ -201,6 +202,8 @@ model Organization {
   projects      Project[]
   webhookSubscriptions WebhookSubscription[]
   aiProviderKeys AiProviderKey[]
+  scheduledMessages ScheduledMessage[]
+  inactivitySettings InactivitySettings?
   messageTemplates MessageTemplate[]
   recoverySettings RecoverySettings?
 
@@ -284,6 +287,7 @@ model Channel {
   aiAgentChannels    AiAgentChannel[]
   segmentMemberships SegmentChannel[]
   primaryOfSegments  Segment[]            @relation("SegmentPrimaryChannel")
+  scheduledMessages  ScheduledMessage[]
   messageTemplates   MessageTemplate[]
 
   @@index([organizationId, type], name: "idx_channel_org_type")
@@ -467,6 +471,7 @@ model Contact {
   tags          ContactTag[]
   aiMemories    AiAgentMemory[]
   cards         Card[]           @relation("CardContact")
+  scheduledMessages ScheduledMessage[]
 
   @@index([organizationId, phone], name: "idx_contact_org_phone")
   @@index([organizationId, email], name: "idx_contact_org_email")
@@ -515,6 +520,11 @@ model Conversation {
   // Conversas CLOSED vão para a aba "Finalizados" independente deste valor.
   awaitingHumanReply Boolean         @default(false) @map("awaiting_human_reply")
   lastMessageAt   DateTime?          @map("last_message_at")
+  lastInboundAt       DateTime? @map("last_inbound_at")
+  lastOutboundAt      DateTime? @map("last_outbound_at")
+  inactivityBand      Int?      @map("inactivity_band")
+  reengageDismissedAt DateTime? @map("reengage_dismissed_at")
+  reengagedAt         DateTime? @map("reengaged_at")
   firstResponseAt DateTime?          @map("first_response_at")
   closedAt        DateTime?          @map("closed_at")
   reopenedAt      DateTime?          @map("reopened_at")
@@ -586,6 +596,7 @@ model Conversation {
   aiPendingActions AiPendingAction[]
   reads            ConversationRead[]
   cards            Card[]                 @relation("CardConversation")
+  scheduledMessages ScheduledMessage[]
 
   @@index([organizationId, status], name: "idx_conv_org_status")
   @@index([organizationId, status, awaitingHumanReply], name: "idx_conv_org_status_awaiting")
@@ -1801,6 +1812,79 @@ model AiProviderKey {
 
   @@index([organizationId], name: "idx_ai_provider_key_org")
   @@map("ai_provider_keys")
+}
+
+enum ScheduledMessageStatus {
+  PENDING
+  SENDING
+  SENT
+  CANCELED
+  FAILED
+}
+
+enum ScheduledMessageOrigin {
+  MANUAL
+  AUTO_REENGAGE
+}
+
+model ScheduledMessage {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  conversationId String @map("conversation_id")
+  contactId      String @map("contact_id")
+  channelId      String @map("channel_id")
+  createdById    String? @map("created_by_id")
+  origin         ScheduledMessageOrigin @default(MANUAL)
+
+  contentType  MessageContentType @default(TEXT)
+  content      Json
+  quickReplyId String? @map("quick_reply_id")
+  templateId   String? @map("template_id")
+
+  scheduledAt DateTime @map("scheduled_at")
+  status      ScheduledMessageStatus @default(PENDING)
+  jobId       String? @map("job_id")
+
+  attempt         Int  @default(1)
+  maxAttempts     Int  @default(1)
+  retryEveryHours Int? @map("retry_every_hours")
+  cancelOnReply   Boolean @default(false) @map("cancel_on_reply")
+
+  sentMessageId String?   @map("sent_message_id")
+  sentAt        DateTime? @map("sent_at")
+  canceledAt    DateTime? @map("canceled_at")
+  cancelReason  String?   @map("cancel_reason")
+  failedReason  String?   @map("failed_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId], references: [id])
+  createdBy    User?        @relation("ScheduledMessageCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status, scheduledAt], name: "idx_sched_org_status_time")
+  @@index([conversationId, status], name: "idx_sched_conv_status")
+  @@map("scheduled_messages")
+}
+
+model InactivitySettings {
+  organizationId   String   @id @map("organization_id")
+  enabled          Boolean  @default(true)
+  bandsDays        Json     @default("[3, 7, 15, 30]")
+  autoReengage     Boolean  @default(false) @map("auto_reengage")
+  reengageFromBand Int      @default(1) @map("reengage_from_band")
+  maxAttempts      Int      @default(2) @map("max_attempts")
+  retryEveryHours  Int      @default(48) @map("retry_every_hours")
+  quietHoursStart  Int?     @map("quiet_hours_start")
+  quietHoursEnd    Int?     @map("quiet_hours_end")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("inactivity_settings")
 }
 
 model MessageTemplate {
