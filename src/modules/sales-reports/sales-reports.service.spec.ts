@@ -75,6 +75,21 @@ describe('SalesReportsService', () => {
   it('getFacets forbids unmapped agent', async () => {
     await expect(service.getFacets({ role: OrgRole.AGENT, email: 'stranger@nope.com' })).rejects.toBeTruthy();
   });
+
+  it('getOrdersPage paginates and projects, admin sees all', async () => {
+    const r = await service.getOrdersPage({ role: OrgRole.ADMIN, email: 'kleber@orlandofastpass.com.br', perPage: 1, page: 1 });
+    expect(r.perPage).toBe(1);
+    expect(r.data.length).toBeLessThanOrEqual(1);
+    expect(typeof r.total).toBe('number');
+  });
+
+  it('getOrdersPage forces agent to own vendedor (ignores query vendedor)', async () => {
+    const spy = jest.spyOn(service as any, 'resolveVendedor');
+    const r = await service.getOrdersPage({ role: OrgRole.AGENT, email: 'pedro@orlandofastpass.com.br', vendedor: 'Rafael' });
+    expect(spy).toHaveBeenCalled();
+    // all returned rows (if any) must be the agent's own vendedor, never 'Rafael'
+    for (const row of r.data) expect(row.vendedor === 'Rafael').toBe(false);
+  });
 });
 
 describe('SalesReportsService db source', () => {

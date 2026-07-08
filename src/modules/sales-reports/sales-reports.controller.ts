@@ -38,6 +38,20 @@ export class SalesReportsController {
     });
   }
 
+  @Get('orders')
+  getOrders(
+    @CurrentUser('email') email: string,
+    @CurrentUserRole() role: OrgRole,
+    @Query() q: ReportQueryDto,
+  ) {
+    return this.service.getOrdersPage({
+      role, email,
+      vendedor: q.vendedor, month: q.month, year: q.year,
+      status: q.status, produto: q.produto, fornecedor: q.fornecedor, search: q.search,
+      page: q.page, perPage: q.per_page,
+    });
+  }
+
   @Get('facets')
   getFacets(@CurrentUser('email') email: string, @CurrentUserRole() role: OrgRole) {
     return this.service.getFacets({ role, email });
