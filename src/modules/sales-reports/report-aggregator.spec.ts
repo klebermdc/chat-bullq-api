@@ -1,4 +1,4 @@
-import { parseOfpDate, aggregate, filterOrders } from './report-aggregator';
+import { parseOfpDate, aggregate, filterOrders, computeFacets } from './report-aggregator';
 import type { OfpOrder } from './ofp-report.service';
 
 const o = (over: Partial<OfpOrder>): OfpOrder =>
@@ -87,6 +87,34 @@ describe('filterOrders', () => {
   });
   it('no filter returns all', () => {
     expect(filterOrders(orders, {}).length).toBe(4);
+  });
+  it('filters by status/produto/fornecedor exact', () => {
+    const os = [o({ status: 'Pendente', produto: 'Ingresso', fornecedor: 'JT' }), o({ status: 'Enviado', produto: 'Guiamento', fornecedor: 'X' })];
+    expect(filterOrders(os, { status: 'Pendente' }).length).toBe(1);
+    expect(filterOrders(os, { produto: 'Guiamento' }).length).toBe(1);
+    expect(filterOrders(os, { fornecedor: 'X' }).length).toBe(1);
+  });
+  it('search matches cliente/pedido/email/telefone (case-insensitive)', () => {
+    const os = [o({ cliente: 'Ana Souza' }), o({ pedido: 'PED-9', cliente: 'Zé' }), o({ email_cliente: 'foo@bar.com', cliente: 'X' })];
+    expect(filterOrders(os, { search: 'ana' }).length).toBe(1);
+    expect(filterOrders(os, { search: 'ped-9' }).length).toBe(1);
+    expect(filterOrders(os, { search: 'BAR.com' }).length).toBe(1);
+    expect(filterOrders(os, { search: 'nao-existe' }).length).toBe(0);
+  });
+});
+
+describe('computeFacets', () => {
+  it('returns distinct sorted values', () => {
+    const os = [
+      o({ status: 'Pendente', produto: 'Ingresso', fornecedor: 'JT', data: '07/07/2026' }),
+      o({ status: 'Enviado', produto: 'Ingresso', fornecedor: 'X', data: '10/06/2025' }),
+    ];
+    const f = computeFacets(os);
+    expect(f.statuses).toEqual(['Enviado', 'Pendente']);
+    expect(f.produtos).toEqual(['Ingresso']);
+    expect(f.fornecedores).toEqual(['JT', 'X']);
+    expect(f.anos).toEqual([2026, 2025]);
+    expect(f.meses).toEqual([6, 7]);
   });
 });
 

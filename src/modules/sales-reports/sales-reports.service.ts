@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { OrgRole } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { OfpReportService, OfpOrder } from './ofp-report.service';
-import { aggregate, filterOrders, SalesReport } from './report-aggregator';
+import { aggregate, computeFacets, filterOrders, ReportFacets, SalesReport } from './report-aggregator';
 
 export interface GetReportInput {
   role: OrgRole;
@@ -11,6 +11,10 @@ export interface GetReportInput {
   vendedor?: string;
   month?: number;
   year?: number;
+  status?: string;
+  produto?: string;
+  fornecedor?: string;
+  search?: string;
   includeOrders?: boolean;
 }
 
@@ -40,13 +44,16 @@ export class SalesReportsService {
     return map.get(email.toLowerCase()) ?? null;
   }
 
-  private async loadOrders(filters: { vendedor?: string; month?: number; year?: number }): Promise<OfpOrder[]> {
+  private async loadOrders(filters: { vendedor?: string; month?: number; year?: number; status?: string; produto?: string; fornecedor?: string }): Promise<OfpOrder[]> {
     const source = this.config.get<string>('OFP_REPORTS_SOURCE') ?? 'db';
     if (source === 'db') {
       const count = await this.prisma.ofpSalesOrder.count();
       if (count > 0) {
         const where: any = {};
         if (filters.vendedor) where.vendedor = filters.vendedor;
+        if (filters.status) where.status = filters.status;
+        if (filters.produto) where.produto = filters.produto;
+        if (filters.fornecedor) where.fornecedor = filters.fornecedor;
         if (filters.year && filters.month) {
           const start = new Date(filters.year, filters.month - 1, 1);
           const end = new Date(filters.year, filters.month, 1);
@@ -100,8 +107,8 @@ export class SalesReportsService {
       scope = 'all';
     }
 
-    const raw = await this.loadOrders({ vendedor, month: input.month, year: input.year });
-    const orders = filterOrders(raw, { vendedor, month: input.month, year: input.year });
+    const raw = await this.loadOrders({ vendedor, month: input.month, year: input.year, status: input.status, produto: input.produto, fornecedor: input.fornecedor });
+    const orders = filterOrders(raw, { vendedor, month: input.month, year: input.year, status: input.status, produto: input.produto, fornecedor: input.fornecedor, search: input.search });
     return aggregate(orders, {
       scope,
       seller: vendedor ?? null,
@@ -109,6 +116,18 @@ export class SalesReportsService {
       year: input.year,
       includeOrders: input.includeOrders,
     });
+  }
+
+  async getFacets(input: { role: OrgRole; email: string }): Promise<ReportFacets> {
+    const isAdmin = input.role === OrgRole.OWNER || input.role === OrgRole.ADMIN;
+    let vendedor: string | undefined;
+    if (!isAdmin) {
+      const own = await this.resolveVendedor(input.email);
+      if (!own) throw new ForbiddenException('Sua conta não está vinculada a um vendedor no OFP Hub.');
+      vendedor = own;
+    }
+    const orders = await this.loadOrders({ vendedor });
+    return computeFacets(orders);
   }
 
   async getVendedores(): Promise<Array<{ nome: string; email: string; role: string }>> {

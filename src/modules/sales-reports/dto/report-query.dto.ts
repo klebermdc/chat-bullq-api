@@ -11,6 +11,18 @@ export class ReportQueryDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(2000) @Max(2100)
   year?: number;
 
+  @IsOptional() @IsString()
+  status?: string;
+
+  @IsOptional() @IsString()
+  produto?: string;
+
+  @IsOptional() @IsString()
+  fornecedor?: string;
+
+  @IsOptional() @IsString()
+  search?: string;
+
   @IsOptional() @IsBooleanString()
   includeOrders?: string;
 }
