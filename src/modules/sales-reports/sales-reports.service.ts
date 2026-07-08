@@ -15,6 +15,7 @@ export interface GetReportInput {
   role: OrgRole;
   email: string;
   vendedor?: string;
+  day?: number;
   month?: number;
   year?: number;
   status?: string;
@@ -50,7 +51,7 @@ export class SalesReportsService {
     return map.get(email.toLowerCase()) ?? null;
   }
 
-  private async loadOrders(filters: { vendedor?: string; month?: number; year?: number; status?: string; produto?: string; fornecedor?: string }): Promise<OfpOrder[]> {
+  private async loadOrders(filters: { vendedor?: string; day?: number; month?: number; year?: number; status?: string; produto?: string; fornecedor?: string }): Promise<OfpOrder[]> {
     const source = this.config.get<string>('OFP_REPORTS_SOURCE') ?? 'db';
     if (source === 'db') {
       const count = await this.prisma.ofpSalesOrder.count();
@@ -60,7 +61,11 @@ export class SalesReportsService {
         if (filters.status) where.status = filters.status;
         if (filters.produto) where.produto = filters.produto;
         if (filters.fornecedor) where.fornecedor = filters.fornecedor;
-        if (filters.year && filters.month) {
+        if (filters.year && filters.month && filters.day) {
+          const start = new Date(filters.year, filters.month - 1, filters.day);
+          const end = new Date(filters.year, filters.month - 1, filters.day + 1);
+          where.data = { gte: start, lt: end };
+        } else if (filters.year && filters.month) {
           const start = new Date(filters.year, filters.month - 1, 1);
           const end = new Date(filters.year, filters.month, 1);
           where.data = { gte: start, lt: end };
@@ -113,8 +118,8 @@ export class SalesReportsService {
       scope = 'all';
     }
 
-    const raw = await this.loadOrders({ vendedor, month: input.month, year: input.year, status: input.status, produto: input.produto, fornecedor: input.fornecedor });
-    const orders = filterOrders(raw, { vendedor, month: input.month, year: input.year, status: input.status, produto: input.produto, fornecedor: input.fornecedor, search: input.search });
+    const raw = await this.loadOrders({ vendedor, day: input.day, month: input.month, year: input.year, status: input.status, produto: input.produto, fornecedor: input.fornecedor });
+    const orders = filterOrders(raw, { vendedor, day: input.day, month: input.month, year: input.year, status: input.status, produto: input.produto, fornecedor: input.fornecedor, search: input.search });
     return aggregate(orders, {
       scope,
       seller: vendedor ?? null,

@@ -28,6 +28,7 @@ export class SalesReportsController {
     return this.service.getReport({
       role, email,
       vendedor: q.vendedor,
+      day: q.day,
       month: q.month,
       year: q.year,
       status: q.status,

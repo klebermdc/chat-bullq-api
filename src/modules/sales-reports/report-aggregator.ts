@@ -27,7 +27,7 @@ export function parseOfpDate(data: string | null): string | null {
 export function filterOrders(
   orders: OfpOrder[],
   f: {
-    vendedor?: string; month?: number; year?: number;
+    vendedor?: string; day?: number; month?: number; year?: number;
     status?: string; produto?: string; fornecedor?: string; search?: string;
   },
 ): OfpOrder[] {
@@ -37,12 +37,13 @@ export function filterOrders(
     if (f.status && o.status !== f.status) return false;
     if (f.produto && o.produto !== f.produto) return false;
     if (f.fornecedor && o.fornecedor !== f.fornecedor) return false;
-    if (f.month || f.year) {
-      const ym = parseOfpDate(o.data);
-      if (!ym) return false;
-      const [yStr, mStr] = ym.split('-');
-      if (f.year && Number(yStr) !== f.year) return false;
-      if (f.month && Number(mStr) !== f.month) return false;
+    if (f.day || f.month || f.year) {
+      const m = o.data ? /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(o.data.trim()) : null;
+      if (!m) return false;
+      const dd = Number(m[1]), mm = Number(m[2]), yyyy = Number(m[3]);
+      if (f.year && yyyy !== f.year) return false;
+      if (f.month && mm !== f.month) return false;
+      if (f.day && dd !== f.day) return false;
     }
     if (q) {
       const hay = [o.cliente, o.pedido, o.email_cliente, o.telefone_cliente]

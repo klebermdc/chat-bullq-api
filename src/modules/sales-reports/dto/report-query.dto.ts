@@ -5,6 +5,9 @@ export class ReportQueryDto {
   @IsOptional() @IsString()
   vendedor?: string;
 
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(31)
+  day?: number;
+
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(12)
   month?: number;
 
