@@ -24,6 +24,7 @@ import { MessagesController } from './messages/messages.controller';
 import { MessagesService } from './messages/messages.service';
 import { MessagesRepository } from './messages/messages.repository';
 import { TranscriptionService } from './messages/transcription.service';
+import { ConversationSummaryService } from './messages/conversation-summary.service';
 import { UploadsService } from './messages/uploads.service';
 import { MediaResolverService } from './messages/media-resolver.service';
 import { AudioSourceService } from './messages/audio-source.service';
@@ -64,6 +65,7 @@ import { ContactsRepository } from './contacts/contacts.repository';
     MessagesService,
     MessagesRepository,
     TranscriptionService,
+    ConversationSummaryService,
     UploadsService,
     MediaResolverService,
     AudioSourceService,

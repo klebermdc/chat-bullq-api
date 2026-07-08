@@ -204,6 +204,8 @@ model Organization {
   aiProviderKeys AiProviderKey[]
   scheduledMessages ScheduledMessage[]
   inactivitySettings InactivitySettings?
+  messageTemplates MessageTemplate[]
+  recoverySettings RecoverySettings?
 
   @@map("organizations")
 }
@@ -286,6 +288,7 @@ model Channel {
   segmentMemberships SegmentChannel[]
   primaryOfSegments  Segment[]            @relation("SegmentPrimaryChannel")
   scheduledMessages  ScheduledMessage[]
+  messageTemplates   MessageTemplate[]
 
   @@index([organizationId, type], name: "idx_channel_org_type")
   @@map("channels")
@@ -547,6 +550,19 @@ model Conversation {
   aiDisabledBy  String?   @map("ai_disabled_by")
   aiDisabledAt  DateTime? @map("ai_disabled_at")
   activeAgentId String?   @map("active_agent_id")
+
+  // ─── Resumo IA (Painel Inteligente) ─────────────
+  /// Resumo automático da conversa gerado por LLM. null = nunca gerado.
+  aiSummary          String?   @map("ai_summary")
+  /// Sentimento do cliente: "satisfeito" | "neutro" | "irritado".
+  aiSummarySentiment String?   @map("ai_summary_sentiment")
+  /// Quando o resumo foi gerado (para exibir "gerado há X").
+  aiSummaryAt        DateTime? @map("ai_summary_at")
+  /// `lastMessageAt` coberto pelo resumo. Se != lastMessageAt atual, está velho.
+  aiSummaryUpToAt    DateTime? @map("ai_summary_up_to_at")
+  /// Objeção detectada + 3 respostas rápidas de quebra de objeção (JSON).
+  /// Formato: { "objecao": string|null, "respostas": string[] }. null = não gerado.
+  aiReplies          Json?     @map("ai_replies")
 
   // ─── Watchdog state ─────────────────────────────
   /// Tentativas de reativação. Cada vez que o watchdog reaciona a IA na
@@ -1869,4 +1885,88 @@ model InactivitySettings {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("inactivity_settings")
+}
+
+model MessageTemplate {
+  id               String    @id @default(cuid())
+  organizationId   String    @map("organization_id")
+  channelId        String    @map("channel_id")
+  name             String
+  displayName      String?   @map("display_name")
+  category         String
+  language         String    @default("pt_BR")
+  status           String    @default("DRAFT")
+  components       Json
+  variableExamples Json      @default("{}") @map("variable_examples")
+  metaTemplateId   String?   @unique @map("meta_template_id")
+  rejectionReason  String?   @map("rejection_reason")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  submittedAt      DateTime? @map("submitted_at")
+  reviewedAt       DateTime? @map("reviewed_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, name])
+  @@index([organizationId, status])
+  @@map("message_templates")
+}
+
+model RecoverySettings {
+  id                   String   @id @default(cuid())
+  organizationId       String   @unique @map("organization_id")
+  outreachChannelId    String?  @map("outreach_channel_id")
+  openerTemplateName   String?  @map("opener_template_name")
+  followUpTemplateName String?  @map("followup_template_name")
+  templateLang         String   @default("pt_BR") @map("template_lang")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("recovery_settings")
+}
+
+// ─── OFP Hub (Relatórios de Vendas) ───────────────
+
+model OfpSalesOrder {
+  id                  String    @id @default(cuid())
+  externalId          String    @unique @map("external_id")
+  pedido              String?
+  cliente             String?
+  emailCliente        String?   @map("email_cliente")
+  telefoneCliente     String?   @map("telefone_cliente")
+  vendedor            String?
+  fornecedor          String?
+  produto             String?
+  status              String?
+  venda               Decimal?  @db.Decimal(14, 2)
+  comissao            Decimal?  @db.Decimal(14, 2)
+  comissaoTotal       Decimal?  @map("comissao_total") @db.Decimal(14, 2)
+  porcentagemVendedor Decimal?  @map("porcentagem_vendedor") @db.Decimal(9, 2)
+  comissaoVendedor    Decimal?  @map("comissao_vendedor") @db.Decimal(14, 2)
+  comissaoGuia        Decimal?  @map("comissao_guia") @db.Decimal(14, 2)
+  enviado             Boolean?
+  guia                String?
+  data                DateTime?
+  dataRaw             String?   @map("data_raw")
+  createdAtExt        DateTime? @map("created_at_ext")
+  updatedAtExt        DateTime? @map("updated_at_ext")
+  syncedAt            DateTime  @default(now()) @map("synced_at")
+
+  @@index([vendedor])
+  @@index([data])
+  @@index([status])
+  @@map("ofp_sales_orders")
+}
+
+model OfpSyncState {
+  id         Int       @id @default(1)
+  lastSyncAt DateTime? @map("last_sync_at")
+  lastCount  Int?      @map("last_count")
+  lastError  String?   @map("last_error")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@map("ofp_sync_state")
 }

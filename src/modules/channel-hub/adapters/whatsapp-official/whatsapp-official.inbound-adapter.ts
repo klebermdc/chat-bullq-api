@@ -103,6 +103,16 @@ export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
       for (const entry of entries) {
         const changes = entry?.changes || [];
         for (const change of changes) {
+          if (change?.field === 'message_template_status_update') {
+            const v = change.value ?? {};
+            (result.templateStatusUpdates ??= []).push({
+              metaTemplateId: String(v.message_template_id),
+              status: String(v.event ?? v.status),
+              reason: v.reason ?? undefined,
+            });
+            continue;
+          }
+
           const value = change?.value;
           if (!value) continue;
 
