@@ -19,13 +19,15 @@ function makeDeps(row: any) {
   };
   const messages = { send: jest.fn(async () => ({ id: 'm1' })) };
   const queue = { add: jest.fn(async () => ({ id: 'j' })) };
+  const cadenceRunner = { onStepSent: jest.fn(async () => undefined) };
   const processor = new ScheduledDispatchProcessor(
     repo as any,
     prisma as any,
     messages as any,
     queue as any,
+    cadenceRunner as any,
   );
-  return { processor, repo, messages, queue };
+  return { processor, repo, messages, queue, cadenceRunner };
 }
 
 describe('ScheduledDispatchProcessor', () => {
@@ -84,6 +86,7 @@ describe('ScheduledDispatchProcessor', () => {
       prisma as any,
       messages as any,
       queue as any,
+      { onStepSent: jest.fn(async () => undefined) } as any,
     );
     await processor.process({ data: { scheduledMessageId: 's1' } } as any);
     expect(messages.send).not.toHaveBeenCalled();
@@ -105,6 +108,7 @@ describe('ScheduledDispatchProcessor', () => {
       prisma as any,
       messages as any,
       queue as any,
+      { onStepSent: jest.fn(async () => undefined) } as any,
     );
     await processor.process({ data: { scheduledMessageId: 's1' } } as any);
     expect(messages.send).not.toHaveBeenCalled();

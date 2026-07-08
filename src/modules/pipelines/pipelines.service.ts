@@ -1,12 +1,16 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
+  Logger,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { CardStatus, PipelineStageType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { CadenceRunner } from '../cadences/cadence-runner.service';
 import {
   CreateCardDto,
   CreatePipelineDto,
@@ -26,9 +30,13 @@ const DEFAULT_STAGES: UpsertStageDto[] = [
 
 @Injectable()
 export class PipelinesService {
+  private readonly logger = new Logger(PipelinesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    @Inject(forwardRef(() => CadenceRunner))
+    private readonly cadenceRunner: CadenceRunner,
   ) {}
 
   // ─── Pipelines ─────────────────────────────────
@@ -475,6 +483,24 @@ export class PipelinesService {
       toIndex: dto.toIndex,
       status: newStatus,
     });
+
+    // Hook de cadência: card entrou numa nova etapa → dispara a cadência com
+    // gatilho STAGE_ENTER/BOTH cuja etapa casa (no-op se não houver). Só quando
+    // o card está vinculado a uma conversa. Fire-and-forget.
+    if (!sameStage && card.conversationId) {
+      this.cadenceRunner
+        .maybeStartForStage(
+          card.conversationId,
+          cardId,
+          dto.toStageId,
+          organizationId,
+        )
+        .catch((err) =>
+          this.logger.warn(
+            `cadence_maybeStartForStage_failed card=${cardId}: ${(err as Error).message}`,
+          ),
+        );
+    }
 
     return this.prisma.card.findUnique({
       where: { id: cardId },

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { CadencesController } from './cadences.controller';
 import { CadencesService } from './cadences.service';
@@ -10,10 +10,12 @@ import {
   CADENCE_RUNNER,
 } from './cadence-transition.service';
 import { CadenceRunner } from './cadence-runner.service';
+import { CadenceInboundService } from './cadence-inbound.service';
 import { LlmModule } from '../ai-agents/llm/llm.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { SchedulingModule } from '../scheduling/scheduling.module';
+import { MessagingModule } from '../messaging/messaging.module';
 import { SCHEDULED_DISPATCH_QUEUE } from '../scheduling/scheduling.constants';
 
 @Module({
@@ -21,7 +23,11 @@ import { SCHEDULED_DISPATCH_QUEUE } from '../scheduling/scheduling.constants';
     LlmModule,
     NotificationsModule,
     RealtimeModule,
-    SchedulingModule,
+    // Task 8: scheduling↔cadences cycle (dispatch processor chama onStepSent) e
+    // messaging↔cadences cycle (inbound processor chama CadenceInboundService)
+    // → forwardRef nos dois lados para o app bootar.
+    forwardRef(() => SchedulingModule),
+    forwardRef(() => MessagingModule),
     // Necessário para `@InjectQueue(SCHEDULED_DISPATCH_QUEUE)` no runner.
     BullModule.registerQueue({ name: SCHEDULED_DISPATCH_QUEUE }),
   ],
@@ -33,6 +39,7 @@ import { SCHEDULED_DISPATCH_QUEUE } from '../scheduling/scheduling.constants';
     ResponseClassifierService,
     CadenceTransitionService,
     CadenceRunner,
+    CadenceInboundService,
     // Task 7: runner real substitui o stub. Sem ciclo runtime: o runner não
     // depende do transition service, então `useExisting` basta (sem forwardRef).
     { provide: CADENCE_RUNNER, useExisting: CadenceRunner },
@@ -44,6 +51,7 @@ import { SCHEDULED_DISPATCH_QUEUE } from '../scheduling/scheduling.constants';
     ResponseClassifierService,
     CadenceTransitionService,
     CadenceRunner,
+    CadenceInboundService,
   ],
 })
 export class CadencesModule {}

@@ -1,8 +1,9 @@
 import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
 import { PrismaService } from '../../database/prisma.service';
 import { MessagesService } from '../messaging/messages/messages.service';
+import { CadenceRunner } from '../cadences/cadence-runner.service';
 import { ScheduledMessagesRepository } from './scheduled-messages.repository';
 import { SCHEDULED_DISPATCH_QUEUE, SCHEDULED_DISPATCH_JOB } from './scheduling.constants';
 
@@ -15,6 +16,8 @@ export class ScheduledDispatchProcessor extends WorkerHost {
     private readonly prisma: PrismaService,
     private readonly messages: MessagesService,
     @InjectQueue(SCHEDULED_DISPATCH_QUEUE) private readonly queue: Queue,
+    @Inject(forwardRef(() => CadenceRunner))
+    private readonly cadenceRunner: CadenceRunner,
   ) {
     super();
   }
@@ -77,6 +80,18 @@ export class ScheduledDispatchProcessor extends WorkerHost {
         sentMessageId: (sent as { id: string }).id,
         sentAt: new Date(),
       });
+
+      // Hook de cadência: toque CADENCE enviado → avisa o runner para agendar
+      // o próximo passo (ou encerrar como esgotado). Fire-and-forget.
+      if (row.origin === 'CADENCE' && row.cadenceEnrollmentId) {
+        this.cadenceRunner
+          .onStepSent(row.cadenceEnrollmentId, row.cadenceStepOrder ?? 0)
+          .catch((err) =>
+            this.logger.warn(
+              `cadence_onStepSent_failed enrollment=${row.cadenceEnrollmentId}: ${(err as Error).message}`,
+            ),
+          );
+      }
 
       // Auto-retry (só AUTO_REENGAGE): agenda o próximo disparo se ainda há
       // tentativas. O auto-cancel no inbound (Fase 1) cancela esse próximo se
