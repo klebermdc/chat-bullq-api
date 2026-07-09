@@ -8,3 +8,8 @@ export const CADENCE_DEFAULT_STEPS = [
 export const OPTION_LABELS: Record<string, string> = {
   SIM: '1 - Sim', NAO: '2 - Não', DESCADASTRAR: '3 - Não quero mais receber',
 };
+
+export const DEFAULT_ON_YES_MESSAGE =
+  'Perfeito, {nome}! 😊 Já vou te encaminhar para um de nossos atendentes. Só um instante que já continuam com você por aqui. 💜';
+export const DEFAULT_ON_NO_MESSAGE =
+  'Tudo bem, {nome}! 🙏 Agradecemos muito o seu contato. Se mudar de ideia ou precisar de qualquer coisa, é só chamar por aqui. Um abraço e boa viagem! 💜';

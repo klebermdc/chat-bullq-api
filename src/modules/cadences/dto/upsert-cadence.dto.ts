@@ -78,6 +78,16 @@ export class UpsertCadenceDto {
   @IsBoolean()
   allowManual: boolean;
 
+  @ApiPropertyOptional({ description: 'Mensagem enviada ao cliente ao responder Sim (antes do handoff).' })
+  @IsOptional()
+  @IsString()
+  onYesMessage?: string;
+
+  @ApiPropertyOptional({ description: 'Mensagem enviada ao cliente ao responder Não (antes de mover para perdido).' })
+  @IsOptional()
+  @IsString()
+  onNoMessage?: string;
+
   @ApiProperty({ type: [UpsertCadenceStepDto] })
   @IsArray()
   @ValidateNested({ each: true })

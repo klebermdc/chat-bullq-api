@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import {
   CadenceEnrollment,
   NotificationType,
@@ -6,6 +6,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { MessagesService } from '../messaging/messages/messages.service';
 
 /**
  * Token de injeção do runner. Evita import direto de `CadenceRunner` (Task 7),
@@ -37,6 +38,8 @@ export interface TransitionCadence {
   hotTagId?: string | null;
   lostStageId?: string | null;
   optOutTagId?: string | null;
+  onYesMessage?: string | null;
+  onNoMessage?: string | null;
 }
 
 /**
@@ -58,6 +61,10 @@ export class CadenceTransitionService {
     @Inject(CADENCE_RUNNER) private readonly runner: CadenceRunnerPort,
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    // messaging↔cadences já é forwardRef no módulo; forwardRef aqui evita ciclo
+    // de resolução ao injetar o MessagesService neste provider.
+    @Inject(forwardRef(() => MessagesService))
+    private readonly messages: MessagesService,
   ) {}
 
   async apply(
@@ -74,6 +81,11 @@ export class CadenceTransitionService {
         // FIX 4: só aplica efeitos se venceu o compare-and-set atômico.
         const claimed = await this.runner.stop(enrollment.id, 'replied_yes');
         if (!claimed) break;
+        // Mensagem de transição (aguarde) ANTES do handoff — só quem venceu o
+        // claim envia, então uma corrida perdida não gera envio duplicado.
+        if (cadence.onYesMessage) {
+          await this.sendTransitionMessage(enrollment, cadence.onYesMessage);
+        }
         if (cadence.hotTagId) {
           await this.addConversationTag(
             enrollment.conversationId,
@@ -96,6 +108,10 @@ export class CadenceTransitionService {
       case 'NAO': {
         const claimed = await this.runner.stop(enrollment.id, 'said_no');
         if (!claimed) break;
+        // Mensagem de transição (agradecimento) ANTES de mover para perdido.
+        if (cadence.onNoMessage) {
+          await this.sendTransitionMessage(enrollment, cadence.onNoMessage);
+        }
         if (cadence.lostStageId) {
           await this.moveCardToStage(enrollment, cadence.lostStageId);
         }
@@ -118,6 +134,78 @@ export class CadenceTransitionService {
         }
         break;
     }
+  }
+
+  /**
+   * Envia ao cliente a mensagem configurada de transição (Sim/Não) antes de
+   * aplicar os demais efeitos. Resolve `{nome}` com o nome do contato e usa um
+   * remetente do sistema (responsável da conversa, senão o OWNER da org, igual
+   * ao `CadenceRunner.resolveSystemSender`). Falha de envio nunca bloqueia a
+   * transição — apenas registra warn.
+   */
+  private async sendTransitionMessage(
+    enrollment: CadenceEnrollment,
+    template: string,
+  ): Promise<void> {
+    try {
+      const conversation = await this.prisma.conversation.findUnique({
+        where: { id: enrollment.conversationId },
+        select: {
+          id: true,
+          organizationId: true,
+          contactId: true,
+          assignedToId: true,
+        },
+      });
+      if (!conversation) return;
+
+      const senderId = await this.resolveSystemSender(
+        conversation.organizationId,
+        conversation.assignedToId ?? null,
+      );
+      if (!senderId) {
+        this.logger.warn(
+          `cadence_transition_no_sender conv=${conversation.id} org=${conversation.organizationId} — sem responsável/OWNER; mensagem de transição não enviada`,
+        );
+        return;
+      }
+
+      const contact = await this.prisma.contact.findUnique({
+        where: { id: conversation.contactId },
+        select: { name: true },
+      });
+      const text = template.replace(/\{nome\}/g, contact?.name ?? '');
+
+      await this.messages.send(
+        {
+          conversationId: conversation.id,
+          type: 'TEXT',
+          content: { text },
+        },
+        senderId,
+        conversation.organizationId,
+        'ALL',
+      );
+    } catch (err) {
+      this.logger.warn(
+        `cadence_transition_send_failed enr=${enrollment.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  /** Remetente do sistema: responsável da conversa, senão o OWNER da org. */
+  private async resolveSystemSender(
+    organizationId: string,
+    assignedToId: string | null,
+  ): Promise<string | null> {
+    if (assignedToId) return assignedToId;
+    const owner = await this.prisma.userOrganization.findFirst({
+      where: { organizationId, role: 'OWNER' },
+      select: { userId: true },
+    });
+    return owner?.userId ?? null;
   }
 
   /** Reabre a conversa para o humano e avisa o vendedor responsável. */

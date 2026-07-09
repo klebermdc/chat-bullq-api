@@ -1,10 +1,21 @@
 import { CadenceTransitionService } from './cadence-transition.service';
 
-function makePrisma(conversation: any = { id: 'conv1', assignedToId: 'seller1' }) {
+function makePrisma(
+  conversation: any = {
+    id: 'conv1',
+    organizationId: 'org1',
+    contactId: 'contact1',
+    assignedToId: 'seller1',
+  },
+) {
   return {
     conversation: {
       findUnique: jest.fn(async () => conversation),
       update: jest.fn(async () => ({})),
+    },
+    contact: { findUnique: jest.fn(async () => ({ name: 'Maria' })) },
+    userOrganization: {
+      findFirst: jest.fn(async () => ({ userId: 'owner1' })),
     },
     card: { update: jest.fn(async () => ({})) },
     conversationTag: { create: jest.fn(async () => ({})) },
@@ -21,12 +32,14 @@ function makeDeps(conversation?: any) {
     notify: jest.fn(async () => ({})),
     notifyOrgAgents: jest.fn(async () => ({})),
   };
+  const messages = { send: jest.fn(async (..._args: any[]) => ({})) };
   const service = new CadenceTransitionService(
     runner as any,
     prisma,
     notifications as any,
+    messages as any,
   );
-  return { runner, prisma, notifications, service };
+  return { runner, prisma, notifications, messages, service };
 }
 
 const enrollment = (overrides: any = {}) => ({
@@ -161,6 +174,113 @@ describe('CadenceTransitionService', () => {
     expect(prisma.conversationTag.create).not.toHaveBeenCalled();
     expect(notifications.notify).not.toHaveBeenCalled();
     expect(prisma.conversation.update).not.toHaveBeenCalled();
+  });
+
+  it('SIM com onYesMessage → envia mensagem ({nome} resolvido) antes do handoff', async () => {
+    const { messages, notifications, service } = makeDeps();
+    await service.apply(
+      enrollment(),
+      'SIM',
+      cadence({ onYesMessage: 'Perfeito, {nome}! Já te encaminho.' }),
+    );
+
+    expect(messages.send).toHaveBeenCalledTimes(1);
+    const [dto, senderId, orgId, access] = messages.send.mock.calls[0];
+    expect(dto).toEqual({
+      conversationId: 'conv1',
+      type: 'TEXT',
+      content: { text: 'Perfeito, Maria! Já te encaminho.' },
+    });
+    expect(senderId).toBe('seller1');
+    expect(orgId).toBe('org1');
+    expect(access).toBe('ALL');
+    // Enviou antes do handoff (que dispara a notificação ao vendedor).
+    expect(notifications.notify).toHaveBeenCalledTimes(1);
+    const sendOrder = messages.send.mock.invocationCallOrder[0];
+    const notifyOrder = notifications.notify.mock.invocationCallOrder[0];
+    expect(sendOrder).toBeLessThan(notifyOrder);
+  });
+
+  it('SIM sem onYesMessage → não envia mensagem de transição', async () => {
+    const { messages, service } = makeDeps();
+    await service.apply(enrollment(), 'SIM', cadence());
+    expect(messages.send).not.toHaveBeenCalled();
+  });
+
+  it('SIM com onYesMessage vazio → não envia', async () => {
+    const { messages, service } = makeDeps();
+    await service.apply(enrollment(), 'SIM', cadence({ onYesMessage: '' }));
+    expect(messages.send).not.toHaveBeenCalled();
+  });
+
+  it('SIM sem sender (nenhum responsável nem OWNER) → não envia mas aplica efeitos', async () => {
+    const { messages, prisma, notifications, service } = makeDeps({
+      id: 'conv1',
+      organizationId: 'org1',
+      contactId: 'contact1',
+      assignedToId: null,
+    });
+    prisma.userOrganization.findFirst.mockResolvedValueOnce(null);
+    await service.apply(
+      enrollment(),
+      'SIM',
+      cadence({ onYesMessage: 'Oi {nome}' }),
+    );
+    expect(messages.send).not.toHaveBeenCalled();
+    // Handoff ainda aconteceu (sem vendedor → agentes do org).
+    expect(notifications.notifyOrgAgents).toHaveBeenCalledTimes(1);
+  });
+
+  it('SIM: falha no envio não bloqueia a transição', async () => {
+    const { messages, notifications, service } = makeDeps();
+    messages.send.mockRejectedValueOnce(new Error('provider down'));
+    await expect(
+      service.apply(
+        enrollment(),
+        'SIM',
+        cadence({ onYesMessage: 'Oi {nome}' }),
+      ),
+    ).resolves.toBeUndefined();
+    expect(notifications.notify).toHaveBeenCalledTimes(1);
+  });
+
+  it('NAO com onNoMessage → envia mensagem antes de mover o card p/ perdido', async () => {
+    const { messages, prisma, service } = makeDeps();
+    await service.apply(
+      enrollment(),
+      'NAO',
+      cadence({ onNoMessage: 'Tudo bem, {nome}! Obrigado.' }),
+    );
+
+    expect(messages.send).toHaveBeenCalledTimes(1);
+    expect(messages.send.mock.calls[0][0].content.text).toBe(
+      'Tudo bem, Maria! Obrigado.',
+    );
+    expect(prisma.card.update).toHaveBeenCalledTimes(1);
+    const sendOrder = messages.send.mock.invocationCallOrder[0];
+    const cardOrder = prisma.card.update.mock.invocationCallOrder[0];
+    expect(sendOrder).toBeLessThan(cardOrder);
+  });
+
+  it('DESCADASTRAR → não envia mensagem de transição', async () => {
+    const { messages, service } = makeDeps();
+    await service.apply(
+      enrollment(),
+      'DESCADASTRAR',
+      cadence({ onYesMessage: 'x', onNoMessage: 'y' }),
+    );
+    expect(messages.send).not.toHaveBeenCalled();
+  });
+
+  it('SIM com claim perdido → não envia mensagem de transição', async () => {
+    const { messages, runner, service } = makeDeps();
+    runner.stop.mockResolvedValueOnce(null as any);
+    await service.apply(
+      enrollment(),
+      'SIM',
+      cadence({ onYesMessage: 'Oi {nome}' }),
+    );
+    expect(messages.send).not.toHaveBeenCalled();
   });
 
   it('tag já aplicada (P2002) não propaga erro', async () => {
