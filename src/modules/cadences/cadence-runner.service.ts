@@ -32,7 +32,26 @@ interface CadenceStepLike {
   delayMinutes: number;
   contentType: MessageContentType;
   content: unknown;
+  options?: string[];
   templateId?: string | null;
+}
+
+/** Ordem canônica + rótulos das opções de resposta (rodapé numerado). */
+const CADENCE_OPTION_ORDER = ['SIM', 'NAO', 'DESCADASTRAR'];
+const CADENCE_OPTION_LABEL: Record<string, string> = {
+  SIM: 'Sim',
+  NAO: 'Não',
+  DESCADASTRAR: 'Não quero mais receber',
+};
+
+/** Rodapé "1 - Sim\n2 - Não\n..." só com as opções habilitadas, em ordem. */
+function buildOptionsFooter(options?: string[]): string {
+  if (!options || options.length === 0) return '';
+  const enabled = CADENCE_OPTION_ORDER.filter((o) => options.includes(o));
+  if (enabled.length === 0) return '';
+  return enabled
+    .map((o, i) => `${i + 1} - ${CADENCE_OPTION_LABEL[o]}`)
+    .join('\n');
 }
 
 /** Cadência (+steps) como devolvida por `findById`/`findByStage`. */
@@ -286,7 +305,11 @@ export class CadenceRunner {
     step: CadenceStepLike,
   ): Promise<void> {
     const scheduledAt = new Date(Date.now() + step.delayMinutes * 60_000);
-    const content = this.resolveContent(step.content, contact?.name ?? null);
+    const content = this.resolveContent(
+      step.content,
+      contact?.name ?? null,
+      step.options,
+    );
 
     // O disparo (MessagesService.send) exige um usuário remetente. A cadência é
     // iniciada pelo sistema, então resolvemos: responsável da conversa, senão
@@ -345,8 +368,17 @@ export class CadenceRunner {
     return owner?.userId ?? null;
   }
 
-  /** Substitui `{nome}` no `content.text` (formato TEXT); demais tipos passam direto. */
-  private resolveContent(content: unknown, contactName: string | null): unknown {
+  /**
+   * Substitui `{nome}` no `content.text` (formato TEXT) e anexa o rodapé
+   * numerado das opções ("1 - Sim / 2 - Não / ..."), pra o cliente saber como
+   * responder (o classificador entende 1/2/3 ou as palavras). Demais tipos
+   * (mídia/template) passam direto.
+   */
+  private resolveContent(
+    content: unknown,
+    contactName: string | null,
+    options?: string[],
+  ): unknown {
     const nome = contactName ?? '';
     if (
       content &&
@@ -354,7 +386,10 @@ export class CadenceRunner {
       typeof (content as { text?: unknown }).text === 'string'
     ) {
       const c = content as { text: string };
-      return { ...c, text: c.text.replace(/\{nome\}/g, nome) };
+      let text = c.text.replace(/\{nome\}/g, nome);
+      const footer = buildOptionsFooter(options);
+      if (footer) text = `${text}\n\n${footer}`;
+      return { ...c, text };
     }
     return content;
   }
