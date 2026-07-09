@@ -6,3 +6,12 @@ export function normalizePhone(raw: string): string {
   }
   return digits;
 }
+
+/**
+ * Sufixo usado para casar um lead do formulário (texto livre) com o telefone
+ * do WhatsApp (E.164). Usa os últimos 10 dígitos para absorver divergência de
+ * DDI/9º dígito. Tradeoff aceito: números muito parecidos podem colidir.
+ */
+export function phoneMatchSuffix(normalized: string): string {
+  return normalized.length > 10 ? normalized.slice(-10) : normalized;
+}
