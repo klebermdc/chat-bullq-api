@@ -1635,6 +1635,7 @@ enum AutomationRunStatus {
   PARTIAL // uma ou mais actions falharam mas o run continuou (continueOnError)
   FAILED // run abortado (action critica falhou ou erro de infra)
   SKIPPED // condições não casaram, ou rate limit, ou kill switch
+  WAITING // run pausado por uma ação `delay`, aguardando resumeAt
 }
 
 enum OutboxEventStatus {
@@ -1759,12 +1760,22 @@ model AutomationRun {
   startedAt  DateTime  @default(now()) @map("started_at")
   finishedAt DateTime? @map("finished_at")
 
+  // ─── Retomada (ação `delay`) ────────────────────────────────────
+  // Quando status = WAITING, estes campos dizem QUANDO e ONDE continuar.
+  resumeAt          DateTime? @map("resume_at")
+  // Índice na lista de actions por onde o run deve continuar ao acordar.
+  resumeActionIndex Int?      @map("resume_action_index")
+  // Snapshot do contexto de execução para reconstruir o ctx no resume:
+  // { cascadeDepth, visitedAutomations }.
+  resumeState       Json?     @map("resume_state")
+
   automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
 
   @@index([automationId, startedAt(sort: Desc)], name: "idx_run_automation_time")
   @@index([organizationId, startedAt(sort: Desc)], name: "idx_run_org_time")
   @@index([traceId], name: "idx_run_trace")
   @@index([status, startedAt(sort: Desc)], name: "idx_run_status_time")
+  @@index([status, resumeAt], name: "idx_run_status_resume")
   @@map("automation_runs")
 }
 
