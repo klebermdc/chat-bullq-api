@@ -46,6 +46,8 @@ export class CadencesRepository {
           trigger: dto.trigger,
           enabled: dto.enabled,
           allowManual: dto.allowManual,
+          onYesMessage: dto.onYesMessage ?? null,
+          onNoMessage: dto.onNoMessage ?? null,
         };
         cadence = await tx.cadence.update({ where: { id: dto.id }, data: updateData });
         await tx.cadenceStep.deleteMany({ where: { cadenceId: cadence.id } });
@@ -61,6 +63,8 @@ export class CadencesRepository {
           trigger: dto.trigger,
           enabled: dto.enabled,
           allowManual: dto.allowManual,
+          onYesMessage: dto.onYesMessage ?? null,
+          onNoMessage: dto.onNoMessage ?? null,
         };
         cadence = await tx.cadence.create({ data: createData });
       }

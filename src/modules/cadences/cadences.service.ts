@@ -6,7 +6,11 @@ import {
 } from '@nestjs/common';
 import { CadenceTrigger } from '@prisma/client';
 import { CadencesRepository } from './cadences.repository';
-import { CADENCE_DEFAULT_STEPS } from './cadences.constants';
+import {
+  CADENCE_DEFAULT_STEPS,
+  DEFAULT_ON_YES_MESSAGE,
+  DEFAULT_ON_NO_MESSAGE,
+} from './cadences.constants';
 import { UpsertCadenceDto } from './dto/upsert-cadence.dto';
 
 @Injectable()
@@ -30,6 +34,8 @@ export class CadencesService {
       trigger: CadenceTrigger.BOTH,
       enabled: false,
       allowManual: true,
+      onYesMessage: DEFAULT_ON_YES_MESSAGE,
+      onNoMessage: DEFAULT_ON_NO_MESSAGE,
       isTemplate: true,
       steps: CADENCE_DEFAULT_STEPS.map((s) => ({
         order: s.order,

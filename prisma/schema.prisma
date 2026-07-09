@@ -2041,6 +2041,8 @@ model Cadence {
   trigger        CadenceTrigger @default(BOTH)
   enabled        Boolean  @default(false)
   allowManual    Boolean  @default(true) @map("allow_manual")
+  onYesMessage   String?  @map("on_yes_message")
+  onNoMessage    String?  @map("on_no_message")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
