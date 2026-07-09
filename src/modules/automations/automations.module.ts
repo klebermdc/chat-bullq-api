@@ -28,6 +28,7 @@ import {
   AUTOMATION_RESUME_WATCHDOG_QUEUE,
 } from './automations.constants';
 import { AutomationResumeWatchdogCron } from './workers/automation-resume-watchdog.cron';
+import { AutomationResumeProcessor } from './workers/automation-resume.processor';
 
 @Global()
 @Module({
@@ -55,6 +56,7 @@ import { AutomationResumeWatchdogCron } from './workers/automation-resume-watchd
     ConditionsEvaluator,
     AutomationExecutorService,
     AutomationEventProcessor,
+    AutomationResumeProcessor,
     AutomationsService,
     AutomationsValidator,
     // Handlers + registry
