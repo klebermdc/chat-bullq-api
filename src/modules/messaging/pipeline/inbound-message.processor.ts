@@ -182,6 +182,7 @@ export class InboundMessageProcessor extends WorkerHost {
         channelId,
         contactId,
         message.isGroup,
+        { referral: message.referral, contactPhone: message.contactPhone },
       );
 
       const isEcho = !!message.isEcho;

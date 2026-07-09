@@ -3,6 +3,8 @@ import { AutomationTrigger, ConversationStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
 import { IdempotencyService } from './idempotency.service';
+import { AttributionService } from './attribution.service';
+import { InboundReferral } from '../../channel-hub/ports/types';
 
 export interface ResolvedConversation {
   conversationId: string;
@@ -26,6 +28,7 @@ export class ConversationResolverService {
     private readonly prisma: PrismaService,
     private readonly idempotency: IdempotencyService,
     private readonly outbox: OutboxService,
+    private readonly attribution: AttributionService,
   ) {}
 
   async resolve(
@@ -33,6 +36,7 @@ export class ConversationResolverService {
     channelId: string,
     contactId: string,
     isGroup?: boolean,
+    attributionInput?: { referral?: InboundReferral; contactPhone?: string },
   ): Promise<ResolvedConversation> {
     // Fast path without lock — most webhooks hit an already-open conversation.
     const fast = await this.findOpen(organizationId, channelId, contactId);
@@ -90,6 +94,12 @@ export class ConversationResolverService {
         // Cria a conversa, o audit log e enfileira o evento CONVERSATION_CREATED
         // na MESMA transação: o evento só "existe" se a criação commitar.
         const conversation = await this.prisma.$transaction(async (tx) => {
+          const attribution = await this.attribution.resolveSource(tx, {
+            organizationId,
+            referral: attributionInput?.referral,
+            contactPhone: attributionInput?.contactPhone,
+          });
+
           const created = await tx.conversation.create({
             data: {
               organizationId,
@@ -98,8 +108,24 @@ export class ConversationResolverService {
               status: ConversationStatus.PENDING,
               protocol,
               isGroup: isGroup || false,
+              source: attribution.source,
+              sourceDetail: attribution.sourceDetail,
             },
           });
+
+          if (attribution.matchedLeadIntakeId) {
+            await tx.leadIntake.update({
+              where: { id: attribution.matchedLeadIntakeId },
+              data: { consumedAt: new Date(), consumedConversationId: created.id },
+            });
+          }
+
+          // First-touch: carimba o Contact só se ainda não tiver origem.
+          await tx.contact.updateMany({
+            where: { id: contactId, source: null },
+            data: { source: attribution.source },
+          });
+
           await tx.conversationAuditLog.create({
             data: {
               conversationId: created.id,
