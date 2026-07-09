@@ -18,7 +18,7 @@ describe('InboundMessageProcessor — observação SHADOW independe do gate', ()
     //  5 realtimeGateway, 6 instagramEnricher, 7 zappfyEnricher,
     //  8 webhookEvents, 9 agentRouter, 10 agentRunner, 11 transcription,
     //  12 outbox, 13 watchdog, 14 salesRecovery, 15 scheduled,
-    //  16 chatbotQueue, 17 shadowObserver.
+    //  16 cadenceInbound, 17 chatbotQueue, 18 shadowObserver.
     return new InboundMessageProcessor(
       overrides.prisma, // 1 prisma
       {} as any, // 2 idempotency
@@ -37,8 +37,9 @@ describe('InboundMessageProcessor — observação SHADOW independe do gate', ()
       { cancelCheck: jest.fn().mockResolvedValue(undefined) } as any,
       {} as any, // 14 salesRecovery
       {} as any, // 15 scheduled
-      {} as any, // 16 chatbotQueue
-      overrides.shadowObserver, // 17 shadowObserver
+      {} as any, // 16 cadenceInbound
+      {} as any, // 17 chatbotQueue
+      overrides.shadowObserver, // 18 shadowObserver
     );
   }
 
