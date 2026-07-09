@@ -37,7 +37,7 @@ describe('ConversationResolverService.resolve', () => {
           status: ConversationStatus.PENDING,
         }),
       },
-      leadIntake: { update: jest.fn().mockResolvedValue({}) },
+      leadIntake: { updateMany: jest.fn().mockResolvedValue({}) },
       contact: { updateMany: jest.fn().mockResolvedValue({}) },
       conversationAuditLog: { create: jest.fn().mockResolvedValue({}) },
     };
@@ -113,7 +113,7 @@ describe('ConversationResolverService.resolve', () => {
           status: ConversationStatus.PENDING,
         }),
       },
-      leadIntake: { update: jest.fn().mockResolvedValue({}) },
+      leadIntake: { updateMany: jest.fn().mockResolvedValue({}) },
       contact: { updateMany: jest.fn().mockResolvedValue({}) },
       conversationAuditLog: { create: jest.fn().mockResolvedValue({}) },
     };
@@ -159,6 +159,58 @@ describe('ConversationResolverService.resolve', () => {
       }),
     );
     // Sem LeadIntake casado → não consome nada.
-    expect(txMock.leadIntake.update).not.toHaveBeenCalled();
+    expect(txMock.leadIntake.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('CREATE: consome o LeadIntake casado atomicamente (guard consumedAt:null)', async () => {
+    const txMock = {
+      conversation: {
+        create: jest.fn().mockResolvedValue({
+          id: 'conv-new',
+          status: ConversationStatus.PENDING,
+        }),
+      },
+      leadIntake: { updateMany: jest.fn().mockResolvedValue({}) },
+      contact: { updateMany: jest.fn().mockResolvedValue({}) },
+      conversationAuditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+
+    const prisma = {
+      conversation: {
+        // fast-path findOpen -> null, locked findOpen -> null, lastClosed -> null
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      conversationAuditLog: { create: jest.fn() },
+      $transaction: jest.fn((fn: any) => fn(txMock)),
+    };
+
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+
+    const attribution = {
+      resolveSource: jest.fn().mockResolvedValue({
+        source: ConversationSource.SITE_FORM,
+        sourceDetail: { page: '/x' },
+        matchedLeadIntakeId: 'li1',
+      }),
+    };
+
+    const service = buildService(prisma, outbox, attribution);
+
+    await service.resolve(organizationId, channelId, contactId, false, {
+      contactPhone: '+5511999999999',
+    });
+
+    expect(txMock.leadIntake.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'li1', consumedAt: null }),
+        data: expect.objectContaining({ consumedConversationId: 'conv-new' }),
+      }),
+    );
+    expect(txMock.contact.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: contactId, source: null },
+        data: { source: ConversationSource.SITE_FORM },
+      }),
+    );
   });
 });

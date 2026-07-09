@@ -114,8 +114,11 @@ export class ConversationResolverService {
           });
 
           if (attribution.matchedLeadIntakeId) {
-            await tx.leadIntake.update({
-              where: { id: attribution.matchedLeadIntakeId },
+            // Consumo atômico: guard `consumedAt: null` evita corrida entre
+            // conversas concorrentes do mesmo telefone em canais diferentes
+            // (o lock só serializa channel:contact, não org+phone).
+            await tx.leadIntake.updateMany({
+              where: { id: attribution.matchedLeadIntakeId, consumedAt: null },
               data: { consumedAt: new Date(), consumedConversationId: created.id },
             });
           }
