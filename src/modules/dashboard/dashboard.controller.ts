@@ -65,6 +65,23 @@ export class DashboardController {
     );
   }
 
+  @Get('leads-by-source')
+  @ApiOperation({ summary: 'Leads por origem (CTWA / site / orgânico)' })
+  @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
+  getLeadsBySource(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.service.getLeadsBySource(
+      orgId,
+      this.parseRange(from, to),
+      this.assignmentScope(userId, role),
+    );
+  }
+
   @Get('volume-by-channel')
   @ApiOperation({ summary: 'Conversations volume by channel' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })

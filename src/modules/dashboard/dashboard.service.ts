@@ -395,6 +395,26 @@ export class DashboardService {
     });
   }
 
+  async getLeadsBySource(
+    organizationId: string,
+    range: DateRange,
+    assignedToId: string | undefined,
+  ): Promise<Array<{ source: string; count: number }>> {
+    const rows = await this.prisma.conversation.groupBy({
+      by: ['source'],
+      where: {
+        organizationId,
+        ...this.convScope(assignedToId),
+        createdAt: { gte: range.from, lte: range.to },
+      },
+      _count: { _all: true },
+    });
+    return rows.map((r) => ({
+      source: r.source ?? 'ORGANIC', // conversas antigas sem origem contam como orgânico
+      count: r._count._all,
+    }));
+  }
+
   async getVolumeByStatus(organizationId: string, assignedToId?: string) {
     const result = await this.prisma.conversation.groupBy({
       by: ['status'],
