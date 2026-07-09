@@ -160,7 +160,7 @@ describe('CadenceRunner.start', () => {
     expect(sm.cadenceEnrollmentId).toBe(enrollment!.id);
     // Regressão: precisa de remetente de sistema (senão dispatch falha no_sender).
     expect(sm.createdById).toBe('owner1');
-    expect(sm.content).toEqual({ text: 'Oi, Maria! Tudo bem?' });
+    expect(sm.content).toEqual({ text: 'Oi, Maria! Tudo bem?\n\n1 - Sim\n2 - Não' });
     expect(sm.scheduledAt.getTime()).toBeGreaterThan(Date.now());
 
     // Enfileirado com jobId sem ':' (regressão BullMQ).
@@ -282,7 +282,7 @@ describe('CadenceRunner.onStepSent', () => {
     expect(schedRepo.create).toHaveBeenCalledTimes(1);
     const sm = (schedRepo.create.mock.calls[0] as any[])[0];
     expect(sm.cadenceStepOrder).toBe(2);
-    expect(sm.content).toEqual({ text: 'Oi de novo, Maria!' });
+    expect(sm.content).toEqual({ text: 'Oi de novo, Maria!\n\n1 - Sim\n2 - Não' });
     expect(enrollments.update).toHaveBeenCalledWith(
       'enr1',
       expect.objectContaining({ currentStep: 2 }),
