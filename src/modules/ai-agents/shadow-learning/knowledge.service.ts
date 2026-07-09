@@ -90,6 +90,76 @@ export class KnowledgeService {
     }
   }
 
+  /**
+   * Importa FAQ curada (source='faq') em lote. Idempotente por pergunta
+   * (case-insensitive) contra o que já existe no agente com o mesmo source, e
+   * também deduplica dentro do próprio lote. Cada item novo entra no RAG via
+   * `index_procedure`. Retorna a contagem de importados/pulados.
+   */
+  async importCurated(
+    organizationId: string,
+    agentId: string,
+    items: { question: string; content: string; category: string }[],
+    source = 'faq',
+  ): Promise<{ imported: number; skipped: number }> {
+    const existing = await this.prisma.aiAgentKnowledge.findMany({
+      where: { agentId, source },
+      select: { question: true },
+    });
+    const seen = new Set(
+      existing.map((e) => (e.question ?? '').trim().toLowerCase()).filter(Boolean),
+    );
+
+    let imported = 0;
+    let skipped = 0;
+    for (const item of items) {
+      const q = (item.question ?? '').trim();
+      const content = (item.content ?? '').trim();
+      if (!q || !content) {
+        skipped++;
+        continue;
+      }
+      const key = q.toLowerCase();
+      if (seen.has(key)) {
+        skipped++;
+        continue;
+      }
+      seen.add(key);
+
+      const created = await this.prisma.aiAgentKnowledge.create({
+        data: {
+          organizationId,
+          agentId,
+          kind: 'qa',
+          source,
+          category: item.category?.trim() || 'faq',
+          content,
+          question: q,
+          confidence: 1,
+        },
+      });
+
+      await this.ragQueue.add(
+        'index_procedure',
+        {
+          type: 'index_procedure',
+          knowledgeId: created.id,
+          content,
+          organizationId,
+          agentId,
+        },
+        { removeOnComplete: 200, removeOnFail: 50 },
+      );
+
+      this.logger.log(
+        `knowledge_curated_imported id=${created.id} agentId=${agentId} source=${source}`,
+      );
+      imported++;
+    }
+
+    return { imported, skipped };
+  }
+
   /** Relatório: conhecimento do agente ordenado por recorrência (desc). */
   list(organizationId: string, agentId: string) {
     return this.prisma.aiAgentKnowledge.findMany({
