@@ -146,6 +146,20 @@ export class OutboundMessageProcessor extends WorkerHost {
 
       return { success: true, externalId: result.externalId };
     } catch (error: any) {
+      // Erros TRANSITÓRIOS (rate limit do Wasender "account protection" = 429
+      // "1 msg a cada 5s", 5xx, quedas de rede) NÃO devem marcar a mensagem
+      // como FAILED enquanto ainda houver retry do BullMQ — só re-lançamos pra
+      // o backoff tentar de novo. Sem isso, a mensagem piscava FAILED e a
+      // cadência/toque parecia ter falhado mesmo indo pra reenvio.
+      const attemptsLimit = (job.opts?.attempts ?? 1) as number;
+      const isLastAttempt = job.attemptsMade + 1 >= attemptsLimit;
+      if (isRetryableSendError(error) && !isLastAttempt) {
+        this.logger.warn(
+          `Outbound transient (retry ${job.attemptsMade + 1}/${attemptsLimit}): msg=${messageId} - ${error.message}`,
+        );
+        throw error; // deixa o BullMQ reenviar (backoff); status segue QUEUED
+      }
+
       this.logger.error(
         `Outbound failed: msg=${messageId} - ${error.message}`,
       );
@@ -246,4 +260,26 @@ function safeJson(value: unknown): any {
   } catch {
     return null;
   }
+}
+
+/**
+ * Erro de envio que vale a pena reenviar (não é falha definitiva):
+ * - 429 / rate limit (Wasender "account protection": 1 msg a cada 5s);
+ * - 5xx do provider;
+ * - quedas de rede (timeout, socket, conexão resetada).
+ * O throttle real (5s) é dado pelo backoff do job (>= 6s).
+ */
+export function isRetryableSendError(error: any): boolean {
+  const status: number | undefined =
+    error?.response?.status ?? error?.status ?? error?.statusCode;
+  const msg = String(error?.message ?? error ?? '').toLowerCase();
+  if (status === 429 || (typeof status === 'number' && status >= 500 && status < 600)) {
+    return true;
+  }
+  return (
+    /account protection|every 5 seconds|rate limit|too many requests|status code 429/.test(
+      msg,
+    ) ||
+    /econnreset|etimedout|socket hang up|network|timeout|econnrefused/.test(msg)
+  );
 }
