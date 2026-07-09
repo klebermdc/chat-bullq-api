@@ -63,4 +63,20 @@ describe('OfpSyncService', () => {
     await service.sync();
     expect(deleteMany).not.toHaveBeenCalled();
   });
+
+  it('retries a transient upsert failure (pool timeout) and still completes', async () => {
+    upsert
+      .mockRejectedValueOnce(
+        new Error('Timed out fetching a new connection from the connection pool'),
+      )
+      .mockResolvedValue({});
+    const res = await service.sync();
+    expect(res.count).toBe(1);
+    // one failed attempt + one successful retry for the single order
+    expect(upsert).toHaveBeenCalledTimes(2);
+    // state recorded without error
+    expect(stateUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: expect.objectContaining({ lastError: null }) }),
+    );
+  });
 });
