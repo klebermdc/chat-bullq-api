@@ -32,6 +32,7 @@ import { AutomationsModule } from './modules/automations/automations.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { SalesReportsModule } from './modules/sales-reports/sales-reports.module';
 import { MetaCapiModule } from './modules/meta-capi/meta-capi.module';
+import { LeadIntakeModule } from './modules/lead-intake/lead-intake.module';
 // ProductsModule removido — catálogo agora vive no Trivapp e é consumido
 // via skill HTTP getProductPitch + CatalogSyncService. Tabela `products`
 // fica órfã no DB (cleanup futuro). Não importar aqui.
@@ -87,6 +88,7 @@ import redisConfig from './config/redis.config';
     WebhooksModule,
     SalesReportsModule,
     MetaCapiModule,
+    LeadIntakeModule,
   ],
 })
 export class AppModule {}
