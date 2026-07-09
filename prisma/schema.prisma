@@ -98,6 +98,12 @@ enum NotificationType {
   AI_TOOL_FAILURE
 }
 
+enum ConversationSource {
+  CTWA
+  SITE_FORM
+  ORGANIC
+}
+
 // ─── Core: Auth + Multi-tenancy ──────────────────
 
 model User {
@@ -180,6 +186,9 @@ model Organization {
   /// null = usa defaults do código (15, 15, 60, 3).
   watchdogConfig        Json?   @map("watchdog_config")
 
+  // Secret do webhook público de entrada de lead (Elementor). null = desativado.
+  leadIntakeSecret String? @map("lead_intake_secret")
+
   members       UserOrganization[]
   channels      Channel[]
   contacts      Contact[]
@@ -210,6 +219,7 @@ model Organization {
   cadenceEnrollments CadenceEnrollment[]
   metaCapiConfig MetaCapiConfig?
   metaCapiEvents MetaCapiEvent[]
+  leadIntakes LeadIntake[]
 
   @@map("organizations")
 }
@@ -464,6 +474,8 @@ model Contact {
   email          String?
   avatarUrl      String?   @map("avatar_url")
   notes          String?
+  // First-touch: origem da PRIMEIRA conversa atribuída deste contato.
+  source         ConversationSource? @map("source")
   metadata       Json      @default("{}")
   // Atribuição Click-to-WhatsApp (Meta CAPI). Preenchido quando a 1ª mensagem
   // do lead traz message.referral (veio de anúncio CTWA). Usado no evento
@@ -486,7 +498,25 @@ model Contact {
 
   @@index([organizationId, phone], name: "idx_contact_org_phone")
   @@index([organizationId, email], name: "idx_contact_org_email")
+  @@index([organizationId, source], name: "idx_contact_org_source")
   @@map("contacts")
+}
+
+model LeadIntake {
+  id                     String             @id @default(cuid())
+  organizationId         String             @map("organization_id")
+  phoneNormalized        String             @map("phone_normalized")
+  name                   String?
+  source                 ConversationSource
+  sourceDetail           Json               @default("{}") @map("source_detail")
+  consumedAt             DateTime?          @map("consumed_at")
+  consumedConversationId String?            @map("consumed_conversation_id")
+  createdAt              DateTime           @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, phoneNormalized, consumedAt], name: "idx_leadintake_match")
+  @@map("lead_intakes")
 }
 
 model ContactChannel {
@@ -550,6 +580,9 @@ model Conversation {
   archivedAt   DateTime? @map("archived_at")
   archivedById String?   @map("archived_by_id")
   metadata     Json      @default("{}")
+  // Origem do lead (atribuição). Setado uma vez, na criação da conversa.
+  source       ConversationSource? @map("source")
+  sourceDetail Json?               @map("source_detail")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
