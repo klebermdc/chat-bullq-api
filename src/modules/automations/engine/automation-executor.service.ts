@@ -23,6 +23,7 @@ import {
   MAX_CASCADE_DEPTH,
 } from '../automations.constants';
 import { AutomationJobData } from '../automations.types';
+import { buildResumeState, parseResumeState, ResumeState } from './resume-context';
 
 @Injectable()
 export class AutomationExecutorService {
@@ -157,7 +158,11 @@ export class AutomationExecutorService {
       }
 
       try {
-        await this.runActions(automation, job);
+        // Cria o run row (WAITING/resumeAt=null = "em progresso") e executa
+        // desde o índice 0.
+        const ctx = this.buildActionContext(automation, job);
+        const runId = await this.createRunningRun(automation, job, ctx);
+        await this.runActionsFrom(automation, ctx, runId, 0, []);
       } finally {
         await this.redis.releaseContactLock(
           job.payload.contactId,
@@ -167,31 +172,68 @@ export class AutomationExecutorService {
     }
   }
 
-  // The hot path: iterate actions, run each, log, decide whether to
-  // continue on error.
-  private async runActions(
+  private buildActionContext(
     automation: Automation,
     job: AutomationJobData,
-  ): Promise<void> {
-    const startedAt = Date.now();
-    const actions = this.parseActions(automation.actions);
-    const log: ActionLogEntry[] = [];
-    let anyFailure = false;
-    let aborted = false;
-
-    const ctx: ActionContext = {
+  ): ActionContext {
+    return {
       organizationId: automation.organizationId,
       payload: job.payload,
       traceId: job.traceId,
-      cascadeDepth: job.cascadeDepth + 1, // emitted events live one hop deeper
+      cascadeDepth: job.cascadeDepth + 1, // eventos emitidos vivem um hop além
       visitedAutomations: [...job.visitedAutomations, automation.id],
       outbox: this.outbox,
-      // Re-cast: PrismaService extends PrismaClient so the cast is safe.
       prisma: this.prisma as unknown as ActionContext['prisma'],
       actorId: automation.actorId,
     };
+  }
 
-    for (let i = 0; i < actions.length; i++) {
+  // Cria o run row antes de executar, para que uma pausa (delay) tenha um row
+  // para atualizar. status=WAITING + resumeAt=null significa "em progresso":
+  // o watchdog só reivindica WAITING com resumeAt<=now, então este row não é
+  // reivindicado enquanto roda.
+  private async createRunningRun(
+    automation: Automation,
+    job: AutomationJobData,
+    ctx: ActionContext,
+  ): Promise<string> {
+    const run = await this.prisma.automationRun.create({
+      data: {
+        automationId: automation.id,
+        organizationId: automation.organizationId,
+        outboxEventId: job.outboxEventId,
+        traceId: job.traceId,
+        status: AutomationRunStatus.WAITING,
+        resumeAt: null,
+        triggerPayload: job.payload as unknown as Prisma.InputJsonValue,
+        actionsLog: [] as unknown as Prisma.InputJsonValue,
+        resumeState: buildResumeState({
+          cascadeDepth: ctx.cascadeDepth,
+          visitedAutomations: ctx.visitedAutomations,
+        }) as unknown as Prisma.InputJsonValue,
+      },
+      select: { id: true },
+    });
+    return run.id;
+  }
+
+  // Executa as ações de `startIndex` até o fim, atualizando o run row `runId`.
+  // Se uma ação devolver control.delay, persiste WAITING + resumeAt +
+  // resumeActionIndex (índice DA PRÓXIMA ação) e para — o watchdog retoma.
+  private async runActionsFrom(
+    automation: Automation,
+    ctx: ActionContext,
+    runId: string,
+    startIndex: number,
+    priorLog: ActionLogEntry[],
+  ): Promise<void> {
+    const startedAt = Date.now();
+    const actions = this.parseActions(automation.actions);
+    const log: ActionLogEntry[] = [...priorLog];
+    let anyFailure = priorLog.some((e) => e.status === 'failed');
+    let aborted = false;
+
+    for (let i = startIndex; i < actions.length; i++) {
       const action = actions[i];
       const handler = this.registry.get(action.type as never);
       if (!handler) {
@@ -215,6 +257,24 @@ export class AutomationExecutorService {
       try {
         const result = await handler.execute(action.params, ctx);
         const dur = Date.now() - startedAction;
+
+        // ── Sinal de controle: delay pausa o run e retorna cedo. ──
+        if (result.ok && result.control?.type === 'delay') {
+          log.push({
+            index: i,
+            type: action.type,
+            status: 'success',
+            durationMs: dur,
+            output: result.output,
+          });
+          await this.pauseRun(runId, {
+            resumeAt: new Date(result.control.resumeAt),
+            resumeActionIndex: i + 1, // continua DEPOIS do delay
+            actionsLog: log,
+          });
+          return; // NÃO finaliza contadores — run continua vivo
+        }
+
         if (result.ok) {
           log.push({
             index: i,
@@ -242,9 +302,6 @@ export class AutomationExecutorService {
           }
         }
       } catch (err) {
-        // Handler threw. Treat as failure with the same continue-on-error
-        // policy — handlers shouldn't throw, but defending here means a
-        // bug in one handler doesn't poison the whole run.
         const dur = Date.now() - startedAction;
         anyFailure = true;
         log.push({
@@ -265,19 +322,81 @@ export class AutomationExecutorService {
     }
 
     const durationMs = Date.now() - startedAt;
-
     let runStatus: AutomationRunStatus;
     if (!anyFailure) runStatus = AutomationRunStatus.SUCCESS;
     else if (aborted) runStatus = AutomationRunStatus.FAILED;
     else runStatus = AutomationRunStatus.PARTIAL;
 
-    await this.persistRun(automation, job, {
+    await this.finalizeRun(runId, {
       status: runStatus,
       actionsLog: log,
       durationMs,
     });
-
     await this.updateAutomationCounters(automation.id, runStatus);
+  }
+
+  private async pauseRun(
+    runId: string,
+    data: {
+      resumeAt: Date;
+      resumeActionIndex: number;
+      actionsLog: ActionLogEntry[];
+    },
+  ): Promise<void> {
+    try {
+      const run = await this.prisma.automationRun.update({
+        where: { id: runId },
+        data: {
+          status: AutomationRunStatus.WAITING,
+          resumeAt: data.resumeAt,
+          resumeActionIndex: data.resumeActionIndex,
+          actionsLog: data.actionsLog as unknown as Prisma.InputJsonValue,
+        },
+      });
+      this.realtime.emitToOrg(run.organizationId, 'automation:run', {
+        automationId: run.automationId,
+        run,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to pause run ${runId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private async finalizeRun(
+    runId: string,
+    data: {
+      status: AutomationRunStatus;
+      actionsLog: ActionLogEntry[];
+      durationMs: number;
+      errorCode?: string;
+      errorMessage?: string;
+    },
+  ): Promise<void> {
+    try {
+      const run = await this.prisma.automationRun.update({
+        where: { id: runId },
+        data: {
+          status: data.status,
+          errorCode: data.errorCode ?? null,
+          errorMessage: data.errorMessage ?? null,
+          actionsLog: data.actionsLog as unknown as Prisma.InputJsonValue,
+          durationMs: data.durationMs,
+          finishedAt: new Date(),
+          resumeAt: null,
+          resumeActionIndex: null,
+        },
+      });
+      this.realtime.emitToOrg(run.organizationId, 'automation:run', {
+        automationId: run.automationId,
+        run,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to finalize run ${runId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   // ─── Persistence helpers ──────────────────────────────────────────
