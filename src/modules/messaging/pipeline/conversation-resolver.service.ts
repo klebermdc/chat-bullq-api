@@ -117,6 +117,9 @@ export class ConversationResolverService {
             // Consumo atômico: guard `consumedAt: null` evita corrida entre
             // conversas concorrentes do mesmo telefone em canais diferentes
             // (o lock só serializa channel:contact, não org+phone).
+            // Edge aceito: nesse cenário raro as duas conversas podem carimbar
+            // `source` do mesmo LeadIntake; só uma marca consumedAt, e o carimbo
+            // da perdedora não é revertido (self-limited, no máx +1 na contagem).
             await tx.leadIntake.updateMany({
               where: { id: attribution.matchedLeadIntakeId, consumedAt: null },
               data: { consumedAt: new Date(), consumedConversationId: created.id },

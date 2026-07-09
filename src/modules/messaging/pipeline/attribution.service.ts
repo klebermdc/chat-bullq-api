@@ -26,8 +26,9 @@ export class AttributionService {
     tx: Prisma.TransactionClient,
     input: AttributionInput,
   ): Promise<AttributionResult> {
-    // CTWA: o referral só existe na 1ª msg pós-clique. Basta ctwaClid OU sourceId.
-    if (input.referral && (input.referral.ctwaClid || input.referral.sourceId)) {
+    // CTWA: o referral só existe na 1ª msg pós-clique.
+    // O mapper oficial só emite referral quando há ctwa_clid; por isso o guard usa ctwaClid (não sourceId).
+    if (input.referral?.ctwaClid) {
       const r = input.referral;
       return {
         source: ConversationSource.CTWA,
