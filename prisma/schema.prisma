@@ -1230,6 +1230,7 @@ model AiAgentKnowledge {
   occurrences    Int     @default(1)
   sourceExamples Json    @default("[]") @map("source_examples")
   confidence     Float   @default(0.8)
+  source         String  @default("learned") // 'learned' | 'faq'
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
