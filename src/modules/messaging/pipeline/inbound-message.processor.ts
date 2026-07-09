@@ -18,6 +18,7 @@ import { TranscriptionService } from '../messages/transcription.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
 import { WatchdogService } from '../../routing/watchdog/watchdog.service';
 import { SalesRecoveryService } from '../../sales-recovery/sales-recovery.service';
+import { pickEchoReconcileTarget } from './echo-reconcile';
 import {
   AutomationTrigger,
   ChannelType,
@@ -453,6 +454,59 @@ export class InboundMessageProcessor extends WorkerHost {
         data: patch,
       });
       return { message: updated, isNew: false };
+    }
+
+    // Echo sem match por externalId. O provedor (ex.: WasenderAPI) pode ter
+    // devolvido no /send-message um id INTERNO (msgId) diferente do key.id do
+    // WhatsApp que chega no echo — então a linha do envio existe mas com outro
+    // externalId. Antes de criar uma linha nova (→ duplicata visível na tela),
+    // tenta mesclar num placeholder OUTBOUND recente de conteúdo idêntico.
+    if (isEcho) {
+      const windowMs = 5 * 60 * 1000;
+      const candidates = await tx.message.findMany({
+        where: {
+          conversationId,
+          direction: MessageDirection.OUTBOUND,
+          createdAt: { gte: new Date(Date.now() - windowMs) },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+      const target = pickEchoReconcileTarget(
+        {
+          type: message.type as unknown as string,
+          content: message.content,
+          externalId: message.externalMessageId || null,
+        },
+        candidates.map((c) => ({
+          id: c.id,
+          externalId: c.externalId,
+          createdAt: c.createdAt,
+          type: c.type as unknown as string,
+          content: c.content,
+          metadata: c.metadata,
+        })),
+        { nowMs: Date.now(), windowMs },
+      );
+      if (target) {
+        const row = candidates.find((c) => c.id === target.id)!;
+        const patch: Record<string, any> = {
+          // Adota o key.id do WhatsApp como externalId canônico: é o mesmo id
+          // usado pelos webhooks de status (messages.update), então os selos de
+          // entregue/lido passam a casar com esta linha depois do merge.
+          externalId: message.externalMessageId || row.externalId,
+          metadata: {
+            ...((row.metadata as Record<string, any>) ?? {}),
+            echoReconciled: true,
+          },
+        };
+        if (!row.sentAt) patch.sentAt = new Date();
+        if (row.status === MessageStatus.QUEUED) patch.status = MessageStatus.SENT;
+        const merged = await tx.message.update({
+          where: { id: row.id },
+          data: patch,
+        });
+        return { message: merged, isNew: false };
+      }
     }
 
     try {
