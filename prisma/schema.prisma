@@ -194,6 +194,7 @@ model Organization {
   aiAgents      AiAgent[]
   aiTools       AiTool[]
   aiSkills      AiSkill[]
+  aiKnowledge    AiAgentKnowledge[]
   inboxViews    InboxView[]
   pipelines     Pipeline[]
   cards         Card[]
@@ -821,6 +822,7 @@ model Tag {
   organization  Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   conversations ConversationTag[]
   contacts      ContactTag[]
+  agentChannels AiAgentChannel[]  @relation("AgentChannelTagFilter")
 
   @@unique([organizationId, name])
   @@map("tags")
@@ -936,6 +938,7 @@ enum AiAgentMode {
   AUTONOMOUS
   COPILOT
   DISABLED
+  SHADOW
 }
 
 enum AiAgentTrigger {
@@ -1014,6 +1017,7 @@ model AiAgent {
 
   channels       AiAgentChannel[]
   memories       AiAgentMemory[]
+  knowledge      AiAgentKnowledge[]
   runs           AiAgentRun[]
   handoffsFrom   AiAgentHandoff[]  @relation("HandoffFrom")
   handoffsTo     AiAgentHandoff[]  @relation("HandoffTo")
@@ -1176,19 +1180,22 @@ model AiAgentSkill {
 }
 
 model AiAgentChannel {
-  id        String         @id @default(cuid())
-  agentId   String         @map("agent_id")
-  channelId String         @map("channel_id")
-  mode      AiAgentMode    @default(AUTONOMOUS)
-  trigger   AiAgentTrigger @default(ALWAYS)
+  id          String         @id @default(cuid())
+  agentId     String         @map("agent_id")
+  channelId   String         @map("channel_id")
+  tagFilterId String?        @map("tag_filter_id")
+  mode        AiAgentMode    @default(AUTONOMOUS)
+  trigger     AiAgentTrigger @default(ALWAYS)
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  agent   AiAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  agent     AiAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  channel   Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  tagFilter Tag?    @relation("AgentChannelTagFilter", fields: [tagFilterId], references: [id], onDelete: SetNull)
 
   @@unique([agentId, channelId])
   @@index([channelId], name: "idx_ai_agent_channel_channel")
+  @@index([tagFilterId], name: "idx_ai_agent_channel_tag")
   @@map("ai_agent_channels")
 }
 
@@ -1211,6 +1218,31 @@ model AiAgentMemory {
   @@index([agentId], name: "idx_ai_memory_agent")
   @@index([contactId], name: "idx_ai_memory_contact")
   @@map("ai_agent_memories")
+}
+
+model AiAgentKnowledge {
+  id             String  @id @default(cuid())
+  organizationId String  @map("organization_id")
+  agentId        String  @map("agent_id")
+
+  kind           String  // 'procedure' | 'qa'
+  category       String  @default("geral")
+  content        String
+  question       String?
+  occurrences    Int     @default(1)
+  sourceExamples Json    @default("[]") @map("source_examples")
+  confidence     Float   @default(0.8)
+  source         String  @default("learned") // 'learned' | 'faq'
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent        AiAgent      @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId], name: "idx_ai_knowledge_agent")
+  @@index([organizationId], name: "idx_ai_knowledge_org")
+  @@map("ai_agent_knowledge")
 }
 
 model AiAgentRun {

@@ -36,6 +36,7 @@ import { IntentType } from '../classifier/intent.types';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { sanitizeAssistantText } from './text-guards';
 import { MediaUrlResolverService } from './media-url-resolver.service';
+import { isShadowMode } from '../shadow-learning/shadow-mode.util';
 
 const MAX_TOOL_ITERATIONS = 8;
 const MAX_RECENT_MESSAGES = 30;
@@ -138,6 +139,23 @@ export class AiAgentRunnerService {
     if (!agent) {
       this.logger.debug(
         `No agent resolved for conv ${conversation.id} — skipping run`,
+      );
+      return;
+    }
+
+    // Guard-rail: agente atribuído em modo SHADOW só observa — nunca responde.
+    const shadowAssignment = await this.prisma.aiAgentChannel.findUnique({
+      where: {
+        agentId_channelId: {
+          agentId: agent.id,
+          channelId: conversation.channelId,
+        },
+      },
+      select: { mode: true },
+    });
+    if (isShadowMode(shadowAssignment?.mode)) {
+      this.logger.log(
+        `agent ${agent.id} em SHADOW — observando, sem resposta (conv=${conversation.id})`,
       );
       return;
     }

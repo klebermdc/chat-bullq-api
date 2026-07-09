@@ -14,6 +14,7 @@ import { ZappfyContactEnricherService } from '../../channel-hub/adapters/zappfy/
 import { WebhookEventsService } from '../../channel-hub/webhook-events.service';
 import { AgentRouterService } from '../../ai-agents/router/agent-router.service';
 import { AiAgentRunnerService } from '../../ai-agents/runner/agent-runner.service';
+import { ShadowObserverService } from '../../ai-agents/shadow-learning/shadow-observer.service';
 import { TranscriptionService } from '../messages/transcription.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
 import { WatchdogService } from '../../routing/watchdog/watchdog.service';
@@ -105,6 +106,7 @@ export class InboundMessageProcessor extends WorkerHost {
     @Inject(forwardRef(() => CadenceInboundService))
     private readonly cadenceInbound: CadenceInboundService,
     @InjectQueue('chatbot-processor') private readonly chatbotQueue: Queue,
+    private readonly shadowObserver: ShadowObserverService,
   ) {
     super();
   }
@@ -596,6 +598,9 @@ export class InboundMessageProcessor extends WorkerHost {
         where: { id: conversationId },
       });
       if (!conv) return;
+
+      // Observação SHADOW: aprende independentemente de a IA responder ou não.
+      void this.shadowObserver.observe(conversationId);
 
       const decision = await this.agentRouter.shouldHandle(conv);
       if (!decision.handle) {
