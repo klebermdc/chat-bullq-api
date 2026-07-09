@@ -22,7 +22,12 @@ import { AutomationsService } from './automations.service';
 import { AutomationsController } from './automations.controller';
 import { AutomationsRunsController } from './automations-runs.controller';
 import { AutomationsValidator } from './automations.validator';
-import { AUTOMATION_QUEUE } from './automations.constants';
+import {
+  AUTOMATION_QUEUE,
+  AUTOMATION_RESUME_QUEUE,
+  AUTOMATION_RESUME_WATCHDOG_QUEUE,
+} from './automations.constants';
+import { AutomationResumeWatchdogCron } from './workers/automation-resume-watchdog.cron';
 
 @Global()
 @Module({
@@ -35,6 +40,10 @@ import { AUTOMATION_QUEUE } from './automations.constants';
       // send_message uses the existing outbound queue. Registering it
       // here pulls it into this module's scope so the handler can inject.
       { name: 'outbound-messages' },
+    ),
+    BullModule.registerQueue(
+      { name: AUTOMATION_RESUME_QUEUE },
+      { name: AUTOMATION_RESUME_WATCHDOG_QUEUE },
     ),
   ],
   controllers: [AutomationsController, AutomationsRunsController],
@@ -57,6 +66,7 @@ import { AUTOMATION_QUEUE } from './automations.constants';
     SendMessageHandler,
     DelayHandler,
     ActionRegistryService,
+    AutomationResumeWatchdogCron,
   ],
   exports: [OutboxService, KillSwitchService],
 })

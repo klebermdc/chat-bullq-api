@@ -33,3 +33,15 @@ export const RUN_RETENTION_DAYS = 90;
 // Currently supported schema version. Worker refuses to run automations
 // with a different version (forces migration before execution).
 export const CURRENT_AUTOMATION_SCHEMA_VERSION = 1;
+
+// ─── Retomada de runs pausados por `delay` ───────────────────────────
+export const AUTOMATION_RESUME_QUEUE = 'automation-resume';
+export const AUTOMATION_RESUME_WATCHDOG_QUEUE = 'automation-resume-watchdog';
+export const AUTOMATION_RESUME_WATCHDOG_JOB = 'scan-due-runs';
+
+// Cadência do scan de runs vencidos. 30s dá granularidade boa para delays
+// medidos em horas/dias sem martelar o banco.
+export const RESUME_WATCHDOG_PATTERN = '*/30 * * * * *';
+
+// Quantos runs vencidos reivindicar por tick (evita enfileirar 10k de uma vez).
+export const RESUME_CLAIM_BATCH_SIZE = 100;
