@@ -311,8 +311,11 @@ export class MessagesService {
         },
       },
       {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 3000 },
+        // 6 tentativas com backoff FIXO de 6s: acima do limite do Wasender
+        // "account protection" (1 msg/5s), então cada retry cai fora da janela
+        // e a mensagem acaba entregue em vez de virar FAILED no 429.
+        attempts: 6,
+        backoff: { type: 'fixed', delay: 6_000 },
         removeOnComplete: true,
         removeOnFail: false,
       },
