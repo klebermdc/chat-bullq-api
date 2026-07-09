@@ -22,7 +22,7 @@ import {
   CURRENT_AUTOMATION_SCHEMA_VERSION,
   MAX_CASCADE_DEPTH,
 } from '../automations.constants';
-import { AutomationJobData } from '../automations.types';
+import { AutomationJobData, AutomationResumeJobData } from '../automations.types';
 import { buildResumeState, parseResumeState, ResumeState } from './resume-context';
 
 @Injectable()
@@ -169,6 +169,76 @@ export class AutomationExecutorService {
           lockToken,
         );
       }
+    }
+  }
+
+  // Entrada de RETOMADA: chamada pelo AutomationResumeProcessor. Diferente
+  // de execute(): não busca regras por trigger — retoma UM run específico.
+  async resumeRun(data: AutomationResumeJobData): Promise<void> {
+    const run = await this.prisma.automationRun.findUnique({
+      where: { id: data.runId },
+      include: { automation: true },
+    });
+
+    // Idempotência: se o run sumiu, já terminou, ou não tem índice, no-op.
+    if (
+      !run ||
+      run.resumeActionIndex === null ||
+      run.status === AutomationRunStatus.SUCCESS ||
+      run.status === AutomationRunStatus.FAILED ||
+      run.status === AutomationRunStatus.PARTIAL
+    ) {
+      return;
+    }
+
+    const automation = run.automation;
+
+    // Regra apagada/desabilitada enquanto dormia → encerra como FAILED.
+    if (!automation || automation.deletedAt || !automation.enabled) {
+      await this.finalizeRun(run.id, {
+        status: AutomationRunStatus.FAILED,
+        actionsLog: this.parseLog(run.actionsLog),
+        durationMs: run.durationMs ?? 0,
+        errorCode: 'automation_unavailable',
+        errorMessage: 'regra apagada ou desabilitada durante o delay',
+      });
+      return;
+    }
+
+    const resume: ResumeState = parseResumeState(run.resumeState);
+    const payload = run.triggerPayload as unknown as AutomationJobData['payload'];
+
+    const ctx: ActionContext = {
+      organizationId: automation.organizationId,
+      payload,
+      traceId: run.traceId,
+      cascadeDepth: resume.cascadeDepth,
+      visitedAutomations: resume.visitedAutomations,
+      outbox: this.outbox,
+      prisma: this.prisma as unknown as ActionContext['prisma'],
+      actorId: automation.actorId,
+    };
+
+    // Re-adquire o lock por contato — não o seguramos durante a espera.
+    const lockToken = await this.redis.acquireContactLock(payload.contactId);
+    if (!lockToken) {
+      // Contenção: outro worker mexe nesse contato. Re-throw → BullMQ
+      // retenta o job de resume com backoff. O watchdog já reivindicou este
+      // run, então NÃO zeramos resumeAt ao reivindicar (ver Task 6): se o
+      // resume falhar, um tick futuro do watchdog o reivindica de novo.
+      throw new Error(`contact ${payload.contactId} locked — resume retry`);
+    }
+
+    try {
+      await this.runActionsFrom(
+        automation,
+        ctx,
+        run.id,
+        run.resumeActionIndex,
+        this.parseLog(run.actionsLog),
+      );
+    } finally {
+      await this.redis.releaseContactLock(payload.contactId, lockToken);
     }
   }
 
@@ -529,6 +599,11 @@ export class AutomationExecutorService {
       select: { id: true },
     });
     return !!member;
+  }
+
+  // Helper: lê actionsLog persistido de volta para o tipo tipado.
+  private parseLog(raw: unknown): ActionLogEntry[] {
+    return Array.isArray(raw) ? (raw as ActionLogEntry[]) : [];
   }
 
   private parseActions(raw: unknown): ActionDefinition[] {
