@@ -54,6 +54,28 @@ export class OfpSyncService {
     };
   }
 
+  // Upsert de uma linha com retry curto. Falhas transitórias do banco (pool timeout,
+  // deadlock, conexão derrubada) não devem abortar um sync de ~8500 linhas.
+  private async upsertRowWithRetry(row: ReturnType<OfpSyncService['toRow']>): Promise<void> {
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.prisma.ofpSalesOrder.upsert({
+          where: { externalId: row.externalId },
+          create: row,
+          update: row,
+        });
+        return;
+      } catch (err: any) {
+        if (attempt >= MAX_ATTEMPTS) throw err;
+        this.logger.warn(
+          `upsert ${row.externalId} falhou (tentativa ${attempt}/${MAX_ATTEMPTS}): ${err?.message}`,
+        );
+        await new Promise((r) => setTimeout(r, 200 * attempt));
+      }
+    }
+  }
+
   // NOTE: `running` is an in-process guard only. On a multi-replica deploy with the
   // cron enabled, replicas could sync concurrently — safe because upsert is idempotent,
   // but it is not a global lock. Single-instance deploy today.
@@ -68,16 +90,14 @@ export class OfpSyncService {
       // Upsert em lotes paralelos (~8500 linhas) — bem mais rápido que sequencial.
       // Se interromper no meio, o próximo run se auto-corrige (upsert por externalId).
       const rows = orders.map((o) => this.toRow(o));
-      const CHUNK = 20;
+      // Concorrência baixa de propósito: em lotes maiores o upsert paralelo esgota o
+      // pool de conexões do Prisma no VPS e derruba o sync inteiro com
+      // "Timed out fetching a new connection from the connection pool". CHUNK pequeno
+      // (<= pool) evita a fila; o retry por linha absorve hiccups transitórios do banco.
+      const CHUNK = 5;
       for (let i = 0; i < rows.length; i += CHUNK) {
         await Promise.all(
-          rows.slice(i, i + CHUNK).map((row) =>
-            this.prisma.ofpSalesOrder.upsert({
-              where: { externalId: row.externalId },
-              create: row,
-              update: row,
-            }),
-          ),
+          rows.slice(i, i + CHUNK).map((row) => this.upsertRowWithRetry(row)),
         );
       }
       // Reconcile deletions: drop local rows no longer present upstream.
