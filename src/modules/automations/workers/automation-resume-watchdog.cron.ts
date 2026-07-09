@@ -77,7 +77,14 @@ export class AutomationResumeWatchdogCron
         {
           jobId: `resume:${run.id}`,
           removeOnComplete: true,
-          removeOnFail: 50,
+          // removeOnFail: true é ESSENCIAL para o self-healing. BullMQ trata
+          // add() com um jobId existente (em QUALQUER estado, inclusive o
+          // failed set) como no-op. Se um job de resume esgotasse os retries
+          // e ficasse no failed set, todo tick futuro do watchdog viraria
+          // no-op e o run ficaria preso em WAITING para sempre. Removendo o
+          // job ao falhar, um tick futuro re-enfileira de verdade — o run
+          // continua elegível enquanto seu resumeAt estiver vencido.
+          removeOnFail: true,
           attempts: 5,
           backoff: { type: 'exponential', delay: 2_000 },
         },
