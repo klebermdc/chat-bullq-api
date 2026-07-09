@@ -105,6 +105,9 @@ function makeDeps(opts: any = {}) {
       findFirst: jest.fn(async () => ({ id: 'card1' })),
       update: jest.fn(async () => ({})),
     },
+    userOrganization: {
+      findFirst: jest.fn(async () => ({ userId: 'owner1' })),
+    },
   };
 
   const runner = new CadenceRunner(
@@ -155,6 +158,8 @@ describe('CadenceRunner.start', () => {
     expect(sm.origin).toBe('CADENCE');
     expect(sm.cadenceStepOrder).toBe(1);
     expect(sm.cadenceEnrollmentId).toBe(enrollment!.id);
+    // Regressão: precisa de remetente de sistema (senão dispatch falha no_sender).
+    expect(sm.createdById).toBe('owner1');
     expect(sm.content).toEqual({ text: 'Oi, Maria! Tudo bem?' });
     expect(sm.scheduledAt.getTime()).toBeGreaterThan(Date.now());
 

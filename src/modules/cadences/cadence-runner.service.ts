@@ -276,18 +276,37 @@ export class CadenceRunner {
   /** Cria o ScheduledMessage do passo e o enfileira no dispatch. */
   private async scheduleStep(
     enrollment: CadenceEnrollment,
-    conversation: { id: string; organizationId: string; channelId: string },
+    conversation: {
+      id: string;
+      organizationId: string;
+      channelId: string;
+      assignedToId?: string | null;
+    },
     contact: { name?: string | null } | null,
     step: CadenceStepLike,
   ): Promise<void> {
     const scheduledAt = new Date(Date.now() + step.delayMinutes * 60_000);
     const content = this.resolveContent(step.content, contact?.name ?? null);
 
+    // O disparo (MessagesService.send) exige um usuário remetente. A cadência é
+    // iniciada pelo sistema, então resolvemos: responsável da conversa, senão
+    // o OWNER da org. Sem isso o toque falha com `no_sender`.
+    const createdById = await this.resolveSystemSender(
+      conversation.organizationId,
+      conversation.assignedToId ?? null,
+    );
+    if (!createdById) {
+      this.logger.warn(
+        `cadence_no_sender conv=${conversation.id} org=${conversation.organizationId} — sem responsável/OWNER; toque não será enviado`,
+      );
+    }
+
     const sm = await this.schedRepo.create({
       organizationId: conversation.organizationId,
       conversationId: conversation.id,
       contactId: enrollment.contactId,
       channelId: conversation.channelId,
+      createdById,
       origin: 'CADENCE',
       cadenceEnrollmentId: enrollment.id,
       cadenceStepOrder: step.order,
@@ -311,6 +330,19 @@ export class CadenceRunner {
       },
     );
     await this.schedRepo.update(sm.id, { jobId: String(job.id) });
+  }
+
+  /** Remetente do sistema: responsável da conversa, senão o OWNER da org. */
+  private async resolveSystemSender(
+    organizationId: string,
+    assignedToId: string | null,
+  ): Promise<string | null> {
+    if (assignedToId) return assignedToId;
+    const owner = await this.prisma.userOrganization.findFirst({
+      where: { organizationId, role: 'OWNER' },
+      select: { userId: true },
+    });
+    return owner?.userId ?? null;
   }
 
   /** Substitui `{nome}` no `content.text` (formato TEXT); demais tipos passam direto. */
