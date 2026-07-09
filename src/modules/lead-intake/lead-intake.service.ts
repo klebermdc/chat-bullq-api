@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { ConversationSource } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { normalizePhone } from '../../common/utils/phone.util';
@@ -40,5 +41,22 @@ export class LeadIntakeService {
       },
       select: { id: true },
     });
+  }
+
+  async rotateSecret(organizationId: string): Promise<{ secret: string }> {
+    const secret = randomBytes(24).toString('hex');
+    await this.prisma.organization.update({
+      where: { id: organizationId },
+      data: { leadIntakeSecret: secret },
+    });
+    return { secret };
+  }
+
+  async getConfig(organizationId: string): Promise<{ configured: boolean }> {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { leadIntakeSecret: true },
+    });
+    return { configured: !!org?.leadIntakeSecret };
   }
 }

@@ -10,6 +10,7 @@ describe('LeadIntakeService', () => {
     prisma = {
       organization: { findUnique: jest.fn() },
       leadIntake: { create: jest.fn().mockResolvedValue({ id: 'li1' }) },
+      // organization.update é adicionado nos testes que precisam
     };
     service = new LeadIntakeService(prisma);
   });
@@ -47,6 +48,29 @@ describe('LeadIntakeService', () => {
         sourceDetail: expect.objectContaining({ page: '/orcamento', utmSource: 'google' }),
       }),
       select: { id: true },
+    });
+  });
+
+  describe('secret management', () => {
+    it('rotateSecret grava um secret novo e o retorna', async () => {
+      prisma.organization.update = jest.fn().mockResolvedValue({});
+      const out = await service.rotateSecret('org1');
+      expect(out.secret).toEqual(expect.any(String));
+      expect(out.secret.length).toBeGreaterThanOrEqual(32);
+      expect(prisma.organization.update).toHaveBeenCalledWith({
+        where: { id: 'org1' },
+        data: { leadIntakeSecret: out.secret },
+      });
+    });
+
+    it('getConfig retorna configured=false quando não há secret', async () => {
+      prisma.organization.findUnique.mockResolvedValue({ leadIntakeSecret: null });
+      expect(await service.getConfig('org1')).toEqual({ configured: false });
+    });
+
+    it('getConfig retorna configured=true quando há secret', async () => {
+      prisma.organization.findUnique.mockResolvedValue({ leadIntakeSecret: 'abc' });
+      expect(await service.getConfig('org1')).toEqual({ configured: true });
     });
   });
 });
