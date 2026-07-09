@@ -17,9 +17,9 @@ export class UpsertCadenceStepDto {
   @IsInt()
   order: number;
 
-  @ApiProperty({ example: 24, description: 'Atraso em horas antes do disparo.' })
+  @ApiProperty({ example: 1440, description: 'Atraso em minutos antes do disparo.' })
   @IsInt()
-  delayHours: number;
+  delayMinutes: number;
 
   @ApiProperty({ example: { text: 'Oi, {nome}! Tudo bem?' } })
   @IsObject()

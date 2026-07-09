@@ -47,8 +47,8 @@ function validDto(overrides: any = {}) {
     enabled: true,
     allowManual: true,
     steps: [
-      { order: 1, delayHours: 24, content: { text: 'A' }, options: ['SIM', 'NAO'] },
-      { order: 2, delayHours: 72, content: { text: 'B' }, options: ['SIM', 'NAO'] },
+      { order: 1, delayMinutes: 24, content: { text: 'A' }, options: ['SIM', 'NAO'] },
+      { order: 2, delayMinutes: 72, content: { text: 'B' }, options: ['SIM', 'NAO'] },
     ],
     ...overrides,
   };
@@ -66,8 +66,8 @@ describe('CadencesService', () => {
       const { service } = build();
       const dto = validDto({
         steps: [
-          { order: 1, delayHours: 24, content: { text: 'A' }, options: ['SIM'] },
-          { order: 1, delayHours: 72, content: { text: 'B' }, options: ['SIM'] },
+          { order: 1, delayMinutes: 24, content: { text: 'A' }, options: ['SIM'] },
+          { order: 1, delayMinutes: 72, content: { text: 'B' }, options: ['SIM'] },
         ],
       });
       await expect(service.upsert('org1', dto as any)).rejects.toThrow(
@@ -75,11 +75,11 @@ describe('CadencesService', () => {
       );
     });
 
-    it('rejeita delayHours <= 0 com BadRequestException', async () => {
+    it('rejeita delayMinutes <= 0 com BadRequestException', async () => {
       const { service } = build();
       const dto = validDto({
         steps: [
-          { order: 1, delayHours: 0, content: { text: 'A' }, options: ['SIM'] },
+          { order: 1, delayMinutes: 0, content: { text: 'A' }, options: ['SIM'] },
         ],
       });
       await expect(service.upsert('org1', dto as any)).rejects.toThrow(
@@ -99,9 +99,9 @@ describe('CadencesService', () => {
       const { service, repo } = build();
       const dto = validDto({
         steps: [
-          { order: 3, delayHours: 120, content: { text: 'C' }, options: ['SIM'] },
-          { order: 1, delayHours: 24, content: { text: 'A' }, options: ['SIM'] },
-          { order: 2, delayHours: 72, content: { text: 'B' }, options: ['SIM'] },
+          { order: 3, delayMinutes: 120, content: { text: 'C' }, options: ['SIM'] },
+          { order: 1, delayMinutes: 24, content: { text: 'A' }, options: ['SIM'] },
+          { order: 2, delayMinutes: 72, content: { text: 'B' }, options: ['SIM'] },
         ],
       });
       const saved = await service.upsert('org1', dto as any);
@@ -119,7 +119,7 @@ describe('CadencesService', () => {
       expect((template.steps[0].content as any).text).toBe(
         CADENCE_DEFAULT_STEPS[0].text,
       );
-      expect(template.steps[0].delayHours).toBe(CADENCE_DEFAULT_STEPS[0].delayHours);
+      expect(template.steps[0].delayMinutes).toBe(CADENCE_DEFAULT_STEPS[0].delayMinutes);
     });
 
     it('lança NotFoundException para id inexistente', async () => {

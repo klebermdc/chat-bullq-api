@@ -2024,7 +2024,7 @@ model CadenceStep {
   id          String @id @default(cuid())
   cadenceId   String @map("cadence_id")
   order       Int
-  delayHours  Int    @map("delay_hours")
+  delayMinutes Int    @map("delay_minutes")
   contentType MessageContentType @default(TEXT)
   content     Json
   options     CadenceStepOption[]
