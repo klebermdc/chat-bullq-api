@@ -10,7 +10,9 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-09-lead-source-attribution-design.md`
 
-**Deploy:** PR no fork `klebermdc`, base `feat/conversation-tabs`. Buildar trial do schema antes de push. Migration aditiva, sem backfill.
+**Depende de:** feature **Meta CAPI + CTWA** (`feat/meta-capi-ctwa`, PR fork API #27) — que JÁ entregou: o tipo `InboundReferral = { ctwaClid?, sourceId?, sourceType? }` em `normalized-message.types.ts`, o parse de `message.referral` no mapper oficial, e as colunas `Contact.ctwaClid/ctwaSourceId/ctwaSourceType/ctwaClidAt` gravadas no `contact-resolver`. **Este plano REUSA tudo isso — não recria.** A captura CTWA já existe; aqui só classificamos (`Conversation.source`), adicionamos o lado do site (Elementor/LeadIntake) e a UI.
+
+**Base/branch:** nova worktree/branch a partir de `feat/meta-capi-ctwa` (fork `klebermdc`), para empilhar sobre o referral já capturado. PR base = `feat/meta-capi-ctwa` (ou `feat/conversation-tabs` depois que o #27 mergear). **Gotcha da worktree:** node_modules não é copiado → `ln -s ../../node_modules node_modules` na raiz da worktree pra o jest rodar. Migration aditiva, sem backfill.
 
 ---
 
@@ -26,11 +28,11 @@
 - `src/modules/messaging/pipeline/attribution.service.spec.ts`
 
 **Modificar:**
-- `prisma/schema.prisma` — enum `ConversationSource`; `Conversation.source/sourceDetail`; `Contact.source` + index; `LeadIntake`; `Organization.leadIntakeSecret`
+- `prisma/schema.prisma` — enum `ConversationSource`; `Conversation.source/sourceDetail`; `Contact.source` + index; `LeadIntake`; `Organization.leadIntakeSecret` (o `Contact` já tem as colunas `ctwa*` do meta-capi — não mexer nelas)
 - `src/common/utils/phone.util.ts` (+ `.spec.ts`) — helper de casamento por sufixo
-- `src/modules/channel-hub/ports/types/normalized-message.types.ts` — `InboundReferral` + `referral?`
-- `src/modules/channel-hub/adapters/whatsapp-official/whatsapp-official.message-mapper.ts` (+ `.spec.ts`) — parse de `message.referral`
 - `src/modules/messaging/pipeline/conversation-resolver.service.ts` — carimbar origem na criação
+
+**Reusado do meta-capi (NÃO tocar):** `InboundReferral` + `referral?` em `normalized-message.types.ts`; parse de `message.referral` no `whatsapp-official.message-mapper.ts`; colunas `Contact.ctwa*`.
 - `src/modules/messaging/pipeline/inbound-message.processor.ts` — passar `referral`+`contactPhone` ao resolver
 - `src/modules/messaging/messaging.module.ts` — registrar `AttributionService`
 - `src/modules/dashboard/dashboard.service.ts` / `dashboard.controller.ts` — endpoint `leads-by-source`
@@ -123,10 +125,10 @@ model LeadIntake {
 }
 ```
 
-- [ ] **Step 6: Validar o schema**
+- [ ] **Step 6: Validar o schema (NÃO rodar `prisma format`)**
 
-Run: `npx prisma format && npx prisma validate`
-Expected: "The schema is valid" (sem erro de `}` faltando — conferir que os models vizinhos continuam fechados).
+Run: `npx prisma validate`
+Expected: "The schema is valid". **Não** rodar `npx prisma format` — ele reflowa o arquivo inteiro e causa a pegadinha de merge do `schema.prisma` (visto no meta-capi e no whatsapp-templates). Formatar à mão só o bloco adicionado e conferir que os models vizinhos (`Contact`, `Organization`, `Conversation`) continuam fechados com `}`.
 
 - [ ] **Step 7: Criar a migration**
 
@@ -213,111 +215,27 @@ git commit -m "feat(phone): phoneMatchSuffix para casar lead do form com WhatsAp
 
 ---
 
-## Task 3: Tipo `InboundReferral` + parsing no message-mapper
+## Task 3: (Herdado do meta-capi) Verificar a captura do referral CTWA
 
-**Files:**
-- Modify: `src/modules/channel-hub/ports/types/normalized-message.types.ts`
-- Modify: `src/modules/channel-hub/adapters/whatsapp-official/whatsapp-official.message-mapper.ts`
-- Test: `src/modules/channel-hub/adapters/whatsapp-official/whatsapp-official.inbound-adapter.spec.ts`
+Nada a implementar — o meta-capi (`feat/meta-capi-ctwa`) já entregou o tipo `InboundReferral` e o parse de `message.referral` no mapper oficial. Este task é só a confirmação de que a base tem o que a atribuição precisa.
 
-- [ ] **Step 1: Adicionar o tipo**
+**Files:** nenhum (verificação).
 
-Em `normalized-message.types.ts`, antes de `export interface NormalizedInboundMessage`, adicionar:
+- [ ] **Step 1: Confirmar o tipo e o parse na base**
 
-```typescript
-/**
- * Atribuição Click-to-WhatsApp (CTWA). Presente só na 1ª mensagem de quem
- * clicou num anúncio/post que abre o WhatsApp. Vem em `message.referral`
- * (topo da mensagem) na Cloud API — não em `context`.
- */
-export interface InboundReferral {
-  sourceType?: 'ad' | 'post';
-  sourceId?: string;
-  sourceUrl?: string;
-  headline?: string;
-  body?: string;
-  ctwaClid?: string;
-}
-```
-
-E dentro de `NormalizedInboundMessage`, após `isForwarded?: boolean;`, adicionar:
-
-```typescript
-  referral?: InboundReferral;
-```
-
-- [ ] **Step 2: Escrever o teste que falha**
-
-Adicionar um caso no spec do inbound-adapter (`whatsapp-official.inbound-adapter.spec.ts`) que passe um payload com `referral` e verifique o mapeamento. Localizar o `describe` de parsing de mensagens e adicionar:
-
-```typescript
-it('mapeia message.referral (CTWA) para o campo referral', () => {
-  const message = {
-    from: '5511999999999',
-    id: 'wamid.TEST',
-    timestamp: '1720000000',
-    type: 'text',
-    text: { body: 'oi' },
-    referral: {
-      source_url: 'https://fb.com/ad',
-      source_id: '120210000',
-      source_type: 'ad',
-      headline: 'Promo',
-      body: 'Clique aqui',
-      ctwa_clid: 'abc123',
-    },
-  };
-  const mapper = new WhatsAppOfficialMessageMapper();
-  const result = mapper.mapInbound(message, ChannelType.WHATSAPP_OFFICIAL);
-  expect(result?.referral).toEqual({
-    sourceType: 'ad',
-    sourceId: '120210000',
-    sourceUrl: 'https://fb.com/ad',
-    headline: 'Promo',
-    body: 'Clique aqui',
-    ctwaClid: 'abc123',
-  });
-});
-```
-
-> Nota: usar o mesmo nome de método que o mapper expõe hoje (`mapInbound` na linha ~15). Se o nome for outro no arquivo, ajustar a chamada — não mudar a assinatura do mapper.
-
-- [ ] **Step 3: Rodar e ver falhar**
-
-Run: `npx jest whatsapp-official.inbound-adapter.spec.ts -t referral`
-Expected: FAIL — `result.referral` é `undefined`.
-
-- [ ] **Step 4: Implementar o parse no mapper**
-
-Em `whatsapp-official.message-mapper.ts`, dentro do método que monta o `result` (após `if (message.context?.id) {...}`, ~L31), adicionar:
-
-```typescript
-    if (message.referral) {
-      const r = message.referral;
-      result.referral = {
-        sourceType: r.source_type,
-        sourceId: r.source_id,
-        sourceUrl: r.source_url,
-        headline: r.headline,
-        body: r.body,
-        ctwaClid: r.ctwa_clid,
-      };
-    }
-```
-
-- [ ] **Step 5: Rodar e ver passar**
-
-Run: `npx jest whatsapp-official.inbound-adapter.spec.ts -t referral`
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
+Run:
 ```bash
-git add src/modules/channel-hub/ports/types/normalized-message.types.ts \
-        src/modules/channel-hub/adapters/whatsapp-official/whatsapp-official.message-mapper.ts \
-        src/modules/channel-hub/adapters/whatsapp-official/whatsapp-official.inbound-adapter.spec.ts
-git commit -m "feat(official): captura referral CTWA no message-mapper"
+grep -n "export interface InboundReferral" src/modules/channel-hub/ports/types/normalized-message.types.ts
+grep -n "referral" src/modules/channel-hub/adapters/whatsapp-official/whatsapp-official.message-mapper.ts
 ```
+Expected: `InboundReferral` existe com `{ ctwaClid?, sourceId?, sourceType? }` e o mapper preenche `result.referral` a partir de `message.referral`.
+
+> Se por algum motivo a base NÃO tiver isso (ex.: começou de `feat/conversation-tabs` antes do #27 mergear), PARE e volte à decisão de base — este plano assume o referral já capturado. A atribuição (Task 4) consome exatamente esses três campos; nada além é necessário.
+
+- [ ] **Step 2: Confirmar que `NormalizedInboundMessage.referral` chega ao processor**
+
+Run: `grep -n "referral" src/modules/messaging/pipeline/contact-resolver.service.ts`
+Expected: `buildCtwaData` lê `message.referral` — confirma que o campo está populado no pipeline e disponível para passarmos ao `conversation-resolver` no Task 5.
 
 ---
 
@@ -351,10 +269,10 @@ describe('AttributionService', () => {
     const out = await service.resolveSource(tx, {
       organizationId: 'org1',
       contactPhone: '5511999999999',
-      referral: { sourceType: 'ad', sourceId: '120', headline: 'Promo' },
+      referral: { sourceType: 'ad', sourceId: '120', ctwaClid: 'clid-abc' },
     });
     expect(out.source).toBe(ConversationSource.CTWA);
-    expect(out.sourceDetail).toMatchObject({ sourceType: 'ad', adId: '120', headline: 'Promo' });
+    expect(out.sourceDetail).toMatchObject({ sourceType: 'ad', adId: '120', ctwaClid: 'clid-abc' });
     expect(out.matchedLeadIntakeId).toBeNull();
     expect(tx.leadIntake.findFirst).not.toHaveBeenCalled();
   });
@@ -436,16 +354,15 @@ export class AttributionService {
     tx: Prisma.TransactionClient,
     input: AttributionInput,
   ): Promise<AttributionResult> {
-    if (input.referral) {
+    // CTWA: o referral só existe na 1ª msg pós-clique. Basta ctwaClid OU sourceId
+    // presente para considerar origem de anúncio (campos vindos do meta-capi).
+    if (input.referral && (input.referral.ctwaClid || input.referral.sourceId)) {
       const r = input.referral;
       return {
         source: ConversationSource.CTWA,
         sourceDetail: {
           sourceType: r.sourceType ?? null,
           adId: r.sourceId ?? null,
-          sourceUrl: r.sourceUrl ?? null,
-          headline: r.headline ?? null,
-          body: r.body ?? null,
           ctwaClid: r.ctwaClid ?? null,
         },
         matchedLeadIntakeId: null,
@@ -1223,7 +1140,7 @@ git commit -m "feat(web): card Leads por origem no dashboard"
 - [ ] Build do web verde nos dois repos.
 - [ ] **E2E site (testável agora):** `POST /webhooks/lead-intake/:org?secret=...` cria `LeadIntake`; simular inbound do mesmo telefone → conversa nasce com `source=SITE_FORM` e o `LeadIntake` fica `consumedAt`; selo "Site" aparece.
 - [ ] **CTWA:** validar só quando o número oficial ligar (payload com `message.referral` → conversa `source=CTWA`). Documentar no PR que contatos antigos não têm origem retroativa.
-- [ ] Abrir **PR no fork `klebermdc`, base `feat/conversation-tabs`** (não push direto). Buildar trial do schema antes.
+- [ ] Abrir **PR no fork `klebermdc`, base `feat/meta-capi-ctwa`** (empilha sobre o referral já capturado; se o #27 já tiver mergeado, base `feat/conversation-tabs`). Não push direto. Buildar trial do schema antes; conferir que a migration deste plano vem DEPOIS de `20260709000000_meta_capi_ctwa`.
 - [ ] Pós-merge/deploy: rodar migrate no VPS; gerar o secret (`POST /lead-intake/secret/rotate`); configurar a ação **Webhook** no Elementor Submissions apontando para `/webhooks/lead-intake/:organizationId` com `x-lead-intake-secret` + campos ocultos `page`/`utm_*`.
 
 ---
@@ -1232,7 +1149,7 @@ git commit -m "feat(web): card Leads por origem no dashboard"
 
 - **Colunas dedicadas (Conversation + Contact first-touch):** Task 1, 5. ✅
 - **LeadIntake + webhook Elementor:** Task 1, 6, 7. ✅
-- **Captura CTWA no adapter oficial:** Task 3, 5. ✅
+- **Captura CTWA no adapter oficial:** herdada do meta-capi (Task 3 = verificação); consumida na Task 4/5. ✅
 - **Regra de prioridade CTWA > SITE_FORM > ORGANIC:** Task 4. ✅
 - **Normalização/casamento de telefone (risco nº 1):** Task 2, 4, 6. ✅
 - **Selo (conversa + contatos):** Task 9. ✅

@@ -1,8 +1,10 @@
 # Atribuição de Origem de Lead (CTWA + Formulário do site)
 
 **Data:** 2026-07-09
-**Status:** Design aprovado — pronto para plano de implementação
-**Branch de deploy alvo:** fork `klebermdc`, base `feat/conversation-tabs` (via PR — nunca push direto)
+**Status:** Design aprovado — plano escrito e revisado
+**Branch de deploy alvo:** fork `klebermdc`, base `feat/meta-capi-ctwa` (empilha sobre o referral já capturado; via PR — nunca push direto)
+
+**Dependência:** REUSA a captura CTWA da feature Meta CAPI (`feat/meta-capi-ctwa`, PR API #27): o tipo `InboundReferral = { ctwaClid?, sourceId?, sourceType? }`, o parse de `message.referral` no mapper oficial e as colunas `Contact.ctwa*` já existem lá. Este design NÃO recria isso — só classifica (`Conversation.source`), adiciona o lado do site (Elementor/LeadIntake) e a UI.
 
 ## Problema
 
