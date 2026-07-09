@@ -73,6 +73,7 @@ export class ContactResolverService {
             name: message.contactName,
             phone: message.contactPhone,
             avatarUrl: message.contactAvatarUrl,
+            ...this.buildCtwaData(message),
             channels: {
               create: {
                 channelId,
@@ -132,11 +133,31 @@ export class ContactResolverService {
     if (message.contactPhone && !existing.contact.phone) {
       contactUpdates.phone = message.contactPhone;
     }
+    // Last-click: se o lead reengaja por um novo anúncio CTWA, sobrescreve o
+    // clique anterior (a atribuição vale para a conversão mais recente).
+    Object.assign(contactUpdates, this.buildCtwaData(message));
     if (Object.keys(contactUpdates).length > 0) {
       await this.prisma.contact.update({
         where: { id: existing.contactId },
         data: contactUpdates,
       });
     }
+  }
+
+  /**
+   * Campos de atribuição Click-to-WhatsApp a persistir no Contact. Vazio
+   * quando a mensagem não traz `referral` (fluxo normal, sem anúncio) — assim
+   * um `...spread` não toca nas colunas de um contato que já veio de anúncio.
+   */
+  private buildCtwaData(
+    message: NormalizedInboundMessage,
+  ): Record<string, unknown> {
+    if (!message.referral?.ctwaClid) return {};
+    return {
+      ctwaClid: message.referral.ctwaClid,
+      ctwaSourceId: message.referral.sourceId ?? null,
+      ctwaSourceType: message.referral.sourceType ?? null,
+      ctwaClidAt: message.timestamp,
+    };
   }
 }
