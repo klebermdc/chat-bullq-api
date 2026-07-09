@@ -12,6 +12,7 @@ export const ACTION_TYPES = [
   'move_pipeline_stage',
   'assign_user',
   'send_message',
+  'delay',
 ] as const;
 
 export type ActionType = (typeof ACTION_TYPES)[number];
@@ -43,6 +44,17 @@ export interface ActionContext {
   actorId: string; // automation creator (snapshot)
 }
 
+// Sinal de controle de fluxo devolvido por ações especiais. Hoje só o
+// `delay`: pede ao executor para persistir o run como WAITING e parar,
+// retomando em `resumeAt`. O executor é o ÚNICO que age sobre isto — o
+// handler não persiste nada.
+export interface DelayControl {
+  type: 'delay';
+  resumeAt: string; // ISO-8601
+}
+
+export type ActionControl = DelayControl;
+
 export interface ActionExecutionResult {
   ok: boolean;
   // Short, machine-readable error code for UI grouping. Examples:
@@ -52,6 +64,9 @@ export interface ActionExecutionResult {
   // Free-form output used by tests/debug/run-log. Avoid putting anything
   // sensitive here — it gets persisted in `automation_runs.actions_log`.
   output?: Record<string, unknown>;
+  // Presente apenas em ações de controle de fluxo (ex.: delay). Quando
+  // setado, o executor NÃO segue para a próxima ação — trata o sinal.
+  control?: ActionControl;
 }
 
 export interface ActionHandler {
