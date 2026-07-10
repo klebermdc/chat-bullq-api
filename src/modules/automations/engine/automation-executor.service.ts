@@ -353,6 +353,15 @@ export class AutomationExecutorService {
             durationMs: dur,
             output: result.output,
           });
+          // Checkpoint após ação de efeito externo irreversível: grava o
+          // progresso para que um crash retome da PRÓXIMA ação em vez de
+          // re-executar o efeito (ex.: send_message não é idempotente).
+          if (handler.checkpoint === true) {
+            await this.checkpointRun(runId, {
+              resumeActionIndex: i + 1,
+              actionsLog: log,
+            });
+          }
         } else {
           anyFailure = true;
           log.push({
@@ -430,6 +439,34 @@ export class AutomationExecutorService {
     } catch (err) {
       this.logger.error(
         `Failed to pause run ${runId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // Igual ao pauseRun, mas NÃO toca em status nem resumeAt — apenas avança
+  // resumeActionIndex e persiste o log parcial. O run continua no mesmo
+  // estado (WAITING; resumeAt=null se em progresso, ou o resumeAt vencido
+  // se num resume ativo, mantendo-o re-reivindicável para continuar).
+  // Best-effort: a ação já teve efeito; um blip aqui não deve abortar o run.
+  private async checkpointRun(
+    runId: string,
+    data: { resumeActionIndex: number; actionsLog: ActionLogEntry[] },
+  ): Promise<void> {
+    try {
+      const run = await this.prisma.automationRun.update({
+        where: { id: runId },
+        data: {
+          resumeActionIndex: data.resumeActionIndex,
+          actionsLog: data.actionsLog as unknown as Prisma.InputJsonValue,
+        },
+      });
+      this.realtime.emitToOrg(run.organizationId, 'automation:run', {
+        automationId: run.automationId,
+        run,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to checkpoint run ${runId}: ${(err as Error).message}`,
       );
     }
   }
