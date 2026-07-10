@@ -45,6 +45,16 @@ export class CreateAgentDto {
   category?: string;
 
   @ApiPropertyOptional({
+    description:
+      'Perfil de voz no template de sistema. "warm" = voz calorosa/acolhedora com emojis moderados (captação/atendimento hospitaleiro). Omitido/"consultive" = voz de venda consultiva seca (default).',
+    example: 'warm',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  voiceProfile?: string;
+
+  @ApiPropertyOptional({
     type: [String],
     example: ['responde sobre planos', 'faz follow-up de orçamentos'],
   })

@@ -1,6 +1,37 @@
 import { BadRequestException } from '@nestjs/common';
 import { AgentsService } from './agents.service';
 
+describe('AgentsService.create — voiceProfile', () => {
+  function make() {
+    const prisma = {
+      aiAgent: { create: jest.fn().mockResolvedValue({ id: 'a1' }) },
+      channel: { findMany: jest.fn().mockResolvedValue([]) },
+      aiAgentChannel: { createMany: jest.fn() },
+    } as any;
+    return { svc: new AgentsService(prisma), prisma };
+  }
+
+  const baseDto = {
+    name: 'Aline',
+    modelId: 'sakana/fugu',
+    systemPrompt: 'Você é uma consultora de viagens acolhedora.',
+  };
+
+  it('persiste voiceProfile quando informado', async () => {
+    const { svc, prisma } = make();
+    await svc.create('org1', { ...baseDto, voiceProfile: 'warm' } as any);
+    expect(prisma.aiAgent.create.mock.calls[0][0].data).toMatchObject({
+      voiceProfile: 'warm',
+    });
+  });
+
+  it('grava voiceProfile null quando omitido (default consultivo)', async () => {
+    const { svc, prisma } = make();
+    await svc.create('org1', { ...baseDto } as any);
+    expect(prisma.aiAgent.create.mock.calls[0][0].data.voiceProfile).toBeNull();
+  });
+});
+
 describe('AgentsService.assignChannel — tagFilterId', () => {
   function make(opts: { tag?: any } = {}) {
     const prisma = {
