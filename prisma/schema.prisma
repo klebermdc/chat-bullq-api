@@ -974,6 +974,12 @@ model AiAgent {
   category     String?
   capabilities String[]    @default([])
 
+  // Perfil de voz do agente no template global de sistema.
+  // null / "consultive" (default) = voz de venda consultiva seca (sem emoji,
+  // sem bullets). "warm" = voz calorosa/acolhedora (emojis com moderação),
+  // usada por agentes de captação/atendimento hospitaleiro (ex: SDR de viagens).
+  voiceProfile String? @map("voice_profile")
+
   // ─── Organograma matricial ágil ────────────────────────────
   // parentAgentId: chefia direta — quem este agent reporta. Null = raiz (CEO/diretoria).
   // department: setor (VENDAS, SUPORTE, CS, CONTABIL, JURIDICO, FINANCEIRO, OPERACOES, ...).

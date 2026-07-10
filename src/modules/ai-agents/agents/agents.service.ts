@@ -25,6 +25,7 @@ export class AgentsService {
         avatarUrl: dto.avatarUrl,
         kind: dto.kind ?? 'WORKER',
         category: dto.category,
+        voiceProfile: dto.voiceProfile ?? null,
         capabilities: dto.capabilities ?? [],
         modelId: dto.modelId,
         modelParams: dto.modelParams as object | undefined,
