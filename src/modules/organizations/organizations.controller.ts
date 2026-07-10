@@ -49,10 +49,11 @@ export class OrganizationsController {
   @ApiOperation({ summary: 'Invite a member to the organization' })
   invite(
     @CurrentOrg('id') orgId: string,
+    @CurrentOrg('userRole') actorRole: OrgRole,
     @Body() dto: InviteMemberDto,
     @CurrentUser('id') userId: string,
   ) {
-    return this.service.inviteMember(orgId, dto, userId);
+    return this.service.inviteMember(orgId, dto, userId, actorRole);
   }
 
   @Get('invitations')

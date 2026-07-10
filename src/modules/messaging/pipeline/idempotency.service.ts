@@ -77,6 +77,21 @@ export class IdempotencyService implements OnModuleDestroy {
     );
   }
 
+  /**
+   * Libera uma claim de processamento (DEL da chave) para que um retry
+   * subsequente possa re-adquiri-la. Usado no caminho de FALHA do inbound:
+   * `markProcessed` faz apenas SET (mantém a chave), então usá-lo no catch
+   * fazia todo retry ver `duplicate_claim` e descartar a mensagem — perda de
+   * dado. Aqui deletamos de fato para que a próxima tentativa reprocessse.
+   */
+  async releaseClaim(
+    externalMessageId: string,
+    channelId: string,
+  ): Promise<void> {
+    if (!externalMessageId) return;
+    await this.redis.del(this.key(channelId, externalMessageId));
+  }
+
   async isDuplicate(
     externalMessageId: string,
     channelId: string,

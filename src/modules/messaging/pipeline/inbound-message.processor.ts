@@ -404,8 +404,10 @@ export class InboundMessageProcessor extends WorkerHost {
         await this.webhookEvents.markFailed(webhookEventId, err.message);
       }
       // Release the claim so retries can try again — next attempt re-acquires.
+      // (markProcessed apenas re-grava a chave via SET, o que fazia todo retry
+      // cair em duplicate_claim e perder a mensagem; releaseClaim faz DEL.)
       await this.idempotency
-        .markProcessed(message.externalMessageId, channelId)
+        .releaseClaim(message.externalMessageId, channelId)
         .catch(() => undefined);
       throw err;
     }
@@ -677,8 +679,16 @@ export class InboundMessageProcessor extends WorkerHost {
       return this.processInstagramReadWatermark(channelId, status, webhookEventId);
     }
 
+    // Escopo por canal: IDs de mensagem de provedores Baileys (Wasender/Zappfy)
+    // não são globalmente únicos e podem colidir entre canais/orgs. Sem o filtro
+    // de canal, um recibo de status podia casar a mensagem de OUTRO tenant.
+    // (Espelha o escopo `conversation: { channelId }` de processInstagramReadWatermark.)
     const message = await this.prisma.message.findFirst({
-      where: { externalId: status.externalMessageId },
+      where: {
+        externalId: status.externalMessageId,
+        conversation: { channelId },
+      },
+      orderBy: { createdAt: 'desc' },
     });
     if (!message) return;
 
