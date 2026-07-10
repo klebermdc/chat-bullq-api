@@ -45,3 +45,8 @@ export const RESUME_WATCHDOG_PATTERN = '*/30 * * * * *';
 
 // Quantos runs vencidos reivindicar por tick (evita enfileirar 10k de uma vez).
 export const RESUME_CLAIM_BATCH_SIZE = 100;
+
+// Runs em progresso (WAITING + resumeAt=null) mais velhos que isto são
+// considerados órfãos de crash e reconciliados para FAILED pelo watchdog.
+// 10min é folga enorme sobre qualquer cadeia síncrona de ações (incl. HTTP).
+export const STALE_RUN_THRESHOLD_MS = 10 * 60 * 1000;

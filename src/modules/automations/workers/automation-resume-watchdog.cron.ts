@@ -9,6 +9,7 @@ import {
   AUTOMATION_RESUME_WATCHDOG_JOB,
   RESUME_WATCHDOG_PATTERN,
   RESUME_CLAIM_BATCH_SIZE,
+  STALE_RUN_THRESHOLD_MS,
 } from '../automations.constants';
 
 // Varre AutomationRun WAITING com resumeAt vencido e enfileira um job de
@@ -55,7 +56,9 @@ export class AutomationResumeWatchdogCron
   }
 
   async process(_job: Job): Promise<void> {
-    await this.claimAndEnqueueDueRuns(new Date());
+    const now = new Date();
+    await this.claimAndEnqueueDueRuns(now);
+    await this.sweepStaleRuns(now);
   }
 
   // Testável isoladamente. Retorna quantos runs foram enfileirados.
@@ -95,5 +98,32 @@ export class AutomationResumeWatchdogCron
       this.logger.log(`enfileirados ${due.length} run(s) de resume`);
     }
     return due.length;
+  }
+
+  // Reconcilia órfãs: runs criados como WAITING+resumeAt=null cujo processo
+  // morreu antes de pausar/finalizar. O scan de resume nunca os toca (filtra
+  // resumeAt<=now, e null nunca casa), então sem isto ficariam WAITING para
+  // sempre. Marca FAILED após STALE_RUN_THRESHOLD_MS, preservando o log
+  // parcial. Testável isoladamente; retorna quantos foram varridos.
+  async sweepStaleRuns(now: Date): Promise<number> {
+    const cutoff = new Date(now.getTime() - STALE_RUN_THRESHOLD_MS);
+    const { count } = await this.prisma.automationRun.updateMany({
+      where: {
+        status: AutomationRunStatus.WAITING,
+        resumeAt: null,
+        startedAt: { lt: cutoff },
+      },
+      data: {
+        status: AutomationRunStatus.FAILED,
+        errorCode: 'stale_in_progress',
+        errorMessage:
+          'run em progresso abandonado (crash antes de pausar/finalizar)',
+        finishedAt: now,
+      },
+    });
+    if (count > 0) {
+      this.logger.warn(`varridos ${count} run(s) órfão(s) → FAILED`);
+    }
+    return count;
   }
 }
