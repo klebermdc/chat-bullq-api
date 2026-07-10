@@ -4,6 +4,7 @@ FROM node:20-alpine AS deps
 RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=development
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 COPY package.json yarn.lock ./
 RUN corepack enable && yarn install --frozen-lockfile --production=false
 
@@ -11,6 +12,7 @@ FROM node:20-alpine AS builder
 RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=development
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate
@@ -27,6 +29,12 @@ ENV PORT=3001
 
 COPY package.json yarn.lock ./
 RUN corepack enable && yarn install --frozen-lockfile --production=true && yarn cache clean
+
+# Chromium do sistema (Alpine/musl) para o render de checkout em proposals.
+# Playwright não suporta --with-deps no Alpine; usamos o chromium do apk via executablePath.
+RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PROPOSAL_CHROMIUM_PATH=/usr/bin/chromium-browser
 
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma

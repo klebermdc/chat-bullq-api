@@ -209,6 +209,7 @@ model Organization {
   recoverySettings RecoverySettings?
   cadences Cadence[]
   cadenceEnrollments CadenceEnrollment[]
+  proposals      Proposal[]
 
   @@map("organizations")
 }
@@ -475,6 +476,7 @@ model Contact {
   aiMemories    AiAgentMemory[]
   cards         Card[]           @relation("CardContact")
   scheduledMessages ScheduledMessage[]
+  proposals         Proposal[]
 
   @@index([organizationId, phone], name: "idx_contact_org_phone")
   @@index([organizationId, email], name: "idx_contact_org_email")
@@ -2096,4 +2098,29 @@ model CadenceEnrollment {
   @@index([conversationId, status])
   @@index([organizationId, status])
   @@map("cadence_enrollments")
+}
+
+model Proposal {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  contactId      String   @map("contact_id")
+  conversationId String   @map("conversation_id")
+  checkoutUrl    String   @map("checkout_url")
+  adults         Int      @default(0)
+  children       Int      @default(0)
+  startDate      DateTime @map("start_date")
+  endDate        DateTime @map("end_date")
+  parks          Json     @default("[]")
+  totalValue     Decimal  @default(0) @map("total_value") @db.Decimal(12, 2)
+  currency       String   @default("BRL")
+  rawText        String   @map("raw_text")
+  createdById    String   @map("created_by_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, contactId], name: "idx_proposal_org_contact")
+  @@index([organizationId, createdAt], name: "idx_proposal_org_created")
+  @@map("proposals")
 }

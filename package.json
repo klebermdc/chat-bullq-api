@@ -49,6 +49,7 @@
     "passport-custom": "^1.1.1",
     "passport-jwt": "^4.0.1",
     "pg": "^8.20.0",
+    "playwright": "^1.61.1",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.0",
     "web-push": "^3.6.0"
