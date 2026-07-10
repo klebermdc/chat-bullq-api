@@ -20,6 +20,8 @@
  * Requer Node 18+ (fetch global).
  */
 
+export {}; // isola o escopo do módulo (evita colisão com outros scripts no build)
+
 const AGENT_NAME = process.env.AGENT_NAME || 'Aline';
 
 // ── systemPrompt (adaptado ao runner: SEM {{placeholders}}) ──────────────────
@@ -109,18 +111,86 @@ observacoes: <extra relevante>
 5. Se exigir humano (travou/pediu/reclamou), faz a passagem calorosa e usa
    transferToHuman com reason + summary (inclua a ficha no summary).`;
 
-async function main() {
-  const apiUrl = (process.env.API_URL || process.argv[2] || '').replace(/\/$/, '');
-  const token = process.env.TOKEN || process.argv[3] || '';
-  if (!apiUrl || !token) {
+/**
+ * Resolve JWT + organizationId. Prefere login (EMAIL+PASSWORD): o retorno do
+ * login já traz as organizações do usuário, então pegamos o org id de lá.
+ * Alternativa: TOKEN + ORG_ID (headers exigem x-organization-id).
+ */
+async function resolveAuth(
+  apiUrl: string,
+): Promise<{ token: string; orgId: string }> {
+  const email = (process.env.EMAIL || '').trim();
+  const password = process.env.PASSWORD || '';
+  const orgIdEnv = (process.env.ORG_ID || '').trim();
+
+  // Login tem prioridade: se vier EMAIL+PASSWORD, ignora qualquer TOKEN velho
+  // que tenha ficado exportado na sessão do shell.
+  if (!email || !password) {
+    const raw = (process.env.TOKEN || process.argv[3] || '').trim();
+    if (raw && raw.length > 20 && !raw.includes('cole') && !raw.includes('...')) {
+      if (!orgIdEnv) {
+        console.error('Com TOKEN você também precisa de ORG_ID=<id da organização>.');
+        process.exit(1);
+      }
+      return { token: raw, orgId: orgIdEnv };
+    }
     console.error(
-      'Faltam parâmetros. Use: API_URL=<.../api/v1> TOKEN=<jwt> npx ts-node scripts/create-sdr-agent.ts',
+      'Sem credencial válida. Faça login pelo próprio script:\n' +
+        '  EMAIL=voce@dominio PASSWORD=suaSenha npx ts-node scripts/create-sdr-agent.ts\n' +
+        '(ou passe TOKEN=<jwt> ORG_ID=<id>)',
     );
     process.exit(1);
   }
 
+  const res = await fetch(`${apiUrl}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`login → ${res.status}: ${text.slice(0, 300)}`);
+  }
+  const j: any = JSON.parse(text);
+  const token =
+    j.accessToken || j.access_token || j?.data?.accessToken || j?.data?.access_token;
+  if (!token) {
+    throw new Error(`login OK mas sem accessToken no retorno: ${text.slice(0, 200)}`);
+  }
+
+  const orgs: any[] = j.organizations || j?.data?.organizations || [];
+  let orgId = orgIdEnv;
+  if (!orgId) {
+    if (orgs.length === 0) {
+      throw new Error(
+        'login OK mas nenhuma organização no retorno; rode com ORG_ID=<id>.',
+      );
+    }
+    orgId = orgs[0].id;
+    if (orgs.length > 1) {
+      console.log(
+        `ℹ️  ${orgs.length} organizações; usando a 1ª: ${orgs[0].name || orgId}` +
+          ` (${orgId}). Pra escolher outra: ORG_ID=<id>.`,
+      );
+    }
+  }
+  console.log(`🔑 Login OK (${email}) — org ${orgId}.`);
+  return { token, orgId };
+}
+
+async function main() {
+  const apiUrl = (process.env.API_URL || process.argv[2] || '').replace(/\/$/, '');
+  if (!apiUrl) {
+    console.error(
+      'Falta API_URL. Ex: API_URL=https://api-ofpchat.explotek.pro/api/v1',
+    );
+    process.exit(1);
+  }
+  const { token, orgId } = await resolveAuth(apiUrl);
+
   const headers = {
     Authorization: `Bearer ${token}`,
+    'x-organization-id': orgId,
     'Content-Type': 'application/json',
   };
   const unwrap = (r: any) => (Array.isArray(r) ? r : r?.data ?? []);
@@ -140,7 +210,9 @@ async function main() {
     if (!res.ok) {
       throw new Error(`${method} ${path} → ${res.status}: ${text.slice(0, 400)}`);
     }
-    return json;
+    // API embrulha respostas em { data, meta }. Desembrulha aqui pra o resto
+    // do script ler .id/.voiceProfile direto (funciona também sem envelope).
+    return json?.data ?? json;
   };
 
   // 1) Idempotência: já existe agente com esse nome?
@@ -154,7 +226,9 @@ async function main() {
     'sakana/fugu-ultra';
 
   if (agent) {
-    console.log(`↩︎  Agente "${AGENT_NAME}" já existe (id=${agent.id}). Reusando.`);
+    console.log(
+      `↩︎  Agente "${AGENT_NAME}" já existe (id=${agent.id}, voiceProfile=${agent.voiceProfile}). Reusando.`,
+    );
   } else {
     agent = await api('POST', '/ai-agents', {
       name: AGENT_NAME,
