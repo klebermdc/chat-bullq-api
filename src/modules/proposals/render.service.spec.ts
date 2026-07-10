@@ -23,7 +23,7 @@ describe('RenderService', () => {
 
     expect(page.goto).toHaveBeenCalledWith(
       'https://exemplo/checkout/abc',
-      expect.objectContaining({ waitUntil: 'networkidle' }),
+      expect.objectContaining({ waitUntil: 'load' }),
     );
     expect(page.waitForTimeout).toHaveBeenCalledWith(5);
     expect(text).toBe('CARRINHO RENDERIZADO');

@@ -67,4 +67,16 @@ describe('ProposalsService', () => {
     ).rejects.toThrow();
     expect(d.render.render).not.toHaveBeenCalled();
   });
+
+  it('rejeita URL de host não permitido (SSRF guard)', async () => {
+    const d = deps();
+    const service = new ProposalsService(d.prisma, d.render, d.extraction, d.repo, d.messages);
+    await expect(
+      service.create(
+        { conversationId: 'conv-1', checkoutUrl: 'https://evil.example.com/x' },
+        'user-1', 'org-1', 'ALL' as any,
+      ),
+    ).rejects.toThrow(/não é de um checkout permitido/i);
+    expect(d.render.render).not.toHaveBeenCalled();
+  });
 });

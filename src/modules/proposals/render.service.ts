@@ -28,7 +28,7 @@ export class RenderService {
     try {
       const page = await browser.newPage();
       await page.goto(url, {
-        waitUntil: 'networkidle',
+        waitUntil: 'load',
         timeout: PROPOSAL_RENDER_TIMEOUT_MS,
       });
       await page.waitForTimeout(delayMs);
