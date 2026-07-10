@@ -25,6 +25,7 @@ export class AgentsService {
         avatarUrl: dto.avatarUrl,
         kind: dto.kind ?? 'WORKER',
         category: dto.category,
+        voiceProfile: dto.voiceProfile ?? null,
         capabilities: dto.capabilities ?? [],
         modelId: dto.modelId,
         modelParams: dto.modelParams as object | undefined,
@@ -201,6 +202,20 @@ export class AgentsService {
       throw new BadRequestException('Channel not found in this organization');
     }
 
+    // Escopo opcional por tag (usado pelo modo SHADOW): valida que a tag
+    // pertence à org antes de gravar. null explícito limpa o filtro.
+    if (dto.tagFilterId) {
+      const tag = await this.prisma.tag.findFirst({
+        where: { id: dto.tagFilterId, organizationId },
+        select: { id: true },
+      });
+      if (!tag) {
+        throw new BadRequestException('Tag not found in this organization');
+      }
+    }
+    const tagFilterId =
+      dto.tagFilterId === undefined ? undefined : dto.tagFilterId || null;
+
     return this.prisma.aiAgentChannel.upsert({
       where: {
         agentId_channelId: { agentId, channelId: dto.channelId },
@@ -208,12 +223,14 @@ export class AgentsService {
       update: {
         mode: dto.mode ?? AiAgentMode.AUTONOMOUS,
         trigger: dto.trigger ?? AiAgentTrigger.ALWAYS,
+        ...(tagFilterId !== undefined ? { tagFilterId } : {}),
       },
       create: {
         agentId,
         channelId: dto.channelId,
         mode: dto.mode ?? AiAgentMode.AUTONOMOUS,
         trigger: dto.trigger ?? AiAgentTrigger.ALWAYS,
+        tagFilterId: tagFilterId ?? null,
       },
     });
   }
