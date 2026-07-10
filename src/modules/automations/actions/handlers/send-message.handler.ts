@@ -27,6 +27,10 @@ export class SendMessageHandler implements ActionHandler {
   // state-changing actions that come after. Default to continueOnError.
   readonly continueOnErrorDefault = true;
 
+  // Efeito externo irreversível (envia mensagem real). Checkpoint garante
+  // que um crash pós-envio não re-envie no resume.
+  readonly checkpoint = true;
+
   // Simple in-process circuit breaker per channel. Three failures within
   // the rolling window opens the breaker for COOLDOWN_MS — during the
   // cooldown, send_message returns short-circuit failures so we don't

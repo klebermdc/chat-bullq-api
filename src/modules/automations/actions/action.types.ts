@@ -74,6 +74,14 @@ export interface ActionHandler {
   // Default for `continueOnError` when the user didn't set it explicitly.
   readonly continueOnErrorDefault: boolean;
 
+  // Quando true, o executor grava um checkpoint (resumeActionIndex+log)
+  // logo após esta ação ter sucesso, para que um crash retome da PRÓXIMA
+  // ação em vez de re-executar esta. Ligar apenas em ações com efeito
+  // colateral EXTERNO irreversível (send_message, http_request). Ações
+  // internas idempotentes (add_tag via @@unique) não precisam. Ausente =
+  // false.
+  readonly checkpoint?: boolean;
+
   // Validate at save time (CRUD endpoint calls this). Throw with a clear
   // message — the controller turns it into a 400.
   validateParams(params: Record<string, unknown>): void;
