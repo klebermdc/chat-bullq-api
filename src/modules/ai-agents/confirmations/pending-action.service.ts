@@ -15,6 +15,7 @@ import type {
 } from './confirmation.types';
 import { PendingActionStorage } from './pending-action.storage';
 import { PENDING_ACTION_EXECUTOR_QUEUE } from './queue-names';
+import { PrismaService } from '../../../database/prisma.service';
 
 /**
  * Service that owns the lifecycle of `PendingAction` records.
@@ -32,6 +33,7 @@ export class PendingActionService {
     private readonly storage: PendingActionStorage,
     @InjectQueue(PENDING_ACTION_EXECUTOR_QUEUE)
     private readonly executorQueue: Queue,
+    private readonly prisma: PrismaService,
   ) {}
 
   /** Create a new PENDING action for human review. */
@@ -163,6 +165,77 @@ export class PendingActionService {
       id,
       userId,
       toolName: action.toolName,
+    });
+
+    return action;
+  }
+
+  /**
+   * Distribui a conversa da pendência pra um atendente escolhido, sem passar
+   * pelo "Aprovar" genérico. Efetiva na hora: pausa a IA, atribui a conversa
+   * ao atendente (`assignedToId`) e move pra aba "Esperando"
+   * (`awaitingHumanReply=true`), carregando o que o lead já mandou. Resolve a
+   * pendência como EXECUTED. Usado pelo botão "Distribuir" no card de handoff.
+   */
+  async distribute(
+    id: string,
+    actorUserId: string,
+    assignedToId: string,
+  ): Promise<PendingAction> {
+    if (!assignedToId || !assignedToId.trim()) {
+      throw new BadRequestException('assignedToId é obrigatório');
+    }
+
+    const action = await this.storage.get(id);
+    if (!action) throw new NotFoundException('Pending action not found');
+
+    if (action.status !== 'PENDING') {
+      throw new BadRequestException(
+        `Action is ${action.status} and cannot be distributed`,
+      );
+    }
+    if (this.isExpired(action)) {
+      const previous = action.status;
+      action.status = 'EXPIRED';
+      await this.storage.save(action, previous);
+      throw new BadRequestException('Action expired');
+    }
+    if (!action.conversationId) {
+      throw new BadRequestException('Action has no conversation to distribute');
+    }
+
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: action.conversationId },
+      select: { status: true, firstResponseAt: true },
+    });
+    if (!conv) throw new NotFoundException('Conversation not found');
+
+    await this.prisma.conversation.update({
+      where: { id: action.conversationId },
+      data: {
+        aiEnabled: false,
+        assignedToId,
+        awaitingHumanReply: true,
+        // Promove PENDING→OPEN (conversa entrou em atendimento humano); mantém
+        // o status quando já é outro. A aba "Esperando" é o flag acima.
+        ...(conv.status === 'PENDING'
+          ? { status: 'OPEN', firstResponseAt: conv.firstResponseAt ?? new Date() }
+          : {}),
+      },
+    });
+
+    const previous = action.status;
+    action.status = 'EXECUTED';
+    action.approvedBy = actorUserId;
+    action.approvedAt = new Date().toISOString();
+    await this.storage.save(action, previous);
+
+    this.logger.log({
+      msg: 'pending_action_distributed',
+      id,
+      actorUserId,
+      assignedToId,
+      conversationId: action.conversationId,
     });
 
     return action;
