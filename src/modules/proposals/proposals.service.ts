@@ -13,7 +13,12 @@ import { MessagesService } from '../messaging/messages/messages.service';
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { buildProposalMessage } from './message-builder';
 import { CreateProposalDto } from './dto/create-proposal.dto';
-import { PROPOSAL_ALLOWED_HOSTS } from './proposals.constants';
+import { PipelinesService } from '../pipelines/pipelines.service';
+import {
+  PROPOSAL_ALLOWED_HOSTS,
+  PROPOSAL_SENT_PIPELINE_NAME,
+  PROPOSAL_SENT_STAGE_NAME,
+} from './proposals.constants';
 
 @Injectable()
 export class ProposalsService {
@@ -25,6 +30,7 @@ export class ProposalsService {
     private readonly extraction: ExtractionService,
     private readonly repo: ProposalsRepository,
     private readonly messages: MessagesService,
+    private readonly pipelines: PipelinesService,
   ) {}
 
   async create(
@@ -91,6 +97,24 @@ export class ProposalsService {
       organizationId,
       access,
     );
+
+    // Glue Etapa 4: proposta enviada → card entra em "Proposta enviada",
+    // o que dispara a cadência. Isolado do envio: falha aqui não derruba a
+    // proposta já entregue/persistida.
+    try {
+      await this.pipelines.enterStageForConversation(
+        conversation.id,
+        organizationId,
+        {
+          pipelineName: PROPOSAL_SENT_PIPELINE_NAME,
+          stageName: PROPOSAL_SENT_STAGE_NAME,
+        },
+      );
+    } catch (err) {
+      this.logger.warn(
+        `proposal_stage_advance_failed conv=${conversation.id}: ${(err as Error).message}`,
+      );
+    }
 
     return proposal;
   }
