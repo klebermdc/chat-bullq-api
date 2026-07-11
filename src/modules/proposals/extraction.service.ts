@@ -38,23 +38,40 @@ export class ExtractionService {
       pastedHint && pastedHint.trim()
         ? `\n\n<<<RESUMO>>>\n${pastedHint}\n<<<END RESUMO>>>`
         : '';
-    const res = await this.llm.complete({
-      organizationId,
-      modelId: SAKANA_SIMPLE_MODEL,
-      temperature: 0,
-      maxTokens: 800,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: `<<<CART>>>\n${renderedText}\n<<<END CART>>>${hintBlock}\n\nExtraia o JSON:`,
-        },
-      ],
-    });
+    const userBase = `<<<CART>>>\n${renderedText}\n<<<END CART>>>${hintBlock}`;
 
-    const raw = this.extractText(res.message.content);
-    const parsed = this.parseJson(raw);
-    return this.validate(parsed);
+    // O modelo (Sakana) às vezes devolve JSON com lixo/incompleto. Tentamos até
+    // 3x: a 1ª determinística (temp 0); nas seguintes subimos a temperatura e
+    // reforçamos "só JSON" pra fugir de uma resposta ruim repetida.
+    let lastErr: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const strict =
+        attempt > 1
+          ? '\n\nATENÇÃO: devolva SOMENTE o objeto JSON, começando com { e terminando ' +
+            'com }, sem nenhum texto, comentário ou marcação antes ou depois.'
+          : '';
+      const res = await this.llm.complete({
+        organizationId,
+        modelId: SAKANA_SIMPLE_MODEL,
+        temperature: attempt === 1 ? 0 : 0.3,
+        maxTokens: 1200,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: `${userBase}${strict}\n\nExtraia o JSON:` },
+        ],
+      });
+      const raw = this.extractText(res.message.content);
+      try {
+        return this.validate(this.parseJson(raw));
+      } catch (err) {
+        lastErr = err as Error;
+        this.logger.warn(
+          `proposal_extract_attempt_${attempt}_failed: ${(err as Error).message} | ` +
+            `raw="${raw.slice(0, 400).replace(/\s+/g, ' ')}"`,
+        );
+      }
+    }
+    throw lastErr ?? new Error('Não foi possível ler o carrinho.');
   }
 
   /** A resposta do LlmService vem como `LlmContent` (string ou content parts). */
@@ -73,8 +90,10 @@ export class ExtractionService {
     if (start === -1 || end === -1 || end < start) {
       throw new Error('Não foi possível ler o carrinho (resposta não é JSON).');
     }
+    // Reparo leve: remove vírgulas penduradas antes de } ou ] (erro comum do LLM).
+    const slice = cleaned.slice(start, end + 1).replace(/,\s*([}\]])/g, '$1');
     try {
-      return JSON.parse(cleaned.slice(start, end + 1));
+      return JSON.parse(slice);
     } catch {
       throw new Error('Não foi possível ler o carrinho (JSON inválido).');
     }

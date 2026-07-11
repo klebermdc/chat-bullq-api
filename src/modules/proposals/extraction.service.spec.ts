@@ -39,6 +39,32 @@ describe('ExtractionService', () => {
     expect(out.adults).toBe(3);
   });
 
+  it('repara vírgula pendurada antes de } ou ]', async () => {
+    const withTrailingCommas =
+      '{"adults":3,"children":1,"startDate":"2026-07-29","endDate":"2026-08-04",' +
+      '"parks":[{"nome":"DISNEY 4 PARKS","dias":4,"data":"2026-07-29"},],' +
+      '"totalValue":10000.38,"currency":"BRL",}';
+    const service = new ExtractionService(makeLlm(withTrailingCommas));
+    const out = await service.extract('org-1', 'texto');
+    expect(out.adults).toBe(3);
+    expect(out.children).toBe(1);
+    expect(out.parks).toHaveLength(1);
+    expect(out.totalValue).toBe(10000.38);
+  });
+
+  it('faz retry e usa a 2ª resposta quando a 1ª vem inválida', async () => {
+    const llm = {
+      complete: jest
+        .fn()
+        .mockResolvedValueOnce({ message: { content: 'desculpe, não sei' } })
+        .mockResolvedValueOnce({ message: { content: VALID_JSON } }),
+    } as any;
+    const service = new ExtractionService(llm);
+    const out = await service.extract('org-1', 'texto');
+    expect(out.adults).toBe(3);
+    expect(llm.complete).toHaveBeenCalledTimes(2);
+  });
+
   it('lança erro quando faltam campos obrigatórios', async () => {
     const service = new ExtractionService(makeLlm(JSON.stringify({ adults: 2 })));
     await expect(service.extract('org-1', 'texto')).rejects.toThrow(
