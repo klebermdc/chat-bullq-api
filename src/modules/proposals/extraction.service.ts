@@ -54,7 +54,10 @@ export class ExtractionService {
         organizationId,
         modelId: SAKANA_SIMPLE_MODEL,
         temperature: attempt === 1 ? 0 : 0.3,
-        maxTokens: 1200,
+        // Sakana é modelo "reasoning": gasta tokens escrevendo o raciocínio em
+        // <think>...</think> ANTES do JSON. Precisa de folga pra não truncar o
+        // JSON final.
+        maxTokens: 4000,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: `${userBase}${strict}\n\nExtraia o JSON:` },
@@ -67,7 +70,7 @@ export class ExtractionService {
         lastErr = err as Error;
         this.logger.warn(
           `proposal_extract_attempt_${attempt}_failed: ${(err as Error).message} | ` +
-            `raw="${raw.slice(0, 400).replace(/\s+/g, ' ')}"`,
+            `raw="${raw.slice(0, 1200).replace(/\s+/g, ' ')}"`,
         );
       }
     }
@@ -84,7 +87,17 @@ export class ExtractionService {
   }
 
   private parseJson(raw: string): any {
-    const cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+    const cleaned = raw
+      // Modelos "reasoning" (Sakana) escrevem o raciocínio — e às vezes um
+      // rascunho de JSON — dentro de <think>...</think>. Removemos esse bloco
+      // ANTES de procurar o JSON final, senão o rascunho polui o parse.
+      .replace(/<think>[\s\S]*?<\/think>/gi, ' ')
+      // <think> sem fechamento = resposta cortada no meio do raciocínio; o que
+      // vier depois não é confiável, então descartamos daí em diante.
+      .replace(/<think>[\s\S]*$/i, ' ')
+      .replace(/```json/gi, '')
+      .replace(/```/g, '')
+      .trim();
     const start = cleaned.indexOf('{');
     const end = cleaned.lastIndexOf('}');
     if (start === -1 || end === -1 || end < start) {

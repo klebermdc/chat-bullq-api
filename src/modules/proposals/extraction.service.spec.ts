@@ -39,6 +39,26 @@ describe('ExtractionService', () => {
     expect(out.adults).toBe(3);
   });
 
+  it('ignora o bloco <think> do modelo reasoning (com rascunho) e usa o JSON final', async () => {
+    const content =
+      '<think>\nVou analisar. Rascunho: {"adults": 9, "children": 9}\nDeixa eu revisar as datas...\n</think>\n' +
+      VALID_JSON;
+    const service = new ExtractionService(makeLlm(content));
+    const out = await service.extract('org-1', 'texto');
+    // usa o JSON de verdade (adults 3), não o rascunho de dentro do <think> (9)
+    expect(out.adults).toBe(3);
+    expect(out.children).toBe(0);
+  });
+
+  it('descarta <think> sem fechamento (resposta truncada no raciocínio)', async () => {
+    const truncated =
+      '<think> Vou analisar o carrinho. 1. Adultos: 6 2. Datas: 10/08 até 14/08 3. Universal';
+    const service = new ExtractionService(makeLlm(truncated));
+    await expect(service.extract('org-1', 'texto')).rejects.toThrow(
+      /não foi possível ler o carrinho/i,
+    );
+  });
+
   it('repara vírgula pendurada antes de } ou ]', async () => {
     const withTrailingCommas =
       '{"adults":3,"children":1,"startDate":"2026-07-29","endDate":"2026-08-04",' +
