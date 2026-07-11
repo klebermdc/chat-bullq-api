@@ -45,6 +45,26 @@ describe('ProposalsService', () => {
     expect(result).toEqual({ id: 'prop-1' });
   });
 
+  it('modo NEW envia as mensagens de follow-up depois da proposta; UPDATE não', async () => {
+    const dNew = deps();
+    const svcNew = new ProposalsService(dNew.prisma, dNew.render, dNew.extraction, dNew.repo, dNew.messages);
+    await svcNew.create(
+      { conversationId: 'conv-1', checkoutUrl: url, mode: 'NEW' },
+      'user-1', 'org-1', 'ALL' as any,
+    );
+    // 1 proposta + os follow-ups
+    expect(dNew.messages.send.mock.calls.length).toBeGreaterThan(1);
+
+    const dUpd = deps();
+    const svcUpd = new ProposalsService(dUpd.prisma, dUpd.render, dUpd.extraction, dUpd.repo, dUpd.messages);
+    await svcUpd.create(
+      { conversationId: 'conv-1', checkoutUrl: url, mode: 'UPDATE' },
+      'user-1', 'org-1', 'ALL' as any,
+    );
+    // só a proposta, sem follow-ups
+    expect(dUpd.messages.send).toHaveBeenCalledTimes(1);
+  });
+
   it('NÃO envia mensagem se a extração falhar', async () => {
     const d = deps();
     d.extraction.extract.mockRejectedValue(new Error('Não foi possível ler o carrinho'));

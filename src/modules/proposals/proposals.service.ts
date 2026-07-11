@@ -14,6 +14,7 @@ import type { ChannelAccess } from '../iam/channel-access/channel-access.service
 import { buildProposalMessage } from './message-builder';
 import { CreateProposalDto } from './dto/create-proposal.dto';
 import { PROPOSAL_ALLOWED_HOSTS } from './proposals.constants';
+import { PROPOSAL_NEW_FOLLOWUPS } from './proposal-followups';
 
 @Injectable()
 export class ProposalsService {
@@ -84,13 +85,34 @@ export class ProposalsService {
       rawText,
     });
 
-    const text = buildProposalMessage(cart, url, dto.mode ?? 'NEW');
+    const mode = dto.mode ?? 'NEW';
+    const text = buildProposalMessage(cart, url, mode);
     await this.messages.send(
       { conversationId: conversation.id, type: 'TEXT', content: { text } },
       userId,
       organizationId,
       access,
     );
+
+    // Só na PRIMEIRA proposta (NEW): dispara as mensagens de follow-up
+    // (conferência + referências) pra reforçar confiança. Best-effort — se uma
+    // falhar, a proposta principal já foi enviada e persistida.
+    if (mode === 'NEW') {
+      for (const followUp of PROPOSAL_NEW_FOLLOWUPS) {
+        try {
+          await this.messages.send(
+            { conversationId: conversation.id, type: 'TEXT', content: { text: followUp } },
+            userId,
+            organizationId,
+            access,
+          );
+        } catch (err) {
+          this.logger.warn(
+            `proposal_followup_failed conv=${conversation.id}: ${(err as Error).message}`,
+          );
+        }
+      }
+    }
 
     return proposal;
   }
