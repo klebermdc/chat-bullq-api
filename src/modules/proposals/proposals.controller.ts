@@ -30,4 +30,12 @@ export class ProposalsController {
   ) {
     return this.service.listForContact(orgId, contactId);
   }
+
+  @Get('conversation/:conversationId')
+  listForConversation(
+    @Param('conversationId') conversationId: string,
+    @CurrentOrg('id') orgId: string,
+  ) {
+    return this.service.listForConversation(orgId, conversationId);
+  }
 }
