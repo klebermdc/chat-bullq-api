@@ -22,7 +22,7 @@ export function buildProposalMessage(cart: ExtractedCart, checkoutUrl: string): 
 
   return (
     '🎉 Preparamos sua proposta com todo carinho para que sua experiência em Orlando ' +
-    'seja mágica e sem preocupações. Aqui estão os detalhes:\n' +
+    'seja mágica e sem preocupações. Aqui estão os detalhes:\n\n' +
     `👉 ${checkoutUrl}\n\n` +
     'Proposta Orlando Fast Pass\n' +
     `${peopleLine}\n\n` +

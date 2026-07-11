@@ -19,6 +19,8 @@ describe('buildProposalMessage', () => {
   it('inclui link, adultos e datas em DD/MM/AAAA', () => {
     const msg = buildProposalMessage(base, url);
     expect(msg).toContain(`👉 ${url}`);
+    // linha em branco entre a frase de abertura e o link
+    expect(msg).toContain(`detalhes:\n\n👉 ${url}`);
     expect(msg).toContain('Para 3 Adultos entre os dias 02/10/2026 e 06/10/2026');
     expect(msg).toContain('UNIVERSAL ORLANDO RESORT: PROMOCIONAL 3 DIAS PARK TO PARK [5 dias] - 02/10/2026');
   });
