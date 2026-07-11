@@ -39,13 +39,23 @@ export class ProposalsService {
     if (!conversation) throw new NotFoundException('Conversation not found');
     if (conversation.organizationId !== organizationId) throw new ForbiddenException();
 
-    this.assertAllowedUrl(dto.checkoutUrl);
+    // O atendente cola o link OU o bloco inteiro (link + resumo do carrinho).
+    // Extraímos a URL de dentro do que foi colado; o texto completo vira
+    // contexto extra pra extração.
+    const pasted = dto.checkoutUrl;
+    const url = this.extractCheckoutUrl(pasted);
+    if (!url) {
+      throw new BadRequestException(
+        'Não encontrei um link de checkout no que foi colado. Cole o link (pode ser junto com o resumo).',
+      );
+    }
+    this.assertAllowedUrl(url);
 
     let rawText: string;
     try {
-      rawText = await this.render.render(dto.checkoutUrl);
+      rawText = await this.render.render(url);
     } catch (err) {
-      this.logger.warn(`proposal_render_failed url=${dto.checkoutUrl}: ${(err as Error).message}`);
+      this.logger.warn(`proposal_render_failed url=${url}: ${(err as Error).message}`);
       throw new BadRequestException(
         'Não foi possível abrir o carrinho. Confere o link e tenta de novo.',
       );
@@ -53,10 +63,10 @@ export class ProposalsService {
 
     let cart;
     try {
-      cart = await this.extraction.extract(organizationId, rawText);
+      cart = await this.extraction.extract(organizationId, rawText, pasted);
     } catch (err) {
       this.logger.warn(
-        `proposal_extract_failed url=${dto.checkoutUrl}: ${(err as Error).message}`,
+        `proposal_extract_failed url=${url}: ${(err as Error).message}`,
       );
       throw new BadRequestException(
         (err as Error).message ||
@@ -68,13 +78,13 @@ export class ProposalsService {
       organizationId,
       contactId: conversation.contactId,
       conversationId: conversation.id,
-      checkoutUrl: dto.checkoutUrl,
+      checkoutUrl: url,
       createdById: userId,
       cart,
       rawText,
     });
 
-    const text = buildProposalMessage(cart, dto.checkoutUrl);
+    const text = buildProposalMessage(cart, url);
     await this.messages.send(
       { conversationId: conversation.id, type: 'TEXT', content: { text } },
       userId,
@@ -87,6 +97,17 @@ export class ProposalsService {
 
   listForContact(organizationId: string, contactId: string) {
     return this.repo.listForContact(organizationId, contactId);
+  }
+
+  /**
+   * Pega a primeira URL http(s) de dentro do texto colado (pode ser só a URL
+   * ou o link + resumo do carrinho em várias linhas). Retorna null se não achar.
+   */
+  private extractCheckoutUrl(pasted: string): string | null {
+    const match = (pasted ?? '').match(/https?:\/\/[^\s<>"']+/i);
+    if (!match) return null;
+    // Remove pontuação de fim que costuma grudar quando a URL vem no meio de texto.
+    return match[0].replace(/[.,);]+$/, '');
   }
 
   private assertAllowedUrl(rawUrl: string) {

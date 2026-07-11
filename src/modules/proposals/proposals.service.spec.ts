@@ -34,7 +34,7 @@ describe('ProposalsService', () => {
     );
 
     expect(d.render.render).toHaveBeenCalledWith(url);
-    expect(d.extraction.extract).toHaveBeenCalledWith('org-1', 'TEXTO RENDER');
+    expect(d.extraction.extract).toHaveBeenCalledWith('org-1', 'TEXTO RENDER', url);
     expect(d.repo.create).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: 'org-1', contactId: 'contact-1', checkoutUrl: url, cart }),
     );
@@ -65,6 +65,38 @@ describe('ProposalsService', () => {
     await expect(
       service.create({ conversationId: 'conv-1', checkoutUrl: url }, 'user-1', 'org-1', 'ALL' as any),
     ).rejects.toThrow();
+    expect(d.render.render).not.toHaveBeenCalled();
+  });
+
+  it('extrai a URL de dentro de um bloco colado (link + resumo) e passa o bloco como contexto', async () => {
+    const d = deps();
+    const service = new ProposalsService(d.prisma, d.render, d.extraction, d.repo, d.messages);
+    const pasted = `${url}\n\nPROMOÇÃO DISNEY 4 PARKS MAGIC TICKET [4 dias]\n29/07/2026\n3 Adultos\n1 Criança`;
+
+    await service.create(
+      { conversationId: 'conv-1', checkoutUrl: pasted },
+      'user-1', 'org-1', 'ALL' as any,
+    );
+
+    // renderiza a URL LIMPA extraída do bloco
+    expect(d.render.render).toHaveBeenCalledWith(url);
+    // passa o texto renderizado + o bloco colado inteiro como contexto
+    expect(d.extraction.extract).toHaveBeenCalledWith('org-1', 'TEXTO RENDER', pasted);
+    // persiste a URL limpa (não o bloco)
+    expect(d.repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ checkoutUrl: url }),
+    );
+  });
+
+  it('erro amigável quando não há link no que foi colado', async () => {
+    const d = deps();
+    const service = new ProposalsService(d.prisma, d.render, d.extraction, d.repo, d.messages);
+    await expect(
+      service.create(
+        { conversationId: 'conv-1', checkoutUrl: 'só um texto sem link nenhum' },
+        'user-1', 'org-1', 'ALL' as any,
+      ),
+    ).rejects.toThrow(/não encontrei um link/i);
     expect(d.render.render).not.toHaveBeenCalled();
   });
 
