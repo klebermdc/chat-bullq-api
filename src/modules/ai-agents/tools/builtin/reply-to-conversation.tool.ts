@@ -9,7 +9,11 @@ import {
 import { PrismaService } from '../../../../database/prisma.service';
 import { RealtimeGateway } from '../../../realtime/realtime.gateway';
 import { AiTool, ToolContext, ToolResult } from '../tool.types';
-import { containsMetaTalk, findForbiddenUrlHosts } from '../../runner/text-guards';
+import {
+  containsMetaTalk,
+  findForbiddenUrlHosts,
+  stripThinkBlocks,
+} from '../../runner/text-guards';
 
 /**
  * Sends a TEXT message to the contact on behalf of the agent. The message
@@ -48,7 +52,11 @@ export class ReplyToConversationTool implements AiTool {
     input: Record<string, unknown>,
     ctx: ToolContext,
   ): Promise<ToolResult> {
-    const text = String(input.text ?? '').trim();
+    // Remove blocos de raciocínio <think>...</think> (MiniMax M-series e afins)
+    // ANTES de qualquer coisa — esse conteúdo interno nunca vai pro cliente.
+    // Cobre tanto o replyToConversation direto quanto o fallback do runner
+    // (que reentra por aqui). Se sobrar vazio, o LLM tem outra chance no run.
+    const text = stripThinkBlocks(String(input.text ?? ''));
     if (!text) {
       return { output: { ok: false, error: 'text is empty' } };
     }
