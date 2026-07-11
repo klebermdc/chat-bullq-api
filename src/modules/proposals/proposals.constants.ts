@@ -10,3 +10,12 @@ export const PROPOSAL_ALLOWED_HOSTS = (
   .split(',')
   .map((h) => h.trim().toLowerCase())
   .filter(Boolean);
+
+/**
+ * Onde o card cai quando a proposta é enviada. Nome é editável pelo operador
+ * na UI, então deixamos configurável por env com defaults sensatos.
+ */
+export const PROPOSAL_SENT_PIPELINE_NAME =
+  process.env.SALES_PIPELINE_NAME?.trim() || 'Vendas OFP';
+export const PROPOSAL_SENT_STAGE_NAME =
+  process.env.PROPOSAL_SENT_STAGE_NAME?.trim() || 'Proposta enviada';
