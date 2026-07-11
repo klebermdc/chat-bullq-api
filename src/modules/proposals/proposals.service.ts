@@ -84,7 +84,7 @@ export class ProposalsService {
       rawText,
     });
 
-    const text = buildProposalMessage(cart, url);
+    const text = buildProposalMessage(cart, url, dto.mode ?? 'NEW');
     await this.messages.send(
       { conversationId: conversation.id, type: 'TEXT', content: { text } },
       userId,
@@ -97,6 +97,21 @@ export class ProposalsService {
 
   listForContact(organizationId: string, contactId: string) {
     return this.repo.listForContact(organizationId, contactId);
+  }
+
+  /**
+   * Propostas do contato de uma conversa — usado pelo modal pra decidir o padrão
+   * (se já existe proposta, o modal abre em "Atualização").
+   */
+  async listForConversation(organizationId: string, conversationId: string) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { organizationId: true, contactId: true },
+    });
+    if (!conversation || conversation.organizationId !== organizationId) {
+      return [];
+    }
+    return this.repo.listForContact(organizationId, conversation.contactId);
   }
 
   /**

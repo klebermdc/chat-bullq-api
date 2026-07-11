@@ -50,6 +50,21 @@ describe('buildProposalMessage', () => {
     expect(msg).toContain('WALT DISNEY WORLD [4 dias] - 03/10/2026');
   });
 
+  it('modo UPDATE usa a saudação curta, sem a frase longa de boas-vindas', () => {
+    const msg = buildProposalMessage(base, url, 'UPDATE');
+    expect(msg).toContain('Prontinho! Ajustei sua proposta com o que você pediu');
+    expect(msg).not.toContain('Preparamos sua proposta com todo carinho');
+    // ainda traz link + detalhes (pax/datas/parques)
+    expect(msg).toContain(`👉 ${url}`);
+    expect(msg).toContain('Para 3 Adultos entre os dias 02/10/2026 e 06/10/2026');
+    expect(msg).toContain('UNIVERSAL ORLANDO RESORT: PROMOCIONAL 3 DIAS PARK TO PARK [5 dias] - 02/10/2026');
+  });
+
+  it('modo NEW (default) mantém a saudação completa', () => {
+    expect(buildProposalMessage(base, url)).toContain('Preparamos sua proposta com todo carinho');
+    expect(buildProposalMessage(base, url, 'NEW')).toContain('Preparamos sua proposta com todo carinho');
+  });
+
   it('nunca inclui o valor na mensagem', () => {
     const msg = buildProposalMessage(base, url);
     expect(msg).not.toContain('4200');

@@ -1,10 +1,19 @@
-import { IsString } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsOptional, IsIn } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateProposalDto {
   @ApiProperty({ example: 'conversation-id' })
   @IsString()
   conversationId: string;
+
+  /**
+   * NEW = proposta nova (saudação completa). UPDATE = atualização de uma proposta
+   * existente (mensagem curta, sem a saudação longa). Default NEW.
+   */
+  @ApiPropertyOptional({ enum: ['NEW', 'UPDATE'], default: 'NEW' })
+  @IsOptional()
+  @IsIn(['NEW', 'UPDATE'])
+  mode?: 'NEW' | 'UPDATE';
 
   /**
    * Conteúdo colado pelo atendente. Pode ser só a URL do checkout OU o bloco
