@@ -513,6 +513,75 @@ export class PipelinesService {
   }
 
   /**
+   * Coloca a conversa numa etapa nomeada de um pipeline nomeado (find-or-create
+   * do card + move). Move dispara a cadência (STAGE_ENTER); no caminho de
+   * create, dispara explicitamente porque createCard não dispara sozinho.
+   * Idempotente: se o card já está na etapa, no-op. Degrada graciosamente:
+   * pipeline/etapa inexistente → log + return (não lança).
+   */
+  async enterStageForConversation(
+    conversationId: string,
+    organizationId: string,
+    opts: { pipelineName: string; stageName: string },
+  ): Promise<void> {
+    const pipeline = await this.prisma.pipeline.findFirst({
+      where: {
+        organizationId,
+        archived: false,
+        name: { equals: opts.pipelineName, mode: 'insensitive' },
+      },
+      select: { id: true },
+    });
+    if (!pipeline) {
+      this.logger.warn(
+        `enterStage: pipeline "${opts.pipelineName}" não encontrado org=${organizationId}`,
+      );
+      return;
+    }
+
+    const stage = await this.prisma.pipelineStage.findFirst({
+      where: {
+        pipelineId: pipeline.id,
+        name: { equals: opts.stageName, mode: 'insensitive' },
+      },
+      select: { id: true },
+    });
+    if (!stage) {
+      this.logger.warn(
+        `enterStage: etapa "${opts.stageName}" não encontrada pipeline=${pipeline.id}`,
+      );
+      return;
+    }
+
+    const card = await this.prisma.card.findFirst({
+      where: { pipelineId: pipeline.id, conversationId },
+      select: { id: true, stageId: true },
+    });
+
+    if (card) {
+      if (card.stageId === stage.id) return; // idempotente
+      await this.moveCard(card.id, organizationId, {
+        toStageId: stage.id,
+        toIndex: 0,
+      } as MoveCardDto);
+      return;
+    }
+
+    // Sem card → cria já na etapa e dispara a cadência (createCard não dispara).
+    const created = await this.createCard(pipeline.id, organizationId, {
+      conversationId,
+      stageId: stage.id,
+    } as CreateCardDto);
+    await this.cadenceRunner
+      .maybeStartForStage(conversationId, created.id, stage.id, organizationId)
+      .catch((err) =>
+        this.logger.warn(
+          `enterStage cadence_failed card=${created.id}: ${(err as Error).message}`,
+        ),
+      );
+  }
+
+  /**
    * Lista todos os cards (pipelines) em que uma conversa está. Usado pela
    * UI da inbox pra mostrar/editar/remover a conversa de pipelines direto
    * do header da conversa (sem precisar abrir o kanban).
