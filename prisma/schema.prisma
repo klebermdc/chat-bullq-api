@@ -556,6 +556,11 @@ model Conversation {
   aiDisabledAt  DateTime? @map("ai_disabled_at")
   activeAgentId String?   @map("active_agent_id")
 
+  // Termômetro do lead (SDR): 1=frio, 2=morno, 3=quente. Setado pelo agente
+  // via setLeadTemperature; exibido como selo no card do pipeline (via a
+  // relação Card→Conversation) e onde a conversa aparecer.
+  temperature   Int?      @map("temperature")
+
   // ─── Resumo IA (Painel Inteligente) ─────────────
   /// Resumo automático da conversa gerado por LLM. null = nunca gerado.
   aiSummary          String?   @map("ai_summary")
