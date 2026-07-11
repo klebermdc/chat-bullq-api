@@ -75,7 +75,13 @@ async function main() {
   if (!aline) throw new Error(`Agente "${AGENT_NAME}" não encontrado.`);
 
   console.log(`\n═══ Aline (id=${aline.id}) ═══`);
-  console.log(`isActive: ${aline.isActive} | voiceProfile: ${aline.voiceProfile}`);
+  console.log(`isActive: ${aline.isActive} | voiceProfile: ${aline.voiceProfile} | temperature: ${aline.temperature}`);
+  const sp = String(aline.systemPrompt ?? '');
+  console.log(`\n═══ systemPrompt LIVE (${sp.length} chars) — primeiras linhas ═══`);
+  console.log(sp.split('\n').slice(0, 8).join('\n'));
+  console.log('...');
+  console.log(`Contém "Como posso te ajudar"? ${sp.includes('Como posso te ajudar') ? 'SIM ✅' : 'NÃO ❌'}`);
+  console.log(`Contém "UMA pergunta por"? ${sp.includes('UMA pergunta') || sp.includes('uma pergunta') ? 'SIM ✅' : 'NÃO ❌'}`);
   console.log('Modo por canal:');
   for (const link of aline.channels ?? []) {
     const ch = link.channel || {};

@@ -1,7 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RealtimeGateway } from '../../../realtime/realtime.gateway';
+import { PrismaService } from '../../../../database/prisma.service';
 import { PendingActionService } from '../../confirmations/pending-action.service';
 import { AiTool, ToolContext, ToolResult } from '../tool.types';
+import { ReplyToConversationTool } from './reply-to-conversation.tool';
+import { TagConversationTool } from './tag-conversation.tool';
+
+/** Mensagem que a IA manda pro cliente ao transferir — garantida por código. */
+const TRANSITION_MESSAGE =
+  'Perfeito! Já tenho tudo que preciso 😊 Vou te passar agora pra um dos nossos consultores finalizar com você. Em instantes alguém continua por aqui! 💙';
+
+/** Tag aplicada ao lead qualificado pra o time saber que é pra distribuir. */
+const DISTRIBUTE_TAG = 'distribuir';
 
 /**
  * Hands the conversation off to a human. Pauses AI on this conversation
@@ -45,6 +55,9 @@ export class TransferToHumanTool implements AiTool {
   constructor(
     private readonly realtime: RealtimeGateway,
     private readonly pendingActions: PendingActionService,
+    private readonly prisma: PrismaService,
+    private readonly replyTool: ReplyToConversationTool,
+    private readonly tagTool: TagConversationTool,
   ) {}
 
   async execute(
@@ -53,6 +66,28 @@ export class TransferToHumanTool implements AiTool {
   ): Promise<ToolResult> {
     const reason = String(input.reason ?? '').trim() || 'Handoff sem motivo informado';
     const summary = input.summary ? String(input.summary).trim() : null;
+
+    // ── Efeitos determinísticos do handoff (best-effort — nunca quebram a
+    //    pendência, que é o essencial). Feitos POR CÓDIGO pra não depender do
+    //    modelo lembrar de avisar/taguear/criar card. ──────────────────────
+    // 1) Avisa o cliente (mensagem de transição garantida).
+    try {
+      await this.replyTool.execute({ text: TRANSITION_MESSAGE }, ctx);
+    } catch (e) {
+      this.logger.warn(`transfer: falha ao avisar cliente (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
+    }
+    // 2) Tag "distribuir" pro time saber que é lead qualificado pra distribuir.
+    try {
+      await this.tagTool.execute({ tags: [DISTRIBUTE_TAG] }, ctx);
+    } catch (e) {
+      this.logger.warn(`transfer: falha ao taguear (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
+    }
+    // 3) Cria card no pipeline "Vendas OFP" (se existir e ainda não houver).
+    try {
+      await this.createVendasOfpCard(ctx);
+    } catch (e) {
+      this.logger.warn(`transfer: falha ao criar card (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
+    }
 
     const preview = {
       action: `Transferir conversa pro atendimento humano: ${reason}`,
@@ -101,14 +136,76 @@ export class TransferToHumanTool implements AiTool {
         pendingActionId: action.id,
         preview,
         message:
-          'Transferência registrada com sucesso. Atendente humano vai assumir em instantes — fluxo padrão, não é erro.',
-        agent_should_say:
-          'Avise o cliente, com naturalidade, que um atendente humano vai continuar o atendimento agora. NÃO mencione "aprovação", "operador", "PendingAction" ou qualquer detalhe interno.',
+          'Transferência concluída: o cliente JÁ foi avisado, a tag "distribuir" foi aplicada e o card foi pro pipeline. NÃO escreva mais nada — o atendente humano assume agora.',
+        agent_should_say: '',
       },
       // Mantém o sinal de "saí do loop" — o agent deve parar de responder
       // até o operador decidir. Sem isso o LLM seguiria conversando como
       // se tivesse transferido de fato.
       finalAction: 'TRANSFERRED_TO_HUMAN',
     };
+  }
+
+  /**
+   * Cria um card pro lead no pipeline "Vendas OFP" (primeira etapa), pra o time
+   * distribuir/trabalhar de lá. Best-effort: se o pipeline não existir ou já
+   * houver card da conversa, apenas loga e segue.
+   */
+  private async createVendasOfpCard(ctx: ToolContext): Promise<void> {
+    const pipeline = await this.prisma.pipeline.findFirst({
+      where: {
+        organizationId: ctx.organizationId,
+        name: { contains: 'Vendas', mode: 'insensitive' },
+        archived: false,
+      },
+      select: {
+        id: true,
+        name: true,
+        stages: { orderBy: { order: 'asc' }, take: 1, select: { id: true } },
+      },
+    });
+    const stageId = pipeline?.stages?.[0]?.id;
+    if (!pipeline || !stageId) {
+      this.logger.warn(
+        `transfer: pipeline "Vendas" com etapa não encontrado (org=${ctx.organizationId}) — card não criado`,
+      );
+      return;
+    }
+
+    // Dedup: não duplica card da mesma conversa no mesmo pipeline.
+    const existing = await this.prisma.card.findFirst({
+      where: { pipelineId: pipeline.id, conversationId: ctx.conversationId },
+      select: { id: true },
+    });
+    if (existing) {
+      this.logger.log(
+        `transfer: card já existe no pipeline "${pipeline.name}" (conv=${ctx.conversationId})`,
+      );
+      return;
+    }
+
+    const contact = await this.prisma.contact.findUnique({
+      where: { id: ctx.contactId },
+      select: { name: true },
+    });
+    const maxOrder = await this.prisma.card.aggregate({
+      where: { stageId },
+      _max: { order: true },
+    });
+
+    await this.prisma.card.create({
+      data: {
+        organizationId: ctx.organizationId,
+        pipelineId: pipeline.id,
+        stageId,
+        title: contact?.name || 'Lead SDR',
+        conversationId: ctx.conversationId,
+        contactId: ctx.contactId,
+        order: (maxOrder._max.order ?? -1) + 1,
+      },
+    });
+    this.logger.log(
+      `transfer: card criado no pipeline "${pipeline.name}" (conv=${ctx.conversationId})`,
+    );
   }
 }

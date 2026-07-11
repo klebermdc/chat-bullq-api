@@ -12,6 +12,7 @@ import { AiTool, ToolContext, ToolResult } from '../tool.types';
 import {
   containsMetaTalk,
   findForbiddenUrlHosts,
+  stripForeignScripts,
   stripThinkBlocks,
 } from '../../runner/text-guards';
 
@@ -56,7 +57,7 @@ export class ReplyToConversationTool implements AiTool {
     // ANTES de qualquer coisa — esse conteúdo interno nunca vai pro cliente.
     // Cobre tanto o replyToConversation direto quanto o fallback do runner
     // (que reentra por aqui). Se sobrar vazio, o LLM tem outra chance no run.
-    const text = stripThinkBlocks(String(input.text ?? ''));
+    const text = stripForeignScripts(stripThinkBlocks(String(input.text ?? '')));
     if (!text) {
       return { output: { ok: false, error: 'text is empty' } };
     }

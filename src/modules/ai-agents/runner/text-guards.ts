@@ -30,6 +30,23 @@ export function stripThinkBlocks(text: string): string {
 }
 
 /**
+ * Remove caracteres CJK (chinês/japonês/coreano) que modelos como o MiniMax
+ * às vezes vazam no meio de uma resposta em PT-BR (ex.: "成人 e crianças").
+ * O atendimento é 100% português — isso nunca vai pro cliente. Preserva
+ * letras latinas com acento, pontuação e emoji.
+ */
+export function stripForeignScripts(text: string): string {
+  return (text ?? '')
+    .replace(
+      /[　-〿぀-ヿ㐀-䶿一-鿿豈-﫿가-힯＀-￯]/g,
+      '',
+    )
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.!?:;])/g, '$1')
+    .trim();
+}
+
+/**
  * Padrões de "meta-talk" — o LLM saindo do modo de resposta e narrando
  * sua própria decisão/dúvida/regra interna. Tudo aqui é coisa que NUNCA
  * deve aparecer numa mensagem ao cliente final.
