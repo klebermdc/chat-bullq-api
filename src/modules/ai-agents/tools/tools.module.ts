@@ -17,6 +17,7 @@ import { ListarReunioesClienteTool } from './builtin/listar-reunioes-cliente.too
 import { LerTranscricaoReuniaoTool } from './builtin/ler-transcricao-reuniao.tool';
 import { AgendarReuniaoTool } from './builtin/agendar-reuniao.tool';
 import { MoveRecoveryCardTool } from './builtin/move-recovery-card.tool';
+import { SetLeadTemperatureTool } from './builtin/set-lead-temperature.tool';
 import { HoppeClientService } from './client-ops/hoppe-client.service';
 import { GoogleAuthService } from './client-ops/google-auth.service';
 import { GoogleCalendarService } from './client-ops/google-calendar.service';
@@ -63,6 +64,7 @@ import { SalesRecoveryModule } from '../../sales-recovery/sales-recovery.module'
     LerTranscricaoReuniaoTool,
     AgendarReuniaoTool,
     MoveRecoveryCardTool,
+    SetLeadTemperatureTool,
     ToolRegistry,
     HttpToolExecutorService,
     SqlToolExecutorService,

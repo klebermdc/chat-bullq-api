@@ -72,6 +72,7 @@ export class PipelinesService {
             select: {
               id: true,
               channelId: true,
+              temperature: true,
               channel: { select: { id: true, type: true, name: true } },
             },
           },

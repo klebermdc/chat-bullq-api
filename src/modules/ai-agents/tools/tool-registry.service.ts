@@ -18,6 +18,7 @@ import { ListarReunioesClienteTool } from './builtin/listar-reunioes-cliente.too
 import { LerTranscricaoReuniaoTool } from './builtin/ler-transcricao-reuniao.tool';
 import { AgendarReuniaoTool } from './builtin/agendar-reuniao.tool';
 import { MoveRecoveryCardTool } from './builtin/move-recovery-card.tool';
+import { SetLeadTemperatureTool } from './builtin/set-lead-temperature.tool';
 
 /**
  * Registry of BUILT-IN skills (named "tools" in the code for legacy reasons).
@@ -55,10 +56,12 @@ export class ToolRegistry {
     lerTranscricaoReuniao: LerTranscricaoReuniaoTool,
     agendarReuniao: AgendarReuniaoTool,
     moveRecoveryCard: MoveRecoveryCardTool,
+    setLeadTemperature: SetLeadTemperatureTool,
   ) {
     this.register(reply, ['ORCHESTRATOR', 'WORKER']);
     this.register(transfer, ['ORCHESTRATOR', 'WORKER']);
     this.register(tag, ['ORCHESTRATOR', 'WORKER']);
+    this.register(setLeadTemperature, ['WORKER']);
     this.register(listAgents, ['ORCHESTRATOR']);
     this.register(delegate, ['ORCHESTRATOR']);
     this.register(handBack, ['WORKER']);
