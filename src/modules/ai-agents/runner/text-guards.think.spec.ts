@@ -1,4 +1,18 @@
-import { stripThinkBlocks } from './text-guards';
+import { stripThinkBlocks, stripForeignScripts } from './text-guards';
+
+describe('stripForeignScripts', () => {
+  it('remove caracteres chineses vazados e limpa o espaço', () => {
+    expect(stripForeignScripts('quantas pessoas vão? 成人 e crianças')).toBe(
+      'quantas pessoas vão? e crianças',
+    );
+  });
+  it('preserva português com acento e emoji', () => {
+    expect(stripForeignScripts('não é você, tá? 💙😊')).toBe('não é você, tá? 💙😊');
+  });
+  it('remove japonês/coreano também', () => {
+    expect(stripForeignScripts('olá こんにちは 안녕 mundo')).toBe('olá mundo');
+  });
+});
 
 /**
  * Modelos de raciocínio (ex.: MiniMax M-series) emitem <think>...</think> antes
