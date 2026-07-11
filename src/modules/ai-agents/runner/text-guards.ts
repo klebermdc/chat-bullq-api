@@ -13,6 +13,23 @@
  */
 
 /**
+ * Remove blocos de raciocínio `<think>...</think>` que modelos de raciocínio
+ * (ex.: MiniMax M-series) emitem antes da resposta. Esse raciocínio JAMAIS
+ * pode ir pro cliente. Trata também tags soltas (bloco não fechado, ou só o
+ * fechamento) de forma conservadora: mantém apenas o texto de resposta real.
+ */
+export function stripThinkBlocks(text: string): string {
+  let out = (text ?? '').replace(/<think>[\s\S]*?<\/think>/gi, '');
+  // Fechamento solto (abertura ficou noutro pedaço): fica só o que vem depois.
+  const lastClose = out.toLowerCase().lastIndexOf('</think>');
+  if (lastClose !== -1) out = out.slice(lastClose + '</think>'.length);
+  // Abertura sem fechamento: tudo dali pra frente é raciocínio → descarta.
+  const open = out.toLowerCase().indexOf('<think>');
+  if (open !== -1) out = out.slice(0, open);
+  return out.trim();
+}
+
+/**
  * Padrões de "meta-talk" — o LLM saindo do modo de resposta e narrando
  * sua própria decisão/dúvida/regra interna. Tudo aqui é coisa que NUNCA
  * deve aparecer numa mensagem ao cliente final.
