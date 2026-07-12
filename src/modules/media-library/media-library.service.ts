@@ -133,6 +133,10 @@ export class MediaLibraryService {
       throw new NotFoundException('Asset not found');
     }
     this.assertCanDelete(asset.uploadedById, userId, role);
+    // Decisão: exclusão é definitiva para o usuário. A linha é soft-deleted
+    // (preserva histórico/auditoria e não quebra mensagens já enviadas que
+    // apontam para a url), mas o objeto no MinIO é removido de vez — não há
+    // "lixeira"/restauração nesta fatia, então não vale reter bytes.
     await this.storage.remove(asset.storageKey);
     return this.repository.softDeleteAsset(id);
   }

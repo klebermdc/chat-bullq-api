@@ -25,15 +25,21 @@ export class MediaLibraryRepository {
   }
 
   async softDeleteFolder(id: string) {
-    // desanexa os assets da pasta antes de removê-la
-    await this.prisma.mediaAsset.updateMany({
-      where: { folderId: id, deletedAt: null },
-      data: { folderId: null },
-    });
-    return this.prisma.mediaFolder.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
+    // Desanexa os assets antes de remover a pasta. O FK é ON DELETE SET NULL,
+    // mas isso só dispara em hard-delete — no soft-delete o detach é manual.
+    // $transaction garante que assets não fiquem órfãos de uma pasta ainda viva
+    // se o segundo update falhar.
+    const [, folder] = await this.prisma.$transaction([
+      this.prisma.mediaAsset.updateMany({
+        where: { folderId: id, deletedAt: null },
+        data: { folderId: null },
+      }),
+      this.prisma.mediaFolder.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      }),
+    ]);
+    return folder;
   }
 
   // ----- assets -----
