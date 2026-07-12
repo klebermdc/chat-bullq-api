@@ -329,6 +329,75 @@ export class PipelinesService {
     return card;
   }
 
+  /**
+   * Garante que a conversa esteja num card no estágio de nome `stageName`
+   * (ex.: "PROPOSTA ENVIADA"). Cria o card se a conversa ainda não tem um no
+   * pipeline; avança se está numa etapa anterior; NÃO puxa pra trás nem mexe em
+   * card ganho/perdido. Dispara a cadência ao criar/avançar. Atualiza o valor do
+   * card com o da proposta. Usado quando uma proposta é enviada — best-effort.
+   * No-op silencioso se não existir etapa com esse nome na org.
+   */
+  async ensureConversationAtStageByName(
+    organizationId: string,
+    conversationId: string,
+    stageName: string,
+    opts: { value?: number; currency?: string } = {},
+  ): Promise<void> {
+    const targetStage = await this.prisma.pipelineStage.findFirst({
+      where: {
+        name: { equals: stageName, mode: 'insensitive' },
+        pipeline: { organizationId },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!targetStage) return;
+
+    const value = opts.value != null ? (opts.value as any) : undefined;
+    const currency = opts.currency ?? 'BRL';
+
+    const existing = await this.prisma.card.findFirst({
+      where: { pipelineId: targetStage.pipelineId, conversationId },
+      include: { stage: { select: { order: true } } },
+    });
+
+    if (!existing) {
+      const card = await this.createCard(targetStage.pipelineId, organizationId, {
+        conversationId,
+        stageId: targetStage.id,
+        value,
+        currency,
+      } as any);
+      // createCard não dispara cadência — disparamos aqui (igual o moveCard faz).
+      this.cadenceRunner
+        .maybeStartForStage(conversationId, card.id, targetStage.id, organizationId)
+        .catch((err) =>
+          this.logger.warn(
+            `cadence_maybeStartForStage_failed card=${card.id}: ${(err as Error).message}`,
+          ),
+        );
+      return;
+    }
+
+    // Não mexe em negócio já ganho/perdido.
+    if (existing.status !== 'OPEN') return;
+
+    // Só avança: se está numa etapa anterior, move (moveCard dispara a cadência).
+    if (existing.stage.order < targetStage.order) {
+      await this.moveCard(existing.id, organizationId, {
+        toStageId: targetStage.id,
+        toIndex: 0,
+      } as any);
+    }
+
+    // Mantém o valor do card em dia com a proposta (mesmo sem trocar de etapa).
+    if (value !== undefined) {
+      await this.prisma.card.update({
+        where: { id: existing.id },
+        data: { value, currency },
+      });
+    }
+  }
+
   async updateCard(
     cardId: string,
     organizationId: string,
