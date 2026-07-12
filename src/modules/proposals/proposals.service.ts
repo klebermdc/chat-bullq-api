@@ -13,8 +13,9 @@ import { MessagesService } from '../messaging/messages/messages.service';
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { buildProposalMessage } from './message-builder';
 import { CreateProposalDto } from './dto/create-proposal.dto';
-import { PROPOSAL_ALLOWED_HOSTS } from './proposals.constants';
+import { PROPOSAL_ALLOWED_HOSTS, PROPOSAL_SENT_STAGE_NAME } from './proposals.constants';
 import { PROPOSAL_NEW_FOLLOWUPS } from './proposal-followups';
+import { PipelinesService } from '../pipelines/pipelines.service';
 
 @Injectable()
 export class ProposalsService {
@@ -26,6 +27,7 @@ export class ProposalsService {
     private readonly extraction: ExtractionService,
     private readonly repo: ProposalsRepository,
     private readonly messages: MessagesService,
+    private readonly pipelines: PipelinesService,
   ) {}
 
   async create(
@@ -112,6 +114,22 @@ export class ProposalsService {
           );
         }
       }
+    }
+
+    // Liga ao pipeline: garante o card em "PROPOSTA ENVIADA" (cria se não existe,
+    // avança se está antes — só avança) e atualiza o valor. Dispara a cadência de
+    // negociação. Best-effort — a proposta já foi enviada/persistida.
+    try {
+      await this.pipelines.ensureConversationAtStageByName(
+        organizationId,
+        conversation.id,
+        PROPOSAL_SENT_STAGE_NAME,
+        { value: cart.totalValue, currency: cart.currency },
+      );
+    } catch (err) {
+      this.logger.warn(
+        `proposal_pipeline_link_failed conv=${conversation.id}: ${(err as Error).message}`,
+      );
     }
 
     return proposal;

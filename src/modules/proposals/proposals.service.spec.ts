@@ -18,7 +18,19 @@ function deps() {
     extraction: { extract: jest.fn().mockResolvedValue(cart) } as any,
     repo: { create: jest.fn().mockResolvedValue({ id: 'prop-1' }), listForContact: jest.fn() } as any,
     messages: { send: jest.fn().mockResolvedValue({ id: 'msg-1' }) } as any,
+    pipelines: { ensureConversationAtStageByName: jest.fn().mockResolvedValue(undefined) } as any,
   };
+}
+
+function makeService(d: ReturnType<typeof deps>) {
+  return new ProposalsService(
+    d.prisma,
+    d.render,
+    d.extraction,
+    d.repo,
+    d.messages,
+    d.pipelines,
+  );
 }
 
 describe('ProposalsService', () => {
@@ -26,7 +38,7 @@ describe('ProposalsService', () => {
 
   it('renderiza, extrai, persiste e envia a proposta', async () => {
     const d = deps();
-    const service = new ProposalsService(d.prisma, d.render, d.extraction, d.repo, d.messages);
+    const service = makeService(d);
 
     const result = await service.create(
       { conversationId: 'conv-1', checkoutUrl: url },
@@ -45,9 +57,36 @@ describe('ProposalsService', () => {
     expect(result).toEqual({ id: 'prop-1' });
   });
 
+  it('liga a conversa ao pipeline em PROPOSTA ENVIADA com o valor da proposta', async () => {
+    const d = deps();
+    const service = makeService(d);
+    await service.create(
+      { conversationId: 'conv-1', checkoutUrl: url },
+      'user-1', 'org-1', 'ALL' as any,
+    );
+    expect(d.pipelines.ensureConversationAtStageByName).toHaveBeenCalledWith(
+      'org-1',
+      'conv-1',
+      'PROPOSTA ENVIADA',
+      { value: cart.totalValue, currency: cart.currency },
+    );
+  });
+
+  it('falha no pipeline NÃO quebra o envio da proposta', async () => {
+    const d = deps();
+    d.pipelines.ensureConversationAtStageByName.mockRejectedValue(new Error('boom'));
+    const service = makeService(d);
+    const result = await service.create(
+      { conversationId: 'conv-1', checkoutUrl: url },
+      'user-1', 'org-1', 'ALL' as any,
+    );
+    expect(result).toEqual({ id: 'prop-1' });
+    expect(d.messages.send).toHaveBeenCalled();
+  });
+
   it('modo NEW envia as mensagens de follow-up depois da proposta; UPDATE não', async () => {
     const dNew = deps();
-    const svcNew = new ProposalsService(dNew.prisma, dNew.render, dNew.extraction, dNew.repo, dNew.messages);
+    const svcNew = makeService(dNew);
     await svcNew.create(
       { conversationId: 'conv-1', checkoutUrl: url, mode: 'NEW' },
       'user-1', 'org-1', 'ALL' as any,
@@ -56,7 +95,7 @@ describe('ProposalsService', () => {
     expect(dNew.messages.send.mock.calls.length).toBeGreaterThan(1);
 
     const dUpd = deps();
-    const svcUpd = new ProposalsService(dUpd.prisma, dUpd.render, dUpd.extraction, dUpd.repo, dUpd.messages);
+    const svcUpd = makeService(dUpd);
     await svcUpd.create(
       { conversationId: 'conv-1', checkoutUrl: url, mode: 'UPDATE' },
       'user-1', 'org-1', 'ALL' as any,
@@ -68,7 +107,7 @@ describe('ProposalsService', () => {
   it('NÃO envia mensagem se a extração falhar', async () => {
     const d = deps();
     d.extraction.extract.mockRejectedValue(new Error('Não foi possível ler o carrinho'));
-    const service = new ProposalsService(d.prisma, d.render, d.extraction, d.repo, d.messages);
+    const service = makeService(d);
 
     await expect(
       service.create({ conversationId: 'conv-1', checkoutUrl: url }, 'user-1', 'org-1', 'ALL' as any),
@@ -80,7 +119,7 @@ describe('ProposalsService', () => {
   it('rejeita conversa de outra org', async () => {
     const d = deps();
     d.prisma.conversation.findUnique.mockResolvedValue({ id: 'conv-1', organizationId: 'outra', contactId: 'c' });
-    const service = new ProposalsService(d.prisma, d.render, d.extraction, d.repo, d.messages);
+    const service = makeService(d);
 
     await expect(
       service.create({ conversationId: 'conv-1', checkoutUrl: url }, 'user-1', 'org-1', 'ALL' as any),
@@ -90,7 +129,7 @@ describe('ProposalsService', () => {
 
   it('extrai a URL de dentro de um bloco colado (link + resumo) e passa o bloco como contexto', async () => {
     const d = deps();
-    const service = new ProposalsService(d.prisma, d.render, d.extraction, d.repo, d.messages);
+    const service = makeService(d);
     const pasted = `${url}\n\nPROMOÇÃO DISNEY 4 PARKS MAGIC TICKET [4 dias]\n29/07/2026\n3 Adultos\n1 Criança`;
 
     await service.create(
@@ -110,7 +149,7 @@ describe('ProposalsService', () => {
 
   it('erro amigável quando não há link no que foi colado', async () => {
     const d = deps();
-    const service = new ProposalsService(d.prisma, d.render, d.extraction, d.repo, d.messages);
+    const service = makeService(d);
     await expect(
       service.create(
         { conversationId: 'conv-1', checkoutUrl: 'só um texto sem link nenhum' },
@@ -122,7 +161,7 @@ describe('ProposalsService', () => {
 
   it('rejeita URL de host não permitido (SSRF guard)', async () => {
     const d = deps();
-    const service = new ProposalsService(d.prisma, d.render, d.extraction, d.repo, d.messages);
+    const service = makeService(d);
     await expect(
       service.create(
         { conversationId: 'conv-1', checkoutUrl: 'https://evil.example.com/x' },
