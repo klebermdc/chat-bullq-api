@@ -187,6 +187,8 @@ model Organization {
   departments   Department[]
   chatbotFlows  ChatbotFlow[]
   quickReplies  QuickReply[]
+  mediaFolders   MediaFolder[]
+  mediaAssets    MediaAsset[]
   tags          Tag[]
   notifications Notification[]
   invitations   Invitation[]
@@ -2128,4 +2130,40 @@ model Proposal {
   @@index([organizationId, contactId], name: "idx_proposal_org_contact")
   @@index([organizationId, createdAt], name: "idx_proposal_org_created")
   @@map("proposals")
+}
+
+model MediaFolder {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  name           String
+  createdById    String?   @map("created_by_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assets       MediaAsset[]
+
+  @@index([organizationId, deletedAt])
+  @@map("media_folders")
+}
+
+model MediaAsset {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  folderId       String?   @map("folder_id")
+  uploadedById   String?   @map("uploaded_by_id")
+  url            String
+  storageKey     String    @map("storage_key")
+  mimeType       String    @map("mime_type")
+  size           Int
+  filename       String
+  title          String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  folder       MediaFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, folderId, deletedAt])
+  @@map("media_assets")
 }
