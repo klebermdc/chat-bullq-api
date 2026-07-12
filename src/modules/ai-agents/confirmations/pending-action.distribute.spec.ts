@@ -52,8 +52,12 @@ describe('PendingActionService.distribute', () => {
       awaitingHumanReply: true,
       status: 'OPEN',
     });
+    // A pendência NÃO é resolvida: fica PENDING (o card permanece como "norte"
+    // pro atendente) mas marcada como distribuída.
     const saved = storage.save.mock.calls[0][0];
-    expect(saved.status).toBe('EXECUTED');
+    expect(saved.status).toBe('PENDING');
+    expect(saved.args).toMatchObject({ distributedTo: 'atendente9' });
+    expect(saved.preview.action).toContain('Distribuído para');
   });
 
   it('não promove status quando a conversa não está PENDING', async () => {

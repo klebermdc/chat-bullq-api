@@ -238,11 +238,32 @@ export class PendingActionService {
       this.logger.warn(`distribute: falha ao mover card p/ Coletando (conv=${action.conversationId}): ${(e as Error)?.message}`);
     }
 
-    const previous = action.status;
-    action.status = 'EXECUTED';
-    action.approvedBy = actorUserId;
-    action.approvedAt = new Date().toISOString();
-    await this.storage.save(action, previous);
+    // NÃO resolve a pendência: ela fica VISÍVEL como "norte" pro atendente
+    // escolhido até ele clicar Aprovar pra iniciar o atendimento (aí sim
+    // vira EXECUTED via approve). Aqui só marca que foi distribuída, atualiza
+    // o texto do card e estende o prazo pra não expirar antes de ele pegar.
+    const attendant = await this.prisma.user.findUnique({
+      where: { id: assignedToId },
+      select: { name: true },
+    });
+    const attendantName = attendant?.name ?? 'atendente';
+    action.args = {
+      ...action.args,
+      distributedTo: assignedToId,
+      distributedToName: attendant?.name ?? null,
+      distributedBy: actorUserId,
+      distributedAt: new Date().toISOString(),
+    };
+    action.preview = {
+      ...action.preview,
+      action: `Distribuído para ${attendantName} — o atendente clica "Aprovar" pra iniciar o atendimento.`,
+    };
+    // 7 dias de prazo pra o atendente pegar sem o card expirar.
+    action.expiresAt = new Date(
+      Date.now() + 7 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    // status continua PENDING → o card permanece na fila até o Aprovar.
+    await this.storage.save(action, action.status);
 
     this.logger.log({
       msg: 'pending_action_distributed',
