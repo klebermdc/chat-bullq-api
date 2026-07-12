@@ -5,6 +5,7 @@ import { PendingActionService } from '../../confirmations/pending-action.service
 import { AiTool, ToolContext, ToolResult } from '../tool.types';
 import { ReplyToConversationTool } from './reply-to-conversation.tool';
 import { TagConversationTool } from './tag-conversation.tool';
+import { enterLeadStage } from '../../lead-stage.util';
 
 /** Mensagem que a IA manda pro cliente ao transferir — garantida por código. */
 const TRANSITION_MESSAGE =
@@ -152,60 +153,22 @@ export class TransferToHumanTool implements AiTool {
    * houver card da conversa, apenas loga e segue.
    */
   private async createVendasOfpCard(ctx: ToolContext): Promise<void> {
-    const pipeline = await this.prisma.pipeline.findFirst({
-      where: {
-        organizationId: ctx.organizationId,
-        name: { contains: 'Vendas', mode: 'insensitive' },
-        archived: false,
-      },
-      select: {
-        id: true,
-        name: true,
-        stages: { orderBy: { order: 'asc' }, take: 1, select: { id: true } },
-      },
+    // Lead qualificado entra no funil "Vendas OFP" na etapa "Distribuir"
+    // (aguardando o ADM distribuir pra um atendente).
+    const stageId = await enterLeadStage(this.prisma, {
+      conversationId: ctx.conversationId,
+      organizationId: ctx.organizationId,
+      contactId: ctx.contactId,
+      stageContains: 'distribu',
     });
-    const stageId = pipeline?.stages?.[0]?.id;
-    if (!pipeline || !stageId) {
+    if (!stageId) {
       this.logger.warn(
-        `transfer: pipeline "Vendas" com etapa não encontrado (org=${ctx.organizationId}) — card não criado`,
+        `transfer: pipeline "Vendas"/etapa "Distribuir" não encontrado (org=${ctx.organizationId}) — card não criado`,
       );
       return;
     }
-
-    // Dedup: não duplica card da mesma conversa no mesmo pipeline.
-    const existing = await this.prisma.card.findFirst({
-      where: { pipelineId: pipeline.id, conversationId: ctx.conversationId },
-      select: { id: true },
-    });
-    if (existing) {
-      this.logger.log(
-        `transfer: card já existe no pipeline "${pipeline.name}" (conv=${ctx.conversationId})`,
-      );
-      return;
-    }
-
-    const contact = await this.prisma.contact.findUnique({
-      where: { id: ctx.contactId },
-      select: { name: true },
-    });
-    const maxOrder = await this.prisma.card.aggregate({
-      where: { stageId },
-      _max: { order: true },
-    });
-
-    await this.prisma.card.create({
-      data: {
-        organizationId: ctx.organizationId,
-        pipelineId: pipeline.id,
-        stageId,
-        title: contact?.name || 'Lead SDR',
-        conversationId: ctx.conversationId,
-        contactId: ctx.contactId,
-        order: (maxOrder._max.order ?? -1) + 1,
-      },
-    });
     this.logger.log(
-      `transfer: card criado no pipeline "${pipeline.name}" (conv=${ctx.conversationId})`,
+      `transfer: card do lead entrou na etapa "Distribuir" (conv=${ctx.conversationId})`,
     );
   }
 }

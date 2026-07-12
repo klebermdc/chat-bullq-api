@@ -224,25 +224,39 @@ export class PendingActionService {
       },
     });
 
-    // Automação pós-distribuição (best-effort — nunca quebra a distribuição):
-    // (1) tag com o nome do atendente; (2) move o card do lead pra etapa
-    // "Coletando informação" (o humano assume o atendimento a partir dali).
+    // Tag com o nome do atendente (best-effort). O card fica na etapa
+    // "Distribuir"; só vai pra "Coletando Informação" quando o atendente
+    // clicar "Iniciar atendimento" (Aprovar → executor).
+    let attendantName = 'atendente';
     try {
-      await this.tagWithAttendant(action.conversationId, conv.organizationId, assignedToId);
+      attendantName =
+        (await this.tagWithAttendant(
+          action.conversationId,
+          conv.organizationId,
+          assignedToId,
+        )) ?? attendantName;
     } catch (e) {
       this.logger.warn(`distribute: falha ao taguear atendente (conv=${action.conversationId}): ${(e as Error)?.message}`);
     }
-    try {
-      await this.advanceCardToColeta(action.conversationId, conv.organizationId);
-    } catch (e) {
-      this.logger.warn(`distribute: falha ao mover card p/ Coletando (conv=${action.conversationId}): ${(e as Error)?.message}`);
-    }
 
-    const previous = action.status;
-    action.status = 'EXECUTED';
-    action.approvedBy = actorUserId;
-    action.approvedAt = new Date().toISOString();
-    await this.storage.save(action, previous);
+    // NÃO resolve a pendência: ela fica VISÍVEL como "norte" pro atendente
+    // escolhido até ele clicar "Iniciar atendimento". Marca como distribuída,
+    // atualiza o texto do card e estende o prazo pra não expirar antes.
+    action.args = {
+      ...action.args,
+      distributedTo: assignedToId,
+      distributedToName: attendantName === 'atendente' ? null : attendantName,
+      distributedBy: actorUserId,
+      distributedAt: new Date().toISOString(),
+    };
+    action.preview = {
+      ...action.preview,
+      action: `Distribuído para ${attendantName} — o atendente clica "Aprovar" pra iniciar o atendimento.`,
+    };
+    action.expiresAt = new Date(
+      Date.now() + 7 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    await this.storage.save(action, action.status); // continua PENDING
 
     this.logger.log({
       msg: 'pending_action_distributed',
@@ -255,18 +269,22 @@ export class PendingActionService {
     return action;
   }
 
-  /** Aplica uma tag com o nome do atendente na conversa (cria a tag se não existir). */
+  /**
+   * Aplica uma tag com o nome do atendente na conversa (cria a tag se não
+   * existir). Retorna o nome do atendente (ou null se não achou), pra o
+   * chamador reusar sem re-buscar.
+   */
   private async tagWithAttendant(
     conversationId: string,
     organizationId: string,
     assignedToId: string,
-  ): Promise<void> {
+  ): Promise<string | null> {
     const user = await this.prisma.user.findUnique({
       where: { id: assignedToId },
       select: { name: true },
     });
     const name = (user?.name ?? '').trim();
-    if (!name) return;
+    if (!name) return null;
 
     const tag = await this.prisma.tag.upsert({
       where: { organizationId_name: { organizationId, name } },
@@ -279,40 +297,7 @@ export class PendingActionService {
       create: { conversationId, tagId: tag.id },
       update: {},
     });
-  }
-
-  /** Move o card do lead (pipeline "Vendas") pra etapa "Coletando informação". */
-  private async advanceCardToColeta(
-    conversationId: string,
-    organizationId: string,
-  ): Promise<void> {
-    const card = await this.prisma.card.findFirst({
-      where: {
-        conversationId,
-        organizationId,
-        pipeline: { name: { contains: 'Vendas', mode: 'insensitive' } },
-      },
-      select: { id: true, pipelineId: true },
-    });
-    if (!card) return;
-
-    const stage = await this.prisma.pipelineStage.findFirst({
-      where: {
-        pipelineId: card.pipelineId,
-        name: { contains: 'oletando', mode: 'insensitive' },
-      },
-      select: { id: true },
-    });
-    if (!stage) return;
-
-    const maxOrder = await this.prisma.card.aggregate({
-      where: { stageId: stage.id },
-      _max: { order: true },
-    });
-    await this.prisma.card.update({
-      where: { id: card.id },
-      data: { stageId: stage.id, order: (maxOrder._max.order ?? -1) + 1 },
-    });
+    return name;
   }
 
   /** List PENDING actions, optionally filtered by conversation. */
