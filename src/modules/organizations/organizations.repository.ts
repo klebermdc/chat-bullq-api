@@ -77,6 +77,13 @@ export class OrganizationsRepository {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
+  async updateUserPassword(userId: string, hashedPassword: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword },
+    });
+  }
+
   async countMembers(organizationId: string) {
     return this.prisma.userOrganization.count({ where: { organizationId } });
   }

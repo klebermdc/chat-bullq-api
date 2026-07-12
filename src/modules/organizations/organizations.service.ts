@@ -7,10 +7,13 @@ import {
   Logger,
 } from '@nestjs/common';
 import { OrgRole, Prisma } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import { OrganizationsRepository } from './organizations.repository';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+
+const BCRYPT_ROUNDS = 12;
 
 @Injectable()
 export class OrganizationsService {
@@ -162,5 +165,40 @@ export class OrganizationsService {
 
     await this.repository.removeMember(membership.id);
     this.logger.log(`Member ${memberId} removed from org ${orgId} by ${actorId}`);
+  }
+
+  // Admin-driven password reset (set a member's password without knowing the
+  // old one). Redefinir senha = tomar a conta, então o RBAC é mais estrito que
+  // o de role/remoção: NINGUÉM redefine um OWNER por aqui (owners trocam a
+  // própria senha via self-service em /users/me/change-password), e um ADMIN só
+  // pode redefinir AGENTE — não outro ADMIN — pra evitar tomada lateral.
+  async resetMemberPassword(
+    orgId: string,
+    memberId: string,
+    dto: { newPassword: string },
+    actorRole: OrgRole,
+  ) {
+    const membership = await this.repository.findMembership(memberId, orgId);
+    if (!membership) {
+      throw new NotFoundException('Member not found in this organization');
+    }
+
+    if (membership.role === 'OWNER') {
+      throw new ForbiddenException(
+        'Cannot reset the password of an organization owner',
+      );
+    }
+
+    if (actorRole === 'ADMIN' && membership.role === 'ADMIN') {
+      throw new ForbiddenException(
+        'Admins can only reset the password of operators',
+      );
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS);
+    await this.repository.updateUserPassword(membership.userId, hashedPassword);
+    this.logger.log(
+      `Password reset for member ${memberId} in org ${orgId} by a ${actorRole}`,
+    );
   }
 }
