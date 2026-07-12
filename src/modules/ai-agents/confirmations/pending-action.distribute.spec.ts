@@ -52,8 +52,12 @@ describe('PendingActionService.distribute', () => {
       awaitingHumanReply: true,
       status: 'OPEN',
     });
+    // NÃO resolve: fica PENDING (card permanece como "norte") mas marcado
+    // como distribuído.
     const saved = storage.save.mock.calls[0][0];
-    expect(saved.status).toBe('EXECUTED');
+    expect(saved.status).toBe('PENDING');
+    expect(saved.args).toMatchObject({ distributedTo: 'atendente9' });
+    expect(saved.preview.action).toContain('Distribuído para');
   });
 
   it('não promove status quando a conversa não está PENDING', async () => {
@@ -79,15 +83,13 @@ describe('PendingActionService.distribute', () => {
     expect(prisma.conversationTag.upsert).toHaveBeenCalled();
   });
 
-  it('move o card pra etapa "Coletando informação" quando existe card+etapa', async () => {
+  it('NÃO move o card no distribuir (Coletando só no Iniciar atendimento)', async () => {
     const { svc, prisma } = make();
     prisma.card.findFirst.mockResolvedValue({ id: 'card1', pipelineId: 'pl1' });
     prisma.pipelineStage.findFirst.mockResolvedValue({ id: 'stage-coleta' });
     await svc.distribute('pa1', 'op1', 'at1');
-    expect(prisma.card.update.mock.calls[0][0]).toMatchObject({
-      where: { id: 'card1' },
-      data: { stageId: 'stage-coleta' },
-    });
+    // O card permanece em "Distribuir" — só vai pra Coletando no approve.
+    expect(prisma.card.update).not.toHaveBeenCalled();
   });
 
   it('exige assignedToId', async () => {
