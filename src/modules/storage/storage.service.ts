@@ -61,6 +61,16 @@ export class StorageService implements OnModuleInit {
     });
   }
 
+  /** Remove um objeto. Idempotente: um objeto inexistente é sucesso. */
+  async remove(key: string): Promise<void> {
+    try {
+      await this.client.removeObject(this.bucket, key);
+    } catch (err: any) {
+      if (this.isNotFound(err)) return;
+      throw err;
+    }
+  }
+
   /** Returns null when the object does not exist (instead of throwing). */
   async stat(key: string): Promise<StoredObjectStat | null> {
     try {
