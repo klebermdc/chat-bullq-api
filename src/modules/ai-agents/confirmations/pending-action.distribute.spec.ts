@@ -19,9 +19,22 @@ function make(actionOverrides: Record<string, unknown> = {}) {
   const queue = { add: jest.fn() } as any;
   const prisma = {
     conversation: {
-      findUnique: jest.fn().mockResolvedValue({ status: 'PENDING', firstResponseAt: null }),
+      findUnique: jest.fn().mockResolvedValue({
+        status: 'PENDING',
+        firstResponseAt: null,
+        organizationId: 'org1',
+      }),
       update: jest.fn().mockResolvedValue({ id: 'conv1' }),
     },
+    user: { findUnique: jest.fn().mockResolvedValue({ name: 'Renata' }) },
+    tag: { upsert: jest.fn().mockResolvedValue({ id: 'tag1' }) },
+    conversationTag: { upsert: jest.fn().mockResolvedValue({}) },
+    card: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      aggregate: jest.fn().mockResolvedValue({ _max: { order: 0 } }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    pipelineStage: { findFirst: jest.fn().mockResolvedValue(null) },
   } as any;
   return { svc: new PendingActionService(storage, queue, prisma), storage, prisma, action };
 }
@@ -50,6 +63,31 @@ describe('PendingActionService.distribute', () => {
     const upd = prisma.conversation.update.mock.calls[0][0];
     expect(upd.data.status).toBeUndefined();
     expect(upd.data).toMatchObject({ aiEnabled: false, awaitingHumanReply: true });
+  });
+
+  it('aplica a tag com o nome do atendente', async () => {
+    const { svc, prisma } = make();
+    await svc.distribute('pa1', 'op1', 'atendente9');
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { id: 'atendente9' },
+      select: { name: true },
+    });
+    expect(prisma.tag.upsert.mock.calls[0][0].create).toMatchObject({
+      organizationId: 'org1',
+      name: 'Renata',
+    });
+    expect(prisma.conversationTag.upsert).toHaveBeenCalled();
+  });
+
+  it('move o card pra etapa "Coletando informação" quando existe card+etapa', async () => {
+    const { svc, prisma } = make();
+    prisma.card.findFirst.mockResolvedValue({ id: 'card1', pipelineId: 'pl1' });
+    prisma.pipelineStage.findFirst.mockResolvedValue({ id: 'stage-coleta' });
+    await svc.distribute('pa1', 'op1', 'at1');
+    expect(prisma.card.update.mock.calls[0][0]).toMatchObject({
+      where: { id: 'card1' },
+      data: { stageId: 'stage-coleta' },
+    });
   });
 
   it('exige assignedToId', async () => {

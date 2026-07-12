@@ -206,7 +206,7 @@ export class PendingActionService {
 
     const conv = await this.prisma.conversation.findUnique({
       where: { id: action.conversationId },
-      select: { status: true, firstResponseAt: true },
+      select: { status: true, firstResponseAt: true, organizationId: true },
     });
     if (!conv) throw new NotFoundException('Conversation not found');
 
@@ -224,6 +224,20 @@ export class PendingActionService {
       },
     });
 
+    // Automação pós-distribuição (best-effort — nunca quebra a distribuição):
+    // (1) tag com o nome do atendente; (2) move o card do lead pra etapa
+    // "Coletando informação" (o humano assume o atendimento a partir dali).
+    try {
+      await this.tagWithAttendant(action.conversationId, conv.organizationId, assignedToId);
+    } catch (e) {
+      this.logger.warn(`distribute: falha ao taguear atendente (conv=${action.conversationId}): ${(e as Error)?.message}`);
+    }
+    try {
+      await this.advanceCardToColeta(action.conversationId, conv.organizationId);
+    } catch (e) {
+      this.logger.warn(`distribute: falha ao mover card p/ Coletando (conv=${action.conversationId}): ${(e as Error)?.message}`);
+    }
+
     const previous = action.status;
     action.status = 'EXECUTED';
     action.approvedBy = actorUserId;
@@ -239,6 +253,66 @@ export class PendingActionService {
     });
 
     return action;
+  }
+
+  /** Aplica uma tag com o nome do atendente na conversa (cria a tag se não existir). */
+  private async tagWithAttendant(
+    conversationId: string,
+    organizationId: string,
+    assignedToId: string,
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: assignedToId },
+      select: { name: true },
+    });
+    const name = (user?.name ?? '').trim();
+    if (!name) return;
+
+    const tag = await this.prisma.tag.upsert({
+      where: { organizationId_name: { organizationId, name } },
+      create: { organizationId, name },
+      update: {},
+      select: { id: true },
+    });
+    await this.prisma.conversationTag.upsert({
+      where: { conversationId_tagId: { conversationId, tagId: tag.id } },
+      create: { conversationId, tagId: tag.id },
+      update: {},
+    });
+  }
+
+  /** Move o card do lead (pipeline "Vendas") pra etapa "Coletando informação". */
+  private async advanceCardToColeta(
+    conversationId: string,
+    organizationId: string,
+  ): Promise<void> {
+    const card = await this.prisma.card.findFirst({
+      where: {
+        conversationId,
+        organizationId,
+        pipeline: { name: { contains: 'Vendas', mode: 'insensitive' } },
+      },
+      select: { id: true, pipelineId: true },
+    });
+    if (!card) return;
+
+    const stage = await this.prisma.pipelineStage.findFirst({
+      where: {
+        pipelineId: card.pipelineId,
+        name: { contains: 'oletando', mode: 'insensitive' },
+      },
+      select: { id: true },
+    });
+    if (!stage) return;
+
+    const maxOrder = await this.prisma.card.aggregate({
+      where: { stageId: stage.id },
+      _max: { order: true },
+    });
+    await this.prisma.card.update({
+      where: { id: card.id },
+      data: { stageId: stage.id, order: (maxOrder._max.order ?? -1) + 1 },
+    });
   }
 
   /** List PENDING actions, optionally filtered by conversation. */
