@@ -133,4 +133,16 @@ export class PipelinesController {
   ) {
     return this.service.moveCard(cardId, orgId, dto);
   }
+
+  @Post('conversations/:conversationId/order-sent')
+  @ApiOperation({
+    summary:
+      'E6 — Entrega: move o card da conversa pra etapa final "Pedido enviado".',
+  })
+  markOrderSent(
+    @Param('conversationId') conversationId: string,
+    @CurrentOrg('id') orgId: string,
+  ) {
+    return this.service.markOrderSentForConversation(orgId, conversationId);
+  }
 }
