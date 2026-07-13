@@ -10,7 +10,13 @@ import {
 } from '../../common/decorators';
 import { CrmReportsService } from './crm-reports.service';
 import { DealsQueryDto } from './dto/deals-query.dto';
-import { parseDealsParams, dealsRowsToCsv } from './crm-reports.mapper';
+import { LeadsQueryDto } from './dto/leads-query.dto';
+import {
+  parseDealsParams,
+  dealsRowsToCsv,
+  parseLeadsParams,
+  leadsRowsToCsv,
+} from './crm-reports.mapper';
 
 @ApiTags('crm-reports')
 @ApiBearerAuth()
@@ -49,5 +55,37 @@ export class CrmReportsController {
       'attachment; filename="relatorio-deals.csv"',
     );
     res.send(dealsRowsToCsv(report.rows));
+  }
+
+  @Get('leads')
+  getLeads(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+    @Query() q: LeadsQueryDto,
+  ) {
+    return this.service.getLeadsReport(parseLeadsParams(q, orgId, userId, role));
+  }
+
+  @Get('leads/export.csv')
+  async exportLeads(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+    @Query() q: LeadsQueryDto,
+    @Res() res: Response,
+  ) {
+    const params = parseLeadsParams(q, orgId, userId, role);
+    const report = await this.service.getLeadsReport({
+      ...params,
+      page: 1,
+      perPage: 10000,
+    });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="relatorio-leads.csv"',
+    );
+    res.send(leadsRowsToCsv(report.rows));
   }
 }
