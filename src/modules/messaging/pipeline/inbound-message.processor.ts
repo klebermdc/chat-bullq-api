@@ -7,6 +7,7 @@ import { PrismaService } from '../../../database/prisma.service';
 import { IdempotencyService } from './idempotency.service';
 import { ContactResolverService } from './contact-resolver.service';
 import { ConversationResolverService } from './conversation-resolver.service';
+import { LeadSourceTaggerService } from './lead-source-tagger.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { NormalizedInboundMessage, StatusUpdate } from '../../channel-hub/ports/types';
 import { InstagramContactEnricherService } from '../../channel-hub/adapters/instagram/instagram-contact-enricher.service';
@@ -107,6 +108,7 @@ export class InboundMessageProcessor extends WorkerHost {
     private readonly cadenceInbound: CadenceInboundService,
     @InjectQueue('chatbot-processor') private readonly chatbotQueue: Queue,
     private readonly shadowObserver: ShadowObserverService,
+    private readonly leadSourceTagger: LeadSourceTaggerService,
   ) {
     super();
   }
@@ -265,6 +267,24 @@ export class InboundMessageProcessor extends WorkerHost {
       this.realtimeGateway.emitToConversation(conversationId, 'message:new', {
         message: savedMessage,
       });
+
+      // Atribuição de origem: lead que veio do link rastreado do Instagram
+      // orgânico (frase-marca no texto pré-preenchido do wa.me) ganha a tag
+      // "Instagram Orgânico". Best-effort — nunca quebra o pipeline.
+      if (direction === MessageDirection.INBOUND) {
+        const c = (message.content ?? {}) as Record<string, any>;
+        const body =
+          typeof c.text === 'string'
+            ? c.text
+            : typeof c.caption === 'string'
+              ? c.caption
+              : null;
+        this.leadSourceTagger
+          .tagInstagramOrganicIfMatch({ organizationId, conversationId, body })
+          .catch((err) =>
+            this.logger.warn(`lead-source tag falhou (não crítico): ${err.message}`),
+          );
+      }
 
       if (
         !isEcho &&
