@@ -145,4 +145,21 @@ export class PipelinesController {
   ) {
     return this.service.markOrderSentForConversation(orgId, conversationId);
   }
+
+  @Post('conversations/:conversationId/won')
+  @ApiOperation({
+    summary:
+      'E5.1 — Fechamento: marca Ganho (guarda o nº do pedido) e move o card pra etapa WON.',
+  })
+  markWon(
+    @Param('conversationId') conversationId: string,
+    @CurrentOrg('id') orgId: string,
+    @Body() body: { orderNumber?: string },
+  ) {
+    return this.service.markWonForConversation(
+      orgId,
+      conversationId,
+      body?.orderNumber,
+    );
+  }
 }
