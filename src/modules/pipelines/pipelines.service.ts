@@ -445,6 +445,59 @@ export class PipelinesService {
     } as MoveCardDto);
   }
 
+  /**
+   * E5.1 — Fechamento: marca o negócio como Ganho. Guarda o nº do pedido no
+   * card (chave de correlação futura com o HUB — `OfpSalesOrder.pedido`, fatia
+   * E5.2) em `metadata.orderNumber` e move o card pra a etapa Ganho (type WON)
+   * do funil da conversa. O `moveCard` já seta status=WON + closedAt.
+   *
+   * nº do pedido é opcional (o atendente pode não tê-lo ainda) — sem ele, só
+   * move pra WON. Lança se a conversa não tem card ou o funil não tem etapa WON.
+   */
+  async markWonForConversation(
+    organizationId: string,
+    conversationId: string,
+    orderNumber?: string,
+  ) {
+    const card = await this.prisma.card.findFirst({
+      where: { conversationId, organizationId },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!card) {
+      throw new BadRequestException(
+        'Este lead ainda não tem card no funil de vendas.',
+      );
+    }
+
+    const wonStage = await this.prisma.pipelineStage.findFirst({
+      where: { pipelineId: card.pipelineId, type: 'WON' },
+      orderBy: { order: 'asc' },
+    });
+    if (!wonStage) {
+      throw new BadRequestException(
+        'O funil não tem etapa de Ganho (tipo WON).',
+      );
+    }
+
+    const trimmed = orderNumber?.trim();
+    if (trimmed) {
+      await this.prisma.card.update({
+        where: { id: card.id },
+        data: {
+          metadata: {
+            ...((card.metadata as Record<string, unknown>) ?? {}),
+            orderNumber: trimmed,
+          },
+        },
+      });
+    }
+
+    return this.moveCard(card.id, organizationId, {
+      toStageId: wonStage.id,
+      toIndex: 0,
+    } as MoveCardDto);
+  }
+
   async updateCard(
     cardId: string,
     organizationId: string,
