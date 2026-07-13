@@ -93,3 +93,50 @@ export interface LeadsReportResult {
   total: number;
   totalPages: number;
 }
+
+export interface ConversationsReportParams {
+  orgId: string;
+  role: string; // OrgRole
+  userId: string;
+  status?: string; // ConversationStatus
+  channelId?: string;
+  assignedToId?: string;
+  tagId?: string;
+  reopened?: boolean; // reopenedCount > 0
+  answered?: boolean; // firstResponseAt != null
+  from?: Date;
+  to?: Date;
+  page?: number;
+  perPage?: number;
+}
+
+export interface ConversationRow {
+  id: string;
+  contactName: string | null;
+  channelName: string | null;
+  status: string;
+  assignedToName: string | null;
+  firstResponseSeconds: number | null;
+  reopenedCount: number;
+  createdAt: string;
+  closedAt: string | null;
+}
+
+export interface ConversationsMetrics {
+  count: number;
+  open: number;
+  closed: number;
+  reopened: number; // conversas com reopenedCount > 0
+  avgFirstResponseSeconds: number | null; // média (amostra) das que têm 1ª resposta
+  answeredCount: number;
+  byChannel: Array<{ name: string; count: number }>;
+}
+
+export interface ConversationsReportResult {
+  metrics: ConversationsMetrics;
+  rows: ConversationRow[];
+  page: number;
+  perPage: number;
+  total: number;
+  totalPages: number;
+}
