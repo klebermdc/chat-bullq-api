@@ -40,6 +40,7 @@ describe('InboundMessageProcessor — observação SHADOW independe do gate', ()
       {} as any, // 16 cadenceInbound
       {} as any, // 17 chatbotQueue
       overrides.shadowObserver, // 18 shadowObserver
+      { tagInstagramOrganicIfMatch: jest.fn().mockResolvedValue(false) } as any, // 19 leadSourceTagger
     );
   }
 

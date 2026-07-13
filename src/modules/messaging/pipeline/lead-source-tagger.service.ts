@@ -1,0 +1,80 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../../../database/prisma.service';
+
+/** Nome da tag aplicada a leads que vieram do Instagram orgânico. */
+const INSTAGRAM_TAG_NAME = 'Instagram Orgânico';
+
+/** Frase-marca padrão no texto pré-preenchido do link wa.me (configurável). */
+const DEFAULT_MARKER = 'vim pelo instagram';
+
+function normalize(s?: string | null): string {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // remove acentos
+    .trim();
+}
+
+/**
+ * Atribuição de origem por link rastreado (Instagram orgânico).
+ *
+ * O link que o ManyChat/Instagram divulga é um `wa.me` com uma frase-marca no
+ * texto pré-preenchido (ex.: "Vim pelo Instagram…"). Quando o lead clica e
+ * manda a 1ª mensagem, ela contém essa marca — aí marcamos a conversa com a
+ * tag "Instagram Orgânico". É o sinal visível pro time, sem webhook externo.
+ *
+ * A frase-marca é configurável via `INSTAGRAM_LEAD_MARKER` (default acima).
+ */
+@Injectable()
+export class LeadSourceTaggerService {
+  private readonly logger = new Logger(LeadSourceTaggerService.name);
+  private readonly marker: string;
+
+  constructor(private readonly prisma: PrismaService) {
+    this.marker = normalize(process.env.INSTAGRAM_LEAD_MARKER || DEFAULT_MARKER);
+  }
+
+  /** True se o texto contém a frase-marca (case/acento-insensitive). */
+  matches(text?: string | null): boolean {
+    if (!text) return false;
+    return normalize(text).includes(this.marker);
+  }
+
+  /**
+   * Se o corpo da mensagem tem a marca, aplica a tag "Instagram Orgânico" na
+   * conversa. Idempotente (re-aplicar é no-op) e best-effort. Retorna true se a
+   * conversa ficou marcada (agora ou já estava).
+   */
+  async tagInstagramOrganicIfMatch(params: {
+    organizationId: string;
+    conversationId: string;
+    body?: string | null;
+  }): Promise<boolean> {
+    if (!this.matches(params.body)) return false;
+
+    const tag = await this.prisma.tag.upsert({
+      where: {
+        organizationId_name: {
+          organizationId: params.organizationId,
+          name: INSTAGRAM_TAG_NAME,
+        },
+      },
+      update: {},
+      create: { organizationId: params.organizationId, name: INSTAGRAM_TAG_NAME },
+      select: { id: true },
+    });
+
+    try {
+      await this.prisma.conversationTag.create({
+        data: { conversationId: params.conversationId, tagId: tag.id },
+      });
+      this.logger.log(
+        `lead Instagram orgânico: conversa ${params.conversationId} marcada`,
+      );
+    } catch (err: any) {
+      // Já tinha a tag (PK composta conversationId+tagId) → no-op.
+      if (err?.code !== 'P2002') throw err;
+    }
+    return true;
+  }
+}

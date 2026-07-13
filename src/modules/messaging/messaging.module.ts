@@ -13,6 +13,7 @@ import { CadencesModule } from '../cadences/cadences.module';
 import { IdempotencyService } from './pipeline/idempotency.service';
 import { ContactResolverService } from './pipeline/contact-resolver.service';
 import { ConversationResolverService } from './pipeline/conversation-resolver.service';
+import { LeadSourceTaggerService } from './pipeline/lead-source-tagger.service';
 import { HistoryImportService } from './pipeline/history-import.service';
 import { InboundMessageProcessor } from './pipeline/inbound-message.processor';
 import { OutboundMessageProcessor } from './pipeline/outbound-message.processor';
@@ -59,6 +60,7 @@ import { ContactsRepository } from './contacts/contacts.repository';
     IdempotencyService,
     ContactResolverService,
     ConversationResolverService,
+    LeadSourceTaggerService,
     HistoryImportService,
     InboundMessageProcessor,
     OutboundMessageProcessor,
