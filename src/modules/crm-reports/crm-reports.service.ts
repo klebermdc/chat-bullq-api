@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, CardStatus } from '@prisma/client';
+import { Prisma, CardStatus, ConversationStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import {
   DealsReportParams,
@@ -8,6 +8,9 @@ import {
   LeadsReportParams,
   LeadsReportResult,
   LeadRow,
+  ConversationsReportParams,
+  ConversationsReportResult,
+  ConversationRow,
 } from './crm-reports.types';
 
 @Injectable()
@@ -226,6 +229,151 @@ export class CrmReportsService {
         withProposal: { count: withProposal, pct: pct(withProposal) },
         withDeal: { count: withDeal, pct: pct(withDeal) },
         byTag,
+      },
+      rows,
+      page,
+      perPage,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / perPage)),
+    };
+  }
+
+  // ─── Conversas/Atendimento ─────────────────────────
+
+  buildConversationsWhere(
+    p: ConversationsReportParams,
+  ): Prisma.ConversationWhereInput {
+    const where: Prisma.ConversationWhereInput = {
+      organizationId: p.orgId,
+      deletedAt: null,
+    };
+    if (p.status) where.status = p.status as ConversationStatus;
+    if (p.channelId) where.channelId = p.channelId;
+    if (p.tagId) where.tags = { some: { tagId: p.tagId } };
+    if (p.reopened === true) where.reopenedCount = { gt: 0 };
+    if (p.reopened === false) where.reopenedCount = 0;
+    if (p.answered === true) where.firstResponseAt = { not: null };
+    if (p.answered === false) where.firstResponseAt = null;
+    if (p.from || p.to) {
+      const d: Prisma.DateTimeFilter = {};
+      if (p.from) d.gte = p.from;
+      if (p.to) d.lte = p.to;
+      where.createdAt = d;
+    }
+    // RBAC: AGENT só vê conversas atribuídas a ele.
+    if (p.role === 'AGENT') where.assignedToId = p.userId;
+    else if (p.assignedToId) where.assignedToId = p.assignedToId;
+    return where;
+  }
+
+  private firstResponseSeconds(
+    createdAt: Date,
+    firstResponseAt: Date | null,
+  ): number | null {
+    if (!firstResponseAt) return null;
+    return Math.max(
+      0,
+      (firstResponseAt.getTime() - createdAt.getTime()) / 1000,
+    );
+  }
+
+  async getConversationsReport(
+    p: ConversationsReportParams,
+  ): Promise<ConversationsReportResult> {
+    const where = this.buildConversationsWhere(p);
+    const page = p.page ?? 1;
+    const perPage = p.perPage ?? 25;
+
+    const [total, statusGroups, channelGroups, reopened, answeredCount, frSample, convs] =
+      await Promise.all([
+        this.prisma.conversation.count({ where }),
+        this.prisma.conversation.groupBy({
+          by: ['status'],
+          where,
+          _count: { _all: true },
+        }),
+        this.prisma.conversation.groupBy({
+          by: ['channelId'],
+          where,
+          _count: { _all: true },
+          orderBy: { _count: { channelId: 'desc' } },
+          take: 5,
+        }),
+        this.prisma.conversation.count({
+          where: { ...where, reopenedCount: { gt: 0 } },
+        }),
+        this.prisma.conversation.count({
+          where: { ...where, firstResponseAt: { not: null } },
+        }),
+        this.prisma.conversation.findMany({
+          where: { ...where, firstResponseAt: { not: null } },
+          select: { createdAt: true, firstResponseAt: true },
+          take: 5000,
+        }),
+        this.prisma.conversation.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * perPage,
+          take: perPage,
+          include: {
+            contact: { select: { name: true, phone: true } },
+            channel: { select: { name: true } },
+            assignedTo: { select: { name: true } },
+          },
+        }),
+      ]);
+
+    const closed =
+      statusGroups.find((g) => g.status === ConversationStatus.CLOSED)?._count
+        ._all ?? 0;
+    const open = total - closed;
+
+    const channelIds = channelGroups.map((g) => g.channelId);
+    const channels = channelIds.length
+      ? await this.prisma.channel.findMany({
+          where: { id: { in: channelIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const channelName = (id: string) =>
+      channels.find((c) => c.id === id)?.name ?? id;
+    const byChannel = channelGroups.map((g) => ({
+      name: channelName(g.channelId),
+      count: g._count._all,
+    }));
+
+    const sampleSeconds = frSample
+      .map((c) => this.firstResponseSeconds(c.createdAt, c.firstResponseAt))
+      .filter((s): s is number => s != null);
+    const avgFirstResponseSeconds =
+      sampleSeconds.length > 0
+        ? sampleSeconds.reduce((a, b) => a + b, 0) / sampleSeconds.length
+        : null;
+
+    const rows: ConversationRow[] = convs.map((c) => ({
+      id: c.id,
+      contactName: c.contact?.name ?? c.contact?.phone ?? null,
+      channelName: c.channel?.name ?? null,
+      status: c.status,
+      assignedToName: c.assignedTo?.name ?? null,
+      firstResponseSeconds: this.firstResponseSeconds(
+        c.createdAt,
+        c.firstResponseAt,
+      ),
+      reopenedCount: c.reopenedCount,
+      createdAt: c.createdAt.toISOString(),
+      closedAt: c.closedAt ? c.closedAt.toISOString() : null,
+    }));
+
+    return {
+      metrics: {
+        count: total,
+        open,
+        closed,
+        reopened,
+        avgFirstResponseSeconds,
+        answeredCount,
+        byChannel,
       },
       rows,
       page,

@@ -1,12 +1,17 @@
 import { CardStatus, OrgRole } from '@prisma/client';
 import { DealsQueryDto } from './dto/deals-query.dto';
 import { LeadsQueryDto } from './dto/leads-query.dto';
+import { ConversationsQueryDto } from './dto/conversations-query.dto';
 import {
   DealsReportParams,
   DealRow,
   LeadsReportParams,
   LeadRow,
+  ConversationsReportParams,
+  ConversationRow,
 } from './crm-reports.types';
+
+const CONVERSATION_STATUSES = ['PENDING', 'BOT', 'OPEN', 'WAITING', 'CLOSED'];
 
 const toNum = (v?: string) =>
   v != null && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : undefined;
@@ -104,6 +109,67 @@ export function parseLeadsParams(
     page: toNum(q.page) ?? 1,
     perPage: Math.min(toNum(q.perPage) ?? 25, 10000),
   };
+}
+
+export function parseConversationsParams(
+  q: ConversationsQueryDto,
+  orgId: string,
+  userId: string,
+  role: OrgRole,
+): ConversationsReportParams {
+  return {
+    orgId,
+    userId,
+    role,
+    status:
+      q.status && CONVERSATION_STATUSES.includes(q.status) ? q.status : undefined,
+    channelId: q.channelId || undefined,
+    assignedToId: q.assignedToId || undefined,
+    tagId: q.tagId || undefined,
+    reopened:
+      q.reopened === 'true' ? true : q.reopened === 'false' ? false : undefined,
+    answered:
+      q.answered === 'true' ? true : q.answered === 'false' ? false : undefined,
+    from: toDate(q.from),
+    to: toDate(q.to),
+    page: toNum(q.page) ?? 1,
+    perPage: Math.min(toNum(q.perPage) ?? 25, 10000),
+  };
+}
+
+const fmtDuration = (s: number | null) => {
+  if (s == null) return '';
+  if (s < 60) return `${Math.round(s)}s`;
+  if (s < 3600) return `${Math.round(s / 60)}min`;
+  return `${(s / 3600).toFixed(1)}h`;
+};
+
+export function conversationsRowsToCsv(rows: ConversationRow[]): string {
+  const header = [
+    'Contato',
+    'Canal',
+    'Status',
+    'Atendente',
+    '1a resposta',
+    'Reaberturas',
+    'Criado',
+    'Fechado',
+  ];
+  const lines = rows.map((r) =>
+    [
+      r.contactName,
+      r.channelName,
+      r.status,
+      r.assignedToName,
+      fmtDuration(r.firstResponseSeconds),
+      r.reopenedCount,
+      r.createdAt,
+      r.closedAt ?? '',
+    ]
+      .map(csvCell)
+      .join(','),
+  );
+  return [header.join(','), ...lines].join('\n');
 }
 
 export function leadsRowsToCsv(rows: LeadRow[]): string {

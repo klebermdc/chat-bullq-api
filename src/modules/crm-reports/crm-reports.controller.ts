@@ -11,11 +11,14 @@ import {
 import { CrmReportsService } from './crm-reports.service';
 import { DealsQueryDto } from './dto/deals-query.dto';
 import { LeadsQueryDto } from './dto/leads-query.dto';
+import { ConversationsQueryDto } from './dto/conversations-query.dto';
 import {
   parseDealsParams,
   dealsRowsToCsv,
   parseLeadsParams,
   leadsRowsToCsv,
+  parseConversationsParams,
+  conversationsRowsToCsv,
 } from './crm-reports.mapper';
 
 @ApiTags('crm-reports')
@@ -87,5 +90,39 @@ export class CrmReportsController {
       'attachment; filename="relatorio-leads.csv"',
     );
     res.send(leadsRowsToCsv(report.rows));
+  }
+
+  @Get('conversations')
+  getConversations(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+    @Query() q: ConversationsQueryDto,
+  ) {
+    return this.service.getConversationsReport(
+      parseConversationsParams(q, orgId, userId, role),
+    );
+  }
+
+  @Get('conversations/export.csv')
+  async exportConversations(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+    @Query() q: ConversationsQueryDto,
+    @Res() res: Response,
+  ) {
+    const params = parseConversationsParams(q, orgId, userId, role);
+    const report = await this.service.getConversationsReport({
+      ...params,
+      page: 1,
+      perPage: 10000,
+    });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="relatorio-conversas.csv"',
+    );
+    res.send(conversationsRowsToCsv(report.rows));
   }
 }
