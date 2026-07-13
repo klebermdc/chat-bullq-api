@@ -267,6 +267,14 @@ export class ConversationsRepository {
             },
           },
           tags: { include: { tag: true } },
+          // Cards do funil → selo da etapa atual (ex.: "Coletando Informação").
+          cards: {
+            select: {
+              id: true,
+              stage: { select: { id: true, name: true, color: true } },
+              pipeline: { select: { id: true, name: true } },
+            },
+          },
           _count: {
             select: {
               messages: true,
@@ -416,6 +424,13 @@ export class ConversationsRepository {
         assignedTo: { select: { id: true, name: true, avatarUrl: true } },
         department: true,
         tags: { include: { tag: true } },
+        cards: {
+          select: {
+            id: true,
+            stage: { select: { id: true, name: true, color: true } },
+            pipeline: { select: { id: true, name: true } },
+          },
+        },
         auditLogs: { orderBy: { createdAt: 'desc' }, take: 20 },
       },
     });
