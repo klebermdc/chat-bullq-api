@@ -20,6 +20,9 @@ import {
   UpsertStageDto,
 } from './dto/pipeline.dto';
 
+/** E6 — nome (contains) da etapa final de entrega. Não colide com "Proposta enviada". */
+const ORDER_SENT_STAGE_NAME = 'Pedido enviado';
+
 const DEFAULT_STAGES: UpsertStageDto[] = [
   { name: 'Novo', color: 'zinc', type: 'NORMAL', order: 0 },
   { name: 'Em qualificação', color: 'blue', type: 'NORMAL', order: 1 },
@@ -396,6 +399,50 @@ export class PipelinesService {
         data: { value, currency },
       });
     }
+  }
+
+  /**
+   * E6 — Entrega: marca o pedido como enviado, movendo o card da conversa pra
+   * etapa final do funil (default "Pedido enviado"). Diferente de
+   * `ensureConversationAtStageByName`, a entrega é PÓS-fechamento (o card já
+   * pode estar ganho/WON) — por isso move via `moveCard` sem a guarda de
+   * "só OPEN". Por decisão de projeto é só ETAPA, sem tag redundante.
+   *
+   * Resolve a etapa por nome (contains, case-insensitive) — "Pedido enviado"
+   * não colide com "Proposta enviada". Lança se a etapa não existir na org ou
+   * se a conversa não tiver card no funil.
+   */
+  async markOrderSentForConversation(
+    organizationId: string,
+    conversationId: string,
+    stageName: string = ORDER_SENT_STAGE_NAME,
+  ) {
+    const targetStage = await this.prisma.pipelineStage.findFirst({
+      where: {
+        name: { contains: stageName, mode: 'insensitive' },
+        pipeline: { organizationId },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!targetStage) {
+      throw new BadRequestException(
+        `Etapa "${stageName}" não existe no funil desta organização.`,
+      );
+    }
+
+    const card = await this.prisma.card.findFirst({
+      where: { pipelineId: targetStage.pipelineId, conversationId },
+    });
+    if (!card) {
+      throw new BadRequestException(
+        'Este lead ainda não tem card no funil de vendas.',
+      );
+    }
+
+    return this.moveCard(card.id, organizationId, {
+      toStageId: targetStage.id,
+      toIndex: 0,
+    } as MoveCardDto);
   }
 
   async updateCard(
