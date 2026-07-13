@@ -4,15 +4,11 @@ import { PrismaService } from '../../../../database/prisma.service';
 import { PendingActionService } from '../../confirmations/pending-action.service';
 import { AiTool, ToolContext, ToolResult } from '../tool.types';
 import { ReplyToConversationTool } from './reply-to-conversation.tool';
-import { TagConversationTool } from './tag-conversation.tool';
 import { enterLeadStage } from '../../lead-stage.util';
 
 /** Mensagem que a IA manda pro cliente ao transferir — garantida por código. */
 const TRANSITION_MESSAGE =
   'Perfeito! Já tenho tudo que preciso 😊 Vou te passar agora pra um dos nossos consultores finalizar com você. Em instantes alguém continua por aqui! 💙';
-
-/** Tag aplicada ao lead qualificado pra o time saber que é pra distribuir. */
-const DISTRIBUTE_TAG = 'distribuir';
 
 /**
  * Hands the conversation off to a human. Pauses AI on this conversation
@@ -58,7 +54,6 @@ export class TransferToHumanTool implements AiTool {
     private readonly pendingActions: PendingActionService,
     private readonly prisma: PrismaService,
     private readonly replyTool: ReplyToConversationTool,
-    private readonly tagTool: TagConversationTool,
   ) {}
 
   async execute(
@@ -77,13 +72,8 @@ export class TransferToHumanTool implements AiTool {
     } catch (e) {
       this.logger.warn(`transfer: falha ao avisar cliente (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
     }
-    // 2) Tag "distribuir" pro time saber que é lead qualificado pra distribuir.
-    try {
-      await this.tagTool.execute({ tags: [DISTRIBUTE_TAG] }, ctx);
-    } catch (e) {
-      this.logger.warn(`transfer: falha ao taguear (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
-    }
-    // 3) Cria card no pipeline "Vendas OFP" (se existir e ainda não houver).
+    // 2) Card no funil "Vendas OFP", etapa "Distribuir" (a ETAPA é o status do
+    //    funil — não usamos mais tag "distribuir", que era redundante).
     try {
       await this.createVendasOfpCard(ctx);
     } catch (e) {
@@ -137,7 +127,7 @@ export class TransferToHumanTool implements AiTool {
         pendingActionId: action.id,
         preview,
         message:
-          'Transferência concluída: o cliente JÁ foi avisado, a tag "distribuir" foi aplicada e o card foi pro pipeline. NÃO escreva mais nada — o atendente humano assume agora.',
+          'Transferência concluída: o cliente JÁ foi avisado e o card entrou no funil (etapa Distribuir). NÃO escreva mais nada — o atendente humano assume agora.',
         agent_should_say: '',
       },
       // Mantém o sinal de "saí do loop" — o agent deve parar de responder
