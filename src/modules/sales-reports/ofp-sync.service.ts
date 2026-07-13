@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { OfpReportService, OfpOrder } from './ofp-report.service';
+import { OrderCorrelationService } from './order-correlation.service';
 
 function parseDate(data: string | null): Date | null {
   if (!data) return null;
@@ -25,6 +26,7 @@ export class OfpSyncService {
   constructor(
     private readonly ofp: OfpReportService,
     private readonly prisma: PrismaService,
+    private readonly correlation: OrderCorrelationService,
   ) {}
 
   private toRow(o: OfpOrder) {
@@ -113,6 +115,13 @@ export class OfpSyncService {
         update: { lastSyncAt, lastCount: orders.length, lastError: null },
       });
       this.logger.log(`OFP sync ok: ${orders.length} pedidos`);
+      // E5.2a — casa os pedidos recém-sincronizados com os cards Ganhos que têm
+      // nº do pedido. Best-effort: falha aqui não invalida o sync.
+      try {
+        await this.correlation.correlateWonCards();
+      } catch (err: any) {
+        this.logger.warn(`correlação HUB falhou (não crítico): ${err?.message}`);
+      }
       return { count: orders.length, lastSyncAt };
     } catch (err: any) {
       await this.prisma.ofpSyncState.upsert({

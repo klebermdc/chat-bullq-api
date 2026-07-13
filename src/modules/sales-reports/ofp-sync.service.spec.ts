@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { OfpSyncService } from './ofp-sync.service';
 import { OfpReportService } from './ofp-report.service';
 import { PrismaService } from '../../database/prisma.service';
+import { OrderCorrelationService } from './order-correlation.service';
 
 describe('OfpSyncService', () => {
   const orders = [
@@ -15,6 +16,9 @@ describe('OfpSyncService', () => {
     ofpSyncState: { upsert: stateUpsert },
   } as any;
   const ofp = { getOrders: jest.fn().mockResolvedValue(orders) } as any;
+  const correlation = {
+    correlateWonCards: jest.fn().mockResolvedValue({ matched: 0, checked: 0 }),
+  } as any;
 
   let service: OfpSyncService;
   beforeEach(async () => {
@@ -24,6 +28,7 @@ describe('OfpSyncService', () => {
         OfpSyncService,
         { provide: OfpReportService, useValue: ofp },
         { provide: PrismaService, useValue: prisma },
+        { provide: OrderCorrelationService, useValue: correlation },
       ],
     }).compile();
     service = mod.get(OfpSyncService);
