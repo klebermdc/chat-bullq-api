@@ -76,6 +76,10 @@ export class PipelinesService {
               id: true,
               channelId: true,
               temperature: true,
+              // Atendente que atende a conversa (o "responsável" real do lead).
+              // O card.assignedTo é a atribuição do card no pipeline, que
+              // costuma ficar vazia — a UI prefere este.
+              assignedTo: { select: { id: true, name: true, avatarUrl: true } },
               channel: { select: { id: true, type: true, name: true } },
             },
           },
