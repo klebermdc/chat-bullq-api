@@ -79,6 +79,14 @@ export class TransferToHumanTool implements AiTool {
     } catch (e) {
       this.logger.warn(`transfer: falha ao criar card (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
     }
+    // 3) Handoff obrigatório (spec E2): o resumo do SDR vira OBSERVAÇÃO do lead,
+    //    pra o atendente humano nunca começar do zero. (O Painel Inteligente já
+    //    auto-resume a conversa por conta própria.)
+    try {
+      await this.saveHandoffSummaryAsNote(ctx, summary);
+    } catch (e) {
+      this.logger.warn(`transfer: falha ao salvar resumo na observação (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
+    }
 
     const preview = {
       action: `Transferir conversa pro atendimento humano: ${reason}`,
@@ -159,6 +167,37 @@ export class TransferToHumanTool implements AiTool {
     }
     this.logger.log(
       `transfer: card do lead entrou na etapa "Distribuir" (conv=${ctx.conversationId})`,
+    );
+  }
+
+  /**
+   * Grava o resumo do SDR nas observações do lead (Contact.notes), pra o
+   * atendente humano pegar o contexto pronto. Anexa (não sobrescreve) uma
+   * observação existente. Sem resumo, não escreve nada — não polui a
+   * observação com o "reason" interno do handoff.
+   */
+  private async saveHandoffSummaryAsNote(
+    ctx: ToolContext,
+    summary: string | null,
+  ): Promise<void> {
+    const text = (summary ?? '').trim();
+    if (!text || !ctx.contactId) return;
+
+    const contact = await this.prisma.contact.findUnique({
+      where: { id: ctx.contactId },
+      select: { notes: true },
+    });
+    const stamp = new Date().toLocaleDateString('pt-BR');
+    const block = `📋 Resumo do SDR (Aline) — ${stamp}\n${text}`;
+    const existing = (contact?.notes ?? '').trim();
+    const notes = existing ? `${existing}\n\n${block}` : block;
+
+    await this.prisma.contact.update({
+      where: { id: ctx.contactId },
+      data: { notes },
+    });
+    this.logger.log(
+      `transfer: resumo do SDR gravado na observação do lead (conv=${ctx.conversationId})`,
     );
   }
 }
