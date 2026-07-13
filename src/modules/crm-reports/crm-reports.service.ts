@@ -5,6 +5,9 @@ import {
   DealsReportParams,
   DealsReportResult,
   DealRow,
+  LeadsReportParams,
+  LeadsReportResult,
+  LeadRow,
 } from './crm-reports.types';
 
 @Injectable()
@@ -107,6 +110,122 @@ export class CrmReportsService {
         lost,
         conversionRate: closed > 0 ? won.count / closed : 0,
         avgWonTicket: won.count > 0 ? won.value / won.count : 0,
+      },
+      rows,
+      page,
+      perPage,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / perPage)),
+    };
+  }
+
+  // ─── Leads/Contatos ───────────────────────────────
+
+  buildLeadsWhere(p: LeadsReportParams): Prisma.ContactWhereInput {
+    const where: Prisma.ContactWhereInput = {
+      organizationId: p.orgId,
+      deletedAt: null,
+    };
+    if (p.from || p.to) {
+      const d: Prisma.DateTimeFilter = {};
+      if (p.from) d.gte = p.from;
+      if (p.to) d.lte = p.to;
+      where.createdAt = d;
+    }
+    if (p.tagId) where.tags = { some: { tagId: p.tagId } };
+    if (p.hasProposal === true) where.proposals = { some: {} };
+    if (p.hasProposal === false) where.proposals = { none: {} };
+    if (p.hasDeal === true) where.cards = { some: {} };
+    if (p.hasDeal === false) where.cards = { none: {} };
+
+    // Filtros que dependem de uma conversa (canal / temperatura / atendente)
+    // + RBAC: AGENT só vê leads com conversa atribuída a ele.
+    const conv: Prisma.ConversationWhereInput = {};
+    if (p.channelId) conv.channelId = p.channelId;
+    if (p.temperatureMin != null) conv.temperature = { gte: p.temperatureMin };
+    if (p.role === 'AGENT') conv.assignedToId = p.userId;
+    else if (p.assignedToId) conv.assignedToId = p.assignedToId;
+    if (Object.keys(conv).length > 0) where.conversations = { some: conv };
+
+    return where;
+  }
+
+  async getLeadsReport(p: LeadsReportParams): Promise<LeadsReportResult> {
+    const where = this.buildLeadsWhere(p);
+    const page = p.page ?? 1;
+    const perPage = p.perPage ?? 25;
+
+    const [total, withProposal, withDeal, tagGroups, contacts] =
+      await Promise.all([
+        this.prisma.contact.count({ where }),
+        this.prisma.contact.count({
+          where: { ...where, proposals: { some: {} } },
+        }),
+        this.prisma.contact.count({ where: { ...where, cards: { some: {} } } }),
+        this.prisma.contactTag.groupBy({
+          by: ['tagId'],
+          where: { contact: { is: where } },
+          _count: { _all: true },
+          orderBy: { _count: { tagId: 'desc' } },
+          take: 5,
+        }),
+        this.prisma.contact.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * perPage,
+          take: perPage,
+          include: {
+            tags: { select: { tag: { select: { name: true } } } },
+            _count: { select: { proposals: true, cards: true } },
+            conversations: {
+              select: {
+                assignedTo: { select: { name: true } },
+                channel: { select: { name: true } },
+                temperature: true,
+              },
+              orderBy: { lastMessageAt: 'desc' },
+              take: 1,
+            },
+          },
+        }),
+      ]);
+
+    const tagIds = tagGroups.map((g) => g.tagId);
+    const tags = tagIds.length
+      ? await this.prisma.tag.findMany({
+          where: { id: { in: tagIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const tagName = (id: string) => tags.find((t) => t.id === id)?.name ?? id;
+    const byTag = tagGroups.map((g) => ({
+      name: tagName(g.tagId),
+      count: g._count._all,
+    }));
+
+    const rows: LeadRow[] = contacts.map((c) => {
+      const conv = c.conversations[0];
+      return {
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        channelName: conv?.channel?.name ?? null,
+        assignedToName: conv?.assignedTo?.name ?? null,
+        tags: c.tags.map((t) => t.tag.name),
+        hasProposal: c._count.proposals > 0,
+        hasDeal: c._count.cards > 0,
+        temperature: conv?.temperature ?? null,
+        createdAt: c.createdAt.toISOString(),
+      };
+    });
+
+    const pct = (n: number) => (total > 0 ? n / total : 0);
+    return {
+      metrics: {
+        count: total,
+        withProposal: { count: withProposal, pct: pct(withProposal) },
+        withDeal: { count: withDeal, pct: pct(withDeal) },
+        byTag,
       },
       rows,
       page,
