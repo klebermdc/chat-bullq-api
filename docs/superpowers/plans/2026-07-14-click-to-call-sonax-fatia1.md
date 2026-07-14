@@ -691,7 +691,9 @@ export class SonaxSettingsController {
 
   private toPublic(s: any) {
     if (!s) return { enabled: false, idCliente: '', tokenConfigured: false, webhookUrl: null };
-    const base = this.config.get<string>('APP_API_URL') ?? '';
+    // APP_URL = base pública da API SEM prefixo (ex.: https://api-ofpchat.explotek.pro);
+    // o código anexa /api/v1 (mesmo contrato de uploads/media-library).
+    const base = (this.config.get<string>('APP_URL') ?? '').replace(/\/$/, '');
     return {
       enabled: s.enabled,
       idCliente: s.idCliente,
@@ -717,7 +719,7 @@ export class SonaxSettingsController {
 }
 ```
 
-> Confirme o nome exato da env da URL pública da API (`APP_API_URL`/`APP_URL`) em `.env.production.example` e ajuste. A `webhookUrl` é só um texto pra copiar; a rota real é criada na Fatia 2.
+> Env confirmada: `APP_URL` (base da API sem `/api/v1`). A `webhookUrl` é só um texto pra copiar; a rota real é criada na Fatia 2.
 
 - [ ] **Step 4: CallsModule + registro no AppModule**
 
