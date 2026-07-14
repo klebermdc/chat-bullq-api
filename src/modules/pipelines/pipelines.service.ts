@@ -107,10 +107,30 @@ export class PipelinesService {
       }),
     ]);
 
-    const cardsByStage: Record<string, typeof cards> = {};
+    // Data da viagem: proposta mais recente de cada contato presente no board.
+    const contactIds = [
+      ...new Set(
+        cards.map((c) => c.contactId).filter((x): x is string => !!x),
+      ),
+    ];
+    const travelByContact = contactIds.length
+      ? latestTravelStartByContact(
+          await this.prisma.proposal.findMany({
+            where: { organizationId, contactId: { in: contactIds } },
+            select: { contactId: true, startDate: true, createdAt: true },
+          }),
+        )
+      : {};
+
+    const cardsByStage: Record<string, any[]> = {};
     for (const s of stages) cardsByStage[s.id] = [];
     for (const c of cards) {
-      (cardsByStage[c.stageId] ||= []).push(c);
+      (cardsByStage[c.stageId] ||= []).push({
+        ...c,
+        travelStartDate: c.contactId
+          ? (travelByContact[c.contactId] ?? null)
+          : null,
+      });
     }
 
     return { pipeline, stages, cards: cardsByStage };
