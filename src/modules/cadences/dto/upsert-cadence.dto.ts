@@ -56,6 +56,12 @@ export class UpsertCadenceDto {
   @IsString()
   lostStageId?: string;
 
+  @ApiPropertyOptional({ type: [String], description: 'Etapas pré-humanas monitoradas (NO_REPLY). Vazio = qualquer etapa pré-humana.' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  watchedStageIds?: string[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
