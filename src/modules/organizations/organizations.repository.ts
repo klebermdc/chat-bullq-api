@@ -67,6 +67,13 @@ export class OrganizationsRepository {
     });
   }
 
+  async updateMemberRamal(membershipId: string, sonaxRamal: string | null) {
+    return this.prisma.userOrganization.update({
+      where: { id: membershipId },
+      data: { sonaxRamal },
+    });
+  }
+
   async removeMember(membershipId: string) {
     return this.prisma.userOrganization.delete({
       where: { id: membershipId },

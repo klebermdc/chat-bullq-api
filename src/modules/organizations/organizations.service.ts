@@ -145,6 +145,13 @@ export class OrganizationsService {
     return this.repository.updateMemberRole(membership.id, dto.role);
   }
 
+  async updateMemberRamal(orgId: string, memberId: string, dto: { sonaxRamal?: string }) {
+    const membership = await this.repository.findMembership(memberId, orgId);
+    if (!membership) throw new NotFoundException('Member not found in organization');
+    const ramal = dto.sonaxRamal?.trim() ? dto.sonaxRamal.trim() : null;
+    return this.repository.updateMemberRamal(membership.id, ramal);
+  }
+
   async removeMember(orgId: string, memberId: string, actorId: string) {
     const membership = await this.repository.findMembership(memberId, orgId);
     if (!membership) {
