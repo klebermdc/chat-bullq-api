@@ -1,4 +1,14 @@
+import { Test } from '@nestjs/testing';
 import { SonaxClient } from './sonax-client';
+
+describe('SonaxClient DI', () => {
+  it('é construído pelo Nest sem provider de fetch (não quebra o boot)', async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [SonaxClient],
+    }).compile();
+    expect(moduleRef.get(SonaxClient)).toBeInstanceOf(SonaxClient);
+  });
+});
 
 describe('SonaxClient.click2call', () => {
   const OK = { ok: true, status: 200, text: async () => '1' } as any;

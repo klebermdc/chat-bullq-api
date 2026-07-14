@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 
 export interface Click2CallParams {
   baseUrl: string;
@@ -17,7 +17,10 @@ type FetchFn = typeof fetch;
  */
 @Injectable()
 export class SonaxClient {
-  constructor(private readonly fetchFn: FetchFn = fetch) {}
+  // @Optional(): sem esse decorator, o Nest tenta resolver o tipo `Function`
+  // do param e quebra o boot da API inteira. Com ele, injeta undefined e o
+  // default `= fetch` (global) assume. `fetchFn` continua injetável em teste.
+  constructor(@Optional() private readonly fetchFn: FetchFn = fetch) {}
 
   async click2call(p: Click2CallParams): Promise<void> {
     const qs = new URLSearchParams({
