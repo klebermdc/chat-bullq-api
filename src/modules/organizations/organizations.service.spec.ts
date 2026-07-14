@@ -11,7 +11,10 @@ import { OrganizationsRepository } from './organizations.repository';
 describe('OrganizationsService.resetMemberPassword', () => {
   let service: OrganizationsService;
   let repo: jest.Mocked<
-    Pick<OrganizationsRepository, 'findMembership' | 'updateUserPassword'>
+    Pick<
+      OrganizationsRepository,
+      'findMembership' | 'updateUserPassword' | 'updateMemberRamal'
+    >
   >;
 
   const membership = (role: OrgRole) => ({
@@ -25,6 +28,7 @@ describe('OrganizationsService.resetMemberPassword', () => {
     repo = {
       findMembership: jest.fn(),
       updateUserPassword: jest.fn().mockResolvedValue(undefined),
+      updateMemberRamal: jest.fn(),
     } as any;
 
     const mod = await Test.createTestingModule({
@@ -119,5 +123,27 @@ describe('OrganizationsService.resetMemberPassword', () => {
     );
 
     expect(repo.updateUserPassword).toHaveBeenCalledTimes(1);
+  });
+
+  describe('updateMemberRamal', () => {
+    it('grava o ramal (trim) do membro encontrado', async () => {
+      repo.findMembership.mockResolvedValue({ id: 'mem1' } as any);
+      repo.updateMemberRamal.mockResolvedValue({ id: 'mem1', sonaxRamal: '101' } as any);
+      const res = await service.updateMemberRamal('org1', 'mem1', { sonaxRamal: ' 101 ' });
+      expect(repo.updateMemberRamal).toHaveBeenCalledWith('mem1', '101');
+      expect(res.sonaxRamal).toBe('101');
+    });
+
+    it('vazio limpa o ramal (null)', async () => {
+      repo.findMembership.mockResolvedValue({ id: 'mem1' } as any);
+      repo.updateMemberRamal.mockResolvedValue({ id: 'mem1', sonaxRamal: null } as any);
+      await service.updateMemberRamal('org1', 'mem1', { sonaxRamal: '' });
+      expect(repo.updateMemberRamal).toHaveBeenCalledWith('mem1', null);
+    });
+
+    it('NotFound quando o membro não existe', async () => {
+      repo.findMembership.mockResolvedValue(null);
+      await expect(service.updateMemberRamal('org1', 'x', { sonaxRamal: '1' })).rejects.toBeTruthy();
+    });
   });
 });

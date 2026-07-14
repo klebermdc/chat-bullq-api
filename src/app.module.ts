@@ -35,6 +35,7 @@ import { SalesReportsModule } from './modules/sales-reports/sales-reports.module
 import { ProposalsModule } from './modules/proposals/proposals.module';
 import { CrmReportsModule } from './modules/crm-reports/crm-reports.module';
 import { CopilotModule } from './modules/copilot/copilot.module';
+import { CallsModule } from './modules/calls/calls.module';
 // ProductsModule removido — catálogo agora vive no Trivapp e é consumido
 // via skill HTTP getProductPitch + CatalogSyncService. Tabela `products`
 // fica órfã no DB (cleanup futuro). Não importar aqui.
@@ -93,6 +94,7 @@ import redisConfig from './config/redis.config';
     ProposalsModule,
     CrmReportsModule,
     CopilotModule,
+    CallsModule,
   ],
 })
 export class AppModule {}

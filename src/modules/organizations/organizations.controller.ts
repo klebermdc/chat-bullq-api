@@ -16,6 +16,7 @@ import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { ResetMemberPasswordDto } from './dto/reset-member-password.dto';
+import { UpdateMemberRamalDto } from './dto/update-member-ramal.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentUser, CurrentOrg, Roles, Public } from '../../common/decorators';
 
@@ -103,6 +104,17 @@ export class OrganizationsController {
     @Body() dto: ResetMemberPasswordDto,
   ) {
     return this.service.resetMemberPassword(orgId, memberId, dto, actorRole);
+  }
+
+  @Patch('members/:memberId/ramal')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({ summary: 'Define o ramal Sonax de um membro' })
+  updateMemberRamal(
+    @CurrentOrg('id') orgId: string,
+    @Param('memberId') memberId: string,
+    @Body() dto: UpdateMemberRamalDto,
+  ) {
+    return this.service.updateMemberRamal(orgId, memberId, dto);
   }
 
   @Delete('members/:memberId')
