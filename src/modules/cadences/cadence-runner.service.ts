@@ -224,8 +224,8 @@ export class CadenceRunner {
     });
     if (!claimed) return;
 
-    if (cadence.lostStageId && enrollment.cardId) {
-      await this.moveCardToStage(enrollment.cardId, cadence.lostStageId);
+    if (cadence.lostStageId) {
+      await this.ensureCardInStage(enrollment, cadence.lostStageId);
     }
     this.realtime.emitToConversation(
       enrollment.conversationId,
@@ -444,6 +444,45 @@ export class CadenceRunner {
     await this.prisma.card.update({
       where: { id: cardId },
       data: { stageId, status: 'LOST', closedAt: new Date() },
+    });
+  }
+
+  /**
+   * Garante que o lead apareça na etapa destino ao esgotar. Se o enrollment já
+   * tem card, move; senão cria um card nessa etapa (leads pré-humanos do
+   * reengajamento normalmente ainda não têm card no board).
+   */
+  private async ensureCardInStage(
+    enrollment: {
+      organizationId: string;
+      conversationId: string;
+      contactId: string;
+      cardId: string | null;
+    },
+    stageId: string,
+  ): Promise<void> {
+    if (enrollment.cardId) {
+      await this.moveCardToStage(enrollment.cardId, stageId);
+      return;
+    }
+    const stage = await this.prisma.pipelineStage.findUnique({
+      where: { id: stageId },
+    });
+    if (!stage) return;
+    const contact = await this.prisma.contact.findUnique({
+      where: { id: enrollment.contactId },
+    });
+    await this.prisma.card.create({
+      data: {
+        organizationId: enrollment.organizationId,
+        pipelineId: stage.pipelineId,
+        stageId,
+        title: contact?.name || 'Lead sem resposta',
+        contactId: enrollment.contactId,
+        conversationId: enrollment.conversationId,
+        status: 'LOST',
+        closedAt: new Date(),
+      },
     });
   }
 

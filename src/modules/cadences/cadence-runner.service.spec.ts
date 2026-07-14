@@ -105,6 +105,10 @@ function makeDeps(opts: any = {}) {
     card: {
       findFirst: jest.fn(async (): Promise<any> => ({ id: 'card1' })),
       update: jest.fn(async () => ({})),
+      create: jest.fn(async () => ({ id: 'card-new' })),
+    },
+    pipelineStage: {
+      findUnique: jest.fn(async (): Promise<any> => null),
     },
     userOrganization: {
       findFirst: jest.fn(async () => ({ userId: 'owner1' })),
@@ -320,6 +324,54 @@ describe('CadenceRunner.onStepSent', () => {
     expect((prisma.card.update.mock.calls[0] as any[])[0].data.stageId).toBe(
       'stage-lost',
     );
+    expect(realtime.emitToConversation).toHaveBeenCalledWith(
+      'conv1',
+      'cadence:completed',
+      expect.anything(),
+    );
+  });
+
+  it('no último passo, SEM cardId (lead pré-humano) → cria card em lostStageId ao invés de mover', async () => {
+    const { runner, enrollments, enrollmentsStore, schedRepo, prisma, realtime } =
+      makeDeps();
+    prisma.pipelineStage.findUnique.mockResolvedValue({
+      id: 'stage-lost',
+      pipelineId: 'pl1',
+    });
+    prisma.contact.findUnique.mockResolvedValue({ id: 'ct1', name: 'Fulano' });
+    enrollmentsStore.push({
+      id: 'enr1',
+      organizationId: 'org1',
+      cadenceId: 'cad1',
+      conversationId: 'conv1',
+      contactId: 'ct1',
+      cardId: null,
+      currentStep: 2,
+      status: 'ACTIVE',
+    });
+
+    await runner.onStepSent('enr1', 2);
+
+    expect(schedRepo.create).not.toHaveBeenCalled();
+    expect(enrollments.finishIfActive).toHaveBeenCalledWith(
+      'enr1',
+      expect.objectContaining({ status: 'COMPLETED_NO_REPLY' }),
+    );
+    expect(prisma.card.update).not.toHaveBeenCalled();
+    expect(prisma.pipelineStage.findUnique).toHaveBeenCalledWith({
+      where: { id: 'stage-lost' },
+    });
+    expect(prisma.card.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        organizationId: 'org1',
+        pipelineId: 'pl1',
+        stageId: 'stage-lost',
+        conversationId: 'conv1',
+        contactId: 'ct1',
+        title: 'Fulano',
+        status: 'LOST',
+      }),
+    });
     expect(realtime.emitToConversation).toHaveBeenCalledWith(
       'conv1',
       'cadence:completed',
