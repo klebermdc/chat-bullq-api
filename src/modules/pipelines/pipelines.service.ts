@@ -122,7 +122,8 @@ export class PipelinesService {
         )
       : {};
 
-    const cardsByStage: Record<string, any[]> = {};
+    type BoardCard = (typeof cards)[number] & { travelStartDate: string | null };
+    const cardsByStage: Record<string, BoardCard[]> = {};
     for (const s of stages) cardsByStage[s.id] = [];
     for (const c of cards) {
       (cardsByStage[c.stageId] ||= []).push({
