@@ -23,6 +23,26 @@ import {
 /** E6 — nome (contains) da etapa final de entrega. Não colide com "Proposta enviada". */
 const ORDER_SENT_STAGE_NAME = 'Pedido enviado';
 
+/**
+ * Dada a lista de propostas de um board, devolve um mapa
+ * `contactId -> startDate (ISO)` da proposta MAIS RECENTE (por createdAt) de
+ * cada contato. Alimenta o filtro "mês da viagem" no Kanban.
+ */
+export function latestTravelStartByContact(
+  proposals: { contactId: string; startDate: Date; createdAt: Date }[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const seenAt: Record<string, number> = {};
+  for (const p of proposals) {
+    const t = p.createdAt.getTime();
+    if (seenAt[p.contactId] === undefined || t > seenAt[p.contactId]) {
+      seenAt[p.contactId] = t;
+      out[p.contactId] = p.startDate.toISOString();
+    }
+  }
+  return out;
+}
+
 const DEFAULT_STAGES: UpsertStageDto[] = [
   { name: 'Novo', color: 'zinc', type: 'NORMAL', order: 0 },
   { name: 'Em qualificação', color: 'blue', type: 'NORMAL', order: 1 },
