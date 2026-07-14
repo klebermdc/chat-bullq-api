@@ -7,11 +7,13 @@ import { SonaxSettingsService } from './sonax-settings.service';
 import { SonaxClient } from './sonax-client';
 import { CallsController } from './calls.controller';
 import { SonaxSettingsController } from './sonax-settings.controller';
+import { SonaxWebhookController } from './sonax-webhook.controller';
+import { SonaxWebhookService } from './sonax-webhook.service';
 
 @Module({
   imports: [PrismaModule, CryptoModule, RealtimeModule],
-  controllers: [CallsController, SonaxSettingsController],
-  providers: [CallsService, SonaxSettingsService, SonaxClient],
+  controllers: [CallsController, SonaxSettingsController, SonaxWebhookController],
+  providers: [CallsService, SonaxSettingsService, SonaxClient, SonaxWebhookService],
   exports: [SonaxSettingsService],
 })
 export class CallsModule {}
