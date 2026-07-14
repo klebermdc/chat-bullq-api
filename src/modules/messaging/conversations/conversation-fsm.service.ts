@@ -12,7 +12,11 @@ type Transition = {
 const VALID_TRANSITIONS: Transition[] = [
   { from: ConversationStatus.PENDING, to: ConversationStatus.OPEN },
   { from: ConversationStatus.PENDING, to: ConversationStatus.BOT },
+  // Encerrar direto da fila: um lead que entrou mas nunca foi assumido
+  // pode ser descartado sem precisar ser aberto primeiro.
+  { from: ConversationStatus.PENDING, to: ConversationStatus.CLOSED },
   { from: ConversationStatus.BOT, to: ConversationStatus.PENDING },
+  { from: ConversationStatus.BOT, to: ConversationStatus.CLOSED },
   { from: ConversationStatus.OPEN, to: ConversationStatus.WAITING },
   { from: ConversationStatus.OPEN, to: ConversationStatus.CLOSED },
   { from: ConversationStatus.WAITING, to: ConversationStatus.OPEN },
@@ -101,7 +105,12 @@ export class ConversationFsmService {
 
     this.logger.log(`Conversation ${conversationId}: ${from} → ${to}`);
 
-    if (to === ConversationStatus.CLOSED) {
+    // Só pede avaliação quando houve atendimento humano de verdade. Fechar
+    // direto de PENDING/BOT (lead descartado da fila, nunca assumido) não
+    // deve disparar pedido de nota ao cliente.
+    const wasHumanAttended =
+      from === ConversationStatus.OPEN || from === ConversationStatus.WAITING;
+    if (to === ConversationStatus.CLOSED && wasHumanAttended) {
       this.ratings.requestRating(conversationId).catch((err) => {
         this.logger.warn(`Failed to request rating for ${conversationId}: ${err?.message}`);
       });
