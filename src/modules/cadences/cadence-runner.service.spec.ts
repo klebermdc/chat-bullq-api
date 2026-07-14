@@ -68,6 +68,7 @@ function makeDeps(opts: any = {}) {
   const cadences = {
     findById: jest.fn(async () => theCadence),
     findByStage: jest.fn(async () => opts.byStage ?? null),
+    findNoReply: jest.fn(async () => opts.noReply ?? null),
   };
 
   let smSeq = 0;
@@ -86,7 +87,7 @@ function makeDeps(opts: any = {}) {
   const realtime = { emitToConversation: jest.fn() };
   const prisma = {
     conversation: {
-      findUnique: jest.fn(async () => ({
+      findUnique: jest.fn(async (): Promise<any> => ({
         id: 'conv1',
         organizationId: 'org1',
         channelId: 'ch1',
@@ -102,7 +103,7 @@ function makeDeps(opts: any = {}) {
       ),
     },
     card: {
-      findFirst: jest.fn(async () => ({ id: 'card1' })),
+      findFirst: jest.fn(async (): Promise<any> => ({ id: 'card1' })),
       update: jest.fn(async () => ({})),
     },
     userOrganization: {
@@ -475,5 +476,123 @@ describe('CadenceRunner.maybeStartForStage', () => {
     await runner.maybeStartForStage('conv1', 'card1', 'stage1', 'org1');
 
     expect(enrollments.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('CadenceRunner.maybeStartForNoReply', () => {
+  const conv = {
+    id: 'c1',
+    organizationId: 'org1',
+    assignedToId: null,
+    awaitingHumanReply: false,
+  };
+
+  it('inscreve quando pré-humano, cadência NO_REPLY enabled e card em etapa monitorada', async () => {
+    const { runner, cadences, prisma } = makeDeps();
+    prisma.conversation.findUnique.mockResolvedValue(conv);
+    prisma.card.findFirst.mockResolvedValue({ id: 'card1', stageId: 'st-coletando' });
+    cadences.findNoReply.mockResolvedValue(
+      makeCadence({
+        id: 'cad-nr',
+        trigger: 'NO_REPLY',
+        enabled: true,
+        watchedStageIds: ['st-coletando'],
+        steps: [
+          { order: 1, delayMinutes: 180, contentType: 'TEXT', content: {}, options: [] },
+        ],
+      }),
+    );
+    const startSpy = jest
+      .spyOn(runner, 'start')
+      .mockResolvedValue({ id: 'e1' } as any);
+
+    const result = await runner.maybeStartForNoReply('c1');
+
+    expect(startSpy).toHaveBeenCalledWith('c1', 'cad-nr', 'NO_REPLY');
+    expect(result).toEqual({ id: 'e1' });
+  });
+
+  it('NÃO inscreve quando a conversa já foi para um humano (assignedToId setado)', async () => {
+    const { runner, cadences, prisma } = makeDeps();
+    prisma.conversation.findUnique.mockResolvedValue({
+      ...conv,
+      assignedToId: 'user1',
+    });
+    cadences.findNoReply.mockResolvedValue(
+      makeCadence({
+        id: 'cad-nr',
+        trigger: 'NO_REPLY',
+        enabled: true,
+        watchedStageIds: [],
+      }),
+    );
+    const startSpy = jest
+      .spyOn(runner, 'start')
+      .mockResolvedValue({ id: 'e1' } as any);
+
+    const result = await runner.maybeStartForNoReply('c1');
+
+    expect(startSpy).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+
+  it('NÃO inscreve quando está aguardando humano (awaitingHumanReply=true)', async () => {
+    const { runner, cadences, prisma } = makeDeps();
+    prisma.conversation.findUnique.mockResolvedValue({
+      ...conv,
+      awaitingHumanReply: true,
+    });
+    cadences.findNoReply.mockResolvedValue(
+      makeCadence({
+        id: 'cad-nr',
+        trigger: 'NO_REPLY',
+        enabled: true,
+        watchedStageIds: [],
+      }),
+    );
+    const startSpy = jest
+      .spyOn(runner, 'start')
+      .mockResolvedValue({ id: 'e1' } as any);
+
+    const result = await runner.maybeStartForNoReply('c1');
+
+    expect(startSpy).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+
+  it('NÃO inscreve quando o card está fora das etapas monitoradas', async () => {
+    const { runner, cadences, prisma } = makeDeps();
+    prisma.conversation.findUnique.mockResolvedValue(conv);
+    prisma.card.findFirst.mockResolvedValue({ id: 'card1', stageId: 'st-proposta' });
+    cadences.findNoReply.mockResolvedValue(
+      makeCadence({
+        id: 'cad-nr',
+        trigger: 'NO_REPLY',
+        enabled: true,
+        watchedStageIds: ['st-coletando'],
+      }),
+    );
+    const startSpy = jest
+      .spyOn(runner, 'start')
+      .mockResolvedValue({ id: 'e1' } as any);
+
+    const result = await runner.maybeStartForNoReply('c1');
+
+    expect(startSpy).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+
+  it('no-op quando não há cadência NO_REPLY habilitada', async () => {
+    const { runner, cadences, prisma } = makeDeps();
+    prisma.conversation.findUnique.mockResolvedValue(conv);
+    cadences.findNoReply.mockResolvedValue(null);
+    const startSpy = jest
+      .spyOn(runner, 'start')
+      .mockResolvedValue({ id: 'e1' } as any);
+
+    const result = await runner.maybeStartForNoReply('c1');
+
+    expect(startSpy).not.toHaveBeenCalled();
+    expect(result).toBeNull();
   });
 });

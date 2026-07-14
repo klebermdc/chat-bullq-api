@@ -63,6 +63,7 @@ interface CadenceLike {
   allowManual?: boolean;
   lostStageId?: string | null;
   optOutTagId?: string | null;
+  watchedStageIds?: string[];
   steps: CadenceStepLike[];
 }
 
@@ -288,6 +289,48 @@ export class CadenceRunner {
       return null;
     }
     return this.start(conversationId, cadence.id, 'STAGE_ENTER');
+  }
+
+  /**
+   * Gatilho de reengajamento de entrada. Chamado (fire-and-forget) quando a
+   * Aline (agente IA) envia uma mensagem. Inscreve apenas se:
+   *  - existe cadência NO_REPLY habilitada na org;
+   *  - a conversa está PRÉ-HUMANA (sem responsável e sem aguardar humano);
+   *  - o card está numa etapa monitorada (ou watchedStageIds vazio = qualquer).
+   * A idempotência (1 enrollment ACTIVE/conversa) e o opt-out são garantidos
+   * por `start()`.
+   */
+  async maybeStartForNoReply(
+    conversationId: string,
+  ): Promise<CadenceEnrollment | null> {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conversation) return null;
+
+    // Pré-humano: ninguém dono da conversa e não está na fila de espera humana.
+    if (conversation.assignedToId || conversation.awaitingHumanReply) {
+      return null;
+    }
+
+    const cadence = (await this.cadences.findNoReply(
+      conversation.organizationId,
+    )) as CadenceLike | null;
+    if (!cadence || !cadence.enabled) return null;
+    if (cadence.trigger !== 'NO_REPLY') return null;
+
+    const watched = cadence.watchedStageIds ?? [];
+    if (watched.length > 0) {
+      const card = await this.prisma.card.findFirst({
+        where: { conversationId },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!card || !card.stageId || !watched.includes(card.stageId)) {
+        return null;
+      }
+    }
+
+    return this.start(conversationId, cadence.id, 'NO_REPLY');
   }
 
   // ─── helpers ──────────────────────────────────────────────
