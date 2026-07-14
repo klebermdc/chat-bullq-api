@@ -1,5 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { MessageStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
@@ -7,6 +7,7 @@ import { ChannelAdapterRegistry } from '../../channel-hub/channel-adapter.regist
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { NormalizedOutboundMessage } from '../../channel-hub/ports/types';
 import { IdempotencyService } from './idempotency.service';
+import { CadenceRunner } from '../../cadences/cadence-runner.service';
 
 interface OutboundJobData {
   messageId: string;
@@ -24,6 +25,8 @@ export class OutboundMessageProcessor extends WorkerHost {
     private readonly adapterRegistry: ChannelAdapterRegistry,
     private readonly realtimeGateway: RealtimeGateway,
     private readonly idempotency: IdempotencyService,
+    @Inject(forwardRef(() => CadenceRunner))
+    private readonly cadenceRunner: CadenceRunner,
   ) {
     super();
   }
@@ -59,6 +62,17 @@ export class OutboundMessageProcessor extends WorkerHost {
       // Persist externalId FIRST, then mark idempotency so that a subsequent
       // echo webhook for the same externalId is recognised as a duplicate
       // instead of creating a phantom row.
+      // NOTE: `metadata` is a JSON field — Prisma REPLACES it wholesale, it
+      // does not merge. We must read-then-spread the existing value (e.g.
+      // aiAgentId/runId set at creation by the AI reply tool) or it gets
+      // silently wiped here, which would break the NO_REPLY cadence trigger
+      // below (it reads `updated.metadata.aiAgentId`).
+      const existingRow = await this.prisma.message.findUnique({
+        where: { id: messageId },
+        select: { metadata: true },
+      });
+      const existingMetadata = (existingRow?.metadata as Record<string, any>) ?? {};
+
       let updated;
       try {
         updated = await this.prisma.message.update({
@@ -68,6 +82,7 @@ export class OutboundMessageProcessor extends WorkerHost {
             externalId: result.externalId || null,
             sentAt: new Date(),
             metadata: {
+              ...existingMetadata,
               providerResponse: safeJson(result.providerResponse),
             },
           },
@@ -103,6 +118,20 @@ export class OutboundMessageProcessor extends WorkerHost {
             if (placeholderContent?.mediaUrl) {
               patch.content = placeholderContent;
             }
+            // Preserve aiAgentId/runId from our placeholder onto the echo row
+            // (webhook echoes never carry it) so the NO_REPLY cadence trigger
+            // below still fires when an AI-sent message hits this race.
+            const placeholderMetadata = (placeholder.metadata as any) ?? {};
+            if (
+              placeholderMetadata.aiAgentId &&
+              !(echoRow.metadata as any)?.aiAgentId
+            ) {
+              patch.metadata = {
+                ...((echoRow.metadata as any) ?? {}),
+                aiAgentId: placeholderMetadata.aiAgentId,
+                runId: placeholderMetadata.runId,
+              };
+            }
             if (Object.keys(patch).length > 0) {
               await this.prisma.message.update({
                 where: { id: echoRow.id },
@@ -125,6 +154,19 @@ export class OutboundMessageProcessor extends WorkerHost {
 
       if (result.externalId) {
         await this.idempotency.markProcessed(result.externalId, channelId);
+      }
+
+      // Reengajamento de entrada: se ESTA mensagem foi enviada pela Aline
+      // (agente IA), arma a cadência NO_REPLY caso o cliente fique em silêncio.
+      // Toques de cadência NÃO têm aiAgentId → não re-disparam (sem loop).
+      if ((updated?.metadata as any)?.aiAgentId && updated?.conversationId) {
+        this.cadenceRunner
+          .maybeStartForNoReply(updated.conversationId)
+          .catch((err) =>
+            this.logger.warn(
+              `cadence_no_reply_start_failed msg=${messageId}: ${(err as Error).message}`,
+            ),
+          );
       }
 
       this.emitStatusUpdate(updated.conversationId, updated.id, MessageStatus.SENT);
