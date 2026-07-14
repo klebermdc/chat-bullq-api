@@ -23,6 +23,26 @@ import {
 /** E6 — nome (contains) da etapa final de entrega. Não colide com "Proposta enviada". */
 const ORDER_SENT_STAGE_NAME = 'Pedido enviado';
 
+/**
+ * Dada a lista de propostas de um board, devolve um mapa
+ * `contactId -> startDate (ISO)` da proposta MAIS RECENTE (por createdAt) de
+ * cada contato. Alimenta o filtro "mês da viagem" no Kanban.
+ */
+export function latestTravelStartByContact(
+  proposals: { contactId: string; startDate: Date; createdAt: Date }[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const seenAt: Record<string, number> = {};
+  for (const p of proposals) {
+    const t = p.createdAt.getTime();
+    if (seenAt[p.contactId] === undefined || t > seenAt[p.contactId]) {
+      seenAt[p.contactId] = t;
+      out[p.contactId] = p.startDate.toISOString();
+    }
+  }
+  return out;
+}
+
 const DEFAULT_STAGES: UpsertStageDto[] = [
   { name: 'Novo', color: 'zinc', type: 'NORMAL', order: 0 },
   { name: 'Em qualificação', color: 'blue', type: 'NORMAL', order: 1 },
@@ -87,10 +107,31 @@ export class PipelinesService {
       }),
     ]);
 
-    const cardsByStage: Record<string, typeof cards> = {};
+    // Data da viagem: proposta mais recente de cada contato presente no board.
+    const contactIds = [
+      ...new Set(
+        cards.map((c) => c.contactId).filter((x): x is string => !!x),
+      ),
+    ];
+    const travelByContact = contactIds.length
+      ? latestTravelStartByContact(
+          await this.prisma.proposal.findMany({
+            where: { organizationId, contactId: { in: contactIds } },
+            select: { contactId: true, startDate: true, createdAt: true },
+          }),
+        )
+      : {};
+
+    type BoardCard = (typeof cards)[number] & { travelStartDate: string | null };
+    const cardsByStage: Record<string, BoardCard[]> = {};
     for (const s of stages) cardsByStage[s.id] = [];
     for (const c of cards) {
-      (cardsByStage[c.stageId] ||= []).push(c);
+      (cardsByStage[c.stageId] ||= []).push({
+        ...c,
+        travelStartDate: c.contactId
+          ? (travelByContact[c.contactId] ?? null)
+          : null,
+      });
     }
 
     return { pipeline, stages, cards: cardsByStage };
