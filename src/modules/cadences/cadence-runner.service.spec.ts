@@ -424,6 +424,27 @@ describe('CadenceRunner.stop', () => {
       );
     }
   });
+
+  it('stop("client_replied") encerra com status RESUMED_AI', async () => {
+    const { runner, enrollments, enrollmentsStore } = makeDeps();
+    enrollmentsStore.push({
+      id: 'enr1',
+      organizationId: 'org1',
+      conversationId: 'conv1',
+      currentStep: 1,
+      status: 'ACTIVE',
+    });
+
+    await runner.stop('enr1', 'client_replied');
+
+    expect(enrollments.finishIfActive).toHaveBeenCalledWith(
+      'enr1',
+      expect.objectContaining({
+        status: 'RESUMED_AI',
+        endReason: 'client_replied',
+      }),
+    );
+  });
 });
 
 describe('CadenceRunner.maybeStartForStage', () => {

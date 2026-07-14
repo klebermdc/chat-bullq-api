@@ -24,7 +24,7 @@ import {
 } from '../scheduling/scheduling.constants';
 
 /** De onde a cadência foi iniciada (gatilho manual ou entrada de etapa). */
-export type CadenceStartSource = 'MANUAL' | 'STAGE_ENTER';
+export type CadenceStartSource = 'MANUAL' | 'STAGE_ENTER' | 'NO_REPLY';
 
 /** Um passo da cadência como devolvido pelo repositório (`findById`). */
 interface CadenceStepLike {
@@ -410,6 +410,8 @@ export class CadenceRunner {
         return 'MOVED_LOST';
       case 'opt_out':
         return 'STOPPED_OPTOUT';
+      case 'client_replied':
+        return 'RESUMED_AI';
       case 'replied_yes':
       case 'engaged':
       case 'manual_handoff':
