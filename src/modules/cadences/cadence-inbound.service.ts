@@ -48,6 +48,21 @@ export class CadenceInboundService {
     const cadence = await this.cadences.findById(enrollment.cadenceId);
     if (!cadence) return;
 
+    // Reengajamento de entrada: qualquer resposta faz a Aline reassumir; só o
+    // opt-out desvia. Não classifica Sim/Não nem faz handoff a humano.
+    if ((cadence as { trigger?: string }).trigger === 'NO_REPLY') {
+      const outcome = await this.classifier.classify(
+        { ...message, organizationId: enrollment.organizationId },
+        {} as ClassifierStep,
+      );
+      await this.transition.apply(
+        enrollment,
+        outcome === 'DESCADASTRAR' ? 'DESCADASTRAR' : 'RESUMED',
+        cadence as TransitionCadence,
+      );
+      return;
+    }
+
     const step = (cadence.steps?.find(
       (s) => s.order === enrollment.currentStep,
     ) ?? {}) as ClassifierStep;
