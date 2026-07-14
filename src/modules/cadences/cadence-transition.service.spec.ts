@@ -283,6 +283,31 @@ describe('CadenceTransitionService', () => {
     expect(messages.send).not.toHaveBeenCalled();
   });
 
+  it('RESUMED → stop(client_replied) apenas, sem handoff/tag/mover card', async () => {
+    const { runner, prisma, notifications, messages, service } = makeDeps();
+    await service.apply(enrollment(), 'RESUMED', cadence());
+
+    expect(runner.stop).toHaveBeenCalledWith('enr1', 'client_replied');
+    expect(prisma.conversation.update).not.toHaveBeenCalled();
+    expect(prisma.card.update).not.toHaveBeenCalled();
+    expect(prisma.conversationTag.create).not.toHaveBeenCalled();
+    expect(prisma.contactTag.create).not.toHaveBeenCalled();
+    expect(notifications.notify).not.toHaveBeenCalled();
+    expect(notifications.notifyOrgAgents).not.toHaveBeenCalled();
+    expect(messages.send).not.toHaveBeenCalled();
+  });
+
+  it('RESUMED com claim perdido (stop devolve null) → nenhum efeito colateral', async () => {
+    const { runner, prisma, notifications, service } = makeDeps();
+    runner.stop.mockResolvedValueOnce(null as any);
+    await service.apply(enrollment(), 'RESUMED', cadence());
+
+    expect(runner.stop).toHaveBeenCalledWith('enr1', 'client_replied');
+    expect(prisma.conversation.update).not.toHaveBeenCalled();
+    expect(notifications.notify).not.toHaveBeenCalled();
+    expect(notifications.notifyOrgAgents).not.toHaveBeenCalled();
+  });
+
   it('tag já aplicada (P2002) não propaga erro', async () => {
     const { service, prisma } = makeDeps();
     const p2002 = Object.assign(new Error('dup'), { code: 'P2002' });

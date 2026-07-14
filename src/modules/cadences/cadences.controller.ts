@@ -55,6 +55,7 @@ export class CadencesController {
       currentStep: e.currentStep,
       totalSteps: e.cadence.steps.length,
       cadenceName: e.cadence.name,
+      trigger: e.cadence.trigger,
     };
   }
 

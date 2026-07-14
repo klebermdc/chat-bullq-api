@@ -24,7 +24,7 @@ import {
 } from '../scheduling/scheduling.constants';
 
 /** De onde a cadência foi iniciada (gatilho manual ou entrada de etapa). */
-export type CadenceStartSource = 'MANUAL' | 'STAGE_ENTER';
+export type CadenceStartSource = 'MANUAL' | 'STAGE_ENTER' | 'NO_REPLY';
 
 /** Um passo da cadência como devolvido pelo repositório (`findById`). */
 interface CadenceStepLike {
@@ -63,6 +63,7 @@ interface CadenceLike {
   allowManual?: boolean;
   lostStageId?: string | null;
   optOutTagId?: string | null;
+  watchedStageIds?: string[];
   steps: CadenceStepLike[];
 }
 
@@ -223,8 +224,8 @@ export class CadenceRunner {
     });
     if (!claimed) return;
 
-    if (cadence.lostStageId && enrollment.cardId) {
-      await this.moveCardToStage(enrollment.cardId, cadence.lostStageId);
+    if (cadence.lostStageId) {
+      await this.ensureCardInStage(enrollment, cadence.lostStageId);
     }
     this.realtime.emitToConversation(
       enrollment.conversationId,
@@ -288,6 +289,48 @@ export class CadenceRunner {
       return null;
     }
     return this.start(conversationId, cadence.id, 'STAGE_ENTER');
+  }
+
+  /**
+   * Gatilho de reengajamento de entrada. Chamado (fire-and-forget) quando a
+   * Aline (agente IA) envia uma mensagem. Inscreve apenas se:
+   *  - existe cadência NO_REPLY habilitada na org;
+   *  - a conversa está PRÉ-HUMANA (sem responsável e sem aguardar humano);
+   *  - o card está numa etapa monitorada (ou watchedStageIds vazio = qualquer).
+   * A idempotência (1 enrollment ACTIVE/conversa) e o opt-out são garantidos
+   * por `start()`.
+   */
+  async maybeStartForNoReply(
+    conversationId: string,
+  ): Promise<CadenceEnrollment | null> {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conversation) return null;
+
+    // Pré-humano: ninguém dono da conversa e não está na fila de espera humana.
+    if (conversation.assignedToId || conversation.awaitingHumanReply) {
+      return null;
+    }
+
+    const cadence = (await this.cadences.findNoReply(
+      conversation.organizationId,
+    )) as CadenceLike | null;
+    if (!cadence || !cadence.enabled) return null;
+    if (cadence.trigger !== 'NO_REPLY') return null;
+
+    const watched = cadence.watchedStageIds ?? [];
+    if (watched.length > 0) {
+      const card = await this.prisma.card.findFirst({
+        where: { conversationId },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!card || !card.stageId || !watched.includes(card.stageId)) {
+        return null;
+      }
+    }
+
+    return this.start(conversationId, cadence.id, 'NO_REPLY');
   }
 
   // ─── helpers ──────────────────────────────────────────────
@@ -404,12 +447,53 @@ export class CadenceRunner {
     });
   }
 
+  /**
+   * Garante que o lead apareça na etapa destino ao esgotar. Se o enrollment já
+   * tem card, move; senão cria um card nessa etapa (leads pré-humanos do
+   * reengajamento normalmente ainda não têm card no board).
+   */
+  private async ensureCardInStage(
+    enrollment: {
+      organizationId: string;
+      conversationId: string;
+      contactId: string;
+      cardId: string | null;
+    },
+    stageId: string,
+  ): Promise<void> {
+    if (enrollment.cardId) {
+      await this.moveCardToStage(enrollment.cardId, stageId);
+      return;
+    }
+    const stage = await this.prisma.pipelineStage.findUnique({
+      where: { id: stageId },
+    });
+    if (!stage) return;
+    const contact = await this.prisma.contact.findUnique({
+      where: { id: enrollment.contactId },
+    });
+    await this.prisma.card.create({
+      data: {
+        organizationId: enrollment.organizationId,
+        pipelineId: stage.pipelineId,
+        stageId,
+        title: contact?.name || 'Lead sem resposta',
+        contactId: enrollment.contactId,
+        conversationId: enrollment.conversationId,
+        status: 'LOST',
+        closedAt: new Date(),
+      },
+    });
+  }
+
   private statusForReason(reason: string): CadenceEnrollmentStatus {
     switch (reason) {
       case 'said_no':
         return 'MOVED_LOST';
       case 'opt_out':
         return 'STOPPED_OPTOUT';
+      case 'client_replied':
+        return 'RESUMED_AI';
       case 'replied_yes':
       case 'engaged':
       case 'manual_handoff':

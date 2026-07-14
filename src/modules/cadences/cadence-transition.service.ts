@@ -31,7 +31,8 @@ export type TransitionOutcome =
   | 'DESCADASTRAR'
   | 'ENGAGED'
   | 'AMBIGUO'
-  | 'EXHAUSTED';
+  | 'EXHAUSTED'
+  | 'RESUMED';
 
 /** Subset mínimo da Cadence necessário para aplicar os efeitos. */
 export interface TransitionCadence {
@@ -124,6 +125,14 @@ export class CadenceTransitionService {
         if (cadence.optOutTagId) {
           await this.addContactTag(enrollment.contactId, cadence.optOutTagId);
         }
+        break;
+      }
+
+      case 'RESUMED': {
+        // Reengajamento (NO_REPLY): o cliente voltou a falar. Só encerra o
+        // enrollment — a Aline (autônoma) reassume naturalmente pelo inbound.
+        // Sem handoff a humano, sem tag, sem mover card.
+        await this.runner.stop(enrollment.id, 'client_replied');
         break;
       }
 

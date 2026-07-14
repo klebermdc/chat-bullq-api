@@ -22,6 +22,13 @@ export class CadencesRepository {
     });
   }
 
+  findNoReply(orgId: string) {
+    return this.prisma.cadence.findFirst({
+      where: { organizationId: orgId, trigger: 'NO_REPLY', enabled: true },
+      include: { steps: { orderBy: { order: 'asc' } } },
+    });
+  }
+
   list(orgId: string) {
     return this.prisma.cadence.findMany({
       where: { organizationId: orgId },
@@ -41,6 +48,7 @@ export class CadencesRepository {
           pipelineId: dto.pipelineId ?? null,
           stageId: dto.stageId ?? null,
           lostStageId: dto.lostStageId ?? null,
+          watchedStageIds: dto.watchedStageIds ?? [],
           hotTagId: dto.hotTagId ?? null,
           optOutTagId: dto.optOutTagId ?? null,
           trigger: dto.trigger,
@@ -58,6 +66,7 @@ export class CadencesRepository {
           pipelineId: dto.pipelineId ?? null,
           stageId: dto.stageId ?? null,
           lostStageId: dto.lostStageId ?? null,
+          watchedStageIds: dto.watchedStageIds ?? [],
           hotTagId: dto.hotTagId ?? null,
           optOutTagId: dto.optOutTagId ?? null,
           trigger: dto.trigger,

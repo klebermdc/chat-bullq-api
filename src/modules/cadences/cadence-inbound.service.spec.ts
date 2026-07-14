@@ -76,3 +76,59 @@ describe('CadenceInboundService — FIX 6 (inbound não-acionável)', () => {
     expect(transition.apply).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('CadenceInboundService — NO_REPLY (reengajamento de entrada)', () => {
+  it('NO_REPLY: resposta comum → RESUMED (Aline reassume), sem classificar Sim/Não como handoff', async () => {
+    const { service, enrollments, cadences, classifier, transition } =
+      makeDeps();
+    enrollments.findActiveByConversation.mockResolvedValue({
+      id: 'e1',
+      cadenceId: 'cad',
+      currentStep: 1,
+      organizationId: 'org1',
+    } as any);
+    cadences.findById.mockResolvedValue({
+      id: 'cad',
+      trigger: 'NO_REPLY',
+      steps: [{ order: 1 }],
+    } as any);
+    classifier.classify.mockResolvedValue('AMBIGUO');
+
+    await service.handleInbound('c1', {
+      content: { text: 'oi, ainda quero sim' },
+    } as any);
+
+    expect(transition.apply).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'e1' }),
+      'RESUMED',
+      expect.anything(),
+    );
+  });
+
+  it('NO_REPLY: opt-out → DESCADASTRAR', async () => {
+    const { service, enrollments, cadences, classifier, transition } =
+      makeDeps();
+    enrollments.findActiveByConversation.mockResolvedValue({
+      id: 'e1',
+      cadenceId: 'cad',
+      currentStep: 1,
+      organizationId: 'org1',
+    } as any);
+    cadences.findById.mockResolvedValue({
+      id: 'cad',
+      trigger: 'NO_REPLY',
+      steps: [{ order: 1 }],
+    } as any);
+    classifier.classify.mockResolvedValue('DESCADASTRAR');
+
+    await service.handleInbound('c1', {
+      content: { text: 'parar' },
+    } as any);
+
+    expect(transition.apply).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'e1' }),
+      'DESCADASTRAR',
+      expect.anything(),
+    );
+  });
+});
