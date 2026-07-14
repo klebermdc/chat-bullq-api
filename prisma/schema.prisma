@@ -2028,6 +2028,7 @@ enum CadenceTrigger {
   STAGE_ENTER
   MANUAL
   BOTH
+  NO_REPLY
 }
 
 enum CadenceStepOption {
@@ -2042,6 +2043,7 @@ enum CadenceEnrollmentStatus {
   STOPPED_OPTOUT
   MOVED_LOST
   COMPLETED_NO_REPLY
+  RESUMED_AI
 }
 
 model Cadence {
@@ -2050,6 +2052,7 @@ model Cadence {
   name           String
   pipelineId     String?  @map("pipeline_id")
   stageId        String?  @map("stage_id")
+  watchedStageIds String[] @map("watched_stage_ids")
   lostStageId    String?  @map("lost_stage_id")
   hotTagId       String?  @map("hot_tag_id")
   optOutTagId    String?  @map("opt_out_tag_id")
