@@ -26,18 +26,23 @@ const DEFAULT_MODEL: Record<AiProvider, string> = {
 
 const SENTIMENTS: readonly CallSentiment[] = ['positivo', 'neutro', 'negativo'];
 
-const SYSTEM_PROMPT = `IDIOMA (regra absoluta): escreva TODA a saída exclusivamente em PORTUGUÊS DO BRASIL, correto e natural. NUNCA use caracteres de alfabetos não latinos nem palavras em outro idioma.
+const SYSTEM_PROMPT = `IDIOMA: escreva TODA a saída exclusivamente em PORTUGUÊS DO BRASIL, correto e natural. NUNCA use caracteres de alfabetos não latinos.
 
-Você é o assistente do time de atendimento da Orlando Fast Pass (viagens a Orlando: Disney, Universal, SeaWorld, ingressos, fila/fast pass, roteiros, transfer). Recebe a TRANSCRIÇÃO de uma LIGAÇÃO telefônica entre um atendente e um cliente (texto corrido, sem separação clara de quem falou). Sua tarefa:
+Você resume LIGAÇÕES telefônicas para o time da Orlando Fast Pass. Você recebe a TRANSCRIÇÃO REAL de uma ligação (texto corrido, sem separar quem falou).
 
-(1) RESUMO — resuma a ligação em 2 a 4 frases claras, para o atendente/gestor se situar: o que o cliente quer, o que foi combinado, e onde ficou (pendências). Seja específico com nomes, datas e valores citados.
+╔═ REGRA MAIS IMPORTANTE — FIDELIDADE ABSOLUTA ═╗
+Baseie TUDO exclusivamente no que está ESCRITO na transcrição fornecida na mensagem do usuário. É TERMINANTEMENTE PROIBIDO inventar, supor, deduzir ou acrescentar QUALQUER informação que não apareça literalmente na transcrição. NÃO invente sintomas, doenças, planos de saúde, nomes de empresas, produtos, datas, valores, destinos, cidades, combinações ou qualquer fato. NÃO use exemplos ou modelos genéricos de call center. Se você não tem certeza de algo, NÃO escreva. Resuma APENAS o que foi REALMENTE dito naquele texto — nada além disso.
+╚═══════════════════════════════════════════════╝
 
-(2) PRÓXIMOS PASSOS — liste de 1 a 4 próximos passos concretos e acionáveis para o atendente dar sequência (ex.: "Enviar cotação da viagem em família para julho", "Confirmar disponibilidade de transfer", "Retornar o contato na quinta"). Frases curtas, no imperativo.
+Se a transcrição for uma conversa informal, um TESTE de sistema, ou não tiver conteúdo de atendimento/comercial, diga isso honestamente (ex.: "Ligação de teste, sem conteúdo comercial." ou "Conversa informal, sem assunto de atendimento.") e deixe proximosPassos como [].
 
-(3) SENTIMENTO — classifique o clima geral do cliente na ligação: "positivo", "neutro" ou "negativo".
+Produza:
+(1) resumo — 2 a 4 frases FIÉIS ao que realmente foi dito na transcrição. Cite nomes/datas/valores SÓ se aparecerem no texto.
+(2) proximosPassos — de 0 a 4 ações concretas que decorram DIRETAMENTE do que foi conversado. Se não houver ação real, use [].
+(3) sentimento — "positivo", "neutro" ou "negativo", conforme o clima real da conversa.
 
-Responda APENAS com um objeto JSON válido, sem markdown e sem texto fora do JSON, no formato:
-{"resumo": "<texto>", "proximosPassos": ["passo 1", "passo 2"], "sentimento": "positivo|neutro|negativo"}`;
+Responda APENAS com um objeto JSON válido, sem markdown e sem texto fora do JSON:
+{"resumo": "<texto fiel à transcrição>", "proximosPassos": ["..."], "sentimento": "positivo|neutro|negativo"}`;
 
 /**
  * Gera o "Resumo da ligação" (transcrição -> insight) para o Card do Cliente e o
@@ -61,15 +66,19 @@ export class CallInsightService {
 
     const baseUrl = (resolved.baseUrl ?? CHAT_BASE_URL[resolved.provider]).replace(/\/$/, '');
     const model = resolved.model ?? DEFAULT_MODEL[resolved.provider];
+    this.logger.log(`Resumo de ligação com ${resolved.provider}/${model} (${transcript.length} chars de transcrição)`);
 
     const body = {
       model,
-      temperature: 0.3,
+      temperature: 0, // fidelidade máxima à transcrição — zero "criatividade"/alucinação
       max_tokens: 1024,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: `Transcrição da ligação:\n\n${transcript}` },
+        {
+          role: 'user',
+          content: `Resuma SOMENTE a ligação abaixo, sem inventar nada que não esteja escrita nela. Se for teste/conversa informal, diga isso.\n\n<<<TRANSCRICAO>>>\n${transcript}\n<<<FIM>>>`,
+        },
       ],
     };
 
