@@ -38,6 +38,7 @@ import {
   ConversationSummaryService,
   SummaryTurn,
 } from '../messages/conversation-summary.service';
+import { AttendantGreetingService } from '../attendant-greeting/attendant-greeting.service';
 
 const SYNC_MESSAGE_PAGE_SIZE = 50;
 const SYNC_MAX_PAGES = 4;
@@ -67,6 +68,8 @@ export class ConversationsService {
     @Inject(forwardRef(() => ScheduledMessagesService))
     private readonly scheduled: ScheduledMessagesService,
     private readonly summarizer: ConversationSummaryService,
+    @Inject(forwardRef(() => AttendantGreetingService))
+    private readonly attendantGreeting: AttendantGreetingService,
   ) {}
 
   /**
@@ -541,6 +544,13 @@ export class ConversationsService {
 
     const updated = await this.repository.findById(id);
     this.broadcastUpdate(updated as Conversation | null);
+
+    await this.attendantGreeting.greet({
+      conversationId: id,
+      attendantUserId: toUserId,
+      source: 'TRANSFER',
+    });
+
     return updated;
   }
 
