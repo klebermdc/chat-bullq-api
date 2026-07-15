@@ -23,6 +23,10 @@ export const CADENCE_RUNNER = 'CADENCE_RUNNER';
  */
 export interface CadenceRunnerPort {
   stop(enrollmentId: string, reason: string): Promise<CadenceEnrollment | null>;
+  pause(
+    enrollmentId: string,
+    silenceWindowMinutes: number,
+  ): Promise<CadenceEnrollment | null>;
 }
 
 export type TransitionOutcome =
@@ -41,6 +45,8 @@ export interface TransitionCadence {
   optOutTagId?: string | null;
   onYesMessage?: string | null;
   onNoMessage?: string | null;
+  reviveEnabled?: boolean | null;
+  silenceWindowMinutes?: number | null;
 }
 
 /**
@@ -73,9 +79,9 @@ export class CadenceTransitionService {
     outcome: TransitionOutcome,
     cadence: TransitionCadence,
   ): Promise<void> {
-    // Guarda de idempotência: uma cadência já encerrada não sofre efeitos de
-    // novo (evita dupla tag/assign se o inbound reprocessar a mesma resposta).
-    if (enrollment.status !== 'ACTIVE') return;
+    // Guarda de idempotência: só age em estado vivo (ACTIVE ou PAUSED). Já
+    // encerrado não sofre efeitos de novo.
+    if (enrollment.status !== 'ACTIVE' && enrollment.status !== 'PAUSED') return;
 
     switch (outcome) {
       case 'SIM': {
@@ -99,7 +105,17 @@ export class CadenceTransitionService {
 
       case 'ENGAGED':
       case 'AMBIGUO': {
-        // Regra de ouro: na dúvida nunca descarta o lead → trata como engajou.
+        // Regra de ouro: na dúvida nunca descarta o lead.
+        const reviveEnabled = cadence.reviveEnabled ?? true;
+        if (reviveEnabled) {
+          // Resposta fraca: pausa e arma o watchdog de silêncio (não encerra).
+          const window = cadence.silenceWindowMinutes ?? 1440;
+          const paused = await this.runner.pause(enrollment.id, window);
+          if (!paused) break; // já pausado / perdeu corrida → no-op
+          await this.handoff(enrollment);
+          break;
+        }
+        // Comportamento antigo: encerra e entrega ao humano.
         const claimed = await this.runner.stop(enrollment.id, 'engaged');
         if (!claimed) break;
         await this.handoff(enrollment);

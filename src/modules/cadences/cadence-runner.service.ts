@@ -251,11 +251,13 @@ export class CadenceRunner {
     }
 
     // Pré-check barato em memória; a porta autoritativa é o write condicional.
-    if (enrollment.status !== 'ACTIVE') return enrollment;
+    if (enrollment.status !== 'ACTIVE' && enrollment.status !== 'PAUSED') {
+      return enrollment;
+    }
 
     // FIX 4: reivindica o encerramento atomicamente (compare-and-set em
     // ACTIVE). Só cancela toques/emite evento se este caminho venceu a corrida.
-    const claimed = await this.enrollments.finishIfActive(enrollment.id, {
+    const claimed = await this.enrollments.finishIfLive(enrollment.id, {
       status: this.statusForReason(reason),
       endedAt: new Date(),
       endReason: reason,

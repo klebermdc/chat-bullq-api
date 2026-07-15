@@ -62,6 +62,13 @@ function makeDeps(opts: any = {}) {
       Object.assign(e, data);
       return true;
     }),
+    // Task 6: encerra a partir de ACTIVE **ou** PAUSED (segunda resposta na pausa).
+    finishIfLive: jest.fn(async (id: string, data: any) => {
+      const e = enrollmentsStore.find((x) => x.id === id);
+      if (!e || (e.status !== 'ACTIVE' && e.status !== 'PAUSED')) return false;
+      Object.assign(e, data);
+      return true;
+    }),
   };
 
   const theCadence = opts.cadence ?? makeCadence();
@@ -413,7 +420,7 @@ describe('CadenceRunner.stop', () => {
 
     await runner.stop('enr1', 'said_no');
 
-    expect(enrollments.finishIfActive).toHaveBeenCalledWith(
+    expect(enrollments.finishIfLive).toHaveBeenCalledWith(
       'enr1',
       expect.objectContaining({ status: 'MOVED_LOST', endReason: 'said_no' }),
     );
@@ -441,7 +448,7 @@ describe('CadenceRunner.stop', () => {
     await expect(runner.stop('enr1', 'manual_handoff', 'org-outra')).rejects.toThrow(
       'enrollment_not_in_org',
     );
-    expect(enrollments.finishIfActive).not.toHaveBeenCalled();
+    expect(enrollments.finishIfLive).not.toHaveBeenCalled();
   });
 
   it('FIX 4: enrollment já não-ACTIVE → não reivindica nem cancela pendentes', async () => {
@@ -454,7 +461,7 @@ describe('CadenceRunner.stop', () => {
       status: 'HANDED_OFF',
     });
     await runner.stop('enr1', 'said_no');
-    expect(enrollments.finishIfActive).not.toHaveBeenCalled();
+    expect(enrollments.finishIfLive).not.toHaveBeenCalled();
     expect(scheduledMessages.cancelPendingForConversation).not.toHaveBeenCalled();
   });
 
@@ -474,7 +481,7 @@ describe('CadenceRunner.stop', () => {
         status: 'ACTIVE',
       });
       await runner.stop('enr1', reason);
-      expect(enrollments.finishIfActive).toHaveBeenCalledWith(
+      expect(enrollments.finishIfLive).toHaveBeenCalledWith(
         'enr1',
         expect.objectContaining({ status }),
       );
@@ -493,7 +500,7 @@ describe('CadenceRunner.stop', () => {
 
     await runner.stop('enr1', 'client_replied');
 
-    expect(enrollments.finishIfActive).toHaveBeenCalledWith(
+    expect(enrollments.finishIfLive).toHaveBeenCalledWith(
       'enr1',
       expect.objectContaining({
         status: 'RESUMED_AI',

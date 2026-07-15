@@ -26,7 +26,10 @@ function makePrisma(
 function makeDeps(conversation?: any) {
   // FIX 4: stop devolve o enrollment (truthy) quando venceu o compare-and-set;
   // os efeitos da transição só rodam quando o claim vence.
-  const runner = { stop: jest.fn(async () => ({ id: 'enr1' })) };
+  const runner = {
+    stop: jest.fn(async () => ({ id: 'enr1' })),
+    pause: jest.fn(async () => ({ id: 'enr1' })),
+  };
   const prisma = makePrisma(conversation);
   const notifications = {
     notify: jest.fn(async () => ({})),
@@ -84,18 +87,18 @@ describe('CadenceTransitionService', () => {
     expect(notifications.notify).toHaveBeenCalledTimes(1);
   });
 
-  it('ENGAGED → stop(engaged) + assign + notifica, SEM tag quente', async () => {
+  it('ENGAGED (reviveEnabled=false) → stop(engaged) + assign + notifica, SEM tag quente', async () => {
     const { runner, prisma, notifications, service } = makeDeps();
-    await service.apply(enrollment(), 'ENGAGED', cadence());
+    await service.apply(enrollment(), 'ENGAGED', cadence({ reviveEnabled: false }));
 
     expect(runner.stop).toHaveBeenCalledWith('enr1', 'engaged');
     expect(prisma.conversationTag.create).not.toHaveBeenCalled();
     expect(notifications.notify).toHaveBeenCalledTimes(1);
   });
 
-  it('AMBIGUO → tratado como engajou (stop engaged + notifica, sem tag)', async () => {
+  it('AMBIGUO (reviveEnabled=false) → tratado como engajou (stop engaged + notifica, sem tag)', async () => {
     const { runner, prisma, notifications, service } = makeDeps();
-    await service.apply(enrollment(), 'AMBIGUO', cadence());
+    await service.apply(enrollment(), 'AMBIGUO', cadence({ reviveEnabled: false }));
 
     expect(runner.stop).toHaveBeenCalledWith('enr1', 'engaged');
     expect(prisma.conversationTag.create).not.toHaveBeenCalled();
@@ -317,5 +320,41 @@ describe('CadenceTransitionService', () => {
     );
     prisma.conversationTag.create.mockRejectedValueOnce(p2002);
     await expect(service.apply(enrollment(), 'SIM', cadence())).resolves.toBeUndefined();
+  });
+});
+
+describe('CadenceTransitionService — revive no caminho fraco', () => {
+  function make() {
+    const runner = { stop: jest.fn().mockResolvedValue({ id: 'e1' }), pause: jest.fn().mockResolvedValue({ id: 'e1' }) };
+    const prisma = {
+      conversation: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', assignedToId: 'u1', organizationId: 'o1' }), update: jest.fn() },
+    };
+    const notifications = { notify: jest.fn(), notifyOrgAgents: jest.fn() };
+    const messages = { send: jest.fn() };
+    const service = new CadenceTransitionService(runner as any, prisma as any, notifications as any, messages as any);
+    return { service, runner, prisma, notifications };
+  }
+
+  const enrollment = { id: 'e1', status: 'ACTIVE', conversationId: 'c1', organizationId: 'o1' } as any;
+
+  it('ENGAGED com reviveEnabled pausa (não encerra) e notifica', async () => {
+    const { service, runner } = make();
+    await service.apply(enrollment, 'ENGAGED', { reviveEnabled: true, silenceWindowMinutes: 1440 } as any);
+    expect(runner.pause).toHaveBeenCalledWith('e1', 1440);
+    expect(runner.stop).not.toHaveBeenCalled();
+  });
+
+  it('ENGAGED com reviveEnabled=false mantém o comportamento antigo (stop→HANDED_OFF)', async () => {
+    const { service, runner } = make();
+    await service.apply(enrollment, 'ENGAGED', { reviveEnabled: false } as any);
+    expect(runner.stop).toHaveBeenCalledWith('e1', 'engaged');
+    expect(runner.pause).not.toHaveBeenCalled();
+  });
+
+  it('aplica efeitos terminais também quando o enrollment está PAUSED', async () => {
+    const { service, runner } = make();
+    const paused = { ...enrollment, status: 'PAUSED' };
+    await service.apply(paused, 'SIM', { reviveEnabled: true } as any);
+    expect(runner.stop).toHaveBeenCalledWith('e1', 'replied_yes');
   });
 });
