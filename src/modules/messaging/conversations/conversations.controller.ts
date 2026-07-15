@@ -15,6 +15,7 @@ import { ConversationsService } from './conversations.service';
 import { StartConversationService } from './start-conversation.service';
 import { StartConversationDto } from './dto/start-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
+import { TransferConversationDto } from './dto/transfer-conversation.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../../common/guards';
 import {
   CurrentUser,
@@ -314,6 +315,21 @@ export class ConversationsController {
     @CurrentChannelAccess() access: ChannelAccess,
   ) {
     return this.service.assignToMe(id, orgId, userId, access);
+  }
+
+  @Post(':id/transfer')
+  @ApiOperation({
+    summary:
+      'Transfere o cliente para outro atendente (registra mensagem SYSTEM no thread).',
+  })
+  transfer(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
+    @Body() dto: TransferConversationDto,
+  ) {
+    return this.service.transfer(id, orgId, dto.toUserId, userId, dto.reason, access);
   }
 
   @Patch(':id/ai')

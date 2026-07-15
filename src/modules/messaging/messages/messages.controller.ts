@@ -49,8 +49,9 @@ export class MessagesController {
     @CurrentUser('id') userId: string,
     @CurrentOrg('id') orgId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.send(dto, userId, orgId, access);
+    return this.service.send(dto, userId, orgId, access, role);
   }
 
   @Post('uploads/audio')

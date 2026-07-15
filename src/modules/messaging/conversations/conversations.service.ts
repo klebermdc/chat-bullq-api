@@ -7,7 +7,15 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { Conversation, ConversationStatus, OrgRole, Prisma } from '@prisma/client';
+import {
+  Conversation,
+  ConversationStatus,
+  MessageContentType,
+  MessageDirection,
+  MessageStatus,
+  OrgRole,
+  Prisma,
+} from '@prisma/client';
 import { ConversationsRepository, InboxFilters } from './conversations.repository';
 import { resolveAssignmentScope } from './conversation-scope';
 import { ConversationFsmService } from './conversation-fsm.service';
@@ -445,6 +453,91 @@ export class ConversationsService {
         subject: trimmed.length > 0 ? trimmed : null,
       });
     }
+
+    const updated = await this.repository.findById(id);
+    this.broadcastUpdate(updated as Conversation | null);
+    return updated;
+  }
+
+  /**
+   * Transferência intencional do cliente para outro atendente. Diferente do
+   * auto-assign (que acontece implicitamente ao responder), aqui o ator move
+   * o card de propósito e a transferência fica REGISTRADA no thread como uma
+   * mensagem SYSTEM ("🔄 Cliente transferido de X para Y"), visível a todos.
+   *
+   * Reusa `fsm.assign` (audit log ASSIGNED + trigger de automação). A mensagem
+   * SYSTEM é criada direto no banco, com status SENT e sem entrar na fila de
+   * entrega — portanto NÃO é enviada ao cliente no WhatsApp/IG.
+   */
+  async transfer(
+    id: string,
+    organizationId: string,
+    toUserId: string,
+    actorId: string,
+    reason?: string,
+    access: ChannelAccess = 'ALL',
+  ) {
+    const conversation = await this.findOne(id, organizationId, access);
+
+    if (conversation.assignedToId === toUserId) {
+      throw new BadRequestException(
+        'A conversa já está atribuída a este atendente.',
+      );
+    }
+
+    // Destinatário precisa ser membro ativo da mesma org.
+    const target = await this.prisma.userOrganization.findFirst({
+      where: { organizationId, userId: toUserId, user: { isActive: true } },
+      select: { user: { select: { id: true, name: true } } },
+    });
+    if (!target) {
+      throw new NotFoundException('Atendente destino não encontrado na organização.');
+    }
+
+    const fromUser = conversation.assignedToId
+      ? await this.prisma.user.findUnique({
+          where: { id: conversation.assignedToId },
+          select: { name: true },
+        })
+      : null;
+
+    await this.fsm.assign(id, toUserId, actorId);
+
+    const fromLabel = fromUser?.name ?? 'ninguém';
+    const toLabel = target.user.name ?? 'atendente';
+    const trimmedReason = reason?.trim();
+    const text = trimmedReason
+      ? `🔄 Cliente transferido de ${fromLabel} para ${toLabel}. Motivo: ${trimmedReason}`
+      : `🔄 Cliente transferido de ${fromLabel} para ${toLabel}`;
+
+    const systemMessage = await this.prisma.message.create({
+      data: {
+        conversationId: id,
+        direction: MessageDirection.OUTBOUND,
+        type: MessageContentType.SYSTEM,
+        status: MessageStatus.SENT,
+        senderId: actorId,
+        sentAt: new Date(),
+        content: {
+          text,
+          transfer: {
+            fromId: conversation.assignedToId,
+            toId: toUserId,
+            reason: trimmedReason ?? null,
+          },
+        },
+      },
+    });
+
+    // Aparece no thread na hora (SYSTEM message não passa pelo fluxo de send).
+    this.realtimeGateway.emitToChannel(conversation.channelId, 'message:new', {
+      message: systemMessage,
+      conversationId: id,
+      contactId: conversation.contactId,
+    });
+    this.realtimeGateway.emitToConversation(id, 'message:new', {
+      message: systemMessage,
+    });
 
     const updated = await this.repository.findById(id);
     this.broadcastUpdate(updated as Conversation | null);
