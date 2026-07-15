@@ -7,6 +7,8 @@ import {
   IsInt,
   IsArray,
   ValidateNested,
+  Min,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -93,6 +95,18 @@ export class UpsertCadenceDto {
   @IsOptional()
   @IsString()
   onNoMessage?: string;
+
+  @ApiPropertyOptional({ default: true, description: 'Se true, resposta fraca do cliente pausa a cadência (revive após silêncio) em vez de encerrar.' })
+  @IsOptional()
+  @IsBoolean()
+  reviveEnabled?: boolean;
+
+  @ApiPropertyOptional({ default: 1440, description: 'Minutos de silêncio (cliente + vendedor) antes de retomar a cadência pausada.' })
+  @IsOptional()
+  @IsInt()
+  @Min(60)
+  @Max(43200)
+  silenceWindowMinutes?: number;
 
   @ApiProperty({ type: [UpsertCadenceStepDto] })
   @IsArray()
