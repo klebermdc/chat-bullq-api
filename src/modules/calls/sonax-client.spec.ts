@@ -37,4 +37,22 @@ describe('SonaxClient.click2call', () => {
       client.click2call({ baseUrl: 'https://x', numero: '1', ramal: '1', token: 't', var1: 'c' }),
     ).rejects.toThrow();
   });
+
+  it('NÃO lança em timeout/abort — o click2call segura a conexão durante a ligação; o resultado vem pelo webhook', async () => {
+    const abortErr = Object.assign(new Error('aborted'), { name: 'AbortError' });
+    const fetchMock = jest.fn().mockRejectedValue(abortErr);
+    const client = new SonaxClient(fetchMock);
+    await expect(
+      client.click2call({ baseUrl: 'https://x', numero: '1', ramal: '1', token: 't', var1: 'c' }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('lança em erro de rede real (não-abort)', async () => {
+    const netErr = new Error('ECONNREFUSED');
+    const fetchMock = jest.fn().mockRejectedValue(netErr);
+    const client = new SonaxClient(fetchMock);
+    await expect(
+      client.click2call({ baseUrl: 'https://x', numero: '1', ramal: '1', token: 't', var1: 'c' }),
+    ).rejects.toThrow();
+  });
 });
