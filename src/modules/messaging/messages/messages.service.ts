@@ -25,6 +25,7 @@ import { WatchdogService } from '../../routing/watchdog/watchdog.service';
 import { SegmentReadService } from '../../segments/segment-read.service';
 import { ChannelAdapterRegistry } from '../../channel-hub/channel-adapter.registry';
 import { resolveAssignmentScope } from '../conversations/conversation-scope';
+import { shouldAutoAssignOnReply } from './auto-assign.util';
 
 @Injectable()
 export class MessagesService {
@@ -46,6 +47,7 @@ export class MessagesService {
     senderId: string,
     organizationId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ) {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: dto.conversationId },
@@ -169,7 +171,16 @@ export class MessagesService {
     // replies are a no-op. Yes, this can "steal" from a teammate — but the
     // alternative (a conversation stuck on an inactive assignee while
     // someone else is actively replying) is worse for accountability.
-    const shouldAutoAssign = conversation.assignedToId !== senderId;
+    //
+    // EXCEÇÃO (ver shouldAutoAssignOnReply): ADM/Owner NÃO rouba conversa que
+    // já tem dono — quando um gestor entra só pra intervir/responder, o cliente
+    // permanece com o agente de direito. Para transferir de propósito existe o
+    // endpoint dedicado de transferência.
+    const shouldAutoAssign = shouldAutoAssignOnReply({
+      currentAssigneeId: conversation.assignedToId,
+      senderId,
+      role,
+    });
 
     await this.prisma.conversation.update({
       where: { id: conversation.id },
