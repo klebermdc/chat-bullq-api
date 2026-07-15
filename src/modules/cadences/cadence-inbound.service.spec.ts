@@ -2,7 +2,7 @@ import { CadenceInboundService } from './cadence-inbound.service';
 
 function makeDeps() {
   const enrollments = {
-    findActiveByConversation: jest.fn(async () => ({
+    findLiveByConversation: jest.fn(async () => ({
       id: 'enr1',
       organizationId: 'org1',
       cadenceId: 'cad1',
@@ -35,7 +35,7 @@ describe('CadenceInboundService — FIX 6 (inbound não-acionável)', () => {
       type: 'REACTION',
       content: { text: '👍' },
     } as any);
-    expect(enrollments.findActiveByConversation).not.toHaveBeenCalled();
+    expect(enrollments.findLiveByConversation).not.toHaveBeenCalled();
     expect(classifier.classify).not.toHaveBeenCalled();
     expect(transition.apply).not.toHaveBeenCalled();
   });
@@ -81,7 +81,7 @@ describe('CadenceInboundService — NO_REPLY (reengajamento de entrada)', () => 
   it('NO_REPLY: resposta comum → RESUMED (Aline reassume), sem classificar Sim/Não como handoff', async () => {
     const { service, enrollments, cadences, classifier, transition } =
       makeDeps();
-    enrollments.findActiveByConversation.mockResolvedValue({
+    enrollments.findLiveByConversation.mockResolvedValue({
       id: 'e1',
       cadenceId: 'cad',
       currentStep: 1,
@@ -108,7 +108,7 @@ describe('CadenceInboundService — NO_REPLY (reengajamento de entrada)', () => 
   it('NO_REPLY: opt-out → DESCADASTRAR', async () => {
     const { service, enrollments, cadences, classifier, transition } =
       makeDeps();
-    enrollments.findActiveByConversation.mockResolvedValue({
+    enrollments.findLiveByConversation.mockResolvedValue({
       id: 'e1',
       cadenceId: 'cad',
       currentStep: 1,
@@ -128,6 +128,78 @@ describe('CadenceInboundService — NO_REPLY (reengajamento de entrada)', () => 
     expect(transition.apply).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'e1' }),
       'DESCADASTRAR',
+      expect.anything(),
+    );
+  });
+});
+
+describe('CadenceInboundService — reclassificação live (ACTIVE|PAUSED)', () => {
+  it('usa findLiveByConversation (acha também PAUSED) para reclassificar', async () => {
+    const enrollments = {
+      findLiveByConversation: jest.fn().mockResolvedValue({
+        id: 'e1',
+        cadenceId: 'cad1',
+        organizationId: 'o1',
+        currentStep: 2,
+        status: 'PAUSED',
+      }),
+    };
+    const cadences = {
+      findById: jest.fn().mockResolvedValue({
+        id: 'cad1',
+        trigger: 'BOTH',
+        steps: [{ order: 2, options: ['SIM', 'NAO'] }],
+      }),
+    };
+    const classifier = { classify: jest.fn().mockResolvedValue('SIM') };
+    const transition = { apply: jest.fn() };
+    const svc = new CadenceInboundService(
+      enrollments as any,
+      cadences as any,
+      classifier as any,
+      transition as any,
+    );
+
+    await svc.handleInbound('c1', {
+      content: { text: 'sim, quero' },
+      metadata: {},
+    } as any);
+
+    expect(enrollments.findLiveByConversation).toHaveBeenCalledWith('c1');
+    expect(transition.apply).toHaveBeenCalled();
+  });
+
+  it('NO_REPLY continua indo para RESUMED (não pausa)', async () => {
+    const enrollments = {
+      findLiveByConversation: jest.fn().mockResolvedValue({
+        id: 'e1',
+        cadenceId: 'cad1',
+        organizationId: 'o1',
+        status: 'ACTIVE',
+      }),
+    };
+    const cadences = {
+      findById: jest.fn().mockResolvedValue({
+        id: 'cad1',
+        trigger: 'NO_REPLY',
+        steps: [],
+      }),
+    };
+    const classifier = { classify: jest.fn().mockResolvedValue('AMBIGUO') };
+    const transition = { apply: jest.fn() };
+    const svc = new CadenceInboundService(
+      enrollments as any,
+      cadences as any,
+      classifier as any,
+      transition as any,
+    );
+    await svc.handleInbound('c1', {
+      content: { text: 'oi de novo' },
+      metadata: {},
+    } as any);
+    expect(transition.apply).toHaveBeenCalledWith(
+      expect.anything(),
+      'RESUMED',
       expect.anything(),
     );
   });
