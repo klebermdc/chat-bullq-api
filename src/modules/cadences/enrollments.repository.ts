@@ -69,4 +69,49 @@ export class EnrollmentsRepository {
     });
     return res.count === 1;
   }
+
+  /** Compare-and-set ACTIVE → PAUSED. `true` só quando este caminho venceu. */
+  async pauseIfActive(
+    id: string,
+    data: Prisma.CadenceEnrollmentUpdateManyMutationInput,
+  ): Promise<boolean> {
+    const res = await this.prisma.cadenceEnrollment.updateMany({
+      where: { id, status: 'ACTIVE' },
+      data,
+    });
+    return res.count === 1;
+  }
+
+  /** Compare-and-set PAUSED → ACTIVE (retomada). */
+  async resumeIfPaused(
+    id: string,
+    data: Prisma.CadenceEnrollmentUpdateManyMutationInput,
+  ): Promise<boolean> {
+    const res = await this.prisma.cadenceEnrollment.updateMany({
+      where: { id, status: 'PAUSED' },
+      data,
+    });
+    return res.count === 1;
+  }
+
+  /** Encerramento a partir de qualquer estado vivo (ACTIVE ou PAUSED). */
+  async finishIfLive(
+    id: string,
+    data: Prisma.CadenceEnrollmentUpdateManyMutationInput,
+  ): Promise<boolean> {
+    const res = await this.prisma.cadenceEnrollment.updateMany({
+      where: { id, status: { in: ['ACTIVE', 'PAUSED'] } },
+      data,
+    });
+    return res.count === 1;
+  }
+
+  /** Enrollment vivo (ACTIVE ou PAUSED) da conversa. */
+  findLiveByConversation(
+    conversationId: string,
+  ): Promise<CadenceEnrollment | null> {
+    return this.prisma.cadenceEnrollment.findFirst({
+      where: { conversationId, status: { in: ['ACTIVE', 'PAUSED'] } },
+    });
+  }
 }
