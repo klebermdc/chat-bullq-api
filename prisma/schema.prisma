@@ -220,15 +220,19 @@ model Organization {
 }
 
 model UserOrganization {
-  id             String      @id @default(cuid())
-  userId         String      @map("user_id")
-  organizationId String      @map("organization_id")
-  role           OrgRole     @default(AGENT)
-  agentStatus    AgentStatus @default(OFFLINE) @map("agent_status")
-  maxConcurrent  Int         @default(5) @map("max_concurrent")
-  preferences    Json        @default("{}")
-  sonaxRamal     String?     @map("sonax_ramal") // ramal Sonax do atendente; null = não pode ligar
-  joinedAt       DateTime    @default(now()) @map("joined_at")
+  id               String      @id @default(cuid())
+  userId           String      @map("user_id")
+  organizationId   String      @map("organization_id")
+  role             OrgRole     @default(AGENT)
+  agentStatus      AgentStatus @default(OFFLINE) @map("agent_status")
+  maxConcurrent    Int         @default(5) @map("max_concurrent")
+  preferences      Json        @default("{}")
+  sonaxRamal       String?     @map("sonax_ramal") // ramal Sonax do atendente; null = não pode ligar
+  /// URL completa do Widget de Webphone da Sonax deste atendente
+  /// (https://webphone2.sonax.cloud/widget?data=...&dataClient=...). Injetada no
+  /// chat pra ele atender/desligar sem softphone externo. null = usa softphone.
+  sonaxWebphoneUrl String?     @map("sonax_webphone_url") @db.Text
+  joinedAt         DateTime    @default(now()) @map("joined_at")
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)

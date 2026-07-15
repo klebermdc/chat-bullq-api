@@ -152,6 +152,37 @@ export class OrganizationsService {
     return this.repository.updateMemberRamal(membership.id, ramal);
   }
 
+  async updateMemberWebphone(orgId: string, memberId: string, dto: { webphoneUrl?: string }) {
+    const membership = await this.repository.findMembership(memberId, orgId);
+    if (!membership) throw new NotFoundException('Member not found in organization');
+    const url = this.extractWebphoneUrl(dto.webphoneUrl);
+    return this.repository.updateMemberWebphone(membership.id, url);
+  }
+
+  /** Webphone (widget Sonax) do atendente LOGADO — pra o chat injetar o script dele. */
+  async getMyWebphone(orgId: string, userId: string): Promise<{ webphoneUrl: string | null }> {
+    const membership = await this.repository.findMembership(userId, orgId);
+    return { webphoneUrl: membership?.sonaxWebphoneUrl ?? null };
+  }
+
+  /**
+   * Aceita a URL do widget OU o `<script ... src="URL">` inteiro colado — extrai o
+   * src. Só aceita o host oficial do webphone Sonax (evita injetar script arbitrário).
+   * Vazio => null (limpa).
+   */
+  private extractWebphoneUrl(input?: string): string | null {
+    const raw = (input ?? '').trim();
+    if (!raw) return null;
+    const fromTag = raw.match(/src\s*=\s*["']([^"']+)["']/i)?.[1];
+    const url = (fromTag ?? raw).trim();
+    if (!/^https:\/\/([a-z0-9-]+\.)*sonax\.(cloud|net\.br)\//i.test(url)) {
+      throw new BadRequestException(
+        'URL de webphone inválida (esperado o widget da Sonax: https://webphone2.sonax.cloud/...)',
+      );
+    }
+    return url;
+  }
+
   async removeMember(orgId: string, memberId: string, actorId: string) {
     const membership = await this.repository.findMembership(memberId, orgId);
     if (!membership) {
