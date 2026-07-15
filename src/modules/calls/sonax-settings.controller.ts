@@ -27,7 +27,10 @@ export class SonaxSettingsController {
       idCliente: s.idCliente,
       tokenConfigured: !!s.tokenEnc,
       click2callBaseUrl: s.click2callBaseUrl,
-      webhookUrl: `${base}/api/v1/webhooks/sonax/${s.webhookSecret}?var_1=<ID_CHAMADA>&status=<STATUS_CHAMADA>&status_atend=<STATUS_ATENDIMENTO>&duracao=<DURACAO_CHAMADA>&url_gravacao=<URL_GRAVACAO>`,
+      // var_1=<VAR1>: <VAR1> devolve o valor que ENVIAMOS no click2call (call.id),
+      // que é a chave de correlação. <ID_CHAMADA> é o id interno da Sonax (guardado
+      // só pra referência em id_chamada). NÃO usar <ID_CHAMADA> no var_1.
+      webhookUrl: `${base}/api/v1/webhooks/sonax/${s.webhookSecret}?var_1=<VAR1>&status=<STATUS_CHAMADA>&status_atend=<STATUS_ATENDIMENTO>&duracao=<DURACAO_CHAMADA>&url_gravacao=<URL_GRAVACAO>&id_chamada=<ID_CHAMADA>`,
     };
   }
 
