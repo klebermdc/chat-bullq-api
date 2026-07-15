@@ -31,12 +31,21 @@ export class SonaxClient {
     });
     const url = `${p.baseUrl}?${qs.toString()}`;
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 8000);
+    const t = setTimeout(() => ctrl.abort(), 5000);
     try {
       const res = await this.fetchFn(url, { method: 'GET', signal: ctrl.signal });
       if (!res.ok) {
         throw new Error(`Sonax respondeu ${res.status}`);
       }
+    } catch (err: any) {
+      // O click2call SEGURA a conexão HTTP durante o toque/ligação — a resposta
+      // só volta no fim da chamada (que pode durar minutos). Um timeout/abort
+      // NÃO é falha: a ligação foi despachada e o resultado real chega depois
+      // pelo webhook de desligamento. Portanto engolimos o AbortError e tratamos
+      // como "despachada". Só propagamos erros REAIS (rejeição rápida non-2xx da
+      // Sonax ou falha de rede), que aí sim marcam a ligação como FAILED.
+      if (err?.name === 'AbortError') return;
+      throw err;
     } finally {
       clearTimeout(t);
     }
