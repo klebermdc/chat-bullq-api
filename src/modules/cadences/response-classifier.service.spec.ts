@@ -176,4 +176,16 @@ describe('ResponseClassifierService', () => {
       expect(out).toBe('AMBIGUO');
     });
   });
+
+  it('prompt instrui que adiamento (vou pensar) NÃO é NAO', async () => {
+    const llm = { complete: jest.fn().mockResolvedValue({ message: { content: 'AMBIGUO' } }) };
+    const service = new ResponseClassifierService(llm as any);
+    await service.classify(
+      { content: { text: 'vou pensar' }, organizationId: 'org1' },
+      { options: ['SIM', 'NAO'] },
+    );
+    const sys = llm.complete.mock.calls[0][0].messages[0].content as string;
+    expect(sys).toContain('adia'); // menciona adiamento
+    expect(sys).not.toContain('adia sem compromisso');
+  });
 });
