@@ -80,6 +80,42 @@ export class TranscriptionService {
       return metadata.transcription as TranscriptionResult;
     }
 
+    const audio = await this.audioSource.resolveBytes(message);
+    this.logger.log(
+      `Transcribing message ${messageId} (${audio.buffer.byteLength} bytes, ${audio.mimeType})`,
+    );
+    const result = await this.transcribeBuffer(
+      organizationId,
+      audio.buffer,
+      audio.mimeType,
+      audio.filename,
+    );
+
+    await this.prisma.message.update({
+      where: { id: messageId },
+      data: {
+        metadata: {
+          ...metadata,
+          transcription: { ...result },
+        } as any,
+      },
+    });
+
+    return result;
+  }
+
+  /**
+   * Transcreve um buffer de áudio arbitrário (não precisa ser uma Message).
+   * Reusado pela transcrição de voice notes E pelo resumo de ligações (Sonax),
+   * que baixa a gravação e passa os bytes direto. Resolve a chave TRANSCRIPTION
+   * da org (Groq/OpenAI Whisper), faz a chamada e devolve o texto — sem persistir.
+   */
+  async transcribeBuffer(
+    organizationId: string,
+    buffer: ArrayBuffer | Buffer | Uint8Array,
+    mimeType?: string,
+    filename?: string,
+  ): Promise<TranscriptionResult> {
     const resolved = await this.providerKeys.resolve(organizationId, 'TRANSCRIPTION');
     if (!resolved) {
       throw new BadRequestException(
@@ -93,22 +129,19 @@ export class TranscriptionService {
       : 'https://api.openai.com/v1/audio/transcriptions';
     const model = resolved.model ?? (isGroq ? 'whisper-large-v3-turbo' : 'whisper-1');
 
-    const audio = await this.audioSource.resolveBytes(message);
-    if (audio.buffer.byteLength > TranscriptionService.MAX_BYTES) {
+    const byteLength =
+      buffer instanceof ArrayBuffer ? buffer.byteLength : buffer.byteLength;
+    if (byteLength > TranscriptionService.MAX_BYTES) {
       throw new BadRequestException(
-        `Audio too large (${Math.round(audio.buffer.byteLength / 1024 / 1024)}MB > 25MB)`,
+        `Audio too large (${Math.round(byteLength / 1024 / 1024)}MB > 25MB)`,
       );
     }
 
-    this.logger.log(
-      `Transcribing message ${messageId} (${audio.buffer.byteLength} bytes, ${audio.mimeType})`,
-    );
-
     const formData = new FormData();
-    const blob = new Blob([audio.buffer as BlobPart], {
-      type: audio.mimeType || 'audio/mpeg',
+    const blob = new Blob([buffer as BlobPart], {
+      type: mimeType || 'audio/mpeg',
     });
-    formData.append('file', blob, audio.filename);
+    formData.append('file', blob, filename || 'audio.mp3');
     formData.append('model', model);
     formData.append('response_format', 'verbose_json');
     // Portuguese by default — pinning the language cuts latency and errors.
@@ -134,24 +167,12 @@ export class TranscriptionService {
     }
 
     const data = response.data;
-    const result: TranscriptionResult = {
+    return {
       text: String(data?.text || '').trim(),
       language: data?.language,
       durationMs: data?.duration ? Math.round(Number(data.duration) * 1000) : undefined,
       provider: isGroq ? 'groq-whisper' : 'openai-whisper',
       transcribedAt: new Date().toISOString(),
     };
-
-    await this.prisma.message.update({
-      where: { id: messageId },
-      data: {
-        metadata: {
-          ...metadata,
-          transcription: { ...result },
-        } as any,
-      },
-    });
-
-    return result;
   }
 }
