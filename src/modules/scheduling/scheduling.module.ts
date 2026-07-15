@@ -7,10 +7,12 @@ import { LlmModule } from '../ai-agents/llm/llm.module';
 import {
   SCHEDULED_DISPATCH_QUEUE,
   INACTIVITY_WATCHDOG_QUEUE,
+  CADENCE_SILENCE_QUEUE,
 } from './scheduling.constants';
 import { ScheduledMessagesRepository } from './scheduled-messages.repository';
 import { ScheduledMessagesService } from './scheduled-messages.service';
 import { ScheduledDispatchProcessor } from './scheduled-dispatch.processor';
+import { CadenceSilenceProcessor } from './cadence-silence.processor';
 import { ScheduledMessagesController } from './scheduled-messages.controller';
 import { InactivitySettingsRepository } from './inactivity/inactivity-settings.repository';
 import { InactivitySettingsService } from './inactivity/inactivity-settings.service';
@@ -27,6 +29,7 @@ import { ReengageSuggestionController } from './inactivity/reengage-suggestion.c
   imports: [
     BullModule.registerQueue({ name: SCHEDULED_DISPATCH_QUEUE }),
     BullModule.registerQueue({ name: INACTIVITY_WATCHDOG_QUEUE }),
+    BullModule.registerQueue({ name: CADENCE_SILENCE_QUEUE }),
     RealtimeModule,
     forwardRef(() => MessagingModule),
     // Task 8: dispatch processor chama CadenceRunner.onStepSent → ciclo
@@ -44,6 +47,7 @@ import { ReengageSuggestionController } from './inactivity/reengage-suggestion.c
     ScheduledMessagesRepository,
     ScheduledMessagesService,
     ScheduledDispatchProcessor,
+    CadenceSilenceProcessor,
     InactivitySettingsRepository,
     InactivitySettingsService,
     InactivityRepository,

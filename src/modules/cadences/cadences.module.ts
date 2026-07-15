@@ -16,7 +16,10 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { SchedulingModule } from '../scheduling/scheduling.module';
 import { MessagingModule } from '../messaging/messaging.module';
-import { SCHEDULED_DISPATCH_QUEUE } from '../scheduling/scheduling.constants';
+import {
+  SCHEDULED_DISPATCH_QUEUE,
+  CADENCE_SILENCE_QUEUE,
+} from '../scheduling/scheduling.constants';
 
 @Module({
   imports: [
@@ -30,6 +33,8 @@ import { SCHEDULED_DISPATCH_QUEUE } from '../scheduling/scheduling.constants';
     forwardRef(() => MessagingModule),
     // Necessário para `@InjectQueue(SCHEDULED_DISPATCH_QUEUE)` no runner.
     BullModule.registerQueue({ name: SCHEDULED_DISPATCH_QUEUE }),
+    // Necessário para `@InjectQueue(CADENCE_SILENCE_QUEUE)` no runner.
+    BullModule.registerQueue({ name: CADENCE_SILENCE_QUEUE }),
   ],
   controllers: [CadencesController],
   providers: [
