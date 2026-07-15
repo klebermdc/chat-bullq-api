@@ -2044,6 +2044,7 @@ enum CadenceStepOption {
 
 enum CadenceEnrollmentStatus {
   ACTIVE
+  PAUSED
   HANDED_OFF
   STOPPED_OPTOUT
   MOVED_LOST
@@ -2066,6 +2067,8 @@ model Cadence {
   allowManual     Boolean        @default(true) @map("allow_manual")
   onYesMessage    String?        @map("on_yes_message")
   onNoMessage     String?        @map("on_no_message")
+  reviveEnabled        Boolean @default(true)  @map("revive_enabled")
+  silenceWindowMinutes Int     @default(1440)  @map("silence_window_minutes")
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
 
@@ -2104,6 +2107,7 @@ model CadenceEnrollment {
   status         CadenceEnrollmentStatus @default(ACTIVE)
   startedAt      DateTime                @default(now()) @map("started_at")
   lastStepAt     DateTime?               @map("last_step_at")
+  pausedAt       DateTime? @map("paused_at")
   endedAt        DateTime?               @map("ended_at")
   endReason      String?                 @map("end_reason")
 
