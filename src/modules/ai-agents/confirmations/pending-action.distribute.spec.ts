@@ -36,7 +36,14 @@ function make(actionOverrides: Record<string, unknown> = {}) {
     },
     pipelineStage: { findFirst: jest.fn().mockResolvedValue(null) },
   } as any;
-  return { svc: new PendingActionService(storage, queue, prisma), storage, prisma, action };
+  const attendantGreeting = { greet: jest.fn().mockResolvedValue(undefined) };
+  return {
+    svc: new PendingActionService(storage, queue, prisma, attendantGreeting as any),
+    storage,
+    prisma,
+    action,
+    attendantGreeting,
+  };
 }
 
 describe('PendingActionService.distribute', () => {

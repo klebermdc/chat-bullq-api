@@ -47,6 +47,7 @@ function makeService(opts: {
     message: { create: jest.fn().mockResolvedValue(createdSystemMessage) },
   };
   const channelAccess = { assertChannelAccess: jest.fn() };
+  const attendantGreeting = { greet: jest.fn().mockResolvedValue(undefined) };
 
   const svc: ConversationsService = Object.create(ConversationsService.prototype);
   Object.assign(svc, {
@@ -55,9 +56,19 @@ function makeService(opts: {
     realtimeGateway,
     prisma,
     channelAccess,
+    attendantGreeting,
   });
 
-  return { svc, repository, fsm, realtimeGateway, prisma, createdSystemMessage, conversation };
+  return {
+    svc,
+    repository,
+    fsm,
+    realtimeGateway,
+    prisma,
+    createdSystemMessage,
+    conversation,
+    attendantGreeting,
+  };
 }
 
 describe('ConversationsService.transfer', () => {
