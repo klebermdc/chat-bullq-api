@@ -6,6 +6,7 @@ import { PendingActionStorage } from './pending-action.storage';
 import { PendingActionService } from './pending-action.service';
 import { PendingActionController } from './pending-action.controller';
 import { PENDING_ACTION_EXECUTOR_QUEUE } from './queue-names';
+import { AttendantGreetingModule } from '../../messaging/attendant-greeting/attendant-greeting.module';
 
 /**
  * Destructive-action confirmation module — apenas CRUD + ciclo de aprovação.
@@ -21,6 +22,7 @@ import { PENDING_ACTION_EXECUTOR_QUEUE } from './queue-names';
   imports: [
     PrismaModule,
     BullModule.registerQueue({ name: PENDING_ACTION_EXECUTOR_QUEUE }),
+    AttendantGreetingModule,
   ],
   controllers: [PendingActionController],
   providers: [PendingActionStorage, PendingActionService],

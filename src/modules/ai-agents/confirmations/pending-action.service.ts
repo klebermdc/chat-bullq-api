@@ -16,6 +16,7 @@ import type {
 import { PendingActionStorage } from './pending-action.storage';
 import { PENDING_ACTION_EXECUTOR_QUEUE } from './queue-names';
 import { PrismaService } from '../../../database/prisma.service';
+import { AttendantGreetingService } from '../../messaging/attendant-greeting/attendant-greeting.service';
 
 /**
  * Service that owns the lifecycle of `PendingAction` records.
@@ -34,6 +35,7 @@ export class PendingActionService {
     @InjectQueue(PENDING_ACTION_EXECUTOR_QUEUE)
     private readonly executorQueue: Queue,
     private readonly prisma: PrismaService,
+    private readonly attendantGreeting: AttendantGreetingService,
   ) {}
 
   /** Create a new PENDING action for human review. */
@@ -120,6 +122,16 @@ export class PendingActionService {
         `Failed to enqueue executor for pending action ${id}: ${err?.message ?? err}`,
       );
       // Não rethrow — aprovação foi salva. Operador pode re-disparar via UI.
+    }
+
+    // Saudação automática: só quando a pendência foi distribuída a um
+    // atendente (fluxo de handoff), não em approve genérico de outras tools.
+    if (action.conversationId && (action.args as any)?.distributedTo) {
+      await this.attendantGreeting.greet({
+        conversationId: action.conversationId,
+        attendantUserId: userId,
+        source: 'HANDOFF_APPROVE',
+      });
     }
 
     return action;
