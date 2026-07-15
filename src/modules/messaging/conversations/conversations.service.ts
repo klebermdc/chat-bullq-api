@@ -438,6 +438,8 @@ export class ConversationsService {
   ) {
     const conversation = await this.findOne(id, organizationId, access);
 
+    const assigneeChanged =
+      !!dto.assignedToId && dto.assignedToId !== conversation.assignedToId;
     if (dto.assignedToId) {
       await this.fsm.assign(id, dto.assignedToId, actorId);
     }
@@ -459,6 +461,15 @@ export class ConversationsService {
 
     const updated = await this.repository.findById(id);
     this.broadcastUpdate(updated as Conversation | null);
+
+    if (assigneeChanged) {
+      await this.attendantGreeting.greet({
+        conversationId: id,
+        attendantUserId: dto.assignedToId!,
+        source: 'MANUAL_ASSIGN',
+      });
+    }
+
     return updated;
   }
 
