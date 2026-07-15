@@ -17,6 +17,7 @@ import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { ResetMemberPasswordDto } from './dto/reset-member-password.dto';
 import { UpdateMemberRamalDto } from './dto/update-member-ramal.dto';
+import { UpdateMemberWebphoneDto } from './dto/update-member-webphone.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentUser, CurrentOrg, Roles, Public } from '../../common/decorators';
 
@@ -115,6 +116,23 @@ export class OrganizationsController {
     @Body() dto: UpdateMemberRamalDto,
   ) {
     return this.service.updateMemberRamal(orgId, memberId, dto);
+  }
+
+  @Patch('members/:memberId/webphone')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({ summary: 'Define o Webphone (widget Sonax) de um membro' })
+  updateMemberWebphone(
+    @CurrentOrg('id') orgId: string,
+    @Param('memberId') memberId: string,
+    @Body() dto: UpdateMemberWebphoneDto,
+  ) {
+    return this.service.updateMemberWebphone(orgId, memberId, dto);
+  }
+
+  @Get('members/me/webphone')
+  @ApiOperation({ summary: 'Webphone (widget Sonax) do atendente logado' })
+  getMyWebphone(@CurrentOrg('id') orgId: string, @CurrentUser('id') userId: string) {
+    return this.service.getMyWebphone(orgId, userId);
   }
 
   @Delete('members/:memberId')

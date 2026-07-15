@@ -74,6 +74,13 @@ export class OrganizationsRepository {
     });
   }
 
+  async updateMemberWebphone(membershipId: string, sonaxWebphoneUrl: string | null) {
+    return this.prisma.userOrganization.update({
+      where: { id: membershipId },
+      data: { sonaxWebphoneUrl },
+    });
+  }
+
   async removeMember(membershipId: string) {
     return this.prisma.userOrganization.delete({
       where: { id: membershipId },

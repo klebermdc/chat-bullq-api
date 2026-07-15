@@ -13,7 +13,10 @@ describe('OrganizationsService.resetMemberPassword', () => {
   let repo: jest.Mocked<
     Pick<
       OrganizationsRepository,
-      'findMembership' | 'updateUserPassword' | 'updateMemberRamal'
+      | 'findMembership'
+      | 'updateUserPassword'
+      | 'updateMemberRamal'
+      | 'updateMemberWebphone'
     >
   >;
 
@@ -29,6 +32,7 @@ describe('OrganizationsService.resetMemberPassword', () => {
       findMembership: jest.fn(),
       updateUserPassword: jest.fn().mockResolvedValue(undefined),
       updateMemberRamal: jest.fn(),
+      updateMemberWebphone: jest.fn(),
     } as any;
 
     const mod = await Test.createTestingModule({
@@ -123,6 +127,50 @@ describe('OrganizationsService.resetMemberPassword', () => {
     );
 
     expect(repo.updateUserPassword).toHaveBeenCalledTimes(1);
+  });
+
+  describe('updateMemberWebphone', () => {
+    it('extrai o src de um <script> colado (host Sonax)', async () => {
+      repo.findMembership.mockResolvedValue(membership(OrgRole.AGENT) as any);
+      repo.updateMemberWebphone.mockResolvedValue({} as any);
+      await service.updateMemberWebphone('org-1', 'membership-1', {
+        webphoneUrl: '<script id="widget-script" src="https://webphone2.sonax.cloud/widget?data=abc&dataClient=103121"></script>',
+      });
+      expect(repo.updateMemberWebphone).toHaveBeenCalledWith(
+        'membership-1',
+        'https://webphone2.sonax.cloud/widget?data=abc&dataClient=103121',
+      );
+    });
+
+    it('aceita a URL crua do webphone Sonax', async () => {
+      repo.findMembership.mockResolvedValue(membership(OrgRole.AGENT) as any);
+      repo.updateMemberWebphone.mockResolvedValue({} as any);
+      await service.updateMemberWebphone('org-1', 'membership-1', {
+        webphoneUrl: 'https://webphone2.sonax.cloud/widget?data=xyz&dataClient=103121',
+      });
+      expect(repo.updateMemberWebphone).toHaveBeenCalledWith('membership-1', 'https://webphone2.sonax.cloud/widget?data=xyz&dataClient=103121');
+    });
+
+    it('rejeita URL de host que não é Sonax (anti-injeção)', async () => {
+      repo.findMembership.mockResolvedValue(membership(OrgRole.AGENT) as any);
+      await expect(
+        service.updateMemberWebphone('org-1', 'membership-1', { webphoneUrl: 'https://evil.com/x.js' }),
+      ).rejects.toBeTruthy();
+      expect(repo.updateMemberWebphone).not.toHaveBeenCalled();
+    });
+
+    it('vazio limpa o webphone (null)', async () => {
+      repo.findMembership.mockResolvedValue(membership(OrgRole.AGENT) as any);
+      repo.updateMemberWebphone.mockResolvedValue({} as any);
+      await service.updateMemberWebphone('org-1', 'membership-1', { webphoneUrl: '' });
+      expect(repo.updateMemberWebphone).toHaveBeenCalledWith('membership-1', null);
+    });
+
+    it('getMyWebphone devolve a url do membership do usuário logado', async () => {
+      repo.findMembership.mockResolvedValue({ ...membership(OrgRole.AGENT), sonaxWebphoneUrl: 'https://webphone2.sonax.cloud/widget?data=q' } as any);
+      const out = await service.getMyWebphone('org-1', 'user-1');
+      expect(out.webphoneUrl).toBe('https://webphone2.sonax.cloud/widget?data=q');
+    });
   });
 
   describe('updateMemberRamal', () => {
