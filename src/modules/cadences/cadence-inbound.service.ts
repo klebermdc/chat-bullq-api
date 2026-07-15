@@ -42,7 +42,7 @@ export class CadenceInboundService {
     if (!this.isActionable(message)) return;
 
     const enrollment =
-      await this.enrollments.findActiveByConversation(conversationId);
+      await this.enrollments.findLiveByConversation(conversationId);
     if (!enrollment) return; // sem cadência ativa → no-op
 
     const cadence = await this.cadences.findById(enrollment.cadenceId);

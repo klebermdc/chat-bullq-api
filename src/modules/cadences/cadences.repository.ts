@@ -56,6 +56,8 @@ export class CadencesRepository {
           allowManual: dto.allowManual,
           onYesMessage: dto.onYesMessage ?? null,
           onNoMessage: dto.onNoMessage ?? null,
+          reviveEnabled: dto.reviveEnabled ?? true,
+          silenceWindowMinutes: dto.silenceWindowMinutes ?? 1440,
         };
         cadence = await tx.cadence.update({ where: { id: dto.id }, data: updateData });
         await tx.cadenceStep.deleteMany({ where: { cadenceId: cadence.id } });
@@ -74,6 +76,8 @@ export class CadencesRepository {
           allowManual: dto.allowManual,
           onYesMessage: dto.onYesMessage ?? null,
           onNoMessage: dto.onNoMessage ?? null,
+          reviveEnabled: dto.reviveEnabled ?? true,
+          silenceWindowMinutes: dto.silenceWindowMinutes ?? 1440,
         };
         cadence = await tx.cadence.create({ data: createData });
       }

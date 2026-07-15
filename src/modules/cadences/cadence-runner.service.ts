@@ -21,6 +21,8 @@ import { ScheduledMessagesService } from '../scheduling/scheduled-messages.servi
 import {
   SCHEDULED_DISPATCH_QUEUE,
   SCHEDULED_DISPATCH_JOB,
+  CADENCE_SILENCE_QUEUE,
+  CADENCE_SILENCE_JOB,
 } from '../scheduling/scheduling.constants';
 
 /** De onde a cadência foi iniciada (gatilho manual ou entrada de etapa). */
@@ -94,6 +96,7 @@ export class CadenceRunner {
     private readonly prisma: PrismaService,
     @InjectQueue(SCHEDULED_DISPATCH_QUEUE) private readonly queue: Queue,
     private readonly realtime: RealtimeGateway,
+    @InjectQueue(CADENCE_SILENCE_QUEUE) private readonly silenceQueue: Queue,
   ) {}
 
   async start(
@@ -248,11 +251,13 @@ export class CadenceRunner {
     }
 
     // Pré-check barato em memória; a porta autoritativa é o write condicional.
-    if (enrollment.status !== 'ACTIVE') return enrollment;
+    if (enrollment.status !== 'ACTIVE' && enrollment.status !== 'PAUSED') {
+      return enrollment;
+    }
 
     // FIX 4: reivindica o encerramento atomicamente (compare-and-set em
     // ACTIVE). Só cancela toques/emite evento se este caminho venceu a corrida.
-    const claimed = await this.enrollments.finishIfActive(enrollment.id, {
+    const claimed = await this.enrollments.finishIfLive(enrollment.id, {
       status: this.statusForReason(reason),
       endedAt: new Date(),
       endReason: reason,
@@ -272,6 +277,92 @@ export class CadenceRunner {
       { enrollmentId: enrollment.id, reason },
     );
     return this.enrollments.findById(enrollment.id);
+  }
+
+  /**
+   * Resposta fraca do cliente: pausa a cadência (ACTIVE→PAUSED), cancela os
+   * toques pendentes e arma o watchdog de silêncio. Devolve o enrollment só
+   * quando ESTE caminho venceu o compare-and-set; `null` caso contrário.
+   */
+  async pause(
+    enrollmentId: string,
+    silenceWindowMinutes: number,
+  ): Promise<CadenceEnrollment | null> {
+    const claimed = await this.enrollments.pauseIfActive(enrollmentId, {
+      status: 'PAUSED',
+      pausedAt: new Date(),
+    });
+    if (!claimed) return null;
+
+    const enrollment = await this.enrollments.findById(enrollmentId);
+    if (!enrollment) return null;
+
+    await this.scheduledMessages.cancelPendingForConversation(
+      enrollment.conversationId,
+      'paused_weak_reply',
+      'CADENCE',
+    );
+
+    const delay = Math.max(0, silenceWindowMinutes) * 60_000;
+    await this.silenceQueue.add(
+      CADENCE_SILENCE_JOB,
+      { enrollmentId },
+      {
+        delay,
+        jobId: `cadsil-${enrollmentId}-${Date.now() + delay}`,
+        removeOnComplete: 100,
+        removeOnFail: 100,
+      },
+    );
+
+    this.realtime.emitToConversation(enrollment.conversationId, 'cadence:paused', {
+      enrollmentId,
+    });
+    return enrollment;
+  }
+
+  /**
+   * Retomada após silêncio: reivindica PAUSED→ACTIVE e reagenda o passo atual
+   * (o que fora cancelado na pausa) no instante `dispatchAt`. Sem próximo passo
+   * possível → encerra como esgotado.
+   */
+  async resumeAtStep(enrollmentId: string, dispatchAt: Date): Promise<void> {
+    const claimed = await this.enrollments.resumeIfPaused(enrollmentId, {
+      status: 'ACTIVE',
+    });
+    if (!claimed) return;
+
+    const enrollment = await this.enrollments.findById(enrollmentId);
+    if (!enrollment) return;
+
+    const cadence = (await this.cadences.findById(
+      enrollment.cadenceId,
+    )) as CadenceLike | null;
+    if (!cadence) return;
+
+    const step = cadence.steps.find((s) => s.order === enrollment.currentStep);
+    if (!step) {
+      await this.enrollments.finishIfActive(enrollment.id, {
+        status: 'COMPLETED_NO_REPLY',
+        endedAt: new Date(),
+        endReason: 'exhausted',
+      });
+      return;
+    }
+
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: enrollment.conversationId },
+    });
+    if (!conversation) return;
+    const contact = await this.prisma.contact.findUnique({
+      where: { id: enrollment.contactId },
+    });
+
+    await this.scheduleStepAt(enrollment, conversation, contact, step, dispatchAt);
+    this.realtime.emitToConversation(enrollment.conversationId, 'cadence:resumed', {
+      enrollmentId: enrollment.id,
+      currentStep: step.order,
+    });
   }
 
   async maybeStartForStage(
@@ -348,6 +439,22 @@ export class CadenceRunner {
     step: CadenceStepLike,
   ): Promise<void> {
     const scheduledAt = new Date(Date.now() + step.delayMinutes * 60_000);
+    await this.scheduleStepAt(enrollment, conversation, contact, step, scheduledAt);
+  }
+
+  /** Como `scheduleStep`, mas em um instante explícito (usado na retomada). */
+  private async scheduleStepAt(
+    enrollment: CadenceEnrollment,
+    conversation: {
+      id: string;
+      organizationId: string;
+      channelId: string;
+      assignedToId?: string | null;
+    },
+    contact: { name?: string | null } | null,
+    step: CadenceStepLike,
+    scheduledAt: Date,
+  ): Promise<void> {
     const content = this.resolveContent(
       step.content,
       contact?.name ?? null,
