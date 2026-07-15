@@ -10,6 +10,7 @@ import { SalesRecoveryModule } from '../sales-recovery/sales-recovery.module';
 import { AiProviderKeysModule } from '../ai-provider-keys/ai-provider-keys.module';
 import { SchedulingModule } from '../scheduling/scheduling.module';
 import { CadencesModule } from '../cadences/cadences.module';
+import { AttendantGreetingModule } from './attendant-greeting/attendant-greeting.module';
 import { IdempotencyService } from './pipeline/idempotency.service';
 import { ContactResolverService } from './pipeline/contact-resolver.service';
 import { ConversationResolverService } from './pipeline/conversation-resolver.service';
@@ -54,6 +55,7 @@ import { ContactsRepository } from './contacts/contacts.repository';
     // Task 8: inbound processor chama CadenceInboundService → ciclo
     // messaging↔cadences → forwardRef nos dois lados.
     forwardRef(() => CadencesModule),
+    forwardRef(() => AttendantGreetingModule),
   ],
   controllers: [ConversationsController, MessagesController, ContactsController],
   providers: [
