@@ -126,7 +126,7 @@ export class PendingActionService {
 
     // Saudação automática: só quando a pendência foi distribuída a um
     // atendente (fluxo de handoff), não em approve genérico de outras tools.
-    if (action.conversationId && (action.args as any)?.distributedTo) {
+    if (action.conversationId && action.args?.distributedTo) {
       await this.attendantGreeting.greet({
         conversationId: action.conversationId,
         attendantUserId: userId,
