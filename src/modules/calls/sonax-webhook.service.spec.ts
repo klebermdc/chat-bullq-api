@@ -15,11 +15,24 @@ function makeDeps(over: any = {}) {
     message: { update: jest.fn(async ({ data }) => { updated.message = data; return data; }) },
   } as any;
   const realtime = { emitToConversation: jest.fn() } as any;
-  return { prisma, realtime, updated, svc: new SonaxWebhookService(prisma, realtime) };
+  const insightQueue = { add: jest.fn(async () => ({})) } as any;
+  return { prisma, realtime, insightQueue, updated, svc: new SonaxWebhookService(prisma, realtime, insightQueue) };
 }
 
 describe('SonaxWebhookService.apply', () => {
   const q = { var_1: 'call1', status: 'desligada', status_atend: 'S', duracao: '192', url_gravacao: 'https://rec/x' };
+
+  it('enfileira o resumo quando atendida (S) + tem gravação', async () => {
+    const d = makeDeps();
+    await d.svc.apply('secretA', q);
+    expect(d.insightQueue.add).toHaveBeenCalledWith('insight', { callId: 'call1' }, expect.any(Object));
+  });
+
+  it('NÃO enfileira quando não atendida (status_atend=N)', async () => {
+    const d = makeDeps();
+    await d.svc.apply('secretA', { ...q, status_atend: 'N', status: 'indisponivel' });
+    expect(d.insightQueue.add).not.toHaveBeenCalled();
+  });
 
   it('atualiza Call e Message quando secret e org batem', async () => {
     const d = makeDeps();
