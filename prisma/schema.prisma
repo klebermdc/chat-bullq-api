@@ -2220,6 +2220,12 @@ model Call {
   startedAt      DateTime   @default(now()) @map("started_at")
   endedAt        DateTime?  @map("ended_at")
   raw            Json       @default("{}")
+  // ─── Resumo de ligação (transcrição + insight IA) ───
+  transcript     String?    @db.Text
+  /// { summary: string, nextSteps: string[], sentiment: 'positivo'|'neutro'|'negativo' }
+  insight        Json?
+  /// PENDING (enfileirado/processando) | READY | FAILED | SKIPPED (não-atendida/sem gravação)
+  insightState   String?    @default("PENDING") @map("insight_state")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
