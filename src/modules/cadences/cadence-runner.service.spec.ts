@@ -84,6 +84,7 @@ function makeDeps(opts: any = {}) {
     cancelPendingForConversation: jest.fn(async () => 0),
   };
   const queue = { add: jest.fn(async () => ({ id: 'job-1' })) };
+  const silenceQueue = { add: jest.fn(async () => ({ id: 'siljob-1' })) };
   const realtime = { emitToConversation: jest.fn() };
   const prisma = {
     conversation: {
@@ -123,6 +124,7 @@ function makeDeps(opts: any = {}) {
     prisma as any,
     queue as any,
     realtime as any,
+    silenceQueue as any,
   );
 
   return {
@@ -133,6 +135,7 @@ function makeDeps(opts: any = {}) {
     schedRepo,
     scheduledMessages,
     queue,
+    silenceQueue,
     realtime,
     prisma,
   };
@@ -646,5 +649,93 @@ describe('CadenceRunner.maybeStartForNoReply', () => {
 
     expect(startSpy).not.toHaveBeenCalled();
     expect(result).toBeNull();
+  });
+});
+
+describe('CadenceRunner.pause', () => {
+  it('pausa (ACTIVE→PAUSED), cancela toques pendentes e arma o watchdog', async () => {
+    const enrollments = {
+      pauseIfActive: jest.fn().mockResolvedValue(true),
+      findById: jest.fn().mockResolvedValue({ id: 'e1', conversationId: 'c1' }),
+    };
+    const scheduledMessages = { cancelPendingForConversation: jest.fn().mockResolvedValue(0) };
+    const silenceQueue = { add: jest.fn().mockResolvedValue({ id: 'j1' }) };
+    const realtime = { emitToConversation: jest.fn() };
+    const runner: any = new CadenceRunner(
+      enrollments as any, {} as any, {} as any, scheduledMessages as any,
+      {} as any, {} as any, realtime as any, silenceQueue as any,
+    );
+
+    const res = await runner.pause('e1', 1440);
+
+    expect(res).toEqual({ id: 'e1', conversationId: 'c1' });
+    expect(scheduledMessages.cancelPendingForConversation)
+      .toHaveBeenCalledWith('c1', 'paused_weak_reply', 'CADENCE');
+    expect(silenceQueue.add).toHaveBeenCalledWith(
+      'check-cadence-silence',
+      { enrollmentId: 'e1' },
+      expect.objectContaining({ delay: 1440 * 60_000 }),
+    );
+    expect(realtime.emitToConversation).toHaveBeenCalledWith('c1', 'cadence:paused', { enrollmentId: 'e1' });
+  });
+
+  it('não faz nada se perdeu o claim (não estava ACTIVE)', async () => {
+    const enrollments = { pauseIfActive: jest.fn().mockResolvedValue(false) };
+    const silenceQueue = { add: jest.fn() };
+    const runner: any = new CadenceRunner(
+      enrollments as any, {} as any, {} as any, {} as any,
+      {} as any, {} as any, { emitToConversation: jest.fn() } as any, silenceQueue as any,
+    );
+    expect(await runner.pause('e1', 1440)).toBeNull();
+    expect(silenceQueue.add).not.toHaveBeenCalled();
+  });
+});
+
+describe('CadenceRunner.resumeAtStep', () => {
+  it('retoma (PAUSED→ACTIVE) e agenda o passo atual no dispatchAt', async () => {
+    const dispatchAt = new Date('2026-07-16T11:00:00Z');
+    const enrollments = {
+      resumeIfPaused: jest.fn().mockResolvedValue(true),
+      findById: jest.fn().mockResolvedValue({
+        id: 'e1', conversationId: 'c1', contactId: 'ct1', cadenceId: 'cad1', currentStep: 2,
+      }),
+    };
+    const cadences = {
+      findById: jest.fn().mockResolvedValue({
+        id: 'cad1', steps: [
+          { order: 1, delayMinutes: 1440, contentType: 'TEXT', content: { text: 'a' } },
+          { order: 2, delayMinutes: 4320, contentType: 'TEXT', content: { text: 'b' }, options: ['SIM', 'NAO'] },
+        ],
+      }),
+    };
+    const prisma = {
+      conversation: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', organizationId: 'o1', channelId: 'ch1', assignedToId: 'u1' }) },
+      contact: { findUnique: jest.fn().mockResolvedValue({ name: 'Ana' }) },
+    };
+    const schedRepo = { create: jest.fn().mockResolvedValue({ id: 'sm1' }), update: jest.fn() };
+    const dispatchQueue = { add: jest.fn().mockResolvedValue({ id: 'j2' }) };
+    const realtime = { emitToConversation: jest.fn() };
+    const runner: any = new CadenceRunner(
+      enrollments as any, cadences as any, schedRepo as any, {} as any,
+      prisma as any, dispatchQueue as any, realtime as any, {} as any,
+    );
+
+    await runner.resumeAtStep('e1', dispatchAt);
+
+    expect(schedRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ cadenceStepOrder: 2, scheduledAt: dispatchAt }),
+    );
+    expect(realtime.emitToConversation).toHaveBeenCalledWith('c1', 'cadence:resumed', { enrollmentId: 'e1', currentStep: 2 });
+  });
+
+  it('não retoma se perdeu o claim', async () => {
+    const enrollments = { resumeIfPaused: jest.fn().mockResolvedValue(false) };
+    const schedRepo = { create: jest.fn() };
+    const runner: any = new CadenceRunner(
+      enrollments as any, {} as any, schedRepo as any, {} as any,
+      {} as any, {} as any, { emitToConversation: jest.fn() } as any, {} as any,
+    );
+    await runner.resumeAtStep('e1', new Date());
+    expect(schedRepo.create).not.toHaveBeenCalled();
   });
 });
