@@ -1,4 +1,4 @@
-import { Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard, OrgGuard } from '../../common/guards';
 import { CurrentOrg, CurrentUser } from '../../common/decorators';
@@ -19,5 +19,21 @@ export class CallsController {
     @CurrentOrg('id') orgId: string,
   ) {
     return this.calls.initiateCall(conversationId, userId, orgId);
+  }
+
+  @Get(':id/calls/latest-insight')
+  @ApiOperation({ summary: 'Resumo da última ligação atendida da conversa (transcrição+IA)' })
+  latestInsight(@Param('id') conversationId: string, @CurrentOrg('id') orgId: string) {
+    return this.calls.getLatestInsight(conversationId, orgId);
+  }
+
+  @Get(':id/calls/:callId/transcript')
+  @ApiOperation({ summary: 'Transcrição completa de uma ligação' })
+  transcript(
+    @Param('id') conversationId: string,
+    @Param('callId') callId: string,
+    @CurrentOrg('id') orgId: string,
+  ) {
+    return this.calls.getTranscript(conversationId, callId, orgId);
   }
 }

@@ -69,4 +69,33 @@ export class CallsService {
 
     return { callId: call.id, status: 'DIALING' as const };
   }
+
+  /** Resumo da última ligação ATENDIDA da conversa (pro Card do Cliente / Painel). */
+  async getLatestInsight(conversationId: string, organizationId: string) {
+    const call = await this.prisma.call.findFirst({
+      where: { conversationId, organizationId, answered: true },
+      orderBy: { startedAt: 'desc' },
+    });
+    if (!call) return { hasCall: false as const };
+    return {
+      hasCall: true as const,
+      callId: call.id,
+      status: call.status,
+      durationSec: call.durationSec,
+      recordingUrl: call.recordingUrl,
+      startedAt: call.startedAt,
+      insightState: call.insightState,
+      insight: call.insight,
+      hasTranscript: !!call.transcript,
+    };
+  }
+
+  /** Transcrição completa (sob demanda — não vai no payload do insight). */
+  async getTranscript(conversationId: string, callId: string, organizationId: string) {
+    const call = await this.prisma.call.findFirst({
+      where: { id: callId, conversationId, organizationId },
+    });
+    if (!call) throw new NotFoundException('Ligação não encontrada');
+    return { callId: call.id, transcript: call.transcript ?? '' };
+  }
 }

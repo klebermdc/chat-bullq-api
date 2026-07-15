@@ -1,7 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { PrismaService } from '../../database/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { mapSonaxStatus } from './sonax-status.util';
+import { CALL_INSIGHT_QUEUE } from './call-insight.constants';
 
 // estados terminais: se o Call já está num deles, o webhook é ignorado (idempotência).
 const TERMINAL = new Set(['FINISHED', 'NO_ANSWER', 'BUSY', 'FAILED']);
@@ -20,6 +23,7 @@ export class SonaxWebhookService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    @InjectQueue(CALL_INSIGHT_QUEUE) private readonly insightQueue: Queue,
   ) {}
 
   async apply(secret: string, q: SonaxWebhookQuery): Promise<{ ok: true; skipped?: boolean }> {
@@ -64,6 +68,21 @@ export class SonaxWebhookService {
     if (call.messageId) {
       await this.prisma.message.update({ where: { id: call.messageId }, data: { content } });
       this.realtime.emitToConversation(call.conversationId, 'message:update', { messageId: call.messageId, content });
+    }
+
+    // Ligação terminou atendida e com gravação → enfileira o resumo (transcrição+IA).
+    // O job baixa a gravação com retry (ela é assíncrona na Sonax), transcreve e resume.
+    if (isTerminal && answered && recordingUrl) {
+      await this.insightQueue.add(
+        'insight',
+        { callId: call.id },
+        {
+          attempts: 6,
+          backoff: { type: 'exponential', delay: 30_000 }, // 30s,1m,2m,4m,8m,16m
+          removeOnComplete: true,
+          removeOnFail: 100,
+        },
+      );
     }
 
     return { ok: true };
