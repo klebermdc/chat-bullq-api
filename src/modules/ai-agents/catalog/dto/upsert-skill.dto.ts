@@ -11,8 +11,30 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+/**
+ * Um item do sqlParamMap: de onde vem o valor de um parâmetro posicional
+ * ($1, $2, ...) da query. PRECISA ser uma classe com campos decorados —
+ * senão o ValidationPipe (whitelist:true) apaga as props e o array vira
+ * `[[], []]`, deixando os params NULL (bug histórico das skills SQL).
+ */
+export class SqlParamMapItemDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiProperty({
+    description: 'Origem do valor: "input.x" | "ctx.x" | "literal:..."',
+    example: 'ctx.organizationId',
+  })
+  @IsString()
+  source!: string;
+}
 
 /**
  * A Skill is the LLM-callable function. It binds to a Tool (provider) and
@@ -107,11 +129,14 @@ export class UpsertSkillDto {
   sqlQuery?: string;
 
   @ApiPropertyOptional({
-    description: '[{name, source: "input.x"|"ctx.x"|"literal:..."}]',
+    type: [SqlParamMapItemDto],
+    description: '[{name?, source: "input.x"|"ctx.x"|"literal:..."}]',
   })
   @IsOptional()
   @IsArray()
-  sqlParamMap?: Array<{ name?: string; source: string }>;
+  @ValidateNested({ each: true })
+  @Type(() => SqlParamMapItemDto)
+  sqlParamMap?: SqlParamMapItemDto[];
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()
