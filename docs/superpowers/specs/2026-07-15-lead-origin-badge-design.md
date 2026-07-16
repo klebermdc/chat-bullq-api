@@ -76,9 +76,11 @@ importar `INSTAGRAM_TAG_NAME` daqui em vez de declarar local (fonte única).
   remove todas as tags de origem conhecidas da conversa e, se a origem escolhida
   tem tag (`INSTAGRAM_ORGANIC`), adiciona. `WHATSAPP_DIRECT` = remover todas
   (volta ao fallback). Idempotente.
-- Implementado num `LeadOriginService` fino que reusa
-  `TagsService.addToConversation/removeFromConversation` (find-or-create de tag
-  + link idempotente já existem lá).
+- Implementado num `LeadOriginService` fino que escreve **direto no Prisma**
+  (upsert da tag + `conversationTag` numa transação), espelhando o
+  `LeadSourceTaggerService`. NÃO usa `TagsService` de propósito: aquele dispara
+  automações `TAG_ADDED/TAG_REMOVED` no outbox, que não devem rodar numa
+  correção manual de origem.
 - Escopo/segurança: valida que a conversa é da org (via OrgGuard + checagem de
   `organizationId`). Liberado para qualquer papel que enxerga a conversa (mesma
   régua do `/transfer`).

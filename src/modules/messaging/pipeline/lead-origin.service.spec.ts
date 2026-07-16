@@ -13,6 +13,9 @@ function make() {
       create: jest.fn().mockResolvedValue({}),
     },
   } as any;
+  // $transaction roda o callback com o próprio mock como tx (as chamadas caem
+  // nos mesmos jest.fn acima).
+  prisma.$transaction = jest.fn((cb: any) => cb(prisma));
   return { service: new LeadOriginService(prisma), prisma };
 }
 

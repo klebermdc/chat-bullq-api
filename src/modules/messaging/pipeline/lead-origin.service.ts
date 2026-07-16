@@ -30,35 +30,40 @@ export class LeadOriginService {
     });
     if (!conv) throw new NotFoundException('Conversation not found');
 
-    // Tags de origem que EXISTEM nesta org (para saber o que limpar).
-    const originTags = await this.prisma.tag.findMany({
-      where: { organizationId, name: { in: ALL_ORIGIN_TAG_NAMES } },
-      select: { id: true, name: true },
-    });
-    const originTagIds = originTags.map((t) => t.id);
-
-    if (originTagIds.length) {
-      await this.prisma.conversationTag.deleteMany({
-        where: { conversationId, tagId: { in: originTagIds } },
-      });
-    }
-
     const desiredName =
       origin === 'WHATSAPP_DIRECT' ? undefined : ORIGIN_TAG_NAMES[origin];
 
-    if (desiredName) {
-      const tag = await this.prisma.tag.upsert({
-        where: { organizationId_name: { organizationId, name: desiredName } },
-        update: {},
-        create: { organizationId, name: desiredName },
+    // Atômico: limpar as tags de origem e (re)aplicar a escolhida numa transação,
+    // senão duas correções concorrentes (double-click, retry) podem intercalar o
+    // read→delete→create e deixar a origem errada ou vazia (invariante single-valued).
+    return this.prisma.$transaction(async (tx) => {
+      // Tags de origem que EXISTEM nesta org (para saber o que limpar).
+      const originTags = await tx.tag.findMany({
+        where: { organizationId, name: { in: ALL_ORIGIN_TAG_NAMES } },
         select: { id: true, name: true },
       });
-      await this.prisma.conversationTag.create({
-        data: { conversationId, tagId: tag.id },
-      });
-      return { tags: [{ id: tag.id, name: tag.name }] };
-    }
+      const originTagIds = originTags.map((t) => t.id);
 
-    return { tags: [] };
+      if (originTagIds.length) {
+        await tx.conversationTag.deleteMany({
+          where: { conversationId, tagId: { in: originTagIds } },
+        });
+      }
+
+      if (desiredName) {
+        const tag = await tx.tag.upsert({
+          where: { organizationId_name: { organizationId, name: desiredName } },
+          update: {},
+          create: { organizationId, name: desiredName },
+          select: { id: true, name: true },
+        });
+        await tx.conversationTag.create({
+          data: { conversationId, tagId: tag.id },
+        });
+        return { tags: [{ id: tag.id, name: tag.name }] };
+      }
+
+      return { tags: [] };
+    });
   }
 }
