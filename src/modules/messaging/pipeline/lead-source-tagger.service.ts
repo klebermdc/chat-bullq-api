@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
+import { ORIGIN_TAG_NAMES } from './lead-origin.constants';
 
 /** Nome da tag aplicada a leads que vieram do Instagram orgânico. */
-const INSTAGRAM_TAG_NAME = 'Instagram Orgânico';
+const INSTAGRAM_TAG_NAME = ORIGIN_TAG_NAMES.INSTAGRAM_ORGANIC;
 
 /** Frase-marca padrão no texto pré-preenchido do link wa.me (configurável). */
 const DEFAULT_MARKER = 'vim pelo instagram';
