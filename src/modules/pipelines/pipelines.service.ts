@@ -101,6 +101,13 @@ export class PipelinesService {
               // costuma ficar vazia — a UI prefere este.
               assignedTo: { select: { id: true, name: true, avatarUrl: true } },
               channel: { select: { id: true, type: true, name: true } },
+              // Tags da conversa — a UI deriva a ORIGEM do lead (ex.: "Instagram
+              // Orgânico") a partir daqui; sem isso o selo de origem fica cego.
+              tags: {
+                select: {
+                  tag: { select: { id: true, name: true, color: true } },
+                },
+              },
             },
           },
         },
