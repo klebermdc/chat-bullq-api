@@ -33,6 +33,35 @@ export class WhatsAppOfficialHttpClient {
     });
   }
 
+  /**
+   * Traduz um erro da Graph API num BadRequestException legível.
+   *
+   * A Meta responde erros em `error.response.data.error`, com os campos
+   * amigáveis `error_user_title`/`error_user_msg` (o motivo real que o
+   * usuário precisa ver) além do `message` genérico ("Invalid parameter").
+   * Antes esse erro cru era re-lançado e o NestJS devolvia 500 "Internal
+   * server error", escondendo o motivo. Aqui logamos o objeto completo (para
+   * diagnóstico) e devolvemos uma mensagem que chega ao toast do front.
+   */
+  private metaError(context: string, error: any): BadRequestException {
+    const meta = error?.response?.data?.error;
+    if (meta) {
+      this.logger.error(
+        `${context} — resposta da Meta: ${JSON.stringify(meta)}`,
+      );
+    } else {
+      this.logger.error(`${context}: ${error?.message}`);
+    }
+    const detail =
+      [meta?.error_user_title, meta?.error_user_msg]
+        .filter(Boolean)
+        .join(' — ') ||
+      meta?.message ||
+      error?.message ||
+      'erro desconhecido';
+    return new BadRequestException(`Meta recusou a operação: ${detail}`);
+  }
+
   async sendMessage(
     channel: Channel,
     payload: Record<string, any>,
@@ -112,10 +141,7 @@ export class WhatsAppOfficialHttpClient {
       );
       return { id: data.id, status: data.status, category: data.category };
     } catch (error: any) {
-      this.logger.error(
-        `WA Official create template failed: ${error.response?.data?.error?.message || error.message}`,
-      );
-      throw error;
+      throw this.metaError('WA Official create template failed', error);
     }
   }
 
@@ -140,10 +166,7 @@ export class WhatsAppOfficialHttpClient {
       );
       return data.data ?? [];
     } catch (error: any) {
-      this.logger.error(
-        `WA Official list templates failed: ${error.response?.data?.error?.message || error.message}`,
-      );
-      throw error;
+      throw this.metaError('WA Official list templates failed', error);
     }
   }
 
@@ -180,10 +203,7 @@ export class WhatsAppOfficialHttpClient {
       });
       return fin.data.h;
     } catch (error: any) {
-      this.logger.error(
-        `WA Official upload header sample failed: ${error.response?.data?.error?.message || error.message}`,
-      );
-      throw error;
+      throw this.metaError('WA Official upload header sample failed', error);
     }
   }
 
@@ -204,10 +224,7 @@ export class WhatsAppOfficialHttpClient {
     try {
       await client.delete(url);
     } catch (error: any) {
-      this.logger.error(
-        `WA Official delete template failed: ${error.response?.data?.error?.message || error.message}`,
-      );
-      throw error;
+      throw this.metaError('WA Official delete template failed', error);
     }
   }
 }
