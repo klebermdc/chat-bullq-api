@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { MessageTemplatesService } from './message-templates.service';
 
 const channel = {
@@ -81,6 +82,33 @@ describe('MessageTemplatesService', () => {
       't1',
       expect.objectContaining({ status: 'PENDING', metaTemplateId: 'META1' }),
     );
+  });
+
+  it('create traduz nome duplicado (P2002) em erro legível, não 500', async () => {
+    const { repo, service } = build();
+    repo.create.mockRejectedValueOnce(
+      Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }),
+    );
+    await expect(
+      service.create('org1', 'ch1', {
+        name: 'promo',
+        category: 'MARKETING',
+        components: { body: { text: 'oi' } },
+      } as any),
+    ).rejects.toMatchObject({
+      status: 409,
+      response: { message: expect.stringContaining('promo') },
+    });
+  });
+
+  it('submit propaga o erro da Meta (BadRequest), não deixa virar 500', async () => {
+    const { http, service } = build();
+    http.createTemplate.mockRejectedValueOnce(
+      new BadRequestException('Meta recusou a operação: categoria inválida'),
+    );
+    await expect(service.submit('org1', 't1')).rejects.toMatchObject({
+      status: 400,
+    });
   });
 
   it('applyStatusUpdate atualiza por metaTemplateId', async () => {
