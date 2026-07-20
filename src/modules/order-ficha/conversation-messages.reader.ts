@@ -23,4 +23,18 @@ export class ConversationMessagesReader {
       .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
       .reverse();
   }
+
+  /**
+   * Resolve o `channelId` de uma conversa. `OrderFicha` não tem relação Prisma
+   * com `Conversation` (só a coluna `conversationId`), então o watchdog usa
+   * isto pra descobrir o canal antes de postar o alerta. Retorna '' se a
+   * conversa não tiver canal.
+   */
+  async channelIdFor(conversationId: string): Promise<string> {
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { channelId: true },
+    });
+    return conv?.channelId ?? '';
+  }
 }

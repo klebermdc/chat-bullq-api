@@ -45,6 +45,28 @@ export class OrderFichaRepository {
     return this.prisma.orderFicha.findUnique({ where: { conversationId } });
   }
 
+  /**
+   * Fichas que registraram um pedido mas ainda não têm carrinho: o cliente
+   * pediu (`requestedAt` preenchido), nenhuma proposta foi vinculada
+   * (`lastProposalId` nulo) e o status segue em `ORDER_LOGGED`. Base do
+   * watchdog de demora sem carrinho.
+   */
+  findDelayCandidates() {
+    return this.prisma.orderFicha.findMany({
+      where: {
+        requestedAt: { not: null },
+        lastProposalId: null,
+        status: OrderFichaStatus.ORDER_LOGGED,
+      },
+      select: {
+        organizationId: true,
+        conversationId: true,
+        requestedAt: true,
+        divergences: true,
+      },
+    });
+  }
+
   updateDivergences(
     conversationId: string,
     divergences: Divergence[],

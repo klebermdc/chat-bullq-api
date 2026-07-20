@@ -11,6 +11,12 @@ import { OrderFichaService } from './order-ficha.service';
 import { OrderFichaProcessor, ORDER_FICHA_QUEUE } from './order-ficha.processor';
 import { DivergenceService } from './divergence.service';
 import { OrderAlertService } from './order-alert.service';
+import { OrderFichaSettingsService } from './order-ficha-settings.service';
+import { OrderWatchdogService } from './order-watchdog.service';
+import {
+  OrderWatchdogProcessor,
+  ORDER_WATCHDOG_QUEUE,
+} from './order-watchdog.processor';
 
 /**
  * Módulo da Ficha do Pedido.
@@ -28,6 +34,7 @@ import { OrderAlertService } from './order-alert.service';
     PrismaModule,
     LlmModule,
     BullModule.registerQueue({ name: ORDER_FICHA_QUEUE }),
+    BullModule.registerQueue({ name: ORDER_WATCHDOG_QUEUE }),
   ],
   providers: [
     OrderFichaRepository,
@@ -41,6 +48,9 @@ import { OrderAlertService } from './order-alert.service';
     OrderAlertService,
     OrderFichaService,
     OrderFichaProcessor,
+    OrderFichaSettingsService,
+    OrderWatchdogService,
+    OrderWatchdogProcessor,
   ],
   exports: [OrderFichaService, OrderFichaRepository, BullModule],
 })
