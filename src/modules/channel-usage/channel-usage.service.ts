@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { StatusUpdate } from '../channel-hub/ports/types';
+import { aggregateWindows, UsageAggregate } from './channel-usage.aggregator';
+import { ChannelType } from '@prisma/client';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -56,5 +58,112 @@ export class ChannelUsageService {
       },
       update,
     });
+  }
+
+  private async loadRates(organizationId: string) {
+    const row = await this.prisma.whatsappWindowPricing.findUnique({
+      where: { organizationId },
+    });
+    return {
+      rates: (row?.rates as Record<string, number>) ?? {},
+      currency: row?.currency ?? 'BRL',
+    };
+  }
+
+  /** Resumo por canal oficial no range [from, to). Default = mês corrente. */
+  async summary(
+    organizationId: string,
+    from: Date,
+    to: Date,
+  ): Promise<
+    Array<{ channelId: string; channelName: string } & UsageAggregate>
+  > {
+    const { rates, currency } = await this.loadRates(organizationId);
+
+    const channels = await this.prisma.channel.findMany({
+      where: {
+        organizationId,
+        type: ChannelType.WHATSAPP_OFFICIAL,
+        deletedAt: null,
+      },
+      select: { id: true, name: true },
+    });
+
+    const results: Array<
+      { channelId: string; channelName: string } & UsageAggregate
+    > = [];
+    for (const ch of channels) {
+      const rows = await this.prisma.whatsappWindow.findMany({
+        where: {
+          organizationId,
+          channelId: ch.id,
+          openedAt: { gte: from, lt: to },
+        },
+        select: { category: true, billable: true },
+      });
+      results.push({
+        channelId: ch.id,
+        channelName: ch.name,
+        ...aggregateWindows(rows, rates, currency),
+      });
+    }
+    return results;
+  }
+
+  /** Série temporal (day|month) pro mini-relatório de um canal. */
+  async timeseries(
+    organizationId: string,
+    channelId: string,
+    from: Date,
+    to: Date,
+    bucket: 'day' | 'month',
+  ) {
+    const { rates, currency } = await this.loadRates(organizationId);
+    const rows = await this.prisma.whatsappWindow.findMany({
+      where: {
+        organizationId,
+        channelId,
+        openedAt: { gte: from, lt: to },
+      },
+      select: { category: true, billable: true, openedAt: true },
+      orderBy: { openedAt: 'asc' },
+    });
+
+    const groups = new Map<string, { category: string; billable: boolean }[]>();
+    for (const r of rows) {
+      const d = r.openedAt;
+      const key =
+        bucket === 'month'
+          ? `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+          : d.toISOString().slice(0, 10);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push({ category: r.category, billable: r.billable });
+    }
+
+    return [...groups.entries()].map(([key, bucketRows]) => ({
+      bucket: key,
+      ...aggregateWindows(bucketRows, rates, currency),
+    }));
+  }
+
+  async getPricing(organizationId: string) {
+    return this.loadRates(organizationId);
+  }
+
+  async setPricing(
+    organizationId: string,
+    currency: string,
+    rates: Record<string, number>,
+  ) {
+    const clean: Record<string, number> = {};
+    for (const [k, v] of Object.entries(rates ?? {})) {
+      if (typeof v === 'number' && Number.isFinite(v) && v >= 0) clean[k] = v;
+    }
+    await this.prisma.whatsappWindowPricing.upsert({
+      where: { organizationId },
+      create: { organizationId, currency, rates: clean },
+      update: { currency, rates: clean },
+    });
+    return { currency, rates: clean };
   }
 }
