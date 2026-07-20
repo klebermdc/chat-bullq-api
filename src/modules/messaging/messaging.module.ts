@@ -11,6 +11,7 @@ import { AiProviderKeysModule } from '../ai-provider-keys/ai-provider-keys.modul
 import { SchedulingModule } from '../scheduling/scheduling.module';
 import { CadencesModule } from '../cadences/cadences.module';
 import { AttendantGreetingModule } from './attendant-greeting/attendant-greeting.module';
+import { OrderFichaModule } from '../order-ficha/order-ficha.module';
 import { IdempotencyService } from './pipeline/idempotency.service';
 import { ContactResolverService } from './pipeline/contact-resolver.service';
 import { ConversationResolverService } from './pipeline/conversation-resolver.service';
@@ -56,6 +57,7 @@ import { ContactsRepository } from './contacts/contacts.repository';
     // messaging↔cadences → forwardRef nos dois lados.
     forwardRef(() => CadencesModule),
     forwardRef(() => AttendantGreetingModule),
+    OrderFichaModule,
   ],
   controllers: [ConversationsController, MessagesController, ContactsController],
   providers: [

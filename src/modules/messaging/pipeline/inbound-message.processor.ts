@@ -20,6 +20,8 @@ import { TranscriptionService } from '../messages/transcription.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
 import { WatchdogService } from '../../routing/watchdog/watchdog.service';
 import { SalesRecoveryService } from '../../sales-recovery/sales-recovery.service';
+import { ORDER_FICHA_QUEUE } from '../../order-ficha/order-ficha.processor';
+import { IngestInput as OrderFichaIngestInput } from '../../order-ficha/order-ficha.service';
 import {
   AutomationTrigger,
   ChannelType,
@@ -109,6 +111,7 @@ export class InboundMessageProcessor extends WorkerHost {
     @InjectQueue('chatbot-processor') private readonly chatbotQueue: Queue,
     private readonly shadowObserver: ShadowObserverService,
     private readonly leadSourceTagger: LeadSourceTaggerService,
+    @InjectQueue(ORDER_FICHA_QUEUE) private readonly orderFichaQueue: Queue,
   ) {
     super();
   }
@@ -258,6 +261,34 @@ export class InboundMessageProcessor extends WorkerHost {
           return result;
         },
       );
+
+      // Ficha do Pedido: mensagem nova do cliente pode descrever ou alterar
+      // um pedido concreto — enfileira o job DEPOIS do commit (nunca de
+      // dentro do $transaction: se ela der rollback, não queremos ter
+      // enfileirado um job fantasma referenciando dados que não existem).
+      if (isNew && direction === MessageDirection.INBOUND) {
+        const content = (message.content ?? {}) as Record<string, any>;
+        const text =
+          typeof content.text === 'string'
+            ? content.text
+            : typeof content.caption === 'string'
+              ? content.caption
+              : '';
+        const jobData: OrderFichaIngestInput = {
+          organizationId,
+          contactId,
+          conversationId,
+          messageId: savedMessage.id,
+          text,
+        };
+        this.orderFichaQueue
+          .add('ingest', jobData, { removeOnComplete: 100, removeOnFail: 50 })
+          .catch((err) =>
+            this.logger.warn(
+              `order_ficha_enqueue_failed conv=${conversationId}: ${err?.message ?? err}`,
+            ),
+          );
+      }
 
       this.realtimeGateway.emitToChannel(channelId, 'message:new', {
         message: savedMessage,

@@ -216,6 +216,7 @@ model Organization {
   proposals            Proposal[]
   sonaxSettings        SonaxSettings?
   calls                Call[]
+  orderFichas          OrderFicha[]
 
   @@map("organizations")
 }
@@ -488,6 +489,7 @@ model Contact {
   cards             Card[]             @relation("CardContact")
   scheduledMessages ScheduledMessage[]
   proposals         Proposal[]
+  orderFichas       OrderFicha[]
 
   @@index([organizationId, phone], name: "idx_contact_org_phone")
   @@index([organizationId, email], name: "idx_contact_org_email")
@@ -555,6 +557,11 @@ model Conversation {
   archivedAt   DateTime? @map("archived_at")
   archivedById String?   @map("archived_by_id")
   metadata     Json      @default("{}")
+  // Ficha do Pedido + Alerta de Divergência: true quando a OrderFicha desta
+  // conversa detectou diferença entre o que o cliente pediu e o carrinho
+  // (Proposal) enviado. Espelha OrderFicha.status para leitura rápida na
+  // inbox sem precisar de join.
+  hasOrderDivergence Boolean @default(false) @map("has_order_divergence")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
@@ -2147,6 +2154,42 @@ model Proposal {
   @@index([organizationId, contactId], name: "idx_proposal_org_contact")
   @@index([organizationId, createdAt], name: "idx_proposal_org_created")
   @@map("proposals")
+}
+
+enum OrderFichaStatus {
+  NO_ORDER
+  ORDER_LOGGED
+  CART_SENT
+  DIVERGENT
+  MATCHED
+}
+
+model OrderFicha {
+  id              String           @id @default(cuid())
+  organizationId  String           @map("organization_id")
+  contactId       String           @map("contact_id")
+  conversationId  String           @unique @map("conversation_id")
+
+  items           Json             @default("[]")
+  travelDatesText String?          @map("travel_dates_text")
+  travelStart     DateTime?        @map("travel_start")
+  travelEnd       DateTime?        @map("travel_end")
+  requestedAt     DateTime?        @map("requested_at")
+  sourceMessageId String?          @map("source_message_id")
+
+  lastProposalId  String?          @map("last_proposal_id")
+  divergences     Json             @default("[]")
+  status          OrderFichaStatus @default(NO_ORDER)
+
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact         Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, contactId])
+  @@index([organizationId, status])
+  @@map("order_fichas")
 }
 
 model MediaFolder {
