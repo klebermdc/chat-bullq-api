@@ -11,6 +11,15 @@ const TRANSITION_MESSAGE =
   'Perfeito! Já tenho tudo que preciso 😊 Vou te passar agora pra um dos nossos consultores finalizar com você. Em instantes alguém continua por aqui! 💙';
 
 /**
+ * O card de handoff ("Distribuir") NÃO deve expirar sozinho. Um lead esperando
+ * distribuição não é uma ação destrutiva com pressa (o TTL padrão de 30min faz
+ * sentido pra grantAccess/resetPassword, não pra isso): antes, o card sumia em
+ * 30min e o ADM — que chega na conversa bem depois — nunca o via. Damos um prazo
+ * efetivamente infinito (~10 anos em minutos); o card só sai quando o ADM
+ * Distribui, Aprova ou Rejeita. */
+const HANDOFF_TTL_MINUTES = 60 * 24 * 365 * 10;
+
+/**
  * Hands the conversation off to a human. Pauses AI on this conversation
  * (so the agent stops responding), moves status to PENDING (so it shows
  * up in the queue), and clears the active agent.
@@ -63,6 +72,30 @@ export class TransferToHumanTool implements AiTool {
     const reason = String(input.reason ?? '').trim() || 'Handoff sem motivo informado';
     const summary = input.summary ? String(input.summary).trim() : null;
 
+    // ── Dedupe: se já existe um handoff PENDING pra essa conversa, NÃO cria
+    //    outro card. Sem isso, a Aline re-qualificava o mesmo lead e empilhava
+    //    cards repetidos (vimos 5 na mesma conversa, todos expirando). Reusa o
+    //    pendente e devolve o sinal de "saí do loop". ─────────────────────────
+    const alreadyPending = (
+      await this.pendingActions.listPending(ctx.conversationId)
+    ).find((a) => a.toolName === this.name);
+    if (alreadyPending) {
+      this.logger.log(
+        `transfer: já existe handoff PENDING (conv=${ctx.conversationId}, pending=${alreadyPending.id}) — não duplica`,
+      );
+      return {
+        output: {
+          ok: true,
+          status: 'already_pending',
+          pendingActionId: alreadyPending.id,
+          message:
+            'Já existe uma transferência pendente pra essa conversa aguardando distribuição. NÃO escreva mais nada — o atendente humano assume.',
+          agent_should_say: '',
+        },
+        finalAction: 'TRANSFERRED_TO_HUMAN',
+      };
+    }
+
     // ── Efeitos determinísticos do handoff (best-effort — nunca quebram a
     //    pendência, que é o essencial). Feitos POR CÓDIGO pra não depender do
     //    modelo lembrar de avisar/taguear/criar card. ──────────────────────
@@ -87,6 +120,19 @@ export class TransferToHumanTool implements AiTool {
     } catch (e) {
       this.logger.warn(`transfer: falha ao salvar resumo na observação (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
     }
+    // 4) Surfacing: coloca o lead na aba "Esperando" (fila de distribuição) JÁ
+    //    no handoff. Antes isso só acontecia quando o ADM clicava "Distribuir",
+    //    então o lead ficava invisível na "Entrada" e o card morria sem ninguém
+    //    ver. A IA segue ligada até a distribuição (design atual). O flag é
+    //    limpo se o ADM Rejeitar (ver PendingActionService.reject).
+    try {
+      await this.prisma.conversation.update({
+        where: { id: ctx.conversationId },
+        data: { awaitingHumanReply: true },
+      });
+    } catch (e) {
+      this.logger.warn(`transfer: falha ao marcar Esperando (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
+    }
 
     const preview = {
       action: `Transferir conversa pro atendimento humano: ${reason}`,
@@ -107,6 +153,8 @@ export class TransferToHumanTool implements AiTool {
       toolName: this.name,
       args: { reason, summary },
       preview,
+      // Card não expira sozinho — só sai ao Distribuir/Aprovar/Rejeitar.
+      ttlMinutes: HANDOFF_TTL_MINUTES,
     });
 
     // Notifica o operador imediatamente — ele revisa a fila de pendências

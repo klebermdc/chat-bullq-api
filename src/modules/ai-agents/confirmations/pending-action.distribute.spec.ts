@@ -102,3 +102,20 @@ describe('PendingActionService.distribute', () => {
     await expect(svc.distribute('pa1', 'op1', 'at1')).rejects.toBeInstanceOf(BadRequestException);
   });
 });
+
+describe('PendingActionService.reject — tira o lead da fila "Esperando"', () => {
+  it('handoff rejeitado limpa awaitingHumanReply (lead volta pro bot)', async () => {
+    const { svc, prisma } = make(); // toolName default = transferToHuman
+    await svc.reject('pa1', 'op1', 'ainda não qualificado');
+    expect(prisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv1' },
+      data: { awaitingHumanReply: false },
+    });
+  });
+
+  it('rejeição de ação NÃO-handoff não mexe na conversa', async () => {
+    const { svc, prisma } = make({ toolName: 'grantAccess' });
+    await svc.reject('pa1', 'op1', 'não autorizado');
+    expect(prisma.conversation.update).not.toHaveBeenCalled();
+  });
+});
