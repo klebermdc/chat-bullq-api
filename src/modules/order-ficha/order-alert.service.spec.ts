@@ -31,4 +31,20 @@ describe('OrderAlertService.raise', () => {
     await svc.raise('cv1', 'ch1', div);
     expect(prisma.message.create).not.toHaveBeenCalled();
   });
+
+  it('setDivergenceFlag(false) limpa o selo da conversa', async () => {
+    await svc.setDivergenceFlag('cv1', false);
+    expect(prisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'cv1' },
+      data: { hasOrderDivergence: false },
+    });
+  });
+
+  it('setDivergenceFlag(true) liga o selo da conversa', async () => {
+    await svc.setDivergenceFlag('cv1', true);
+    expect(prisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'cv1' },
+      data: { hasOrderDivergence: true },
+    });
+  });
 });

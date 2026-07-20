@@ -71,6 +71,11 @@ export class OrderFichaService {
       requestedAt: new Date(),
       sourceMessageId: input.messageId,
     });
+
+    // Pedido (re)logado ainda não tem cruzamento novo — limpa um selo de
+    // divergência que ficou de uma rodada anterior (ex.: cliente editou o
+    // pedido depois de um alerta).
+    await this.alert.setDivergenceFlag(input.conversationId, false);
   }
 
   /**
@@ -97,6 +102,14 @@ export class OrderFichaService {
     const status = divergences.length > 0 ? OrderFichaStatus.DIVERGENT : OrderFichaStatus.MATCHED;
 
     await this.repo.updateDivergences(input.conversationId, divergences, status, input.proposalId);
+
+    if (divergences.length === 0) {
+      // Carrinho corrigido bate com a ficha: limpa um selo que pode ter
+      // ficado ligado de uma rodada anterior de divergência.
+      await this.alert.setDivergenceFlag(input.conversationId, false);
+    }
+    // Não-vazio: alert.raise já liga o selo (setDivergenceFlag(true) por
+    // dentro) e posta a mensagem SYSTEM; no-op se vier vazio.
     await this.alert.raise(input.conversationId, input.channelId, divergences);
   }
 }

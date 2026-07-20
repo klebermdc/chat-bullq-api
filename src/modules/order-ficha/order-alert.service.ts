@@ -47,14 +47,24 @@ export class OrderAlertService {
       },
     });
 
-    await this.prisma.conversation.update({
-      where: { id: conversationId },
-      data: { hasOrderDivergence: true },
-    });
+    await this.setDivergenceFlag(conversationId, true);
 
     this.realtime.emitToConversation(conversationId, 'message:new', { message });
     if (channelId) {
       this.realtime.emitToChannel(channelId, 'message:new', { conversationId, message });
     }
+  }
+
+  /**
+   * Liga/desliga o selo `hasOrderDivergence` da conversa. Único caminho que
+   * escreve nesse campo — usado por `raise` (liga) e, externamente, por quem
+   * precisa limpar o selo quando um carrinho corrigido bate ou uma ficha é
+   * relançada (edição do pedido).
+   */
+  async setDivergenceFlag(conversationId: string, value: boolean): Promise<void> {
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { hasOrderDivergence: value },
+    });
   }
 }

@@ -47,4 +47,25 @@ describe('OrderWatchdogService.sweep', () => {
     await svc.sweep(now);
     expect(alert.raise).not.toHaveBeenCalled();
   });
+
+  it('isola erro por candidato: se o 1º falhar, o 2º ainda é processado', async () => {
+    const candidate1 = { ...stale, conversationId: 'cv1' };
+    const candidate2 = { ...stale, conversationId: 'cv2' };
+    repo.findDelayCandidates.mockResolvedValue([candidate1, candidate2]);
+    alert.raise = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce(undefined);
+
+    await svc.sweep(now);
+
+    expect(alert.raise).toHaveBeenCalledTimes(2);
+    expect(alert.raise).toHaveBeenNthCalledWith(1, 'cv1', 'ch1', [
+      expect.objectContaining({ kind: 'DELAY_NO_CART' }),
+    ]);
+    expect(alert.raise).toHaveBeenNthCalledWith(2, 'cv2', 'ch1', [
+      expect.objectContaining({ kind: 'DELAY_NO_CART' }),
+    ]);
+    expect(repo.updateDivergences).toHaveBeenCalledTimes(2);
+  });
 });

@@ -30,20 +30,40 @@ export class DivergenceService {
     const cartQty = (cart.adults ?? 0) + (cart.children ?? 0);
     const cartProducts = (cart.parks ?? []).map((p) => norm(p.nome));
 
+    // Presença de produto: por produto distinto pedido, verifica se está no
+    // carrinho. NÃO compara quantidade aqui — pedidos legítimos costumam vir
+    // "quebrados" por tipo (adulto/criança) no mesmo produto.
+    const distinctProducts = new Map<string, string>();
     for (const item of order.items) {
       const normProduto = norm(item.produto);
+      if (!distinctProducts.has(normProduto)) {
+        distinctProducts.set(normProduto, item.produto);
+      }
+    }
+
+    let allProductsPresent = true;
+    for (const [normProduto, produto] of distinctProducts) {
       if (!cartProducts.includes(normProduto)) {
+        allProductsPresent = false;
         out.push({
           kind: 'ITEM_MISMATCH',
-          message: `Cliente pediu "${item.produto}" · não está no carrinho enviado`,
-          detail: { pedido: item, carrinho: cart.parks },
+          message: `Cliente pediu "${produto}" · não está no carrinho enviado`,
+          detail: { pedido: produto, carrinho: cart.parks },
           detectedAt,
         });
-      } else if (item.quantidade !== cartQty) {
+      }
+    }
+
+    // Quantidade: agregada (soma de todos os itens pedidos vs headcount total
+    // do carrinho), e só verificada quando todos os produtos batem — evita
+    // falso positivo em splits por tipo (ex.: 4 adultos + 2 crianças = 6).
+    if (allProductsPresent) {
+      const totalOrdered = order.items.reduce((sum, item) => sum + item.quantidade, 0);
+      if (totalOrdered !== cartQty) {
         out.push({
           kind: 'ITEM_MISMATCH',
-          message: `Cliente pediu ${item.quantidade}x ${item.produto} · carrinho tem ${cartQty}`,
-          detail: { pedidoQtd: item.quantidade, carrinhoQtd: cartQty, produto: item.produto },
+          message: `Cliente pediu ${totalOrdered} pessoa(s) · carrinho tem ${cartQty}`,
+          detail: { totalPedido: totalOrdered, totalCarrinho: cartQty },
           detectedAt,
         });
       }

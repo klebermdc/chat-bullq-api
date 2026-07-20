@@ -6,7 +6,7 @@ describe('OrderFichaService.ingestMessage', () => {
   const repo = { upsertOrder: jest.fn() } as any;
   const messages = { recentCustomerTexts: jest.fn().mockResolvedValue(['quero 4 ingressos']) } as any;
   const divergence = { compare: jest.fn() } as any;
-  const alert = { raise: jest.fn() } as any;
+  const alert = { raise: jest.fn(), setDivergenceFlag: jest.fn() } as any;
   const svc = new OrderFichaService(relevance, extractor, repo, messages, divergence, alert);
 
   beforeEach(() => jest.clearAllMocks());
@@ -23,6 +23,7 @@ describe('OrderFichaService.ingestMessage', () => {
     extractor.extract.mockResolvedValue({ items: [{ produto: 'MK', quantidade: 4 }], travelDatesText: 'julho', travelStart: null, travelEnd: null });
     await svc.ingestMessage({ organizationId: 'o1', contactId: 'c1', conversationId: 'cv1', messageId: 'm1', text: 'quero 4 ingressos' });
     expect(repo.upsertOrder).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'cv1', sourceMessageId: 'm1' }));
+    expect(alert.setDivergenceFlag).toHaveBeenCalledWith('cv1', false);
   });
 
   it('não faz upsert se a extração vier vazia', async () => {
@@ -50,5 +51,14 @@ describe('OrderFichaService.ingestMessage', () => {
     await svc.crossCheckOnProposal({ conversationId: 'cv1', channelId: 'ch1', proposalId: 'p1', cart: {} as any });
     expect(repo.updateDivergences).toHaveBeenCalledWith('cv1', expect.any(Array), 'DIVERGENT', 'p1');
     expect(alert.raise).toHaveBeenCalledWith('cv1', 'ch1', expect.any(Array));
+  });
+
+  it('crossCheckOnProposal: sem divergência (MATCHED) => grava status e limpa o selo', async () => {
+    repo.findByConversation = jest.fn().mockResolvedValue({ items: [{ produto: 'MK', quantidade: 4 }], travelStart: null, travelEnd: null, travelDatesText: null });
+    repo.updateDivergences = jest.fn();
+    divergence.compare = jest.fn().mockReturnValue([]);
+    await svc.crossCheckOnProposal({ conversationId: 'cv1', channelId: 'ch1', proposalId: 'p1', cart: {} as any });
+    expect(repo.updateDivergences).toHaveBeenCalledWith('cv1', [], 'MATCHED', 'p1');
+    expect(alert.setDivergenceFlag).toHaveBeenCalledWith('cv1', false);
   });
 });

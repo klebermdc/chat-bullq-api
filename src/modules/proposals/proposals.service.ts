@@ -89,19 +89,6 @@ export class ProposalsService {
       rawText,
     });
 
-    // Cruzamento com a Ficha do Pedido: compara o que o cliente pediu na
-    // conversa com o carrinho realmente montado no HUB e, se divergir, posta
-    // alerta SYSTEM + marca a conversa. Fire-and-forget — nunca deve
-    // bloquear/derrubar o envio da proposta.
-    this.orderFicha
-      .crossCheckOnProposal({
-        conversationId: conversation.id,
-        channelId: conversation.channelId,
-        proposalId: proposal.id,
-        cart,
-      })
-      .catch((e) => this.logger.warn(`cross-check ficha falhou: ${e}`));
-
     const mode = dto.mode ?? 'NEW';
     const text = buildProposalMessage(cart, url, mode);
     await this.messages.send(
@@ -110,6 +97,21 @@ export class ProposalsService {
       organizationId,
       access,
     );
+
+    // Cruzamento com a Ficha do Pedido: compara o que o cliente pediu na
+    // conversa com o carrinho realmente montado no HUB e, se divergir, posta
+    // alerta SYSTEM + marca a conversa. Fire-and-forget — nunca deve
+    // bloquear/derrubar o envio da proposta. Disparado DEPOIS do envio da
+    // mensagem de proposta pra a bolha SYSTEM de divergência (se houver)
+    // sempre aparecer depois da proposta no thread.
+    this.orderFicha
+      .crossCheckOnProposal({
+        conversationId: conversation.id,
+        channelId: conversation.channelId,
+        proposalId: proposal.id,
+        cart,
+      })
+      .catch((e) => this.logger.warn(`cross-check ficha falhou: ${e}`));
 
     // Só na PRIMEIRA proposta (NEW): dispara as mensagens de follow-up
     // (conferência + referências) pra reforçar confiança. Best-effort — se uma

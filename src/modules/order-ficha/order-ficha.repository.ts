@@ -28,6 +28,12 @@ export class OrderFichaRepository {
       requestedAt: input.requestedAt,
       sourceMessageId: input.sourceMessageId,
       status: OrderFichaStatus.ORDER_LOGGED,
+      // Pedido (re)logado: limpa cruzamento anterior. Um pedido editado volta
+      // a aguardar carrinho — mostrar divergências antigas ou manter o
+      // watchdog de demora desligado (por causa do lastProposalId de uma
+      // proposta anterior) seria enganoso.
+      divergences: [] as any,
+      lastProposalId: null,
     };
     return this.prisma.orderFicha.upsert({
       where: { conversationId: input.conversationId },
@@ -64,6 +70,8 @@ export class OrderFichaRepository {
         requestedAt: true,
         divergences: true,
       },
+      orderBy: { requestedAt: 'asc' },
+      take: 500,
     });
   }
 

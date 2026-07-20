@@ -61,4 +61,36 @@ describe('DivergenceService.compare', () => {
     );
     expect(d.filter((x) => x.kind === 'ITEM_MISMATCH' || x.kind === 'TRAVEL_DATE_MISMATCH')).toHaveLength(0);
   });
+
+  it('split adulto+criança do mesmo produto com headcount batendo NÃO diverge (agregado)', () => {
+    const d = svc.compare(
+      {
+        items: [
+          { produto: 'Magic Kingdom', quantidade: 4, tipo: 'adulto' },
+          { produto: 'Magic Kingdom', quantidade: 2, tipo: 'crianca' },
+        ],
+        travelDatesText: null,
+        travelStart: null,
+        travelEnd: null,
+      },
+      cart({ adults: 4, children: 2 }),
+    );
+    expect(d.filter((x) => x.kind === 'ITEM_MISMATCH')).toHaveLength(0);
+  });
+
+  it('split adulto+criança com headcount divergente gera UMA única ITEM_MISMATCH (não uma por item)', () => {
+    const d = svc.compare(
+      {
+        items: [
+          { produto: 'Magic Kingdom', quantidade: 4, tipo: 'adulto' },
+          { produto: 'Magic Kingdom', quantidade: 2, tipo: 'crianca' },
+        ],
+        travelDatesText: null,
+        travelStart: null,
+        travelEnd: null,
+      },
+      cart({ adults: 4, children: 1 }),
+    );
+    expect(d.filter((x) => x.kind === 'ITEM_MISMATCH')).toHaveLength(1);
+  });
 });

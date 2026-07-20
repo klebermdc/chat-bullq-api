@@ -30,34 +30,40 @@ export class OrderWatchdogService {
   async sweep(now: Date): Promise<void> {
     const candidates = await this.repo.findDelayCandidates();
     for (const f of candidates) {
-      const existing = ((f.divergences as any[]) ?? []) as Divergence[];
-      const already = existing.some((d) => d?.kind === 'DELAY_NO_CART');
-      if (already) continue;
+      try {
+        const existing = ((f.divergences as any[]) ?? []) as Divergence[];
+        const already = existing.some((d) => d?.kind === 'DELAY_NO_CART');
+        if (already) continue;
 
-      const hours = await this.settings.delayHoursFor(f.organizationId ?? '');
-      if (!f.requestedAt) continue;
-      const elapsedH =
-        (now.getTime() - new Date(f.requestedAt).getTime()) / 3_600_000;
-      if (elapsedH < hours) continue;
+        const hours = await this.settings.delayHoursFor(f.organizationId ?? '');
+        if (!f.requestedAt) continue;
+        const elapsedH =
+          (now.getTime() - new Date(f.requestedAt).getTime()) / 3_600_000;
+        if (elapsedH < hours) continue;
 
-      const div: Divergence = {
-        kind: 'DELAY_NO_CART',
-        message: `Cliente pediu há ${Math.floor(elapsedH)}h e ainda não recebeu carrinho`,
-        detail: { requestedAt: f.requestedAt, prazoHoras: hours },
-        detectedAt: now.toISOString(),
-      };
+        const div: Divergence = {
+          kind: 'DELAY_NO_CART',
+          message: `Cliente pediu há ${Math.floor(elapsedH)}h e ainda não recebeu carrinho`,
+          detail: { requestedAt: f.requestedAt, prazoHoras: hours },
+          detectedAt: now.toISOString(),
+        };
 
-      const channelId = await this.convos.channelIdFor(f.conversationId);
-      await this.repo.updateDivergences(
-        f.conversationId,
-        [...existing, div],
-        OrderFichaStatus.DIVERGENT,
-        undefined,
-      );
-      await this.alert.raise(f.conversationId, channelId, [div]);
-      this.logger.log(
-        `order_watchdog_delay_alert conversation=${f.conversationId} elapsedH=${Math.floor(elapsedH)}`,
-      );
+        const channelId = await this.convos.channelIdFor(f.conversationId);
+        await this.repo.updateDivergences(
+          f.conversationId,
+          [...existing, div],
+          OrderFichaStatus.DIVERGENT,
+          undefined,
+        );
+        await this.alert.raise(f.conversationId, channelId, [div]);
+        this.logger.log(
+          `order_watchdog_delay_alert conversation=${f.conversationId} elapsedH=${Math.floor(elapsedH)}`,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `order_watchdog_candidate_failed conversation=${f.conversationId}: ${(err as Error).message}`,
+        );
+      }
     }
   }
 }
