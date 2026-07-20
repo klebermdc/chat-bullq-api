@@ -6,6 +6,7 @@ import { LlmModule } from '../ai-agents/llm/llm.module';
 import { OrderRelevanceService } from './order-relevance.service';
 import { OrderExtractorService } from './order-extractor.service';
 import { OrderFichaRepository } from './order-ficha.repository';
+import { OrderFichaController } from './order-ficha.controller';
 import { ConversationMessagesReader } from './conversation-messages.reader';
 import { OrderFichaService } from './order-ficha.service';
 import { OrderFichaProcessor, ORDER_FICHA_QUEUE } from './order-ficha.processor';
@@ -36,6 +37,7 @@ import {
     BullModule.registerQueue({ name: ORDER_FICHA_QUEUE }),
     BullModule.registerQueue({ name: ORDER_WATCHDOG_QUEUE }),
   ],
+  controllers: [OrderFichaController],
   providers: [
     OrderFichaRepository,
     OrderRelevanceService,
