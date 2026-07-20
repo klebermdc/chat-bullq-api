@@ -208,6 +208,7 @@ model Organization {
   aiProviderKeys       AiProviderKey[]
   scheduledMessages    ScheduledMessage[]
   inactivitySettings   InactivitySettings?
+  attendantGreetingSettings AttendantGreetingSettings?
   messageTemplates     MessageTemplate[]
   recoverySettings     RecoverySettings?
   cadences             Cadence[]
@@ -2242,4 +2243,15 @@ model Call {
   @@index([organizationId, startedAt])
   @@index([conversationId])
   @@map("calls")
+}
+
+model AttendantGreetingSettings {
+  organizationId String   @id @map("organization_id")
+  enabled        Boolean  @default(true)
+  template       String   @default("Oi! Sou o {atendente} e vou continuar seu atendimento por aqui 😊") @db.Text
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("attendant_greeting_settings")
 }

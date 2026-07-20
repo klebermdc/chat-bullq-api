@@ -38,6 +38,7 @@ function makeService(overrides: {
     {} as any, // projects
     {} as any, // scheduled (ScheduledMessagesService)
     summarizer,
+    { greet: jest.fn() } as any, // attendantGreeting
   );
   jest.spyOn(svc, 'findOne').mockResolvedValue(overrides.conversation);
   return { svc, prisma, summarizer };
