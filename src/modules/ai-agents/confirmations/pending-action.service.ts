@@ -172,6 +172,22 @@ export class PendingActionService {
     action.rejectedReason = reason.trim();
     await this.storage.save(action, previous);
 
+    // Handoff rejeitado = o ADM devolveu o lead pro bot. Tira da aba "Esperando"
+    // (o transferToHuman marca awaitingHumanReply=true ao criar o card); senão o
+    // lead ficaria preso na fila de distribuição sem card.
+    if (action.toolName === 'transferToHuman' && action.conversationId) {
+      try {
+        await this.prisma.conversation.update({
+          where: { id: action.conversationId },
+          data: { awaitingHumanReply: false },
+        });
+      } catch (err: any) {
+        this.logger.warn(
+          `reject: falha ao limpar Esperando (conv=${action.conversationId}): ${err?.message ?? err}`,
+        );
+      }
+    }
+
     this.logger.log({
       msg: 'pending_action_rejected',
       id,
