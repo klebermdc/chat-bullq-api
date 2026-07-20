@@ -16,6 +16,7 @@ import { CreateProposalDto } from './dto/create-proposal.dto';
 import { PROPOSAL_ALLOWED_HOSTS, PROPOSAL_SENT_STAGE_NAME } from './proposals.constants';
 import { PROPOSAL_NEW_FOLLOWUPS } from './proposal-followups';
 import { PipelinesService } from '../pipelines/pipelines.service';
+import { OrderFichaService } from '../order-ficha/order-ficha.service';
 
 @Injectable()
 export class ProposalsService {
@@ -28,6 +29,7 @@ export class ProposalsService {
     private readonly repo: ProposalsRepository,
     private readonly messages: MessagesService,
     private readonly pipelines: PipelinesService,
+    private readonly orderFicha: OrderFichaService,
   ) {}
 
   async create(
@@ -86,6 +88,19 @@ export class ProposalsService {
       cart,
       rawText,
     });
+
+    // Cruzamento com a Ficha do Pedido: compara o que o cliente pediu na
+    // conversa com o carrinho realmente montado no HUB e, se divergir, posta
+    // alerta SYSTEM + marca a conversa. Fire-and-forget — nunca deve
+    // bloquear/derrubar o envio da proposta.
+    this.orderFicha
+      .crossCheckOnProposal({
+        conversationId: conversation.id,
+        channelId: conversation.channelId,
+        proposalId: proposal.id,
+        cart,
+      })
+      .catch((e) => this.logger.warn(`cross-check ficha falhou: ${e}`));
 
     const mode = dto.mode ?? 'NEW';
     const text = buildProposalMessage(cart, url, mode);

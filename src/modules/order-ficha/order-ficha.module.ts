@@ -9,6 +9,8 @@ import { OrderFichaRepository } from './order-ficha.repository';
 import { ConversationMessagesReader } from './conversation-messages.reader';
 import { OrderFichaService } from './order-ficha.service';
 import { OrderFichaProcessor, ORDER_FICHA_QUEUE } from './order-ficha.processor';
+import { DivergenceService } from './divergence.service';
+import { OrderAlertService } from './order-alert.service';
 
 /**
  * Módulo da Ficha do Pedido.
@@ -32,6 +34,11 @@ import { OrderFichaProcessor, ORDER_FICHA_QUEUE } from './order-ficha.processor'
     OrderRelevanceService,
     OrderExtractorService,
     ConversationMessagesReader,
+    DivergenceService,
+    // OrderAlertService injeta RealtimeGateway — vem do RealtimeModule, que é
+    // @Global() (registrado uma vez no AppModule), então não precisa ser
+    // importado aqui (mesmo padrão de ConversationsService em MessagingModule).
+    OrderAlertService,
     OrderFichaService,
     OrderFichaProcessor,
   ],

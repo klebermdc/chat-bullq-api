@@ -9,7 +9,7 @@ const cart: ExtractedCart = {
 };
 
 function deps() {
-  const conversation = { id: 'conv-1', organizationId: 'org-1', contactId: 'contact-1' };
+  const conversation = { id: 'conv-1', organizationId: 'org-1', contactId: 'contact-1', channelId: 'chan-1' };
   return {
     prisma: {
       conversation: { findUnique: jest.fn().mockResolvedValue(conversation) },
@@ -19,6 +19,7 @@ function deps() {
     repo: { create: jest.fn().mockResolvedValue({ id: 'prop-1' }), listForContact: jest.fn() } as any,
     messages: { send: jest.fn().mockResolvedValue({ id: 'msg-1' }) } as any,
     pipelines: { ensureConversationAtStageByName: jest.fn().mockResolvedValue(undefined) } as any,
+    orderFicha: { crossCheckOnProposal: jest.fn().mockResolvedValue(undefined) } as any,
   };
 }
 
@@ -30,6 +31,7 @@ function makeService(d: ReturnType<typeof deps>) {
     d.repo,
     d.messages,
     d.pipelines,
+    d.orderFicha,
   );
 }
 
