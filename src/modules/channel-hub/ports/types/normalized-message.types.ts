@@ -40,7 +40,12 @@ export interface NormalizedMessageContent {
   latitude?: number;
   longitude?: number;
   reaction?: { emoji: string; targetMessageId: string };
-  interactive?: { type: string; buttonId?: string; listRowId?: string };
+  interactive?: {
+    type: string;
+    buttonId?: string;
+    listRowId?: string;
+    payload?: string;
+  };
   template?: {
     templateType?: string;
     text?: string;
