@@ -114,6 +114,34 @@ describe('WasenderMessageMapper', () => {
       expect(r!.contactPhone).toBe('14074218779');
     });
 
+    it('normaliza resposta de botão (buttonsResponseMessage) com o texto exibido', () => {
+      const r = mapper.normalizeInbound(
+        wrap({
+          buttonsResponseMessage: {
+            selectedButtonId: 'sim_id',
+            selectedDisplayText: 'Sim, quero',
+          },
+        }),
+      );
+      expect(r!.type).toBe(MessageContentType.INTERACTIVE);
+      expect(r!.content.text).toBe('Sim, quero');
+      expect(r!.content.interactive?.buttonId).toBe('sim_id');
+    });
+
+    it('normaliza resposta de lista (listResponseMessage) com o título escolhido', () => {
+      const r = mapper.normalizeInbound(
+        wrap({
+          listResponseMessage: {
+            title: 'Opção A',
+            singleSelectReply: { selectedRowId: 'row_1' },
+          },
+        }),
+      );
+      expect(r!.type).toBe(MessageContentType.INTERACTIVE);
+      expect(r!.content.text).toBe('Opção A');
+      expect(r!.content.interactive?.listRowId).toBe('row_1');
+    });
+
     it('retorna null sem key', () => {
       expect(mapper.normalizeInbound({ event: 'x', data: {} })).toBeNull();
     });
