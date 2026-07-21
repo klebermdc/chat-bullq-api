@@ -4,6 +4,7 @@ import { ChannelHubModule } from '../channel-hub/channel-hub.module';
 import { RatingsModule } from '../ratings/ratings.module';
 import { AiAgentsModule } from '../ai-agents/ai-agents.module';
 import { WatchdogModule } from '../routing/watchdog/watchdog.module';
+import { RoutingModule } from '../routing/routing.module';
 import { SegmentsModule } from '../segments/segments.module';
 import { ProjectsModule } from '../projects/projects.module';
 import { SalesRecoveryModule } from '../sales-recovery/sales-recovery.module';
@@ -58,6 +59,11 @@ import { ContactsRepository } from './contacts/contacts.repository';
     forwardRef(() => CadencesModule),
     forwardRef(() => AttendantGreetingModule),
     OrderFichaModule,
+    // Task 4 (agent-hours): InboundMessageProcessor chama
+    // AgentAvailabilityService (Routing), e RoutingModule já importa
+    // MessagingModule → ciclo routing↔messaging → forwardRef nos dois lados
+    // (mesmo padrão de cadences↔messaging acima).
+    forwardRef(() => RoutingModule),
   ],
   controllers: [ConversationsController, MessagesController, ContactsController],
   providers: [

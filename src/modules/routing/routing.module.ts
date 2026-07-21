@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { MessagingModule } from '../messaging/messaging.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -17,7 +17,10 @@ import { AgentAvailabilityService } from './availability/agent-availability.serv
       { name: 'conversation-router' },
       { name: 'sla-timers' },
     ),
-    MessagingModule,
+    // Task 4 (agent-hours): InboundMessageProcessor (Messaging) agora chama
+    // AgentAvailabilityService (Routing) → ciclo routing↔messaging →
+    // forwardRef nos dois lados (mesmo padrão de cadences↔messaging).
+    forwardRef(() => MessagingModule),
     NotificationsModule,
     WatchdogModule,
   ],
