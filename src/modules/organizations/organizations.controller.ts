@@ -18,6 +18,7 @@ import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { ResetMemberPasswordDto } from './dto/reset-member-password.dto';
 import { UpdateMemberRamalDto } from './dto/update-member-ramal.dto';
 import { UpdateMemberWebphoneDto } from './dto/update-member-webphone.dto';
+import { UpdateWorkingHoursDto } from './dto/update-working-hours.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentUser, CurrentOrg, Roles, Public } from '../../common/decorators';
 
@@ -127,6 +128,17 @@ export class OrganizationsController {
     @Body() dto: UpdateMemberWebphoneDto,
   ) {
     return this.service.updateMemberWebphone(orgId, memberId, dto);
+  }
+
+  @Patch('members/:memberId/working-hours')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({ summary: "Set a member's working hours + off-hours notice toggle" })
+  updateMemberWorkingHours(
+    @CurrentOrg('id') orgId: string,
+    @Param('memberId') memberId: string,
+    @Body() dto: UpdateWorkingHoursDto,
+  ) {
+    return this.service.updateMemberWorkingHours(orgId, memberId, dto);
   }
 
   @Get('members/me/webphone')
