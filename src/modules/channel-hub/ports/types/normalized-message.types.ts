@@ -107,6 +107,31 @@ export interface StatusUpdate {
   status: 'sent' | 'delivered' | 'read' | 'failed';
   timestamp: Date;
   errorMessage?: string;
+  /**
+   * Janela de conversa de 24h da Meta (só WHATSAPP_OFFICIAL); presente no
+   * status que abre a janela, ausente em delivered/read repetidos.
+   */
+  conversation?: {
+    id: string;
+    /** conversation.origin.type: marketing|utility|authentication|service */
+    originType?: string;
+    /**
+     * conversation.expiration_timestamp — mantido como epoch SEGUNDOS cru
+     * (diferente do irmão `timestamp: Date`) pra casar direto com o campo da Meta.
+     */
+    expirationTimestamp?: number;
+  };
+  /**
+   * Dados de cobrança da Meta (só canal WHATSAPP_OFFICIAL). Presentes no
+   * status `sent` que abre uma janela; ausentes em delivered/read repetidos.
+   */
+  pricing?: {
+    billable?: boolean;
+    /** pricing.category */
+    category?: string;
+    /** pricing.pricing_model: CBP|PMP */
+    pricingModel?: string;
+  };
 }
 
 export interface WebhookParseResult {

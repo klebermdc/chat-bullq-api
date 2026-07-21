@@ -21,6 +21,7 @@ import { OutboxService } from '../../automations/outbox/outbox.service';
 import { WatchdogService } from '../../routing/watchdog/watchdog.service';
 import { AgentAvailabilityService } from '../../routing/availability/agent-availability.service';
 import { SalesRecoveryService } from '../../sales-recovery/sales-recovery.service';
+import { ChannelUsageService } from '../../channel-usage/channel-usage.service';
 import { ORDER_FICHA_QUEUE } from '../../order-ficha/order-ficha.processor';
 import { IngestInput as OrderFichaIngestInput } from '../../order-ficha/order-ficha.service';
 import {
@@ -114,6 +115,7 @@ export class InboundMessageProcessor extends WorkerHost {
     private readonly shadowObserver: ShadowObserverService,
     private readonly leadSourceTagger: LeadSourceTaggerService,
     @InjectQueue(ORDER_FICHA_QUEUE) private readonly orderFichaQueue: Queue,
+    private readonly channelUsage: ChannelUsageService,
   ) {
     super();
   }
@@ -752,6 +754,17 @@ export class InboundMessageProcessor extends WorkerHost {
       orderBy: { createdAt: 'desc' },
     });
     if (!message) return;
+
+    // Contador de janelas (canal oficial): best-effort, NUNCA derruba o status.
+    if (data.organizationId && data.status.conversation?.id) {
+      this.channelUsage
+        .recordWindow(data.organizationId, channelId, data.status)
+        .catch((err) =>
+          this.logger.warn(
+            `recordWindow falhou (conv ${data.status.conversation?.id}): ${err?.message ?? err}`,
+          ),
+        );
+    }
 
     const updateData: Record<string, any> = {
       status: this.maxStatus(message.status, dbStatus),

@@ -8,6 +8,7 @@ import { RoutingModule } from '../routing/routing.module';
 import { SegmentsModule } from '../segments/segments.module';
 import { ProjectsModule } from '../projects/projects.module';
 import { SalesRecoveryModule } from '../sales-recovery/sales-recovery.module';
+import { ChannelUsageModule } from '../channel-usage/channel-usage.module';
 import { AiProviderKeysModule } from '../ai-provider-keys/ai-provider-keys.module';
 import { SchedulingModule } from '../scheduling/scheduling.module';
 import { CadencesModule } from '../cadences/cadences.module';
@@ -52,6 +53,7 @@ import { ContactsRepository } from './contacts/contacts.repository';
     SegmentsModule,
     ProjectsModule,
     SalesRecoveryModule,
+    ChannelUsageModule,
     AiProviderKeysModule,
     forwardRef(() => SchedulingModule),
     // Task 8: inbound processor chama CadenceInboundService → ciclo

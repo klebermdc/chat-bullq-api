@@ -221,6 +221,8 @@ model Organization {
   sonaxSettings        SonaxSettings?
   calls                Call[]
   orderFichas          OrderFicha[]
+  whatsappWindows       WhatsappWindow[]
+  whatsappWindowPricing WhatsappWindowPricing?
 
   @@map("organizations")
 }
@@ -311,6 +313,7 @@ model Channel {
   primaryOfSegments  Segment[]            @relation("SegmentPrimaryChannel")
   scheduledMessages  ScheduledMessage[]
   messageTemplates   MessageTemplate[]
+  whatsappWindows    WhatsappWindow[]
 
   @@index([organizationId, type], name: "idx_channel_org_type")
   @@map("channels")
@@ -2304,4 +2307,44 @@ model AttendantGreetingSettings {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("attendant_greeting_settings")
+}
+
+/// Uma janela de conversa de 24h cobrada pela Meta (canal WHATSAPP_OFFICIAL).
+/// 1 linha por conversation.id — dedup pela chave única (webhooks reenviados
+/// não inflam a contagem). Só o adapter oficial popula isto.
+model WhatsappWindow {
+  id                 String    @id @default(cuid())
+  organizationId     String    @map("organization_id")
+  channelId          String    @map("channel_id")
+  metaConversationId String    @map("meta_conversation_id")
+  /// marketing | utility | authentication | service | unknown
+  category           String    @default("unknown")
+  billable           Boolean   @default(true)
+  /// CBP (conversation-based) | PMP (per-message). Null se a Meta não mandou.
+  pricingModel       String?   @map("pricing_model")
+  /// Quando a janela abriu: expiration_timestamp - 24h, ou o timestamp do status.
+  openedAt           DateTime  @map("opened_at")
+  expirationAt       DateTime? @map("expiration_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, metaConversationId], name: "uq_window_channel_conv")
+  @@index([organizationId, channelId, openedAt], name: "idx_window_org_channel_opened")
+  @@map("whatsapp_windows")
+}
+
+/// Tarifa por categoria (por org) usada pra estimar o custo das janelas.
+model WhatsappWindowPricing {
+  id             String   @id @default(cuid())
+  organizationId String   @unique @map("organization_id")
+  currency       String   @default("BRL")
+  /// { marketing: 0.35, utility: 0.10, authentication: 0.20, service: 0 }
+  rates          Json     @default("{}")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_window_pricing")
 }

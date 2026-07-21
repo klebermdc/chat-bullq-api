@@ -34,6 +34,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { SalesReportsModule } from './modules/sales-reports/sales-reports.module';
 import { ProposalsModule } from './modules/proposals/proposals.module';
 import { CrmReportsModule } from './modules/crm-reports/crm-reports.module';
+import { ChannelUsageModule } from './modules/channel-usage/channel-usage.module';
 import { CopilotModule } from './modules/copilot/copilot.module';
 import { CallsModule } from './modules/calls/calls.module';
 import { OrderFichaModule } from './modules/order-ficha/order-ficha.module';
@@ -94,6 +95,7 @@ import redisConfig from './config/redis.config';
     SalesReportsModule,
     ProposalsModule,
     CrmReportsModule,
+    ChannelUsageModule,
     CopilotModule,
     CallsModule,
     OrderFichaModule,
