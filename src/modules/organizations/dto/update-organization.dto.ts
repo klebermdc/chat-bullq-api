@@ -122,6 +122,19 @@ export class UpdateOrganizationDto {
   @ValidateIf((_, value) => value !== null)
   @IsObject()
   watchdogConfig?: WatchdogConfigDto | null;
+
+  // ─── Off-hours notice (agenda por atendente) ───────────────────
+
+  @ApiPropertyOptional({
+    description:
+      'Template do aviso de fora-de-horário enviado ao cliente. Placeholders {atendente} e {proximo_horario}. null/vazio = sem aviso.',
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(1000)
+  offHoursMessageTemplate?: string | null;
 }
 
 export interface WatchdogConfigDto {

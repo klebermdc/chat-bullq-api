@@ -48,7 +48,14 @@ export class MessagesService {
     organizationId: string,
     access: ChannelAccess = 'ALL',
     role?: OrgRole,
+    opts?: { automated?: boolean },
   ) {
+    // Mensagens automáticas de sistema (ex.: aviso de fora-de-horário) são
+    // enviadas em nome de um atendente, mas NÃO são uma resposta humana: não
+    // devem tirar a conversa de "Esperando", cancelar o watchdog de
+    // "ninguém respondeu", marcar como lida em nome do atendente offline nem
+    // reatribuir dono. Só persistem o OUTBOUND e disparam pro canal.
+    const automated = opts?.automated === true;
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: dto.conversationId },
       include: {
@@ -176,67 +183,77 @@ export class MessagesService {
     // já tem dono — quando um gestor entra só pra intervir/responder, o cliente
     // permanece com o agente de direito. Para transferir de propósito existe o
     // endpoint dedicado de transferência.
-    const shouldAutoAssign = shouldAutoAssignOnReply({
-      currentAssigneeId: conversation.assignedToId,
-      senderId,
-      role,
-    });
+    const shouldAutoAssign =
+      !automated &&
+      shouldAutoAssignOnReply({
+        currentAssigneeId: conversation.assignedToId,
+        senderId,
+        role,
+      });
 
     await this.prisma.conversation.update({
       where: { id: conversation.id },
       data: {
         lastMessageAt: new Date(),
-        // Humano respondeu → sai de "Esperando" pra "Caixa de entrada".
-        // Este é o caminho EXCLUSIVO do atendente (senderId é um user); bot/IA
-        // persistem via prisma.message.create e nunca passam por aqui, então o
-        // flag permanece true quando só o bot respondeu.
-        awaitingHumanReply: false,
         lastOutboundAt: new Date(),
-        inactivityBand: null,
-        reengageDismissedAt: null,
-        ...(shouldAutoAssign ? { assignedToId: senderId } : {}),
-        ...(shouldDisableAi
-          ? {
-              aiEnabled: false,
-              aiDisabledBy: senderId,
-              aiDisabledAt: new Date(),
-              activeAgentId: null,
-            }
-          : {}),
+        // Efeitos de "humano respondeu" — pulados para mensagens automáticas
+        // (o cliente continua esperando um atendente de verdade).
+        ...(automated
+          ? {}
+          : {
+              // Humano respondeu → sai de "Esperando" pra "Caixa de entrada".
+              // Este é o caminho EXCLUSIVO do atendente (senderId é um user);
+              // bot/IA persistem via prisma.message.create e nunca passam por
+              // aqui, então o flag permanece true quando só o bot respondeu.
+              awaitingHumanReply: false,
+              inactivityBand: null,
+              reengageDismissedAt: null,
+              ...(shouldAutoAssign ? { assignedToId: senderId } : {}),
+              ...(shouldDisableAi
+                ? {
+                    aiEnabled: false,
+                    aiDisabledBy: senderId,
+                    aiDisabledAt: new Date(),
+                    activeAgentId: null,
+                  }
+                : {}),
+            }),
       },
     });
 
-    // Humano respondeu — cancela qualquer timer de watchdog pendente e
-    // zera o contador de tentativas. Se a IA estava paralisada e quem
-    // resolveu foi a pessoa, conversa não deve aparecer como "presa".
-    this.watchdog.cancelCheck(conversation.id).catch(() => undefined);
+    if (!automated) {
+      // Humano respondeu — cancela qualquer timer de watchdog pendente e
+      // zera o contador de tentativas. Se a IA estava paralisada e quem
+      // resolveu foi a pessoa, conversa não deve aparecer como "presa".
+      this.watchdog.cancelCheck(conversation.id).catch(() => undefined);
 
-    // Replying = reading. The sender obviously saw the inbound stream
-    // before typing — bump their lastReadAt so the unread badge resets
-    // even if they never clicked the conversation first.
-    await this.prisma.conversationRead.upsert({
-      where: {
-        userId_conversationId: {
+      // Replying = reading. The sender obviously saw the inbound stream
+      // before typing — bump their lastReadAt so the unread badge resets
+      // even if they never clicked the conversation first.
+      await this.prisma.conversationRead.upsert({
+        where: {
+          userId_conversationId: {
+            userId: senderId,
+            conversationId: conversation.id,
+          },
+        },
+        create: {
           userId: senderId,
           conversationId: conversation.id,
+          lastReadMessageId: message.id,
+          lastReadAt: new Date(),
         },
-      },
-      create: {
-        userId: senderId,
+        update: {
+          lastReadMessageId: message.id,
+          lastReadAt: new Date(),
+        },
+      });
+      this.realtimeGateway.emitToUser(senderId, 'conversation:read', {
         conversationId: conversation.id,
-        lastReadMessageId: message.id,
+        userId: senderId,
         lastReadAt: new Date(),
-      },
-      update: {
-        lastReadMessageId: message.id,
-        lastReadAt: new Date(),
-      },
-    });
-    this.realtimeGateway.emitToUser(senderId, 'conversation:read', {
-      conversationId: conversation.id,
-      userId: senderId,
-      lastReadAt: new Date(),
-    });
+      });
+    }
 
     if (shouldAutoAssign) {
       this.realtimeGateway.emitToConversation(

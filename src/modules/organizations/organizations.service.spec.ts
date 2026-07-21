@@ -17,6 +17,7 @@ describe('OrganizationsService.resetMemberPassword', () => {
       | 'updateUserPassword'
       | 'updateMemberRamal'
       | 'updateMemberWebphone'
+      | 'updateMemberWorkingHours'
     >
   >;
 
@@ -33,6 +34,7 @@ describe('OrganizationsService.resetMemberPassword', () => {
       updateUserPassword: jest.fn().mockResolvedValue(undefined),
       updateMemberRamal: jest.fn(),
       updateMemberWebphone: jest.fn(),
+      updateMemberWorkingHours: jest.fn(),
     } as any;
 
     const mod = await Test.createTestingModule({
@@ -192,6 +194,72 @@ describe('OrganizationsService.resetMemberPassword', () => {
     it('NotFound quando o membro não existe', async () => {
       repo.findMembership.mockResolvedValue(null);
       await expect(service.updateMemberRamal('org1', 'x', { sonaxRamal: '1' })).rejects.toBeTruthy();
+    });
+  });
+
+  describe('updateMemberWorkingHours', () => {
+    const workingHours = {
+      monday: { enabled: true, windows: [['09:00', '18:00']] },
+    };
+
+    it('grava a agenda e o toggle do aviso do membro resolvido, escopado à org', async () => {
+      repo.findMembership.mockResolvedValue({ id: 'mem1' } as any);
+      repo.updateMemberWorkingHours.mockResolvedValue({
+        id: 'mem1',
+        workingHours,
+        offHoursNoticeEnabled: true,
+      } as any);
+
+      const res = await service.updateMemberWorkingHours('org1', 'mem1', {
+        workingHours,
+        offHoursNoticeEnabled: true,
+      });
+
+      expect(repo.findMembership).toHaveBeenCalledWith('mem1', 'org1');
+      expect(repo.updateMemberWorkingHours).toHaveBeenCalledWith('mem1', {
+        workingHours,
+        offHoursNoticeEnabled: true,
+      });
+      expect(res.offHoursNoticeEnabled).toBe(true);
+    });
+
+    it('aceita workingHours: null (desliga a agenda)', async () => {
+      repo.findMembership.mockResolvedValue({ id: 'mem1' } as any);
+      repo.updateMemberWorkingHours.mockResolvedValue({
+        id: 'mem1',
+        workingHours: null,
+        offHoursNoticeEnabled: false,
+      } as any);
+
+      const res = await service.updateMemberWorkingHours('org1', 'mem1', {
+        workingHours: null,
+      });
+
+      expect(repo.updateMemberWorkingHours).toHaveBeenCalledWith('mem1', {
+        workingHours: null,
+      });
+      expect(res.workingHours).toBeNull();
+    });
+
+    it('só grava os campos informados (parcial)', async () => {
+      repo.findMembership.mockResolvedValue({ id: 'mem1' } as any);
+      repo.updateMemberWorkingHours.mockResolvedValue({ id: 'mem1' } as any);
+
+      await service.updateMemberWorkingHours('org1', 'mem1', {
+        offHoursNoticeEnabled: true,
+      });
+
+      expect(repo.updateMemberWorkingHours).toHaveBeenCalledWith('mem1', {
+        offHoursNoticeEnabled: true,
+      });
+    });
+
+    it('NotFound quando o membro não existe na org (evita escrita cross-org)', async () => {
+      repo.findMembership.mockResolvedValue(null);
+      await expect(
+        service.updateMemberWorkingHours('org1', 'ghost', { workingHours }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.updateMemberWorkingHours).not.toHaveBeenCalled();
     });
   });
 });

@@ -17,9 +17,9 @@ describe('InboundMessageProcessor — observação SHADOW independe do gate', ()
     //  1 prisma, 2 idempotency, 3 contactResolver, 4 conversationResolver,
     //  5 realtimeGateway, 6 instagramEnricher, 7 zappfyEnricher,
     //  8 webhookEvents, 9 agentRouter, 10 agentRunner, 11 transcription,
-    //  12 outbox, 13 watchdog, 14 salesRecovery, 15 scheduled,
-    //  16 cadenceInbound, 17 chatbotQueue, 18 shadowObserver, 19 leadSourceTagger,
-    //  20 orderFichaQueue, 21 channelUsage.
+    //  12 outbox, 13 watchdog, 14 salesRecovery, 15 agentAvailability,
+    //  16 scheduled, 17 cadenceInbound, 18 chatbotQueue, 19 shadowObserver,
+    //  20 leadSourceTagger, 21 orderFichaQueue, 22 channelUsage.
     return new InboundMessageProcessor(
       overrides.prisma, // 1 prisma
       {} as any, // 2 idempotency
@@ -37,13 +37,14 @@ describe('InboundMessageProcessor — observação SHADOW independe do gate', ()
       // um run bem-sucedido; stub que resolve pra não gerar ERROR no log.
       { cancelCheck: jest.fn().mockResolvedValue(undefined) } as any,
       {} as any, // 14 salesRecovery
-      {} as any, // 15 scheduled
-      {} as any, // 16 cadenceInbound
-      {} as any, // 17 chatbotQueue
-      overrides.shadowObserver, // 18 shadowObserver
-      { tagInstagramOrganicIfMatch: jest.fn().mockResolvedValue(false) } as any, // 19 leadSourceTagger
-      { add: jest.fn().mockResolvedValue(undefined) } as any, // 20 orderFichaQueue
-      { recordWindow: jest.fn().mockResolvedValue(undefined) } as any, // 21 channelUsage
+      { onInboundReply: jest.fn().mockResolvedValue(undefined) } as any, // 15 agentAvailability
+      {} as any, // 16 scheduled
+      {} as any, // 17 cadenceInbound
+      {} as any, // 18 chatbotQueue
+      overrides.shadowObserver, // 19 shadowObserver
+      { tagInstagramOrganicIfMatch: jest.fn().mockResolvedValue(false) } as any, // 20 leadSourceTagger
+      { add: jest.fn().mockResolvedValue(undefined) } as any, // 21 orderFichaQueue
+      { recordWindow: jest.fn().mockResolvedValue(undefined) } as any, // 22 channelUsage
     );
   }
 

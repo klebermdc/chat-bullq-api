@@ -145,6 +145,10 @@ model Organization {
   aiTimezone            String   @default("America/Sao_Paulo") @map("ai_timezone")
   aiBusinessHours       Json?    @map("ai_business_hours")
   aiOutOfHoursMessage   String?  @map("ai_out_of_hours_message")
+  /// Template do aviso enviado quando o cliente escreve fora do horário do
+  /// atendente responsável. Placeholders: {atendente} e {proximo_horario}.
+  /// NULL = usa o default do código (OFF_HOURS_DEFAULT_TEMPLATE).
+  offHoursMessageTemplate String? @map("off_hours_message_template")
   aiAutoDisableOnHuman  Boolean  @default(true) @map("ai_auto_disable_on_human")
   aiMonthlyTokenCap     Int?     @map("ai_monthly_token_cap")
   /// Notas livres do negócio injetadas no system prompt de TODOS os
@@ -231,6 +235,8 @@ model UserOrganization {
   agentStatus      AgentStatus @default(OFFLINE) @map("agent_status")
   maxConcurrent    Int         @default(5) @map("max_concurrent")
   preferences      Json        @default("{}")
+  workingHours          Json?   @map("working_hours")
+  offHoursNoticeEnabled Boolean @default(false) @map("off_hours_notice_enabled")
   sonaxRamal       String?     @map("sonax_ramal") // ramal Sonax do atendente; null = não pode ligar
   /// URL completa do Widget de Webphone da Sonax deste atendente
   /// (https://webphone2.sonax.cloud/widget?data=...&dataClient=...). Injetada no
@@ -546,6 +552,7 @@ model Conversation {
   inactivityBand      Int?               @map("inactivity_band")
   reengageDismissedAt DateTime?          @map("reengage_dismissed_at")
   reengagedAt         DateTime?          @map("reengaged_at")
+  offHoursNoticeAt    DateTime? @map("off_hours_notice_at")
   firstResponseAt     DateTime?          @map("first_response_at")
   closedAt            DateTime?          @map("closed_at")
   reopenedAt          DateTime?          @map("reopened_at")

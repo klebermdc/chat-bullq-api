@@ -19,6 +19,7 @@ import { ShadowObserverService } from '../../ai-agents/shadow-learning/shadow-ob
 import { TranscriptionService } from '../messages/transcription.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
 import { WatchdogService } from '../../routing/watchdog/watchdog.service';
+import { AgentAvailabilityService } from '../../routing/availability/agent-availability.service';
 import { SalesRecoveryService } from '../../sales-recovery/sales-recovery.service';
 import { ChannelUsageService } from '../../channel-usage/channel-usage.service';
 import { ORDER_FICHA_QUEUE } from '../../order-ficha/order-ficha.processor';
@@ -105,6 +106,7 @@ export class InboundMessageProcessor extends WorkerHost {
     private readonly outbox: OutboxService,
     private readonly watchdog: WatchdogService,
     private readonly salesRecovery: SalesRecoveryService,
+    private readonly agentAvailability: AgentAvailabilityService,
     @Inject(forwardRef(() => ScheduledMessagesService))
     private readonly scheduled: ScheduledMessagesService,
     @Inject(forwardRef(() => CadenceInboundService))
@@ -371,6 +373,14 @@ export class InboundMessageProcessor extends WorkerHost {
         this.salesRecovery.onInboundReply(conversationId).catch((err) =>
           this.logger.warn(
             `Recovery onInboundReply failed for conv ${conversationId}: ${err?.message ?? err}`,
+          ),
+        );
+        // Aviso de fora-de-horário: se a conversa já tem atendente humano e o
+        // cliente escreveu fora do horário dele, manda 1x o aviso. No-op fora
+        // disso. Best-effort — nunca derruba o pipeline.
+        this.agentAvailability.onInboundReply(conversationId).catch((err) =>
+          this.logger.warn(
+            `agent_availability_failed conv=${conversationId}: ${(err as Error).message}`,
           ),
         );
         // Cliente respondeu → cancela reengajamentos automáticos pendentes e

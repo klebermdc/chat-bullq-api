@@ -81,6 +81,30 @@ export class OrganizationsRepository {
     });
   }
 
+  async updateMemberWorkingHours(
+    membershipId: string,
+    data: {
+      workingHours?: Record<string, unknown> | null;
+      offHoursNoticeEnabled?: boolean;
+    },
+  ) {
+    const { workingHours, ...rest } = data;
+    return this.prisma.userOrganization.update({
+      where: { id: membershipId },
+      data: {
+        ...rest,
+        ...('workingHours' in data
+          ? {
+              workingHours:
+                workingHours === null
+                  ? Prisma.JsonNull
+                  : (workingHours as Prisma.InputJsonValue),
+            }
+          : {}),
+      },
+    });
+  }
+
   async removeMember(membershipId: string) {
     return this.prisma.userOrganization.delete({
       where: { id: membershipId },

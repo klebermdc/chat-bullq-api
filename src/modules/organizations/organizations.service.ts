@@ -183,6 +183,26 @@ export class OrganizationsService {
     return url;
   }
 
+  /**
+   * Agenda semanal + toggle do aviso de fora-de-horário de um membro. Escrita
+   * parcial (só grava os campos presentes no dto) e escopada à org via
+   * findMembership — mesmo padrão de updateMemberRamal/updateMemberWebphone.
+   */
+  async updateMemberWorkingHours(
+    orgId: string,
+    memberId: string,
+    dto: { workingHours?: Record<string, unknown> | null; offHoursNoticeEnabled?: boolean },
+  ) {
+    const membership = await this.repository.findMembership(memberId, orgId);
+    if (!membership) throw new NotFoundException('Member not found in organization');
+
+    const data: { workingHours?: Record<string, unknown> | null; offHoursNoticeEnabled?: boolean } = {};
+    if (dto.workingHours !== undefined) data.workingHours = dto.workingHours;
+    if (dto.offHoursNoticeEnabled !== undefined) data.offHoursNoticeEnabled = dto.offHoursNoticeEnabled;
+
+    return this.repository.updateMemberWorkingHours(membership.id, data);
+  }
+
   async removeMember(orgId: string, memberId: string, actorId: string) {
     const membership = await this.repository.findMembership(memberId, orgId);
     if (!membership) {
