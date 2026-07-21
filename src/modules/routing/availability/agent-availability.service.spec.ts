@@ -89,16 +89,35 @@ describe('AgentAvailabilityService.onInboundReply', () => {
     });
     await svc.onInboundReply('conv1');
     expect(messages.send).toHaveBeenCalledTimes(1);
-    const [dto, senderId, orgId] = messages.send.mock.calls[0];
+    const [dto, senderId, orgId, access, role, opts] = messages.send.mock.calls[0];
     expect(dto.type).toBe('TEXT');
     expect(dto.content.text).toContain('João'); // primeiro nome
     expect(dto.content.text).toContain('amanhã às 09h'); // próximo horário
     expect(senderId).toBe('user1');
     expect(orgId).toBe('org1');
+    // Enviado como mensagem AUTOMÁTICA — não deve acionar os efeitos de
+    // "humano respondeu" (sai de Esperando / cancela watchdog / marca lido).
+    expect(opts).toEqual({ automated: true });
     expect(prisma.conversation.update).toHaveBeenCalledWith({
       where: { id: 'conv1' },
       data: { offHoursNoticeAt: now },
     });
+  });
+
+  it('agenda sem nenhum dia habilitado -> no-op (não faz spam)', async () => {
+    const { svc, messages, prisma } = makeService({
+      conversation: buildConversation({ offHoursNoticeAt: spDate('2026-07-20T20:00:00') }),
+      membership: {
+        userId: 'user1',
+        workingHours: { monday: { enabled: false }, tuesday: { enabled: false } },
+        offHoursNoticeEnabled: true,
+        user: { name: 'João' },
+      },
+      now: spDate('2026-07-22T20:00:00'),
+    });
+    await svc.onInboundReply('conv1');
+    expect(messages.send).not.toHaveBeenCalled();
+    expect(prisma.conversation.update).not.toHaveBeenCalled();
   });
 
   it('fora do horário, já avisado neste período -> skip (dedup)', async () => {

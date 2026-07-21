@@ -62,7 +62,14 @@ export class AgentAvailabilityService {
 
     if (isWithinHours(config, tz, now)) return; // dentro do horário
 
-    // Dedup: já avisado neste período fechado?
+    // Sem nenhuma janela habilitada, não há "próximo horário" para prometer e
+    // `previousCloseAt` seria null (sem âncora de dedup → spam a cada inbound).
+    // Nesse caso degenerado (agenda vazia), não avisa.
+    const nextOpen = nextOpenAt(config, tz, now);
+    if (!nextOpen) return;
+
+    // Dedup: já avisado neste período fechado? (closedAt é não-null aqui, pois
+    // nextOpen existe → há pelo menos um dia habilitado.)
     const closedAt = previousCloseAt(config, tz, now);
     if (
       conversation.offHoursNoticeAt &&
@@ -73,8 +80,7 @@ export class AgentAvailabilityService {
     }
 
     const firstName = (membership.user?.name ?? '').trim().split(/\s+/)[0] || 'o atendente';
-    const nextOpen = nextOpenAt(config, tz, now);
-    const proximo = nextOpen ? formatReturn(nextOpen, tz, now) : 'assim que possível';
+    const proximo = formatReturn(nextOpen, tz, now);
     const template = org?.offHoursMessageTemplate || OFF_HOURS_DEFAULT_TEMPLATE;
     const text = template
       .replace(/\{atendente\}/g, firstName)
@@ -86,6 +92,8 @@ export class AgentAvailabilityService {
         conversation.assignedToId,
         conversation.organizationId,
         'ALL',
+        undefined,
+        { automated: true },
       );
     } catch (err) {
       this.logger.warn(
