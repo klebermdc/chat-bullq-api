@@ -223,6 +223,8 @@ model Organization {
   orderFichas          OrderFicha[]
   whatsappWindows       WhatsappWindow[]
   whatsappWindowPricing WhatsappWindowPricing?
+  metaCapiConfig        MetaCapiConfig?
+  metaCapiEvents        MetaCapiEvent[]
 
   @@map("organizations")
 }
@@ -486,6 +488,13 @@ model Contact {
   avatarUrl      String?   @map("avatar_url")
   notes          String?
   metadata       Json      @default("{}")
+  // Atribuição Click-to-WhatsApp (Meta CAPI). Preenchido quando a 1ª mensagem
+  // do lead traz message.referral (veio de anúncio CTWA). Usado no evento
+  // Purchase enviado à Conversions API quando o card fecha em GANHO.
+  ctwaClid       String?   @map("ctwa_clid")
+  ctwaSourceId   String?   @map("ctwa_source_id")
+  ctwaSourceType String?   @map("ctwa_source_type")
+  ctwaClidAt     DateTime? @map("ctwa_clid_at")
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
   deletedAt      DateTime? @map("deleted_at")
@@ -1888,6 +1897,48 @@ model AiProviderKey {
 
   @@index([organizationId], name: "idx_ai_provider_key_org")
   @@map("ai_provider_keys")
+}
+
+// ─── Meta Conversions API (CAPI) ─────────────────
+//
+// Credenciais por org da Conversions API (Events Manager). Token guardado
+// cifrado (AES-256-GCM) igual AiProviderKey. `enabled=false` desliga o
+// disparo do evento Purchase sem precisar de deploy (feature-flag por org).
+model MetaCapiConfig {
+  id             String   @id @default(cuid())
+  organizationId String   @unique @map("organization_id")
+  datasetId      String   @map("dataset_id")
+  encryptedToken String   @map("encrypted_token")
+  tokenPreview   String   @map("token_preview")
+  testEventCode  String?  @map("test_event_code")
+  enabled        Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("meta_capi_configs")
+}
+
+// Log append-only de cada evento enviado (ou pulado) à CAPI. Idempotência
+// via `eventId` único (`${cardId}:won`) — retry da fila e a dedup da Meta
+// usam o mesmo id, então a venda nunca conta 2x.
+model MetaCapiEvent {
+  id              String   @id @default(cuid())
+  organizationId  String   @map("organization_id")
+  cardId          String   @map("card_id")
+  eventId         String   @unique @map("event_id")
+  status          String   @default("PENDING")
+  value           Decimal? @db.Decimal(14, 2)
+  currency        String?
+  responsePayload Json?    @map("response_payload")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status], name: "idx_meta_capi_event_org_status")
+  @@index([cardId], name: "idx_meta_capi_event_card")
+  @@map("meta_capi_events")
 }
 
 enum ScheduledMessageStatus {

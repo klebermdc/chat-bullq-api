@@ -82,7 +82,17 @@ export interface NormalizedInboundMessage {
   isGroup?: boolean;
   isEcho?: boolean;
   senderName?: string;
+  // Atribuição Click-to-WhatsApp: presente só na 1ª mensagem após o clique no
+  // anúncio (Cloud API entrega em message.referral). Persistido no Contact
+  // para o evento Purchase da Meta CAPI quando o lead fecha em GANHO.
+  referral?: InboundReferral;
   rawPayload: unknown;
+}
+
+export interface InboundReferral {
+  ctwaClid?: string;
+  sourceId?: string; // ad id / source_id do referral
+  sourceType?: string; // "ad" | "post"
 }
 
 export interface NormalizedOutboundMessage {
