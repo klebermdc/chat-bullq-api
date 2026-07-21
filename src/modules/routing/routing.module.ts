@@ -9,6 +9,7 @@ import { RouterService } from './router.service';
 import { SlaService } from './sla/sla.service';
 import { SlaTimerProcessor } from './sla/sla-timer.processor';
 import { WatchdogModule } from './watchdog/watchdog.module';
+import { AgentAvailabilityService } from './availability/agent-availability.service';
 
 @Module({
   imports: [
@@ -21,7 +22,7 @@ import { WatchdogModule } from './watchdog/watchdog.module';
     WatchdogModule,
   ],
   controllers: [DepartmentsController],
-  providers: [DepartmentsRepository, DepartmentsService, RouterService, SlaService, SlaTimerProcessor],
-  exports: [DepartmentsService, DepartmentsRepository, RouterService, SlaService],
+  providers: [DepartmentsRepository, DepartmentsService, RouterService, SlaService, SlaTimerProcessor, AgentAvailabilityService],
+  exports: [DepartmentsService, DepartmentsRepository, RouterService, SlaService, AgentAvailabilityService],
 })
 export class RoutingModule {}
