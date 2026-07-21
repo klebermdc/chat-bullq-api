@@ -7,7 +7,7 @@ function makePrisma(overrides: any = {}) {
     organization: {
       findUnique: jest.fn().mockResolvedValue({ aiTimezone: 'America/Sao_Paulo' }),
     },
-    conversationAuditLog: {
+    conversation: {
       findMany: jest.fn().mockResolvedValue([]),
     },
     user: {
@@ -33,14 +33,16 @@ describe('DashboardService.getLeadDistributionScoreboard', () => {
     jest.useRealTimers();
   });
 
-  it('conta hoje e mês por atendente, bucketiza na tz da org e ignora no-op', async () => {
+  it('conta hoje e mês por atendente (conversas por assignedToId), bucketiza na tz da org', async () => {
     const prisma = makePrisma({
-      conversationAuditLog: {
+      conversation: {
         findMany: jest.fn().mockResolvedValue([
-          { toValue: 'u1', fromValue: null, createdAt: new Date('2026-07-20T13:00:00Z') },
-          { toValue: 'u1', fromValue: 'u9', createdAt: new Date('2026-07-20T02:30:00Z') },
-          { toValue: 'u2', fromValue: null, createdAt: new Date('2026-07-20T14:00:00Z') },
-          { toValue: 'u2', fromValue: 'u2', createdAt: new Date('2026-07-20T15:00:00Z') },
+          // Hoje (2026-07-20 local) para u1
+          { assignedToId: 'u1', createdAt: new Date('2026-07-20T13:00:00Z') },
+          // 2026-07-20T02:30:00Z = 2026-07-19 23:30 local → dia 19 (mês corrente, não hoje) para u1
+          { assignedToId: 'u1', createdAt: new Date('2026-07-20T02:30:00Z') },
+          // Hoje para u2
+          { assignedToId: 'u2', createdAt: new Date('2026-07-20T14:00:00Z') },
         ]),
       },
       user: {
@@ -56,20 +58,21 @@ describe('DashboardService.getLeadDistributionScoreboard', () => {
 
     expect(r.timezone).toBe('America/Sao_Paulo');
     expect(r.today).toBe('2026-07-20');
+    // u1: 2 leads no mês (dias 20 e 19), 1 hoje → rankeado à frente de u2 (1 mês)
     expect(r.rows.map((x: any) => x.agent.id)).toEqual(['u1', 'u2']);
     expect(r.rows[0]).toMatchObject({ agent: { id: 'u1', name: 'Aline' }, today: 1, month: 2 });
     expect(r.rows[1]).toMatchObject({ agent: { id: 'u2', name: 'Bruno' }, today: 1, month: 1 });
     expect(r.rows[0].spark).toHaveLength(14);
-    expect(r.rows[0].spark[13]).toEqual({ date: '2026-07-20', count: 1 });
-    expect(r.rows[0].spark[12]).toEqual({ date: '2026-07-19', count: 1 });
+    expect(r.rows[0].spark[13]).toEqual({ date: '2026-07-20', count: 1 }); // hoje
+    expect(r.rows[0].spark[12]).toEqual({ date: '2026-07-19', count: 1 }); // ontem
   });
 
-  it('AGENT (scope) filtra o WHERE por toValue e retorna só a própria linha', async () => {
+  it('AGENT (scope) filtra o WHERE por assignedToId e retorna só a própria linha', async () => {
     const findMany = jest.fn().mockResolvedValue([
-      { toValue: 'u1', fromValue: null, createdAt: new Date('2026-07-20T13:00:00Z') },
+      { assignedToId: 'u1', createdAt: new Date('2026-07-20T13:00:00Z') },
     ]);
     const prisma = makePrisma({
-      conversationAuditLog: { findMany },
+      conversation: { findMany },
       user: { findMany: jest.fn().mockResolvedValue([{ id: 'u1', name: 'Aline', avatarUrl: null }]) },
     });
     const service = await build(prisma);
@@ -79,14 +82,30 @@ describe('DashboardService.getLeadDistributionScoreboard', () => {
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          action: 'ASSIGNED',
-          conversation: { organizationId: 'org1' },
-          toValue: 'u1',
+          organizationId: 'org1',
+          assignedToId: 'u1',
         }),
       }),
     );
     expect(r.rows).toHaveLength(1);
     expect(r.rows[0].agent.id).toBe('u1');
+  });
+
+  it('OWNER/ADMIN (sem scope) filtra assignedToId not null', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = makePrisma({ conversation: { findMany } });
+    const service = await build(prisma);
+
+    await service.getLeadDistributionScoreboard('org1');
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: 'org1',
+          assignedToId: { not: null },
+        }),
+      }),
+    );
   });
 
   it('retorna rows vazio quando não há distribuição', async () => {
