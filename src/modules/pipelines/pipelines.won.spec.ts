@@ -26,7 +26,13 @@ function make(overrides: { card?: unknown; wonStage?: unknown } = {}) {
   } as any;
   const realtime = { emitToOrg: jest.fn() } as any;
   const cadenceRunner = { maybeStartForStage: jest.fn() } as any;
-  const service = new PipelinesService(prisma, realtime, cadenceRunner);
+  const metaCapiQueue = { enqueuePurchase: jest.fn() } as any;
+  const service = new PipelinesService(
+    prisma,
+    realtime,
+    cadenceRunner,
+    metaCapiQueue,
+  );
   const moveSpy = jest
     .spyOn(service, 'moveCard')
     .mockResolvedValue({ id: 'card-1' } as any);

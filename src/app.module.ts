@@ -38,6 +38,7 @@ import { ChannelUsageModule } from './modules/channel-usage/channel-usage.module
 import { CopilotModule } from './modules/copilot/copilot.module';
 import { CallsModule } from './modules/calls/calls.module';
 import { OrderFichaModule } from './modules/order-ficha/order-ficha.module';
+import { MetaCapiModule } from './modules/meta-capi/meta-capi.module';
 // ProductsModule removido — catálogo agora vive no Trivapp e é consumido
 // via skill HTTP getProductPitch + CatalogSyncService. Tabela `products`
 // fica órfã no DB (cleanup futuro). Não importar aqui.
@@ -99,6 +100,7 @@ import redisConfig from './config/redis.config';
     CopilotModule,
     CallsModule,
     OrderFichaModule,
+    MetaCapiModule,
   ],
 })
 export class AppModule {}

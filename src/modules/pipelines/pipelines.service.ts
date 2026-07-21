@@ -11,6 +11,7 @@ import { CardStatus, PipelineStageType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { CadenceRunner } from '../cadences/cadence-runner.service';
+import { MetaCapiQueue } from '../meta-capi/meta-capi.queue';
 import {
   CreateCardDto,
   CreatePipelineDto,
@@ -60,6 +61,7 @@ export class PipelinesService {
     private readonly realtime: RealtimeGateway,
     @Inject(forwardRef(() => CadenceRunner))
     private readonly cadenceRunner: CadenceRunner,
+    private readonly metaCapiQueue: MetaCapiQueue,
   ) {}
 
   // ─── Pipelines ─────────────────────────────────
@@ -713,6 +715,19 @@ export class PipelinesService {
         .catch((err) =>
           this.logger.warn(
             `cadence_maybeStartForStage_failed card=${cardId}: ${(err as Error).message}`,
+          ),
+        );
+    }
+
+    // Hook Meta CAPI: card fechou em GANHO → enfileira o evento Purchase pra
+    // Conversions API (atribuição do anúncio CTWA). No-op se a org não tiver
+    // config/enabled (o processor decide). Fire-and-forget: nunca trava o move.
+    if (newStatus === CardStatus.WON) {
+      this.metaCapiQueue
+        .enqueuePurchase({ cardId, organizationId })
+        .catch((err) =>
+          this.logger.warn(
+            `meta_capi_enqueue_failed card=${cardId}: ${(err as Error).message}`,
           ),
         );
     }

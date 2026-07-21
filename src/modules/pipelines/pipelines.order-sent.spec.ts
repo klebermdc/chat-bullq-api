@@ -30,7 +30,13 @@ function make(overrides: {
   } as any;
   const realtime = { emitToOrg: jest.fn() } as any;
   const cadenceRunner = { maybeStartForStage: jest.fn() } as any;
-  const service = new PipelinesService(prisma, realtime, cadenceRunner);
+  const metaCapiQueue = { enqueuePurchase: jest.fn() } as any;
+  const service = new PipelinesService(
+    prisma,
+    realtime,
+    cadenceRunner,
+    metaCapiQueue,
+  );
   // moveCard é testado noutro lugar — aqui espiamos que E6 o chama certo.
   const moveSpy = jest
     .spyOn(service, 'moveCard')
