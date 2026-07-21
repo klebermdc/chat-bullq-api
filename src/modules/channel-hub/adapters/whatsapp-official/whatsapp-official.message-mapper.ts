@@ -48,12 +48,31 @@ export class WhatsAppOfficialMessageMapper {
     const mapped = statusMap[status.status];
     if (!mapped) return null;
 
-    return {
+    const result: StatusUpdate = {
       externalMessageId: status.id,
       status: mapped,
       timestamp: new Date(parseInt(status.timestamp, 10) * 1000),
       errorMessage: status.errors?.[0]?.message,
     };
+
+    if (status.conversation?.id) {
+      const exp = status.conversation.expiration_timestamp;
+      result.conversation = {
+        id: status.conversation.id,
+        originType: status.conversation.origin?.type,
+        expirationTimestamp: exp != null ? parseInt(exp, 10) : undefined,
+      };
+    }
+
+    if (status.pricing) {
+      result.pricing = {
+        billable: status.pricing.billable,
+        category: status.pricing.category,
+        pricingModel: status.pricing.pricing_model,
+      };
+    }
+
+    return result;
   }
 
   denormalize(
