@@ -519,9 +519,12 @@ export class DashboardService {
   }
 
   /**
-   * Placar de leads distribuídos por atendente. Conta eventos ASSIGNED do
-   * audit log (toda atribuição: roteador + manual + transferência), agrupados
-   * por `toValue` (quem recebeu). "Hoje" e "Este mês" são fixos na tz da org.
+   * Placar de leads distribuídos por atendente. Conta CONVERSAS por atendente
+   * atribuído (`assignedToId`), bucketizadas pela data de ENTRADA do lead
+   * (`createdAt`) na tz da org. Essa fonte captura TODA distribuição — inclusive
+   * a da IA/"Distribuído para X" ([[pending-action.distribute]]) e a atribuição
+   * no intake, que setam `assignedToId` direto (sem passar pelo `fsm.assign`,
+   * logo sem evento ASSIGNED no audit log). "Hoje" e "Este mês" são fixos.
    *
    * @param scope quando setado (AGENT), restringe a linha ao próprio userId;
    *   undefined (OWNER/ADMIN) devolve o placar inteiro.
@@ -552,28 +555,26 @@ export class DashboardService {
     }
     const sparkSet = new Set(sparkDates);
 
-    const logs = await this.prisma.conversationAuditLog.findMany({
+    const convs = await this.prisma.conversation.findMany({
       where: {
-        action: 'ASSIGNED',
-        conversation: { organizationId },
+        organizationId,
+        assignedToId: scope ? scope : { not: null },
         createdAt: { gte: windowStart },
-        ...(scope ? { toValue: scope } : {}),
       },
-      select: { toValue: true, fromValue: true, createdAt: true },
+      select: { assignedToId: true, createdAt: true },
     });
 
     const byAgent = new Map<
       string,
       { today: number; month: number; days: Map<string, number> }
     >();
-    for (const log of logs) {
-      if (!log.toValue) continue;
-      if (log.fromValue === log.toValue) continue; // no-op re-save, não é distribuição
-      const day = this.localDateKey(log.createdAt, timezone);
-      let e = byAgent.get(log.toValue);
+    for (const conv of convs) {
+      if (!conv.assignedToId) continue;
+      const day = this.localDateKey(conv.createdAt, timezone);
+      let e = byAgent.get(conv.assignedToId);
       if (!e) {
         e = { today: 0, month: 0, days: new Map() };
-        byAgent.set(log.toValue, e);
+        byAgent.set(conv.assignedToId, e);
       }
       if (day === todayStr) e.today++;
       if (day.startsWith(monthPrefix)) e.month++;
