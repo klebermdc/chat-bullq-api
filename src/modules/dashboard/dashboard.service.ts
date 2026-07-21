@@ -7,6 +7,24 @@ export interface DateRange {
   to: Date;
 }
 
+export interface ScoreboardSparkPoint {
+  date: string;
+  count: number;
+}
+
+export interface ScoreboardRow {
+  agent: { id: string; name: string; avatarUrl: string | null };
+  today: number;
+  month: number;
+  spark: ScoreboardSparkPoint[];
+}
+
+export interface LeadDistributionScoreboard {
+  timezone: string;
+  today: string;
+  rows: ScoreboardRow[];
+}
+
 @Injectable()
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
@@ -487,6 +505,113 @@ export class DashboardService {
         ? Math.round(a.resolutionTimes.reduce((s, v) => s + v, 0) / a.resolutionTimes.length)
         : null,
     }));
+  }
+
+  /** Data local (YYYY-MM-DD) de um instante na timezone informada. */
+  private localDateKey(d: Date, timeZone: string): string {
+    // en-CA formata como "YYYY-MM-DD".
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
+  }
+
+  /**
+   * Placar de leads distribuídos por atendente. Conta eventos ASSIGNED do
+   * audit log (toda atribuição: roteador + manual + transferência), agrupados
+   * por `toValue` (quem recebeu). "Hoje" e "Este mês" são fixos na tz da org.
+   *
+   * @param scope quando setado (AGENT), restringe a linha ao próprio userId;
+   *   undefined (OWNER/ADMIN) devolve o placar inteiro.
+   */
+  async getLeadDistributionScoreboard(
+    organizationId: string,
+    scope?: string,
+  ): Promise<LeadDistributionScoreboard> {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { aiTimezone: true },
+    });
+    const timezone = org?.aiTimezone ?? 'America/Sao_Paulo';
+
+    const now = new Date();
+    // 32 dias cobrem com folga o mês corrente (≤31 dias) e os 14 do sparkline.
+    const windowStart = new Date(now.getTime() - 32 * 24 * 60 * 60 * 1000);
+    const todayStr = this.localDateKey(now, timezone);
+    const monthPrefix = todayStr.slice(0, 7); // "YYYY-MM"
+
+    // 14 datas locais (hoje para trás), decrementando dias de calendário de
+    // forma aritmética a partir da data local de hoje — imune a DST.
+    const [y, m, d] = todayStr.split('-').map(Number);
+    const anchor = Date.UTC(y, m - 1, d);
+    const sparkDates: string[] = [];
+    for (let i = 13; i >= 0; i--) {
+      sparkDates.push(new Date(anchor - i * 86400000).toISOString().slice(0, 10));
+    }
+    const sparkSet = new Set(sparkDates);
+
+    const logs = await this.prisma.conversationAuditLog.findMany({
+      where: {
+        action: 'ASSIGNED',
+        conversation: { organizationId },
+        createdAt: { gte: windowStart },
+        ...(scope ? { toValue: scope } : {}),
+      },
+      select: { toValue: true, fromValue: true, createdAt: true },
+    });
+
+    const byAgent = new Map<
+      string,
+      { today: number; month: number; days: Map<string, number> }
+    >();
+    for (const log of logs) {
+      if (!log.toValue) continue;
+      if (log.fromValue === log.toValue) continue; // no-op re-save, não é distribuição
+      const day = this.localDateKey(log.createdAt, timezone);
+      let e = byAgent.get(log.toValue);
+      if (!e) {
+        e = { today: 0, month: 0, days: new Map() };
+        byAgent.set(log.toValue, e);
+      }
+      if (day === todayStr) e.today++;
+      if (day.startsWith(monthPrefix)) e.month++;
+      if (sparkSet.has(day)) e.days.set(day, (e.days.get(day) ?? 0) + 1);
+    }
+
+    const agentIds = [...byAgent.keys()];
+    if (agentIds.length === 0) {
+      return { timezone, today: todayStr, rows: [] };
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: agentIds } },
+      select: { id: true, name: true, avatarUrl: true },
+    });
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    const rows = agentIds
+      .map((id): ScoreboardRow | null => {
+        const u = userMap.get(id);
+        if (!u) return null;
+        const e = byAgent.get(id)!;
+        return {
+          agent: { id: u.id, name: u.name, avatarUrl: u.avatarUrl ?? null },
+          today: e.today,
+          month: e.month,
+          spark: sparkDates.map((date) => ({ date, count: e.days.get(date) ?? 0 })),
+        };
+      })
+      .filter((r): r is ScoreboardRow => r !== null)
+      .sort(
+        (a, b) =>
+          b.month - a.month ||
+          b.today - a.today ||
+          a.agent.name.localeCompare(b.agent.name),
+      );
+
+    return { timezone, today: todayStr, rows };
   }
 
   async getVolumeFlow(

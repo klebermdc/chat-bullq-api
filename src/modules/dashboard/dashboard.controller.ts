@@ -228,6 +228,21 @@ export class DashboardController {
     );
   }
 
+  @Get('lead-distribution-scoreboard')
+  @ApiOperation({
+    summary: 'Placar de leads distribuídos por atendente (Hoje + Este mês + 14d)',
+  })
+  getLeadDistributionScoreboard(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+  ) {
+    return this.service.getLeadDistributionScoreboard(
+      orgId,
+      this.assignmentScope(userId, role),
+    );
+  }
+
   @Get('top-tags')
   @ApiOperation({ summary: 'Top tags / conversation reasons' })
   @ApiQuery({ name: 'from', required: false }) @ApiQuery({ name: 'to', required: false })
