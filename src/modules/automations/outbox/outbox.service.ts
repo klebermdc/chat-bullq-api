@@ -127,6 +127,14 @@ export class OutboxService {
         // doing it twice is a no-op at the domain layer too.
         return `${trigger}:${p.target}:${p.target === 'conversation' ? p.conversationId : p.contactId}:${p.tagId}`;
       }
+      case AutomationTrigger.LEAD_QUALIFIED: {
+        const p = payload as TriggerToPayload[typeof AutomationTrigger.LEAD_QUALIFIED];
+        // Uma qualificação por CONVERSA, não por contato: cliente que volta
+        // meses depois abre nova conversa, clica em novo anúncio e gera novo
+        // ctwa_clid — é um lead novo e deve contar de novo. Por contato,
+        // esse segundo lead seria engolido para sempre.
+        return `LEAD_QUALIFIED:${p.conversationId}`;
+      }
       case AutomationTrigger.MESSAGE_RECEIVED: {
         const p = payload as TriggerToPayload[typeof AutomationTrigger.MESSAGE_RECEIVED];
         // messageId is unique in our DB — perfect dedup key.

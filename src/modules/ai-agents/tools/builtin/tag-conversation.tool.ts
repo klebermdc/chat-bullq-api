@@ -59,7 +59,7 @@ export class TagConversationTool implements AiTool {
 
     const existing = await this.prisma.tag.findMany({
       where: { organizationId: ctx.organizationId, name: { in: names } },
-      select: { id: true, name: true },
+      select: { id: true, name: true, marksQualifiedLead: true },
     });
     const existingByName = new Map(existing.map((t) => [t.name, t.id]));
     const toCreate = names.filter((n) => !existingByName.has(n));
@@ -69,7 +69,7 @@ export class TagConversationTool implements AiTool {
           toCreate.map((name) =>
             this.prisma.tag.create({
               data: { organizationId: ctx.organizationId, name },
-              select: { id: true, name: true },
+              select: { id: true, name: true, marksQualifiedLead: true },
             }),
           ),
         )
@@ -91,15 +91,28 @@ export class TagConversationTool implements AiTool {
               tagId: tag.id,
             },
           });
-          await this.outbox.enqueue(tx, AutomationTrigger.TAG_ADDED, {
+          const base = {
             organizationId: ctx.organizationId,
             contactId: ctx.contactId,
             conversationId: ctx.conversationId,
             channelId: ctx.channelId,
             actorId: ctx.agentId, // attribution: AI agent that tagged
             tagId: tag.id,
-            target: 'conversation',
-          });
+            target: 'conversation' as const,
+          };
+          await this.outbox.enqueue(tx, AutomationTrigger.TAG_ADDED, base);
+
+          // Tag marcada como "lead qualificado" emite também o evento de
+          // atribuição, na MESMA transação — se a tag gravar, o evento sai.
+          // Só dispara em tag genuinamente nova (o P2002 abaixo descarta
+          // re-aplicação), então não há risco de contar o lead duas vezes.
+          if (tag.marksQualifiedLead) {
+            await this.outbox.enqueue(
+              tx,
+              AutomationTrigger.LEAD_QUALIFIED,
+              base,
+            );
+          }
         });
       } catch (err) {
         // Tag already on this conversation — silent no-op. We don't want
