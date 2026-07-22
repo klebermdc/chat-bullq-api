@@ -20,6 +20,14 @@ export interface InboxFilters {
   tagIds?: string[];
   assignedToId?: string;
   /**
+   * Só conversas SEM responsável (`assignedToId IS NULL`) — os leads que
+   * ainda estão na fila pra distribuir. Precisa ser um flag próprio: um
+   * `assignedToId` com valor "vazio" não distingue "não filtra" de "filtra
+   * por ninguém", e mandar a string 'null' pro Prisma compara texto contra
+   * uma coluna UUID (nunca casa).
+   */
+  assignedToNone?: boolean;
+  /**
    * Barreira de segurança: quando setado, força `assignedToId = este valor`
    * independentemente do filtro opcional. Usado para escopar AGENTs às
    * conversas atribuídas a eles. OWNER/ADMIN não recebem este campo.
@@ -156,7 +164,8 @@ export class ConversationsRepository {
         { contact: { tags: { some: { tagId: { in: filters.tagIds } } } } },
       ];
     }
-    if (filters.assignedToId) where.assignedToId = filters.assignedToId;
+    if (filters.assignedToNone) where.assignedToId = null;
+    else if (filters.assignedToId) where.assignedToId = filters.assignedToId;
     if (filters.enforceAssignedToId) {
       // Precedência sobre o filtro opcional — barreira, não preferência.
       where.assignedToId = filters.enforceAssignedToId;
