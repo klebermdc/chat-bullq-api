@@ -319,6 +319,19 @@ export class InboundMessageProcessor extends WorkerHost {
           .catch((err) =>
             this.logger.warn(`lead-source tag falhou (não crítico): ${err.message}`),
           );
+
+        // Lead vindo de anúncio Click-to-WhatsApp: a Meta manda o referral
+        // junto da 1ª mensagem. Marca a conversa para o time enxergar e
+        // filtrar na caixa de entrada sem depender de relatório.
+        this.leadSourceTagger
+          .tagAdLeadIfReferral({
+            organizationId,
+            conversationId,
+            ctwaClid: message.referral?.ctwaClid,
+          })
+          .catch((err) =>
+            this.logger.warn(`ad-source tag falhou (não crítico): ${err.message}`),
+          );
       }
 
       if (
