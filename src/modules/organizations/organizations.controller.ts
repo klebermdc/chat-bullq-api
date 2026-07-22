@@ -16,6 +16,7 @@ import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { ResetMemberPasswordDto } from './dto/reset-member-password.dto';
+import { UpdateMemberEmailDto } from './dto/update-member-email.dto';
 import { UpdateMemberRamalDto } from './dto/update-member-ramal.dto';
 import { UpdateMemberWebphoneDto } from './dto/update-member-webphone.dto';
 import { UpdateWorkingHoursDto } from './dto/update-working-hours.dto';
@@ -106,6 +107,18 @@ export class OrganizationsController {
     @Body() dto: ResetMemberPasswordDto,
   ) {
     return this.service.resetMemberPassword(orgId, memberId, dto, actorRole);
+  }
+
+  @Patch('members/:memberId/email')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({ summary: "Change a member's login e-mail (admin)" })
+  updateMemberEmail(
+    @CurrentOrg('id') orgId: string,
+    @CurrentOrg('userRole') actorRole: OrgRole,
+    @Param('memberId') memberId: string,
+    @Body() dto: UpdateMemberEmailDto,
+  ) {
+    return this.service.updateMemberEmail(orgId, memberId, dto, actorRole);
   }
 
   @Patch('members/:memberId/ramal')
