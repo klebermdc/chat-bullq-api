@@ -124,8 +124,10 @@ export class PipelinesController {
     @Param('cardId') cardId: string,
     @CurrentOrg('id') orgId: string,
     @Body() dto: UpdateCardDto,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.updateCard(cardId, orgId, dto);
+    return this.service.updateCard(cardId, orgId, dto, role, userId);
   }
 
   @Delete('cards/:cardId')
@@ -147,8 +149,10 @@ export class PipelinesController {
     @Param('cardId') cardId: string,
     @CurrentOrg('id') orgId: string,
     @Body() dto: MoveCardDto,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.moveCard(cardId, orgId, dto);
+    return this.service.moveCard(cardId, orgId, dto, role, userId);
   }
 
   @Post('conversations/:conversationId/order-sent')

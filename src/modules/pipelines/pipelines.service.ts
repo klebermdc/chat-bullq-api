@@ -554,15 +554,38 @@ export class PipelinesService {
     } as MoveCardDto);
   }
 
+  /**
+   * Carrega o card garantindo que o usuário pode tocá-lo.
+   * AGENT só alcança card cuja conversa (ou o próprio card) é dele.
+   * Lança NotFound — e não Forbidden — para não vazar a existência do card alheio.
+   */
+  private async assertCardAccess(
+    cardId: string,
+    organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
+    const scope = currentUserId ? pipelineCardScopeWhere(role, currentUserId) : {};
+    const card = await this.prisma.card.findFirst({
+      where: { id: cardId, organizationId, ...scope },
+    });
+    if (!card) throw new NotFoundException('Card not found');
+    return card;
+  }
+
   async updateCard(
     cardId: string,
     organizationId: string,
     dto: UpdateCardDto,
+    role?: OrgRole,
+    currentUserId?: string,
   ) {
-    const card = await this.prisma.card.findUnique({ where: { id: cardId } });
-    if (!card || card.organizationId !== organizationId) {
-      throw new NotFoundException('Card not found');
-    }
+    const card = await this.assertCardAccess(
+      cardId,
+      organizationId,
+      role,
+      currentUserId,
+    );
 
     const updated = await this.prisma.card.update({
       where: { id: cardId },
@@ -617,11 +640,15 @@ export class PipelinesService {
     cardId: string,
     organizationId: string,
     dto: MoveCardDto,
+    role?: OrgRole,
+    currentUserId?: string,
   ) {
-    const card = await this.prisma.card.findUnique({ where: { id: cardId } });
-    if (!card || card.organizationId !== organizationId) {
-      throw new NotFoundException('Card not found');
-    }
+    const card = await this.assertCardAccess(
+      cardId,
+      organizationId,
+      role,
+      currentUserId,
+    );
     const targetStage = await this.prisma.pipelineStage.findUnique({
       where: { id: dto.toStageId },
     });
