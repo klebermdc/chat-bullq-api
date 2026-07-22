@@ -22,6 +22,7 @@ import {
   CurrentOrg,
   CurrentChannelAccess,
   CurrentUserRole,
+  Feature,
   Roles,
 } from '../../../common/decorators';
 import type { ChannelAccess } from '../../iam/channel-access/channel-access.service';
@@ -333,6 +334,7 @@ export class ConversationsController {
   }
 
   @Patch(':id/ai')
+  @Feature('inbox.ai.toggle')
   @ApiOperation({
     summary:
       'Override AI behavior on this conversation. enabled=true forces AI on (overrides kill switch and business hours), false forces off, null clears the override (follows global rules).',
@@ -352,6 +354,7 @@ export class ConversationsController {
   }
 
   @Post(':id/ai/engage')
+  @Feature('inbox.ai.toggle')
   @ApiOperation({
     summary:
       'Manually engage the AI on this conversation right now. The agent reads the full message history, decides what to do (reply, delegate, transfer) and acts. Useful when the inbound stream is silent but a human wants the AI to take over (e.g. after pausing then resuming).',
@@ -366,6 +369,7 @@ export class ConversationsController {
   }
 
   @Post(':id/ai/set-agent')
+  @Feature('inbox.ai.toggle')
   @ApiOperation({
     summary:
       'Pin a specific AI agent to this conversation and immediately engage it. Sets activeAgentId + aiEnabled=true + fires the runner. Use case: human picks Lívia/André via UI when delegating manually.',
