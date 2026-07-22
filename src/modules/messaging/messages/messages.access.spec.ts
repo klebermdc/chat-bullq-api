@@ -84,11 +84,15 @@ describe('MessagesService.send — AGENT não manda mensagem em conversa alheia'
     ).rejects.toThrow('reached-channel-check');
   });
 
-  it('chamador de sistema (role indefinida) NÃO é barrado mesmo em conversa de outro dono', async () => {
+  it('chamador de sistema marcado { system: true } NÃO é barrado mesmo em conversa de outro dono', async () => {
+    // Substitui o teste antigo "role indefinida não é barrada" — esse
+    // comportamento era fail-OPEN (o bug do Part 1) e foi removido. Agora a
+    // barreira só é pulada com o opt-in explícito `system: true` (ver
+    // describe abaixo, "fail-CLOSED por padrão").
     const { svc, channelAccess } = makeMessagesService({
       conversation: baseConversation,
       // Se a guarda rodasse, bloquearia (findFirst escopado devolve null) —
-      // ela não deve nem ser chamada quando `role` está ausente.
+      // ela não deve nem ser chamada quando `system: true`.
       conversationsGuardFinds: null,
     });
     channelAccess.assertChannelAccess.mockImplementation(() => {
@@ -102,6 +106,64 @@ describe('MessagesService.send — AGENT não manda mensagem em conversa alheia'
         'org1',
         'ALL',
         undefined,
+        { system: true },
+      ),
+    ).rejects.toThrow('reached-channel-check');
+  });
+});
+
+describe('MessagesService.send — fail-CLOSED por padrão (sem role e sem opts.system)', () => {
+  const baseConversation = {
+    id: 'conv1',
+    organizationId: 'org1',
+    channelId: 'chan1',
+    assignedToId: 'colega-u2',
+    contact: { channels: [] },
+  };
+
+  it('nem role nem opts.system → BARRADO em conversa alheia (fail-closed, não fail-open)', async () => {
+    const { svc, channelAccess } = makeMessagesService({
+      conversation: baseConversation,
+      // Sem role, resolveAssignmentScope(undefined, senderId) escopa ao
+      // próprio senderId — a guarda RODA e, escopada, não acha a conversa
+      // (que é do colega).
+      conversationsGuardFinds: null,
+    });
+
+    await expect(
+      svc.send(
+        { conversationId: 'conv1', type: 'TEXT', content: { text: 'oi' } } as any,
+        'algum-caller-sem-role-nem-system',
+        'org1',
+        'ALL',
+        // sem role
+        undefined,
+        // sem opts (equivalente a opts undefined — não é system)
+        undefined,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(channelAccess.assertChannelAccess).not.toHaveBeenCalled();
+  });
+
+  it('{ system: true } PULA a barreira mesmo sem role, em conversa alheia', async () => {
+    const { svc, channelAccess } = makeMessagesService({
+      conversation: baseConversation,
+      // Guarda nem deveria ser chamada — se fosse, acharia null (escopado)
+      // e bloquearia. `system: true` pula a chamada inteira.
+      conversationsGuardFinds: null,
+    });
+    channelAccess.assertChannelAccess.mockImplementation(() => {
+      throw new Error('reached-channel-check');
+    });
+
+    await expect(
+      svc.send(
+        { conversationId: 'conv1', type: 'TEXT', content: { text: 'oi' } } as any,
+        'system-caller',
+        'org1',
+        'ALL',
+        undefined,
+        { system: true },
       ),
     ).rejects.toThrow('reached-channel-check');
   });

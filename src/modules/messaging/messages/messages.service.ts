@@ -50,13 +50,24 @@ export class MessagesService {
     organizationId: string,
     access: ChannelAccess = 'ALL',
     role?: OrgRole,
-    opts?: { automated?: boolean },
+    /**
+     * `automated`: mensagem automática de sistema (ex.: aviso de
+     * fora-de-horário) enviada em nome de um atendente, mas NÃO é uma
+     * resposta humana — não deve tirar a conversa de "Esperando", cancelar
+     * o watchdog de "ninguém respondeu", marcar como lida em nome do
+     * atendente offline nem reatribuir dono. Só persiste o OUTBOUND e
+     * dispara pro canal. Comportamento independente de `system` — mudar
+     * quem marca `automated` muda comportamento de produto, não é sobre
+     * autorização.
+     *
+     * `system`: chamada interna de sistema — pula a checagem de atribuição
+     * (`assertConversationAccess`). NUNCA use a partir de um handler HTTP:
+     * é só para chamadores server-to-server (cadência, agendamento,
+     * disponibilidade, saudação, propostas) que já validaram acesso por
+     * outro caminho ou não têm um usuário autenticado real por trás.
+     */
+    opts?: { automated?: boolean; system?: boolean },
   ) {
-    // Mensagens automáticas de sistema (ex.: aviso de fora-de-horário) são
-    // enviadas em nome de um atendente, mas NÃO são uma resposta humana: não
-    // devem tirar a conversa de "Esperando", cancelar o watchdog de
-    // "ninguém respondeu", marcar como lida em nome do atendente offline nem
-    // reatribuir dono. Só persistem o OUTBOUND e disparam pro canal.
     const automated = opts?.automated === true;
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: dto.conversationId },
@@ -74,14 +85,21 @@ export class MessagesService {
     // conseguia mandar mensagem (e auto-atribuir a conversa pra si) numa
     // conversa de colega que a leitura já negava.
     //
-    // Só aplica a barreira quando `role` vem preenchida — isto é, chamada
-    // autenticada de verdade (UI/JWT ou API key, que "impersona" um usuário
-    // real com role real). `senderId` sozinho NÃO basta como sinal: vários
-    // chamadores de sistema (cadência resolve o OWNER como remetente de
-    // fallback, dispatch de agendamento usa o `createdById` de quando foi
-    // agendado, aviso de fora-de-horário usa o assignedToId atual) passam um
-    // senderId genuíno mas nunca uma role — continuam irrestritos, igual antes.
-    if (role) {
+    // Fail-CLOSED: a barreira roda sempre, A MENOS que o chamador se marque
+    // explicitamente `system: true`. Isto é o oposto do que existia antes
+    // (só rodava quando `role` vinha preenchida) — aquilo era fail-open:
+    // qualquer handler HTTP futuro que esquecesse de passar `role` perdia a
+    // checagem silenciosamente no endpoint mais perigoso do app (entrega
+    // mensagem de verdade pro cliente no WhatsApp). Sem `role` e sem
+    // `system`, `resolveAssignmentScope(undefined, senderId)` escopa ao
+    // próprio remetente — o padrão seguro.
+    //
+    // Chamadores de sistema (cadência, dispatch de agendamento, aviso de
+    // fora-de-horário, saudação de atendente, propostas) já resolveram
+    // acesso por outro caminho (ou não têm usuário autenticado real por
+    // trás) e se marcam `{ system: true }` para pular a barreira — ver
+    // tabela de call sites no PR.
+    if (opts?.system !== true) {
       await this.conversations.assertConversationAccess(
         conversation.id,
         organizationId,
