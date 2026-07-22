@@ -47,11 +47,26 @@ export class CadencesController {
     @Param('conversationId') conversationId: string,
     @CurrentOrg('id') orgId: string,
   ) {
-    const e = await this.enrollments.findActiveWithCadence(conversationId);
+    // `findLive`, não `findActive`: um enrollment PAUSED (revive armado) segue
+    // vivo e precisa aparecer no selo — senão o atendente vê a cadência sumir
+    // do header e conclui que ela morreu depois de um "vou pensar".
+    const e = await this.enrollments.findLiveWithCadence(conversationId);
     if (!e || e.organizationId !== orgId) return { active: false };
     return {
       active: true,
       enrollmentId: e.id,
+      status: e.status,
+      paused: e.status === 'PAUSED',
+      pausedAt: e.pausedAt,
+      // Retomada estimada: a janela de silêncio contada a partir da pausa. É
+      // uma previsão — o watchdog rearma a cada mensagem nova na conversa.
+      resumesAt:
+        e.status === 'PAUSED' && e.pausedAt
+          ? new Date(
+              new Date(e.pausedAt).getTime() +
+                (e.cadence.silenceWindowMinutes ?? 1440) * 60_000,
+            )
+          : null,
       currentStep: e.currentStep,
       totalSteps: e.cadence.steps.length,
       cadenceName: e.cadence.name,
@@ -98,6 +113,19 @@ export class CadencesController {
     @CurrentOrg('id') orgId: string,
   ) {
     return this.runner.stop(enrollmentId, 'manual_handoff', orgId);
+  }
+
+  @Post('enrollments/:enrollmentId/resume')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.AGENT)
+  @ApiOperation({
+    summary: 'Retoma agora um enrollment PAUSED (sem esperar o watchdog)',
+  })
+  async resumeEnrollment(
+    @Param('enrollmentId') enrollmentId: string,
+    @CurrentOrg('id') orgId: string,
+  ) {
+    await this.runner.resumeNow(enrollmentId, orgId);
+    return { resumed: true };
   }
 
   @Post(':id/start')

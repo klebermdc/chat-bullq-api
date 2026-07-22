@@ -51,4 +51,53 @@ describe('EnrollmentsRepository — PAUSED claims', () => {
       where: { conversationId: 'c1', status: { in: ['ACTIVE', 'PAUSED'] } },
     });
   });
+
+  // Regressão do selo sumido: o header lê este finder. Só-ACTIVE fazia a
+  // cadência pausada desaparecer do header e parecer morta.
+  it('findLiveWithCadence traz PAUSED junto com a cadência', async () => {
+    prisma.cadenceEnrollment.findFirst.mockResolvedValue({ id: 'e1' });
+    await repo.findLiveWithCadence('c1');
+    expect(prisma.cadenceEnrollment.findFirst).toHaveBeenCalledWith({
+      where: { conversationId: 'c1', status: { in: ['ACTIVE', 'PAUSED'] } },
+      include: {
+        cadence: { include: { steps: { orderBy: { order: 'asc' } } } },
+      },
+    });
+  });
+});
+
+describe('EnrollmentsRepository.create — desempate do P2002', () => {
+  const { Prisma } = jest.requireActual('@prisma/client');
+
+  function makeRepo(existing: any) {
+    const p2002 = new Prisma.PrismaClientKnownRequestError('unique', {
+      code: 'P2002',
+      clientVersion: '6',
+    });
+    const prisma: any = {
+      cadenceEnrollment: {
+        create: jest.fn().mockRejectedValue(p2002),
+        findFirst: jest.fn().mockResolvedValue(existing),
+      },
+    };
+    return { repo: new EnrollmentsRepository(prisma), prisma };
+  }
+
+  // O índice único parcial cobre ACTIVE+PAUSED. Buscando só ACTIVE, o
+  // desempate vinha vazio e o P2002 vazava como 500 pro atendente.
+  it('P2002 com enrollment PAUSED → devolve o existente em vez de estourar', async () => {
+    const { repo, prisma } = makeRepo({ id: 'enrPaused', status: 'PAUSED' });
+
+    const result = await repo.create({ conversationId: 'c1' } as any);
+
+    expect(result).toMatchObject({ id: 'enrPaused' });
+    expect(prisma.cadenceEnrollment.findFirst).toHaveBeenCalledWith({
+      where: { conversationId: 'c1', status: { in: ['ACTIVE', 'PAUSED'] } },
+    });
+  });
+
+  it('P2002 sem enrollment vivo → propaga o erro', async () => {
+    const { repo } = makeRepo(null);
+    await expect(repo.create({ conversationId: 'c1' } as any)).rejects.toThrow();
+  });
 });

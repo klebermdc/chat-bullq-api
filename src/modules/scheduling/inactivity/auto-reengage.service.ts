@@ -5,6 +5,7 @@ import { ScheduledMessagesRepository } from '../scheduled-messages.repository';
 import { InactivityRepository } from './inactivity.repository';
 import { ReengageDraftService } from './reengage-draft.service';
 import { SCHEDULED_DISPATCH_QUEUE, SCHEDULED_DISPATCH_JOB } from '../scheduling.constants';
+import { nextAllowedTime } from './quiet-hours.util';
 import type { ResolvedInactivitySettings } from './inactivity-settings.service';
 
 @Injectable()
@@ -100,9 +101,8 @@ export class AutoReengageService {
   }
 
   /**
-   * Se estamos dentro do quiet window (resolvido no fuso `timeZone`), empurra
-   * para o próximo `endHour` naquele fuso; senão agora. Função pura (tz e now
-   * injetados) para ficar testável.
+   * Delega ao util puro `quiet-hours.util`. Mantido como método para não
+   * quebrar os callers (e os specs) que já dependem desta assinatura.
    */
   nextAllowedTime(
     now: Date,
@@ -110,36 +110,6 @@ export class AutoReengageService {
     endHour: number | null,
     timeZone: string,
   ): Date {
-    if (startHour === null || endHour === null) return now;
-    const { hour, minute, second } = this.wallClock(now, timeZone);
-    const inQuiet =
-      startHour <= endHour
-        ? hour >= startHour && hour < endHour
-        : hour >= startHour || hour < endHour;
-    if (!inQuiet) return now;
-    // Distância (em horas de relógio no fuso) até o próximo `endHour`.
-    const deltaHours = (endHour - hour + 24) % 24;
-    const msUntilEnd =
-      deltaHours * 3_600_000 - minute * 60_000 - second * 1000 - now.getMilliseconds();
-    return new Date(now.getTime() + msUntilEnd);
-  }
-
-  /** Hora/min/seg de relógio (0-23) do instante `date` no fuso `timeZone`. */
-  private wallClock(
-    date: Date,
-    timeZone: string,
-  ): { hour: number; minute: number; second: number } {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone,
-      hour: 'numeric',
-      minute: 'numeric',
-      second: 'numeric',
-      hour12: false,
-    }).formatToParts(date);
-    const get = (t: string) =>
-      parseInt(parts.find((p) => p.type === t)?.value ?? '0', 10);
-    // Intl pode emitir "24" para meia-noite com hour12:false; normaliza pra 0.
-    const hour = get('hour') % 24;
-    return { hour, minute: get('minute'), second: get('second') };
+    return nextAllowedTime(now, startHour, endHour, timeZone);
   }
 }

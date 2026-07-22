@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -24,6 +25,12 @@ import {
   CADENCE_SILENCE_QUEUE,
   CADENCE_SILENCE_JOB,
 } from '../scheduling/scheduling.constants';
+import { nextAllowedTime } from '../scheduling/inactivity/quiet-hours.util';
+
+/** Quiet hours da retomada: 20h→8h no fuso padrão do Brasil (igual watchdog). */
+const RESUME_QUIET_START = 20;
+const RESUME_QUIET_END = 8;
+const RESUME_TZ = 'America/Sao_Paulo';
 
 /** De onde a cadência foi iniciada (gatilho manual ou entrada de etapa). */
 export type CadenceStartSource = 'MANUAL' | 'STAGE_ENTER' | 'NO_REPLY';
@@ -105,10 +112,16 @@ export class CadenceRunner {
     source: CadenceStartSource,
     orgId?: string,
   ): Promise<CadenceEnrollment | null> {
-    // Idempotência: qualquer enrollment ACTIVE na conversa → não duplica
-    // (independe da cadência: uma conversa só tem uma cadência viva por vez).
+    // Idempotência: qualquer enrollment VIVO (ACTIVE ou PAUSED) na conversa →
+    // não duplica (independe da cadência: uma conversa só tem uma cadência viva
+    // por vez).
+    //
+    // Precisa ser `findLive`, não `findActive`: o índice único parcial cobre
+    // ACTIVE+PAUSED, então com um enrollment PAUSED esta guarda passava batido
+    // e o create logo abaixo estourava P2002 — reentrar na etapa gatilho (ou
+    // clicar em "iniciar cadência") virava erro em vez de no-op.
     const existing =
-      await this.enrollments.findActiveByConversation(conversationId);
+      await this.enrollments.findLiveByConversation(conversationId);
     if (existing) return existing;
 
     const cadence = (await this.cadences.findById(
@@ -319,6 +332,33 @@ export class CadenceRunner {
       enrollmentId,
     });
     return enrollment;
+  }
+
+  /**
+   * Retomada MANUAL (atendente clicou "Retomar agora"): não espera a janela de
+   * silêncio do watchdog, dispara o próximo toque no primeiro horário permitido.
+   *
+   * Quiet hours continuam valendo — o atendente decide *retomar*, não decide
+   * mandar mensagem 23h. Mesma regra do watchdog (`RESUME_QUIET_*`), via util
+   * puro para não injetar `AutoReengageService` através do forwardRef
+   * cadences↔scheduling.
+   */
+  async resumeNow(enrollmentId: string, orgId: string): Promise<void> {
+    const enrollment = await this.enrollments.findById(enrollmentId);
+    if (!enrollment) throw new NotFoundException('enrollment_not_found');
+    if (enrollment.organizationId !== orgId) {
+      throw new ForbiddenException('enrollment_not_in_org');
+    }
+    if (enrollment.status !== 'PAUSED') {
+      throw new BadRequestException('enrollment_not_paused');
+    }
+    const dispatchAt = nextAllowedTime(
+      new Date(),
+      RESUME_QUIET_START,
+      RESUME_QUIET_END,
+      RESUME_TZ,
+    );
+    await this.resumeAtStep(enrollmentId, dispatchAt);
   }
 
   /**
