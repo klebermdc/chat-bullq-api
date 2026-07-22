@@ -863,6 +863,9 @@ model Tag {
   organizationId String @map("organization_id")
   name           String
   color          String @default("#6B7280")
+  /// Marca esta tag como "lead qualificado": aplicá-la dispara, além do
+  /// TAG_ADDED, um evento LEAD_QUALIFIED com os dados de atribuição.
+  marksQualifiedLead Boolean @default(false) @map("marks_qualified_lead")
 
   organization  Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   conversations ConversationTag[]
@@ -1679,6 +1682,9 @@ enum AutomationTrigger {
   CONVERSATION_STATUS_CHANGED
   CONVERSATION_ASSIGNED
   CONVERSATION_CREATED
+  // Emitido junto do TAG_ADDED quando a tag aplicada tem marksQualifiedLead.
+  // Carrega a atribuição do anúncio (ctwa_clid) para uso externo (CAPI/sGTM).
+  LEAD_QUALIFIED
 }
 
 enum AutomationRunStatus {

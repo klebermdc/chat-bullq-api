@@ -64,6 +64,12 @@ export const FIELDS_BY_TRIGGER: Record<
     conversationId: (p) => p.conversationId,
     channelId: (p) => p.channelId,
   },
+  [AutomationTrigger.LEAD_QUALIFIED]: {
+    tagId: (p) => (p as any).tagId,
+    contactId: (p) => p.contactId,
+    conversationId: (p) => p.conversationId,
+    channelId: (p) => p.channelId,
+  },
   [AutomationTrigger.TAG_REMOVED]: {
     tagId: (p) => (p as any).tagId,
     target: (p) => (p as any).target,

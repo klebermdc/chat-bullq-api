@@ -1,7 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { createHash } from 'crypto';
+import { hashPhoneSha256 } from '../../common/utils/phone-hash.util';
 import { PrismaService } from '../../database/prisma.service';
 import { MetaCapiService } from './meta-capi.service';
 import { MetaCapiHttpClient } from './meta-capi.http-client';
@@ -103,7 +103,7 @@ export class MetaCapiProcessor extends WorkerHost {
     if (contact.ctwaClid && this.withinWindow(contact.ctwaClidAt)) {
       ud.ctwa_clid = contact.ctwaClid;
     }
-    const ph = this.hashPhone(contact.phone);
+    const ph = hashPhoneSha256(contact.phone);
     if (ph) ud.ph = [ph];
 
     return ud;
@@ -113,14 +113,6 @@ export class MetaCapiProcessor extends WorkerHost {
     if (!clidAt) return false;
     const ageDays = (Date.now() - clidAt.getTime()) / DAY_MS;
     return ageDays <= CTWA_ATTRIBUTION_WINDOW_DAYS;
-  }
-
-  /** SHA-256 do telefone em E.164 sem '+', só dígitos (requisito da Meta). */
-  private hashPhone(phone: string | null): string | null {
-    if (!phone) return null;
-    const digits = phone.replace(/\D/g, '');
-    if (!digits) return null;
-    return createHash('sha256').update(digits).digest('hex');
   }
 
   private async record(
