@@ -5,7 +5,7 @@ import { ContactsService } from './contacts.service';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../../common/guards';
-import { CurrentOrg, Roles } from '../../../common/decorators';
+import { CurrentOrg, CurrentUser, CurrentUserRole, Roles } from '../../../common/decorators';
 
 @ApiTags('Contacts')
 @ApiBearerAuth()
@@ -36,8 +36,13 @@ export class ContactsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get contact detail with channels, tags, conversations' })
-  findOne(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
-    return this.service.findOne(id, orgId);
+  findOne(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.findOne(id, orgId, role, userId);
   }
 
   @Patch(':id')
