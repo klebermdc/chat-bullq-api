@@ -15,7 +15,7 @@ const STAFF: OrgRole[] = [OrgRole.OWNER, OrgRole.ADMIN];
  * OWNER e ADMIN são idênticos aqui; a diferença entre os dois vive só nas
  * regras de membros (OWNER não pode ser removido nem rebaixado).
  */
-export const FEATURE_MAP: Record<string, OrgRole[]> = {
+export const FEATURE_MAP = {
   // --- Inbox -------------------------------------------------------------
   'inbox.view': ALL, // escopado por assignedToId para AGENT
   'inbox.transfer': ALL,
@@ -57,14 +57,26 @@ export const FEATURE_MAP: Record<string, OrgRole[]> = {
   'copilot.view': STAFF,
   'products.view': STAFF,
   'settings.view': STAFF, // cobre as 19 abas de Configurações
-};
+} as const satisfies Record<string, OrgRole[]>;
 
+// `keyof typeof FEATURE_MAP` só é uma união literal real ("inbox.view" |
+// "pipelines.manage" | ...) por causa do `as const` acima. Sem ele o map
+// colapsava pra `Record<string, OrgRole[]>` e `FeatureKey` virava `string` —
+// aí `@Feature('pipeline.manage')` (typo, falta o "s") compilava igual, e
+// `can()` fail-closed devolvia 403 pra TODO MUNDO, inclusive OWNER, sem
+// nenhum teste pegando.
 export type FeatureKey = keyof typeof FEATURE_MAP;
 
-/** O cargo pode usar a feature? Nega feature desconhecida e role ausente. */
+/**
+ * O cargo pode usar a feature? Nega feature desconhecida e role ausente.
+ *
+ * Assinatura em `string`, não `FeatureKey`, de propósito: o RolesGuard lê a
+ * chave de `Reflector.getAllAndOverride` (metadata do decorator), que não
+ * carrega o tipo literal em runtime — só o decorator `@Feature` é tipado.
+ */
 export function can(role: OrgRole | undefined, feature: string): boolean {
   if (!role) return false;
-  const allowed = FEATURE_MAP[feature];
+  const allowed = (FEATURE_MAP as Record<string, readonly OrgRole[] | undefined>)[feature];
   if (!allowed) return false;
   return allowed.includes(role);
 }
@@ -72,5 +84,7 @@ export function can(role: OrgRole | undefined, feature: string): boolean {
 /** Todas as features liberadas para o cargo. Role ausente → lista vazia. */
 export function permissionsFor(role: OrgRole | undefined): string[] {
   if (!role) return [];
-  return Object.keys(FEATURE_MAP).filter((f) => FEATURE_MAP[f].includes(role));
+  return Object.keys(FEATURE_MAP).filter((f) =>
+    (FEATURE_MAP as Record<string, readonly OrgRole[]>)[f].includes(role),
+  );
 }
