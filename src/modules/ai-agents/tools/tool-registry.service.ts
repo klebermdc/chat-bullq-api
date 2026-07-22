@@ -10,8 +10,6 @@ import { ListAvailableAgentsTool } from './builtin/list-available-agents.tool';
 import { DelegateToAgentTool } from './builtin/delegate-to-agent.tool';
 import { HandBackToOrchestratorTool } from './builtin/hand-back-to-orchestrator.tool';
 import { GetProductPitchTool } from './builtin/get-product-pitch.tool';
-import { CheckBonusEligibilityTool } from './builtin/check-bonus-eligibility.tool';
-import { CheckMembersAccessTool } from './builtin/check-members-access.tool';
 import { CheckPurchaseTool } from './builtin/check-purchase.tool';
 import { ConsultarClickUpClienteTool } from './builtin/consultar-clickup-cliente.tool';
 import { ConsultarN8nClienteTool } from './builtin/consultar-n8n-cliente.tool';
@@ -49,8 +47,6 @@ export class ToolRegistry {
     delegate: DelegateToAgentTool,
     handBack: HandBackToOrchestratorTool,
     lookupOffering: GetProductPitchTool,
-    checkBonusEligibility: CheckBonusEligibilityTool,
-    checkMembersAccess: CheckMembersAccessTool,
     checkPurchase: CheckPurchaseTool,
     consultarClickUpCliente: ConsultarClickUpClienteTool,
     consultarN8nCliente: ConsultarN8nClienteTool,
@@ -70,13 +66,14 @@ export class ToolRegistry {
     // Detalhes oficiais (preço/condições/link) das soluções da org —
     // ORCHESTRATOR e WORKER de vendas usam pra não inventar valor/link.
     this.register(lookupOffering, ['ORCHESTRATOR', 'WORKER']);
-    // Cálculo determinístico de elegibilidade de bônus (D+7 corridos).
-    // Disponível pra todos — bonus é dúvida frequente em qualquer fluxo.
-    this.register(checkBonusEligibility, ['ORCHESTRATOR', 'WORKER']);
-    // Read-only: cliente já tem acesso a entrega na área de membros?
-    // Usado pra "não recebi o brinde" / "cadê o agente grátis" antes
-    // de pedir email novamente ou prometer liberação.
-    this.register(checkMembersAccess, ['ORCHESTRATOR', 'WORKER']);
+    // NÃO registradas: checkBonusEligibility e checkMembersAccess.
+    // As duas são da operação Bravy (portal de membros Trivapp, regra de
+    // bônus D+7) e não existem na Orlando Fast Pass. Ficavam visíveis pra
+    // LLM em toda conversa: checkMembersAccess sem MEMBERS_ADMIN_KEY /
+    // MEMBERS_TENANT_BRAVY devolve ok:false e vira alerta de falha, e
+    // checkBonusEligibility faria a IA prometer bônus de um portal que o
+    // cliente não tem. As classes continuam no ToolsModule — pra religar,
+    // basta voltar o register aqui.
     // ETAPA ZERO do prompt de vendas: cliente já comprou? Lê o espelho
     // local de pedidos do HUB. Sem ela, o prompt manda chamar checkPurchase
     // e o runner responde "Unknown tool" — alerta falso a cada conversa.
