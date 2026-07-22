@@ -11,7 +11,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ProjectsService } from './projects.service';
 import { UpdateProjectDto } from './dto/project.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentOrg } from '../../common/decorators';
+import { CurrentOrg, Feature } from '../../common/decorators';
 
 @ApiTags('Projects')
 @ApiBearerAuth()
@@ -21,6 +21,7 @@ export class ProjectsController {
   constructor(private readonly service: ProjectsService) {}
 
   @Get()
+  @Feature('projects.view')
   @ApiOperation({
     summary:
       'Lista os projetos (um por grupo da org) com os dados do projeto e a conversa representante.',
@@ -36,6 +37,7 @@ export class ProjectsController {
   }
 
   @Get('filters')
+  @Feature('projects.view')
   @ApiOperation({ summary: 'Valores distintos (hoppeId/status) p/ os filtros' })
   filters(@CurrentOrg('id') orgId: string) {
     return this.service.filters(orgId);

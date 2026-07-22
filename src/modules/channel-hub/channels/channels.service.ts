@@ -5,7 +5,13 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { ChannelType, ChannelSyncMode, ChannelSyncStatus, OrgRole } from '@prisma/client';
+import {
+  Channel,
+  ChannelType,
+  ChannelSyncMode,
+  ChannelSyncStatus,
+  OrgRole,
+} from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { ChannelsRepository } from './channels.repository';
 import { CreateChannelDto } from './dto/create-channel.dto';
@@ -20,6 +26,7 @@ import {
   ChannelAccessService,
   type ChannelAccess,
 } from '../../iam/channel-access/channel-access.service';
+import { maskChannelSecrets } from './channel-masking';
 
 @Injectable()
 export class ChannelsService {
@@ -300,12 +307,38 @@ export class ChannelsService {
     );
   }
 
-  async findAll(organizationId: string, access: ChannelAccess) {
+  /**
+   * `role` só é passado pelo controller (rota HTTP `GET /channels`) — quando
+   * presente, mascara `config`/`webhookSecret` pra quem não é OWNER/ADMIN.
+   * Chamadores internos do service (nenhum hoje) que não passem `role`
+   * continuam recebendo o canal cru.
+   */
+  async findAll(organizationId: string, access: ChannelAccess, role?: OrgRole) {
     const accessibleIds = access === 'ALL' ? undefined : [...access];
-    return this.repository.findByOrganization(organizationId, accessibleIds);
+    const channels = await this.repository.findByOrganization(organizationId, accessibleIds);
+    return channels.map((channel) => maskChannelSecrets(channel, role));
   }
 
-  async findOne(id: string, organizationId: string, access?: ChannelAccess) {
+  /**
+   * `role` é opcional e só deve ser passado pelo controller (rota HTTP
+   * `GET /channels/:id`) — presente, mascara `config`/`webhookSecret` pra quem
+   * não é OWNER/ADMIN. Chamadores internos do service (sync, test connection,
+   * templates, adapters via `enrichProviderIds`/`assertWasenderChannel` etc.)
+   * NÃO passam `role` de propósito: precisam do canal cru pra falar com o
+   * provedor. Só a resposta HTTP de leitura é mascarada.
+   */
+  // Sobrecarga: sem `role`, o retorno é o Channel cru (chamadores internos —
+  // sync, test connection, adapters, message-templates — seguem tipados
+  // corretamente contra o Channel completo). Com `role`, o retorno pode vir
+  // mascarado (controller HTTP).
+  async findOne(id: string, organizationId: string, access?: ChannelAccess): Promise<Channel>;
+  async findOne(
+    id: string,
+    organizationId: string,
+    access: ChannelAccess | undefined,
+    role: OrgRole,
+  ): Promise<Channel | Omit<Channel, 'config' | 'webhookSecret'>>;
+  async findOne(id: string, organizationId: string, access?: ChannelAccess, role?: OrgRole) {
     const channel = await this.repository.findById(id);
     if (!channel) throw new NotFoundException('Channel not found');
     if (channel.organizationId !== organizationId) {
@@ -314,7 +347,8 @@ export class ChannelsService {
     if (access !== undefined && access !== 'ALL' && !access.has(id)) {
       throw new ForbiddenException('You do not have access to this channel');
     }
-    return channel;
+    if (role === undefined) return channel;
+    return maskChannelSecrets(channel, role);
   }
 
   async update(

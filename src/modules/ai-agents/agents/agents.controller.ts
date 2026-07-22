@@ -15,7 +15,7 @@ import { AgentsService } from './agents.service';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
 import { AssignAgentChannelDto } from './dto/assign-channel.dto';
-import { CurrentOrg, Roles } from '../../../common/decorators';
+import { CurrentOrg, Feature, Roles } from '../../../common/decorators';
 import {
   JwtAuthGuard,
   OrgGuard,
@@ -43,6 +43,7 @@ export class AgentsController {
   }
 
   @Get(':id')
+  @Feature('ai-agents.view')
   @ApiOperation({ summary: 'Get a single AI agent' })
   findOne(@CurrentOrg('id') orgId: string, @Param('id') id: string) {
     return this.service.findOne(orgId, id);
@@ -89,6 +90,7 @@ export class AgentsController {
   }
 
   @Get('watchdog/stats')
+  @Feature('ai-agents.view')
   @ApiOperation({
     summary:
       'Snapshot do watchdog: KPIs (timers ativos, checks 24h, reativações, presas) + listas de conversas em alerta',
@@ -98,6 +100,7 @@ export class AgentsController {
   }
 
   @Get(':id/skills')
+  @Feature('ai-agents.view')
   @ApiOperation({
     summary: 'List skills attached to this agent (with requiresApproval flag)',
   })
@@ -129,6 +132,7 @@ export class AgentsController {
   }
 
   @Get(':id/runs')
+  @Feature('ai-agents.view')
   @ApiOperation({ summary: 'List recent runs of this agent (with tool calls)' })
   runs(
     @CurrentOrg('id') orgId: string,
@@ -171,6 +175,7 @@ export class AgentsController {
   }
 
   @Get('stats/overview')
+  @Feature('ai-agents.view')
   @ApiOperation({
     summary: 'Aggregated org stats over a window: cost, tokens, runs, tools.',
   })
@@ -183,6 +188,7 @@ export class AgentsController {
   }
 
   @Get(':id/stats')
+  @Feature('ai-agents.view')
   @ApiOperation({ summary: 'Aggregated stats for a single agent.' })
   agentStats(
     @CurrentOrg('id') orgId: string,

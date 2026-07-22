@@ -160,8 +160,9 @@ export class MessagesController {
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.revokeForEveryone(id, orgId, userId, access);
+    return this.service.revokeForEveryone(id, orgId, userId, access, role);
   }
 
   @Get()

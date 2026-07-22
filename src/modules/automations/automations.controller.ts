@@ -12,7 +12,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentOrg, CurrentUser, Roles } from '../../common/decorators';
+import { CurrentOrg, CurrentUser, Feature, Roles } from '../../common/decorators';
 import { AutomationsService } from './automations.service';
 import {
   CreateAutomationDto,
@@ -23,6 +23,7 @@ import {
 @ApiTags('Automations')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
+@Feature('automations.view')
 @Controller('automations')
 export class AutomationsController {
   constructor(private readonly service: AutomationsService) {}

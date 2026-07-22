@@ -1,4 +1,7 @@
+import { NotFoundException } from '@nestjs/common';
+import { OrgRole } from '@prisma/client';
 import { ProposalsService } from './proposals.service';
+import { ConversationsService } from '../messaging/conversations/conversations.service';
 import { ExtractedCart } from './proposals.types';
 
 const cart: ExtractedCart = {
@@ -8,7 +11,21 @@ const cart: ExtractedCart = {
   totalValue: 4200, currency: 'BRL',
 };
 
-function deps() {
+/**
+ * Instância REAL de ConversationsService (só com `prisma` montado), mesmo
+ * padrão de messages.access.spec.ts / pipelines.card-access.spec.ts — prova
+ * a integração de verdade com `assertConversationAccess`, não um double.
+ */
+function makeConversationsService(conversationFound: unknown) {
+  const prisma: any = {
+    conversation: { findFirst: jest.fn().mockResolvedValue(conversationFound) },
+  };
+  const svc: ConversationsService = Object.create(ConversationsService.prototype);
+  Object.assign(svc, { prisma });
+  return svc;
+}
+
+function deps(opts: { conversationsGuardFinds?: unknown } = {}) {
   const conversation = { id: 'conv-1', organizationId: 'org-1', contactId: 'contact-1', channelId: 'chan-1' };
   return {
     prisma: {
@@ -20,6 +37,9 @@ function deps() {
     messages: { send: jest.fn().mockResolvedValue({ id: 'msg-1' }) } as any,
     pipelines: { ensureConversationAtStageByName: jest.fn().mockResolvedValue(undefined) } as any,
     orderFicha: { crossCheckOnProposal: jest.fn().mockResolvedValue(undefined) } as any,
+    conversations: makeConversationsService(
+      'conversationsGuardFinds' in opts ? opts.conversationsGuardFinds : { id: 'conv-1' },
+    ),
   };
 }
 
@@ -32,6 +52,7 @@ function makeService(d: ReturnType<typeof deps>) {
     d.messages,
     d.pipelines,
     d.orderFicha,
+    d.conversations,
   );
 }
 
@@ -55,6 +76,8 @@ describe('ProposalsService', () => {
     expect(d.messages.send).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: 'conv-1', type: 'TEXT' }),
       'user-1', 'org-1', 'ALL',
+      undefined,
+      { system: true },
     );
     expect(result).toEqual({ id: 'prop-1' });
   });
@@ -171,5 +194,101 @@ describe('ProposalsService', () => {
       ),
     ).rejects.toThrow(/não é de um checkout permitido/i);
     expect(d.render.render).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProposalsService.create — escopo por atribuição', () => {
+  const url = 'https://reservas.orlandofastpass.com.br/pt/checkout/abc';
+
+  it('AGENT + conversa de colega → NotFound, sem renderizar nem persistir', async () => {
+    const d = deps({ conversationsGuardFinds: null }); // findFirst escopado não acha nada
+    const service = makeService(d);
+
+    await expect(
+      service.create(
+        { conversationId: 'conv-1', checkoutUrl: url },
+        'agent-u1', 'org-1', 'ALL' as any, OrgRole.AGENT,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(d.render.render).not.toHaveBeenCalled();
+    expect(d.repo.create).not.toHaveBeenCalled();
+  });
+
+  it('AGENT + conversa própria → passa da guarda e cria a proposta', async () => {
+    const d = deps({ conversationsGuardFinds: { id: 'conv-1' } });
+    const service = makeService(d);
+
+    const result = await service.create(
+      { conversationId: 'conv-1', checkoutUrl: url },
+      'agent-u1', 'org-1', 'ALL' as any, OrgRole.AGENT,
+    );
+    expect(result).toEqual({ id: 'prop-1' });
+  });
+
+  it('ADMIN não é barrado mesmo quando a conversa não é dele', async () => {
+    // Guard de ADMIN não escopa por assignedToId — devolve sem cláusula de
+    // atribuição, então mesmo um mock que "acharia null" pra AGENT aqui nem
+    // entra no caminho escopado.
+    const d = deps({ conversationsGuardFinds: { id: 'conv-1' } });
+    const service = makeService(d);
+
+    const result = await service.create(
+      { conversationId: 'conv-1', checkoutUrl: url },
+      'admin-u1', 'org-1', 'ALL' as any, OrgRole.ADMIN,
+    );
+    expect(result).toEqual({ id: 'prop-1' });
+  });
+});
+
+describe('ProposalsService.listForContact / listForConversation — escopo por atribuição', () => {
+  function proposalsFixture() {
+    return [
+      { id: 'p1', conversationId: 'conv-mine', contactId: 'c1' },
+      { id: 'p2', conversationId: 'conv-colega', contactId: 'c1' },
+    ] as any[];
+  }
+
+  it('AGENT: listForContact devolve só as propostas de conversas atribuídas a ele', async () => {
+    const d = deps();
+    d.repo.listForContact = jest.fn().mockResolvedValue(proposalsFixture());
+    d.prisma.conversation.findMany = jest
+      .fn()
+      .mockResolvedValue([{ id: 'conv-mine' }]); // só a própria conversa bate o where escopado
+    const service = makeService(d);
+
+    const result = await service.listForContact('org-1', 'c1', OrgRole.AGENT, 'agent-u1');
+
+    expect(result).toEqual([{ id: 'p1', conversationId: 'conv-mine', contactId: 'c1' }]);
+    expect(d.prisma.conversation.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ['conv-mine', 'conv-colega'] }, assignedToId: 'agent-u1' },
+      select: { id: true },
+    });
+  });
+
+  it('ADMIN: listForContact devolve tudo, sem consultar conversas', async () => {
+    const d = deps();
+    d.repo.listForContact = jest.fn().mockResolvedValue(proposalsFixture());
+    d.prisma.conversation.findMany = jest.fn();
+    const service = makeService(d);
+
+    const result = await service.listForContact('org-1', 'c1', OrgRole.ADMIN, 'admin-u1');
+
+    expect(result).toEqual(proposalsFixture());
+    expect(d.prisma.conversation.findMany).not.toHaveBeenCalled();
+  });
+
+  it('AGENT: listForConversation de conversa alheia devolve vazio', async () => {
+    const d = deps();
+    d.prisma.conversation.findUnique = jest
+      .fn()
+      .mockResolvedValue({ organizationId: 'org-1', contactId: 'c1' });
+    d.repo.listForContact = jest.fn().mockResolvedValue(proposalsFixture());
+    d.prisma.conversation.findMany = jest.fn().mockResolvedValue([]); // nenhuma conversa é do agent
+    const service = makeService(d);
+
+    const result = await service.listForConversation(
+      'org-1', 'conv-colega', OrgRole.AGENT, 'agent-u1',
+    );
+    expect(result).toEqual([]);
   });
 });

@@ -1,3 +1,5 @@
+import { OrgRole } from '@prisma/client';
+import { NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ContactsService } from './contacts.service';
 
 describe('ContactsService.create', () => {
@@ -48,5 +50,44 @@ describe('ContactsService.create', () => {
     const out = await svc.create('org1', { name: 'Ana', phone: '5511982015967', channelId: 'ch1' });
     expect(repo.createWithChannel).not.toHaveBeenCalled();
     expect(out).toMatchObject({ id: 'existing' });
+  });
+});
+
+describe('ContactsService.findOne — escopo por atribuição na relação conversations', () => {
+  const make = (found: unknown) => {
+    const repo = { findById: jest.fn().mockResolvedValue(found) } as any;
+    return { repo, svc: new ContactsService(repo) };
+  };
+
+  it('AGENT: repassa o próprio userId como scopedUserId pro repositório', async () => {
+    const { svc, repo } = make({ id: 'c1', organizationId: 'org1' });
+    await svc.findOne('c1', 'org1', OrgRole.AGENT, 'agent-u1');
+    expect(repo.findById).toHaveBeenCalledWith('c1', 'agent-u1');
+  });
+
+  it('ADMIN: NÃO escopa (scopedUserId undefined)', async () => {
+    const { svc, repo } = make({ id: 'c1', organizationId: 'org1' });
+    await svc.findOne('c1', 'org1', OrgRole.ADMIN, 'admin-u1');
+    expect(repo.findById).toHaveBeenCalledWith('c1', undefined);
+  });
+
+  it('chamador de sistema (sem currentUserId) não escopa', async () => {
+    const { svc, repo } = make({ id: 'c1', organizationId: 'org1' });
+    await svc.findOne('c1', 'org1');
+    expect(repo.findById).toHaveBeenCalledWith('c1', undefined);
+  });
+
+  it('contato inexistente → NotFound', async () => {
+    const { svc } = make(null);
+    await expect(svc.findOne('c1', 'org1', OrgRole.AGENT, 'agent-u1')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('contato de outra org → Forbidden', async () => {
+    const { svc } = make({ id: 'c1', organizationId: 'outra-org' });
+    await expect(svc.findOne('c1', 'org1', OrgRole.AGENT, 'agent-u1')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 });

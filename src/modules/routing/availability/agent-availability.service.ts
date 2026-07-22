@@ -93,7 +93,7 @@ export class AgentAvailabilityService {
         conversation.organizationId,
         'ALL',
         undefined,
-        { automated: true },
+        { automated: true, system: true },
       );
     } catch (err) {
       this.logger.warn(

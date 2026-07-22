@@ -1,8 +1,10 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { OrgRole } from '@prisma/client';
 import { ContactsRepository } from './contacts.repository';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { normalizePhone } from '../../../common/utils/phone.util';
+import { resolveAssignmentScope } from '../conversations/conversation-scope';
 
 @Injectable()
 export class ContactsService {
@@ -44,8 +46,21 @@ export class ContactsService {
     });
   }
 
-  async findOne(id: string, organizationId: string) {
-    const contact = await this.repository.findById(id);
+  /**
+   * `contacts.view` é `ALL` de propósito (Inbox usa este endpoint pra
+   * qualquer conversa que o AGENT já pode ver) — a rota não é bloqueada.
+   * Mas o payload inclui as últimas 10 conversas do contato COM a última
+   * mensagem de cada uma; pra AGENT, filtra essa lista pras conversas
+   * atribuídas a ele (ver `ContactsRepository.findById`). OWNER/ADMIN vê tudo.
+   */
+  async findOne(
+    id: string,
+    organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
+    const scoped = currentUserId ? resolveAssignmentScope(role, currentUserId) : undefined;
+    const contact = await this.repository.findById(id, scoped);
     if (!contact) throw new NotFoundException('Contact not found');
     if (contact.organizationId !== organizationId) throw new ForbiddenException();
     return contact;

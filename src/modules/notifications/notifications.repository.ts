@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, NotificationType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
@@ -31,7 +31,20 @@ export class NotificationsRepository {
     });
   }
 
-  async markRead(id: string) {
+  /**
+   * Antes desta checagem, `markRead` operava só por `id` (chave primária)
+   * sem validar `recipientId`/`organizationId` — qualquer usuário
+   * autenticado de QUALQUER org conseguia marcar como lida a notificação de
+   * outro usuário/org só sabendo (ou adivinhando) o id. É o único ponto do
+   * módulo sem checagem de tenancy; impacto é baixo (só flips isRead/readAt,
+   * não vaza conteúdo), mas fecha aqui mesmo assim.
+   */
+  async markRead(id: string, recipientId: string, organizationId: string) {
+    const owned = await this.prisma.notification.findFirst({
+      where: { id, recipientId, organizationId },
+      select: { id: true },
+    });
+    if (!owned) throw new NotFoundException('Notification not found');
     return this.prisma.notification.update({
       where: { id },
       data: { isRead: true, readAt: new Date() },

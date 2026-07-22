@@ -9,7 +9,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AutomationRunStatus, Prisma } from '@prisma/client';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentOrg } from '../../common/decorators';
+import { CurrentOrg, Feature } from '../../common/decorators';
 import { PrismaService } from '../../database/prisma.service';
 
 const MAX_PAGE_SIZE = 100;
@@ -17,6 +17,7 @@ const MAX_PAGE_SIZE = 100;
 @ApiTags('Automations / Runs')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
+@Feature('automations.view')
 @Controller('automations')
 export class AutomationsRunsController {
   constructor(private readonly prisma: PrismaService) {}

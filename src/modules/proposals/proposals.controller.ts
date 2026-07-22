@@ -1,7 +1,13 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { OrgRole } from '@prisma/client';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentUser, CurrentOrg, CurrentChannelAccess } from '../../common/decorators';
+import {
+  CurrentUser,
+  CurrentOrg,
+  CurrentChannelAccess,
+  CurrentUserRole,
+} from '../../common/decorators';
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { ProposalsService } from './proposals.service';
 import { CreateProposalDto } from './dto/create-proposal.dto';
@@ -19,23 +25,28 @@ export class ProposalsController {
     @CurrentUser('id') userId: string,
     @CurrentOrg('id') orgId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.create(dto, userId, orgId, access);
+    return this.service.create(dto, userId, orgId, access, role);
   }
 
   @Get('contact/:contactId')
   listForContact(
     @Param('contactId') contactId: string,
     @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.listForContact(orgId, contactId);
+    return this.service.listForContact(orgId, contactId, role, userId);
   }
 
   @Get('conversation/:conversationId')
   listForConversation(
     @Param('conversationId') conversationId: string,
     @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.listForConversation(orgId, conversationId);
+    return this.service.listForConversation(orgId, conversationId, role, userId);
   }
 }

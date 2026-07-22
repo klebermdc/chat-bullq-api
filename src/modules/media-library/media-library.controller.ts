@@ -18,7 +18,7 @@ import { MediaLibraryService } from './media-library.service';
 import { CreateFolderDto } from './dto/create-folder.dto';
 import { UploadAssetDto } from './dto/upload-asset.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentOrg, CurrentUser, CurrentUserRole } from '../../common/decorators';
+import { CurrentOrg, CurrentUser, CurrentUserRole, Feature } from '../../common/decorators';
 
 @ApiTags('Media library')
 @ApiBearerAuth()
@@ -45,6 +45,7 @@ export class MediaLibraryController {
   }
 
   @Delete('folders/:id')
+  @Feature('media.delete')
   @ApiOperation({ summary: 'Delete folder (assets stay, unassigned)' })
   deleteFolder(
     @Param('id') id: string,
@@ -86,6 +87,7 @@ export class MediaLibraryController {
   }
 
   @Delete('assets/:id')
+  @Feature('media.delete')
   @ApiOperation({ summary: 'Delete an asset (owner or admin)' })
   deleteAsset(
     @Param('id') id: string,

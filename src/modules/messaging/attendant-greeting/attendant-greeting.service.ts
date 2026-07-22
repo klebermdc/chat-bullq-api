@@ -50,6 +50,8 @@ export class AttendantGreetingService {
         attendantUserId,
         conversation.organizationId,
         'ALL',
+        undefined,
+        { system: true },
       );
 
       this.logger.log({
