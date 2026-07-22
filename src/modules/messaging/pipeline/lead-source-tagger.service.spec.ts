@@ -70,4 +70,41 @@ describe('LeadSourceTaggerService', () => {
       await expect(service.tagInstagramOrganicIfMatch(params)).resolves.toBe(true);
     });
   });
+
+  describe('tagAdLeadIfReferral', () => {
+    const base = { organizationId: 'org1', conversationId: 'cv1' };
+
+    it('marca a conversa quando a mensagem traz ctwaClid', async () => {
+      const { service, prisma } = make();
+      const out = await service.tagAdLeadIfReferral({
+        ...base,
+        ctwaClid: 'ARAbc123',
+      });
+
+      expect(out).toBe(true);
+      expect(prisma.tag.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: { organizationId: 'org1', name: 'Anúncio Meta' },
+        }),
+      );
+      expect(prisma.conversationTag.create).toHaveBeenCalled();
+    });
+
+    it('NÃO marca quando a mensagem não traz referral (lead orgânico)', async () => {
+      const { service, prisma } = make();
+
+      expect(await service.tagAdLeadIfReferral({ ...base, ctwaClid: null })).toBe(false);
+      expect(await service.tagAdLeadIfReferral({ ...base })).toBe(false);
+      expect(prisma.conversationTag.create).not.toHaveBeenCalled();
+    });
+
+    it('é idempotente: re-aplicar a tag não estoura', async () => {
+      const { service, prisma } = make();
+      prisma.conversationTag.create.mockRejectedValueOnce({ code: 'P2002' });
+
+      await expect(
+        service.tagAdLeadIfReferral({ ...base, ctwaClid: 'ARAbc123' }),
+      ).resolves.toBe(true);
+    });
+  });
 });

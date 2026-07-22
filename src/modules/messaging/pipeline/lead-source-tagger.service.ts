@@ -4,6 +4,9 @@ import { PrismaService } from '../../../database/prisma.service';
 /** Nome da tag aplicada a leads que vieram do Instagram orgânico. */
 const INSTAGRAM_TAG_NAME = 'Instagram Orgânico';
 
+/** Nome da tag aplicada a leads que vieram de anúncio Click-to-WhatsApp. */
+const AD_TAG_NAME = 'Anúncio Meta';
+
 /** Frase-marca padrão no texto pré-preenchido do link wa.me (configurável). */
 const DEFAULT_MARKER = 'vim pelo instagram';
 
@@ -73,6 +76,48 @@ export class LeadSourceTaggerService {
       );
     } catch (err: any) {
       // Já tinha a tag (PK composta conversationId+tagId) → no-op.
+      if (err?.code !== 'P2002') throw err;
+    }
+    return true;
+  }
+
+  /**
+   * Marca a conversa como vinda de anúncio quando a mensagem traz o referral
+   * do Click-to-WhatsApp.
+   *
+   * O gatilho é o `ctwaClid` da PRÓPRIA mensagem, não o do contato: contato
+   * que clicou num anúncio meses atrás guarda o clid antigo, e usá-lo marcaria
+   * como "anúncio" uma conversa nova que na verdade veio orgânica.
+   *
+   * Idempotente e best-effort — nunca quebra o pipeline de entrada.
+   */
+  async tagAdLeadIfReferral(params: {
+    organizationId: string;
+    conversationId: string;
+    ctwaClid?: string | null;
+  }): Promise<boolean> {
+    if (!params.ctwaClid) return false;
+
+    const tag = await this.prisma.tag.upsert({
+      where: {
+        organizationId_name: {
+          organizationId: params.organizationId,
+          name: AD_TAG_NAME,
+        },
+      },
+      update: {},
+      create: { organizationId: params.organizationId, name: AD_TAG_NAME },
+      select: { id: true },
+    });
+
+    try {
+      await this.prisma.conversationTag.create({
+        data: { conversationId: params.conversationId, tagId: tag.id },
+      });
+      this.logger.log(
+        `lead de anúncio (CTWA): conversa ${params.conversationId} marcada`,
+      );
+    } catch (err: any) {
       if (err?.code !== 'P2002') throw err;
     }
     return true;

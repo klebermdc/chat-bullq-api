@@ -24,6 +24,12 @@ function build(overrides: { contact?: any; tag?: any; channel?: any } = {}) {
           overrides.tag === undefined ? { name: 'lead-qualificado' } : overrides.tag,
         ),
     },
+    conversationTag: {
+      findMany: jest.fn().mockResolvedValue([
+        { tag: { name: 'lead-qualificado-ingresso' } },
+        { tag: { name: 'origem:anuncio' } },
+      ]),
+    },
     channel: {
       findUnique: jest.fn().mockResolvedValue(
         overrides.channel === undefined
@@ -101,5 +107,15 @@ describe('LeadQualifiedPayloadBuilder', () => {
     expect(out.contact.phoneSha256).toBeNull();
     expect(out.attribution).toBeNull();
     expect(out.event).toBe('LEAD_QUALIFIED');
+  });
+
+  it('leva todas as tags da conversa, para o destino segmentar por produto', async () => {
+    const { builder } = build();
+    const out = await builder.build(payload);
+
+    // ordenadas, para o consumidor não depender da ordem de aplicação
+    expect(out.tags).toEqual(['lead-qualificado-ingresso', 'origem:anuncio']);
+    // e `tag` continua sendo especificamente a que disparou
+    expect(out.tag).toBe('lead-qualificado');
   });
 });
