@@ -43,6 +43,9 @@ import { AttendantGreetingService } from '../attendant-greeting/attendant-greeti
 const SYNC_MESSAGE_PAGE_SIZE = 50;
 const SYNC_MAX_PAGES = 4;
 
+/** Valores de `assignedToId` que significam "sem responsável", não um id. */
+const UNASSIGNED_TOKENS = new Set(['none', 'null', 'unassigned']);
+
 function parseDate(v?: string): Date | undefined {
   if (!v) return undefined;
   const d = new Date(v);
@@ -127,6 +130,8 @@ export class ConversationsService {
       kind?: 'INDIVIDUAL' | 'GROUP';
       tagIds?: string[];
       assignedToId?: string;
+      /** Só conversas sem responsável (fila de distribuição). */
+      assignedToNone?: boolean;
       search?: string;
       archived?: 'exclude' | 'only' | 'any';
       unreadOnly?: boolean;
@@ -219,7 +224,16 @@ export class ConversationsService {
       conversationIds,
       kind: isGroupResolved ? 'GROUP' : filters.kind,
       tagIds: filters.tagIds,
-      assignedToId: filters.assignedToId,
+      // Query string também pode pedir "sem responsável" (?assignedToId=none).
+      // Normalizar aqui garante que nenhum sentinel textual chegue ao Prisma
+      // como se fosse um id de usuário.
+      assignedToId: UNASSIGNED_TOKENS.has(filters.assignedToId ?? '')
+        ? undefined
+        : filters.assignedToId,
+      assignedToNone:
+        filters.assignedToNone ||
+        UNASSIGNED_TOKENS.has(filters.assignedToId ?? '') ||
+        undefined,
       enforceAssignedToId: currentUserId
         ? resolveAssignmentScope(role, currentUserId)
         : undefined,
