@@ -25,6 +25,7 @@ import { WatchdogService } from '../../routing/watchdog/watchdog.service';
 import { SegmentReadService } from '../../segments/segment-read.service';
 import { ChannelAdapterRegistry } from '../../channel-hub/channel-adapter.registry';
 import { resolveAssignmentScope } from '../conversations/conversation-scope';
+import { ConversationsService } from '../conversations/conversations.service';
 import { shouldAutoAssignOnReply } from './auto-assign.util';
 
 @Injectable()
@@ -39,6 +40,7 @@ export class MessagesService {
     private readonly watchdog: WatchdogService,
     private readonly adapterRegistry: ChannelAdapterRegistry,
     private readonly segmentRead: SegmentReadService,
+    private readonly conversations: ConversationsService,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
   ) {}
 
@@ -67,6 +69,25 @@ export class MessagesService {
     if (!conversation) throw new NotFoundException('Conversation not found');
     if (conversation.organizationId !== organizationId) {
       throw new ForbiddenException();
+    }
+    // Mesma classe de bug do write-path de conversations: sem isso, um AGENT
+    // conseguia mandar mensagem (e auto-atribuir a conversa pra si) numa
+    // conversa de colega que a leitura já negava.
+    //
+    // Só aplica a barreira quando `role` vem preenchida — isto é, chamada
+    // autenticada de verdade (UI/JWT ou API key, que "impersona" um usuário
+    // real com role real). `senderId` sozinho NÃO basta como sinal: vários
+    // chamadores de sistema (cadência resolve o OWNER como remetente de
+    // fallback, dispatch de agendamento usa o `createdById` de quando foi
+    // agendado, aviso de fora-de-horário usa o assignedToId atual) passam um
+    // senderId genuíno mas nunca uma role — continuam irrestritos, igual antes.
+    if (role) {
+      await this.conversations.assertConversationAccess(
+        conversation.id,
+        organizationId,
+        role,
+        senderId,
+      );
     }
     this.channelAccess.assertChannelAccess(access, conversation.channelId);
 
@@ -371,6 +392,7 @@ export class MessagesService {
     organizationId: string,
     actorId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ): Promise<{
     messageId: string;
     revokedAt: Date;
@@ -388,6 +410,16 @@ export class MessagesService {
     if (message.conversation.organizationId !== organizationId) {
       throw new ForbiddenException();
     }
+    // Mesma barreira: sem isso um AGENT revogava mensagem que outro colega
+    // acabou de mandar numa conversa alheia. Único chamador é o controller
+    // (ator sempre é o usuário autenticado da request) — sem chamador de
+    // sistema conhecido, então escopa sempre que houver actorId.
+    await this.conversations.assertConversationAccess(
+      message.conversation.id,
+      organizationId,
+      role,
+      actorId,
+    );
     this.channelAccess.assertChannelAccess(access, message.conversation.channelId);
 
     if (message.direction !== MessageDirection.OUTBOUND) {
