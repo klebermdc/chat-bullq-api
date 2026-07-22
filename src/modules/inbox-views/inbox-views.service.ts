@@ -284,6 +284,7 @@ export class InboxViewsService {
         tagIds: finalTagIds,
         assignedToId: finalAssignedToId,
         assignedToNone: finalAssignedToNone || undefined,
+        awaitingHumanReply: filters.awaitingHumanReply,
         search: extraSearch,
         archived: finalArchived,
         unreadOnly: finalUnread,
