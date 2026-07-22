@@ -33,7 +33,6 @@ import {
 } from '../prompts/layers/security.layer';
 import type { SecurityRules } from '../prompts/types';
 import { RetrievalService } from '../rag/retrieval.service';
-import { IntentType } from '../classifier/intent.types';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { sanitizeAssistantText } from './text-guards';
 import { MediaUrlResolverService } from './media-url-resolver.service';
@@ -41,13 +40,6 @@ import { isShadowMode } from '../shadow-learning/shadow-mode.util';
 
 const MAX_TOOL_ITERATIONS = 8;
 const MAX_RECENT_MESSAGES = 30;
-
-/**
- * Acima desta confiança, mensagens classificadas como SPAM_OR_NOISE são
- * ignoradas sem rodar nenhum agente (o classifier barato já decidiu). Antes
- * isso caía no Augusto (orquestrador caro) só pra ele mandar transferToHuman.
- */
-const SPAM_SKIP_CONFIDENCE = 0.8;
 
 /**
  * Tools that signal "agent is preparing to sell": pulled product info,
@@ -118,19 +110,6 @@ export class AiAgentRunnerService {
         triggerText,
         [],
       );
-
-      // Curto-circuito por intenção: spam/ruído com confiança alta não merece
-      // rodar agente LLM nenhum. O classifier (fugu, barato) já decidiu —
-      // apenas ignoramos. Economiza 100% do run que antes caía no Augusto.
-      if (
-        selection?.classifiedIntent === IntentType.SPAM_OR_NOISE &&
-        (selection.classifierConfidence ?? 0) >= SPAM_SKIP_CONFIDENCE
-      ) {
-        this.logger.log(
-          `Conv ${conversation.id}: intent=SPAM_OR_NOISE (conf=${selection.classifierConfidence}) — skipping agent run`,
-        );
-        return;
-      }
     }
     const agent = selection
       ? await this.prisma.aiAgent.findFirst({
