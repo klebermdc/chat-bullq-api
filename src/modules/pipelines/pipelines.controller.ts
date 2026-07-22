@@ -20,7 +20,7 @@ import {
   UpsertStageDto,
 } from './dto/pipeline.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentOrg } from '../../common/decorators';
+import { CurrentOrg, Feature } from '../../common/decorators';
 
 @ApiTags('Pipelines (Kanban)')
 @ApiBearerAuth()
@@ -36,6 +36,7 @@ export class PipelinesController {
   }
 
   @Post()
+  @Feature('pipelines.manage')
   @ApiOperation({ summary: 'Create a pipeline (with default stages if empty)' })
   create(
     @CurrentOrg('id') orgId: string,
@@ -51,6 +52,7 @@ export class PipelinesController {
   }
 
   @Patch(':id')
+  @Feature('pipelines.manage')
   @ApiOperation({ summary: 'Update pipeline metadata' })
   update(
     @Param('id') id: string,
@@ -61,12 +63,14 @@ export class PipelinesController {
   }
 
   @Delete(':id')
+  @Feature('pipelines.manage')
   @ApiOperation({ summary: 'Delete pipeline (cascade stages + cards)' })
   remove(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
     return this.service.removePipeline(id, orgId);
   }
 
   @Put(':id/stages')
+  @Feature('pipelines.manage')
   @ApiOperation({
     summary: 'Replace stages in bulk (upsert + delete orphans w/o cards)',
   })
@@ -93,6 +97,7 @@ export class PipelinesController {
   }
 
   @Post(':id/cards')
+  @Feature('pipelines.manage')
   @ApiOperation({ summary: 'Create a card in this pipeline' })
   createCard(
     @Param('id') pipelineId: string,
@@ -113,6 +118,7 @@ export class PipelinesController {
   }
 
   @Delete('cards/:cardId')
+  @Feature('pipelines.manage')
   @ApiOperation({ summary: 'Delete a card' })
   removeCard(
     @Param('cardId') cardId: string,
