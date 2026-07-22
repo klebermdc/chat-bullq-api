@@ -37,8 +37,12 @@ export class PipelinesController {
 
   @Get()
   @ApiOperation({ summary: 'List pipelines for current org' })
-  list(@CurrentOrg('id') orgId: string) {
-    return this.service.listPipelines(orgId);
+  list(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.listPipelines(orgId, role, userId);
   }
 
   @Post()

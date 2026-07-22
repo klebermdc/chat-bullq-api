@@ -68,13 +68,20 @@ export class PipelinesService {
 
   // ─── Pipelines ─────────────────────────────────
 
-  async listPipelines(organizationId: string) {
+  /**
+   * `role`/`currentUserId` escopam a contagem de cards por funil pro AGENT —
+   * sem eles, `_count` batia a org toda, enquanto o board (getBoard) do
+   * vendedor só mostra os cards dele. O card dizia "42" e o board tinha 6.
+   * OWNER/ADMIN continuam vendo o total real (cardScope = `{}`).
+   */
+  async listPipelines(organizationId: string, role?: OrgRole, currentUserId?: string) {
+    const cardScope = currentUserId ? pipelineCardScopeWhere(role, currentUserId) : {};
     return this.prisma.pipeline.findMany({
       where: { organizationId, archived: false },
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
       include: {
         stages: { orderBy: { order: 'asc' } },
-        _count: { select: { cards: true } },
+        _count: { select: { cards: { where: cardScope } } },
       },
     });
   }
