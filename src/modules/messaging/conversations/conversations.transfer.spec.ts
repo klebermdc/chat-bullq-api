@@ -32,6 +32,12 @@ function makeService(opts: {
   };
   const createdSystemMessage = { id: 'sysmsg1', type: MessageContentType.SYSTEM };
   const prisma = {
+    conversation: {
+      // assertConversationAccess: sem role/currentUserId nestes testes
+      // (chamadas legadas de 6 args), então o guard não escopa — só
+      // precisa devolver algo truthy pra não confundir com "não encontrada".
+      findFirst: jest.fn().mockResolvedValue(conversation),
+    },
     userOrganization: {
       findFirst: jest.fn().mockResolvedValue(
         opts.targetMember === undefined

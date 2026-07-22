@@ -303,8 +303,9 @@ export class ConversationsController {
     @Body() dto: UpdateConversationDto,
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.update(id, orgId, dto, userId, access);
+    return this.service.update(id, orgId, dto, userId, access, role);
   }
 
   @Post(':id/assign-me')
@@ -314,8 +315,9 @@ export class ConversationsController {
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.assignToMe(id, orgId, userId, access);
+    return this.service.assignToMe(id, orgId, userId, access, role);
   }
 
   @Post(':id/transfer')
@@ -329,8 +331,9 @@ export class ConversationsController {
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
     @Body() dto: TransferConversationDto,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.transfer(id, orgId, dto.toUserId, userId, dto.reason, access);
+    return this.service.transfer(id, orgId, dto.toUserId, userId, dto.reason, access, role);
   }
 
   @Patch(':id/ai')
@@ -345,12 +348,13 @@ export class ConversationsController {
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
     @Body() body: { enabled: boolean | null },
+    @CurrentUserRole() role: OrgRole,
   ) {
     const value =
       body?.enabled === null || body?.enabled === undefined
         ? null
         : !!body.enabled;
-    return this.service.toggleAi(id, orgId, value, userId, access);
+    return this.service.toggleAi(id, orgId, value, userId, access, role);
   }
 
   @Post(':id/ai/engage')
@@ -364,8 +368,9 @@ export class ConversationsController {
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.engageAi(id, orgId, userId, access);
+    return this.service.engageAi(id, orgId, userId, access, role);
   }
 
   @Post(':id/ai/set-agent')
@@ -380,6 +385,7 @@ export class ConversationsController {
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
     @Body() body: { agentId: string },
+    @CurrentUserRole() role: OrgRole,
   ) {
     return this.service.setActiveAgent(
       id,
@@ -387,6 +393,7 @@ export class ConversationsController {
       body.agentId,
       userId,
       access,
+      role,
     );
   }
 
@@ -397,8 +404,9 @@ export class ConversationsController {
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.close(id, orgId, userId, access);
+    return this.service.close(id, orgId, userId, access, role);
   }
 
   @Post(':id/reopen')
@@ -408,8 +416,9 @@ export class ConversationsController {
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.reopen(id, orgId, userId, access);
+    return this.service.reopen(id, orgId, userId, access, role);
   }
 
   @Post(':id/sync')

@@ -287,6 +287,39 @@ export class ConversationsService {
   }
 
   /**
+   * Garante que o usuário pode agir sobre a conversa.
+   * AGENT só alcança conversa atribuída a ele. OWNER/ADMIN passam direto.
+   * Lança NotFound — e não Forbidden — para não confirmar a existência da conversa alheia.
+   *
+   * Guarda ÚNICA e compartilhada para os métodos de escrita (update, transfer,
+   * toggleAi, engageAi, setActiveAgent, close, reopen, assignToMe) e reusada
+   * pelo MessagesService (send/revoke). Propositalmente NÃO reusa `findOne`:
+   * esta checagem é barata (um único findFirst) e não faz o attachProjects
+   * que as mutações não precisam.
+   */
+  async assertConversationAccess(
+    id: string,
+    organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
+    // Sem currentUserId = chamador de sistema (cadência, webhook, automação,
+    // agente de IA) — mantém irrestrito, igual ao resto do arquivo.
+    const scoped = currentUserId
+      ? resolveAssignmentScope(role, currentUserId)
+      : undefined;
+    const conversation = await this.prisma.conversation.findFirst({
+      where: {
+        id,
+        organizationId,
+        ...(scoped ? { assignedToId: scoped } : {}),
+      },
+    });
+    if (!conversation) throw new NotFoundException('Conversation not found');
+    return conversation;
+  }
+
+  /**
    * Resumo IA do Painel Inteligente. Cache barato: reaproveita `lastMessageAt`
    * — o resumo é fresco enquanto `aiSummaryUpToAt` for igual ao `lastMessageAt`
    * atual. Chegou mensagem nova → divergem → regenera. Só gera para conversas
@@ -449,7 +482,9 @@ export class ConversationsService {
     dto: UpdateConversationDto,
     actorId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ) {
+    await this.assertConversationAccess(id, organizationId, role, actorId);
     const conversation = await this.findOne(id, organizationId, access);
 
     const assigneeChanged =
@@ -504,7 +539,9 @@ export class ConversationsService {
     actorId: string,
     reason?: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ) {
+    await this.assertConversationAccess(id, organizationId, role, actorId);
     const conversation = await this.findOne(id, organizationId, access);
 
     if (conversation.assignedToId === toUserId) {
@@ -585,7 +622,9 @@ export class ConversationsService {
     enabled: boolean | null,
     actorId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ) {
+    await this.assertConversationAccess(id, organizationId, role, actorId);
     await this.findOne(id, organizationId, access);
 
     // Tri-state:
@@ -647,7 +686,9 @@ export class ConversationsService {
     organizationId: string,
     actorId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ): Promise<{ engaged: boolean; reason?: string }> {
+    await this.assertConversationAccess(id, organizationId, role, actorId);
     const conversation = await this.findOne(id, organizationId, access);
 
     const decision = await this.agentRouter.shouldHandle(
@@ -713,7 +754,9 @@ export class ConversationsService {
     agentId: string,
     actorId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ): Promise<{ engaged: boolean; reason?: string; agentName?: string }> {
+    await this.assertConversationAccess(id, organizationId, role, actorId);
     const conversation = await this.findOne(id, organizationId, access);
 
     const agent = await this.prisma.aiAgent.findFirst({
@@ -792,7 +835,9 @@ export class ConversationsService {
     organizationId: string,
     actorId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ) {
+    await this.assertConversationAccess(id, organizationId, role, actorId);
     await this.findOne(id, organizationId, access);
     await this.fsm.transition(id, ConversationStatus.CLOSED, actorId);
     const updated = await this.repository.findById(id);
@@ -808,7 +853,9 @@ export class ConversationsService {
     organizationId: string,
     actorId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ) {
+    await this.assertConversationAccess(id, organizationId, role, actorId);
     const conversation = await this.findOne(id, organizationId, access);
     const target = conversation.assignedToId
       ? ConversationStatus.OPEN
@@ -926,12 +973,22 @@ export class ConversationsService {
     return updated;
   }
 
+  /**
+   * AGENT só "reivindica" a própria conversa — o guard abaixo é o MESMO usado
+   * nas demais mutações, sem caso especial: se `assertConversationAccess`
+   * passar, a conversa já é do usuário (ou ele é OWNER/ADMIN), então
+   * `fsm.assign(id, userId, userId)` vira um no-op. Isso torna IMPOSSÍVEL um
+   * AGENT reivindicar conversa alheia — decisão de produto: conversa sem
+   * dono é distribuída por Admin/Owner, não "roubada" via self-claim.
+   */
   async assignToMe(
     id: string,
     organizationId: string,
     userId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ) {
+    await this.assertConversationAccess(id, organizationId, role, userId);
     await this.findOne(id, organizationId, access);
     await this.fsm.assign(id, userId, userId);
     const updated = await this.repository.findById(id);
