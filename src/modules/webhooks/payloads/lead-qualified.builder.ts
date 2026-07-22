@@ -38,7 +38,7 @@ export class LeadQualifiedPayloadBuilder {
       },
     });
 
-    const [tag, channel] = await Promise.all([
+    const [tag, channel, conversationTags] = await Promise.all([
       payload.tagId
         ? this.prisma.tag.findUnique({
             where: { id: payload.tagId },
@@ -51,6 +51,13 @@ export class LeadQualifiedPayloadBuilder {
             select: { name: true, type: true },
           })
         : Promise.resolve(null),
+      // Todas as tags da conversa, não só a que disparou. O consumidor usa
+      // isso para segmentar (ex.: produto — ingresso vs carro) sem depender
+      // de como a tag de qualificação foi nomeada.
+      this.prisma.conversationTag.findMany({
+        where: { conversationId: payload.conversationId },
+        select: { tag: { select: { name: true } } },
+      }),
     ]);
 
     const occurredAt = payload.occurredAt
@@ -68,7 +75,10 @@ export class LeadQualifiedPayloadBuilder {
       eventId: `${payload.conversationId}:qualified`,
       contactId: payload.contactId,
       conversationId: payload.conversationId,
+      // `tag` = a que qualificou (dispara o evento). `tags` = todas as da
+      // conversa, para segmentação no destino.
       tag: tag?.name ?? null,
+      tags: conversationTags.map((ct) => ct.tag.name).sort(),
       attribution: contact?.ctwaClid
         ? {
             ctwaClid: contact.ctwaClid,
