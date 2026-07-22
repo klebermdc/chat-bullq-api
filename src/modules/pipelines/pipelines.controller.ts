@@ -163,8 +163,16 @@ export class PipelinesController {
   markOrderSent(
     @Param('conversationId') conversationId: string,
     @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.markOrderSentForConversation(orgId, conversationId);
+    return this.service.markOrderSentForConversation(
+      orgId,
+      conversationId,
+      undefined,
+      role,
+      userId,
+    );
   }
 
   @Post('conversations/:conversationId/won')
@@ -176,11 +184,15 @@ export class PipelinesController {
     @Param('conversationId') conversationId: string,
     @CurrentOrg('id') orgId: string,
     @Body() body: { orderNumber?: string },
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
     return this.service.markWonForConversation(
       orgId,
       conversationId,
       body?.orderNumber,
+      role,
+      userId,
     );
   }
 }

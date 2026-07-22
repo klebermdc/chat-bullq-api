@@ -472,6 +472,8 @@ export class PipelinesService {
     organizationId: string,
     conversationId: string,
     stageName: string = ORDER_SENT_STAGE_NAME,
+    role?: OrgRole,
+    currentUserId?: string,
   ) {
     const targetStage = await this.prisma.pipelineStage.findFirst({
       where: {
@@ -486,8 +488,9 @@ export class PipelinesService {
       );
     }
 
+    const scope = currentUserId ? pipelineCardScopeWhere(role, currentUserId) : {};
     const card = await this.prisma.card.findFirst({
-      where: { pipelineId: targetStage.pipelineId, conversationId },
+      where: { pipelineId: targetStage.pipelineId, conversationId, ...scope },
     });
     if (!card) {
       throw new BadRequestException(
@@ -514,9 +517,12 @@ export class PipelinesService {
     organizationId: string,
     conversationId: string,
     orderNumber?: string,
+    role?: OrgRole,
+    currentUserId?: string,
   ) {
+    const scope = currentUserId ? pipelineCardScopeWhere(role, currentUserId) : {};
     const card = await this.prisma.card.findFirst({
-      where: { conversationId, organizationId },
+      where: { conversationId, organizationId, ...scope },
       orderBy: { createdAt: 'desc' },
     });
     if (!card) {
