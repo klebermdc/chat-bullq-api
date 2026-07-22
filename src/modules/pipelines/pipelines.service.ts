@@ -13,6 +13,7 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { CadenceRunner } from '../cadences/cadence-runner.service';
 import { MetaCapiQueue } from '../meta-capi/meta-capi.queue';
 import { pipelineCardScopeWhere } from './pipeline-scope';
+import { resolveAssignmentScope } from '../messaging/conversations/conversation-scope';
 import {
   CreateCardDto,
   CreatePipelineDto,
@@ -292,8 +293,23 @@ export class PipelinesService {
     pipelineId: string,
     organizationId: string,
     dto: CreateCardDto,
+    role?: OrgRole,
+    currentUserId?: string,
   ) {
     await this.assertPipeline(pipelineId, organizationId);
+
+    // AGENT só pode criar card vinculado a conversa que é dela — card
+    // avulso (sem conversationId) é inofensivo e fica de fora do check.
+    const scoped = currentUserId
+      ? resolveAssignmentScope(role, currentUserId)
+      : undefined;
+    if (scoped && dto.conversationId) {
+      const owned = await this.prisma.conversation.findFirst({
+        where: { id: dto.conversationId, organizationId, assignedToId: scoped },
+        select: { id: true },
+      });
+      if (!owned) throw new NotFoundException('Conversation not found');
+    }
 
     // Cards represent conversations entering the pipeline. If the same
     // conversation is already in this pipeline (any stage), reject — the
@@ -624,11 +640,18 @@ export class PipelinesService {
     return updated;
   }
 
-  async removeCard(cardId: string, organizationId: string) {
-    const card = await this.prisma.card.findUnique({ where: { id: cardId } });
-    if (!card || card.organizationId !== organizationId) {
-      throw new NotFoundException('Card not found');
-    }
+  async removeCard(
+    cardId: string,
+    organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
+    const card = await this.assertCardAccess(
+      cardId,
+      organizationId,
+      role,
+      currentUserId,
+    );
     await this.prisma.card.delete({ where: { id: cardId } });
     this.realtime.emitToOrg(organizationId, 'card:deleted', {
       cardId,

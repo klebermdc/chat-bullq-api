@@ -115,14 +115,15 @@ export class PipelinesController {
   }
 
   @Post(':id/cards')
-  @Feature('pipelines.manage')
   @ApiOperation({ summary: 'Create a card in this pipeline' })
   createCard(
     @Param('id') pipelineId: string,
     @CurrentOrg('id') orgId: string,
     @Body() dto: CreateCardDto,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.createCard(pipelineId, orgId, dto);
+    return this.service.createCard(pipelineId, orgId, dto, role, userId);
   }
 
   @Patch('cards/:cardId')
@@ -138,13 +139,14 @@ export class PipelinesController {
   }
 
   @Delete('cards/:cardId')
-  @Feature('pipelines.manage')
   @ApiOperation({ summary: 'Delete a card' })
   removeCard(
     @Param('cardId') cardId: string,
     @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.removeCard(cardId, orgId);
+    return this.service.removeCard(cardId, orgId, role, userId);
   }
 
   @Post('cards/:cardId/move')
