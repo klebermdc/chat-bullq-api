@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AiAgentKind } from '@prisma/client';
 import { AiTool as BuiltInSkillImpl, toLlmDefinition } from './tool.types';
@@ -41,6 +41,7 @@ export class ToolRegistry {
   constructor(
     config: ConfigService,
     reply: ReplyToConversationTool,
+    @Inject(forwardRef(() => TransferToHumanTool))
     transfer: TransferToHumanTool,
     tag: TagConversationTool,
     listAgents: ListAvailableAgentsTool,
