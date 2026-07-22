@@ -19,6 +19,8 @@ export class RolesGuard implements CanActivate {
     const userRole: OrgRole | undefined = request.organization?.userRole;
 
     // Novo: @Feature('chave') resolvido contra o FEATURE_MAP.
+    // getAllAndOverride: handler-level SUBSTITUI class-level (não faz AND) — um
+    // @Feature solto num método widening o acesso da classe inteira em silêncio.
     const feature = this.reflector.getAllAndOverride<string>(FEATURE_KEY, [
       context.getHandler(),
       context.getClass(),
