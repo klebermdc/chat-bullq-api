@@ -15,7 +15,7 @@ import { ToolsCatalogService } from './tools.service';
 import { SkillsCatalogService } from './skills.service';
 import { UpsertToolDto } from './dto/upsert-tool.dto';
 import { UpsertSkillDto } from './dto/upsert-skill.dto';
-import { CurrentOrg, CurrentUser, Roles } from '../../../common/decorators';
+import { CurrentOrg, CurrentUser, Feature, Roles } from '../../../common/decorators';
 import {
   JwtAuthGuard,
   OrgGuard,
@@ -35,12 +35,14 @@ export class AiCatalogController {
   // ── Tools ────────────────────────────────────────────────────────
 
   @Get('tools')
+  @Feature('ai-agents.view')
   @ApiOperation({ summary: 'Lista tools (built-in + custom da org)' })
   listTools(@CurrentOrg('id') orgId: string) {
     return this.tools.list(orgId);
   }
 
   @Get('tools/:id')
+  @Feature('ai-agents.view')
   findTool(@CurrentOrg('id') orgId: string, @Param('id') id: string) {
     return this.tools.findOne(orgId, id);
   }
@@ -74,17 +76,20 @@ export class AiCatalogController {
   // ── Skills ───────────────────────────────────────────────────────
 
   @Get('skills')
+  @Feature('ai-agents.view')
   @ApiOperation({ summary: 'Lista skills da org' })
   listSkills(@CurrentOrg('id') orgId: string) {
     return this.skills.list(orgId);
   }
 
   @Get('skills/:id')
+  @Feature('ai-agents.view')
   findSkill(@CurrentOrg('id') orgId: string, @Param('id') id: string) {
     return this.skills.findOne(orgId, id);
   }
 
   @Get('skills/:id/versions')
+  @Feature('ai-agents.view')
   @ApiOperation({ summary: 'Histórico de versões da skill' })
   listSkillVersions(
     @CurrentOrg('id') orgId: string,
