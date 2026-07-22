@@ -10,8 +10,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { OrgRole } from '@prisma/client';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentUser, CurrentOrg, CurrentChannelAccess } from '../../common/decorators';
+import {
+  CurrentUser,
+  CurrentOrg,
+  CurrentChannelAccess,
+  CurrentUserRole,
+} from '../../common/decorators';
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { ScheduledMessagesService } from './scheduled-messages.service';
 import { CreateScheduledMessageDto } from './dto/create-scheduled-message.dto';
@@ -30,8 +36,9 @@ export class ScheduledMessagesController {
     @CurrentUser('id') userId: string,
     @CurrentOrg('id') orgId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.create(dto, userId, orgId, access);
+    return this.service.create(dto, userId, orgId, access, role);
   }
 
   @Get('conversation/:conversationId')
@@ -39,9 +46,11 @@ export class ScheduledMessagesController {
     @Param('conversationId') conversationId: string,
     @CurrentOrg('id') orgId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
     @Query('status') status?: string,
   ) {
-    return this.service.listForConversation(conversationId, orgId, access, status);
+    return this.service.listForConversation(conversationId, orgId, access, status, role, userId);
   }
 
   @Patch(':id')
@@ -50,8 +59,10 @@ export class ScheduledMessagesController {
     @Body() dto: UpdateScheduledMessageDto,
     @CurrentOrg('id') orgId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.reschedule(id, dto, orgId, access);
+    return this.service.reschedule(id, dto, orgId, access, role, userId);
   }
 
   @Delete(':id')
@@ -59,7 +70,9 @@ export class ScheduledMessagesController {
     @Param('id') id: string,
     @CurrentOrg('id') orgId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.cancel(id, orgId, 'manual', access);
+    return this.service.cancel(id, orgId, 'manual', access, role, userId);
   }
 }

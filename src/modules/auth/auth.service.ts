@@ -12,6 +12,7 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../database/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { permissionsFor } from '../../common/rbac/feature-map';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -300,6 +301,8 @@ export class AuthService {
         name: m.organization.name,
         slug: m.organization.slug,
         role: m.role,
+        // Permissões efetivas do cargo. O frontend só obedece — não decide.
+        permissions: permissionsFor(m.role),
         // 'ALL' for OWNER/ADMIN — they bypass the per-channel allowlist.
         accessibleChannelIds:
           m.role === 'OWNER' || m.role === 'ADMIN'

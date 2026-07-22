@@ -15,7 +15,12 @@ import { ChannelsService } from './channels.service';
 import { CreateChannelDto } from './dto/create-channel.dto';
 import { UpdateChannelDto } from './dto/update-channel.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../../common/guards';
-import { CurrentChannelAccess, CurrentOrg, Roles } from '../../../common/decorators';
+import {
+  CurrentChannelAccess,
+  CurrentOrg,
+  CurrentUserRole,
+  Roles,
+} from '../../../common/decorators';
 import type { ChannelAccess } from '../../iam/channel-access/channel-access.service';
 
 @ApiTags('Channels')
@@ -26,9 +31,10 @@ export class ChannelsController {
   constructor(private readonly service: ChannelsService) {}
 
   @Post()
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
   @ApiOperation({
     summary:
-      'Create a new channel. Any member can create — AGENTs are auto-granted access to the channel they create (deny-by-default for everyone else).',
+      'Create a new channel. Restricted to OWNER/ADMIN.',
   })
   create(
     @CurrentOrg() org: { id: string; userOrganizationId: string; userRole: OrgRole },
@@ -45,8 +51,9 @@ export class ChannelsController {
   findAll(
     @CurrentOrg('id') orgId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.findAll(orgId, access);
+    return this.service.findAll(orgId, access, role);
   }
 
   @Get(':id')
@@ -55,8 +62,9 @@ export class ChannelsController {
     @Param('id') id: string,
     @CurrentOrg('id') orgId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.findOne(id, orgId, access);
+    return this.service.findOne(id, orgId, access, role);
   }
 
   @Patch(':id')

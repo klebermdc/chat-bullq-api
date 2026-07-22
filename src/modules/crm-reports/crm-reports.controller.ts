@@ -7,6 +7,7 @@ import {
   CurrentOrg,
   CurrentUser,
   CurrentUserRole,
+  Feature,
 } from '../../common/decorators';
 import { CrmReportsService } from './crm-reports.service';
 import { DealsQueryDto } from './dto/deals-query.dto';
@@ -24,6 +25,7 @@ import {
 @ApiTags('crm-reports')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
+@Feature('crm-reports.view')
 @Controller('crm-reports')
 export class CrmReportsController {
   constructor(private readonly service: CrmReportsService) {}

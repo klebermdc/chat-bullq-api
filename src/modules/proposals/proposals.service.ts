@@ -5,11 +5,14 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { OrgRole } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RenderService } from './render.service';
 import { ExtractionService } from './extraction.service';
 import { ProposalsRepository } from './proposals.repository';
 import { MessagesService } from '../messaging/messages/messages.service';
+import { ConversationsService } from '../messaging/conversations/conversations.service';
+import { resolveAssignmentScope } from '../messaging/conversations/conversation-scope';
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { buildProposalMessage } from './message-builder';
 import { CreateProposalDto } from './dto/create-proposal.dto';
@@ -17,6 +20,7 @@ import { PROPOSAL_ALLOWED_HOSTS, PROPOSAL_SENT_STAGE_NAME } from './proposals.co
 import { PROPOSAL_NEW_FOLLOWUPS } from './proposal-followups';
 import { PipelinesService } from '../pipelines/pipelines.service';
 import { OrderFichaService } from '../order-ficha/order-ficha.service';
+import type { Proposal } from '@prisma/client';
 
 @Injectable()
 export class ProposalsService {
@@ -30,6 +34,7 @@ export class ProposalsService {
     private readonly messages: MessagesService,
     private readonly pipelines: PipelinesService,
     private readonly orderFicha: OrderFichaService,
+    private readonly conversations: ConversationsService,
   ) {}
 
   async create(
@@ -37,12 +42,22 @@ export class ProposalsService {
     userId: string,
     organizationId: string,
     access: ChannelAccess,
+    role?: OrgRole,
   ) {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: dto.conversationId },
     });
     if (!conversation) throw new NotFoundException('Conversation not found');
     if (conversation.organizationId !== organizationId) throw new ForbiddenException();
+    // AGENT só cria proposta em conversa atribuída a si — mesma barreira
+    // compartilhada do resto do app (NotFound, não Forbidden: não confirma
+    // a existência do registro pra quem não tem acesso).
+    await this.conversations.assertConversationAccess(
+      conversation.id,
+      organizationId,
+      role,
+      userId,
+    );
 
     // O atendente cola o link OU o bloco inteiro (link + resumo do carrinho).
     // Extraímos a URL de dentro do que foi colado; o texto completo vira
@@ -96,6 +111,12 @@ export class ProposalsService {
       userId,
       organizationId,
       access,
+      undefined,
+      // Já validamos acesso à conversa acima (assertConversationAccess);
+      // sem `system: true` esta chamada ficaria escopada de novo (fail-closed
+      // por padrão) sem `role` — redundante mas inofensivo, marcamos mesmo
+      // assim para não depender de uma segunda checagem implícita.
+      { system: true },
     );
 
     // Cruzamento com a Ficha do Pedido: compara o que o cliente pediu na
@@ -124,6 +145,8 @@ export class ProposalsService {
             userId,
             organizationId,
             access,
+            undefined,
+            { system: true },
           );
         } catch (err) {
           this.logger.warn(
@@ -152,15 +175,26 @@ export class ProposalsService {
     return proposal;
   }
 
-  listForContact(organizationId: string, contactId: string) {
-    return this.repo.listForContact(organizationId, contactId);
+  async listForContact(
+    organizationId: string,
+    contactId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
+    const proposals = await this.repo.listForContact(organizationId, contactId);
+    return this.scopeToAssignedConversation(proposals, role, currentUserId);
   }
 
   /**
    * Propostas do contato de uma conversa — usado pelo modal pra decidir o padrão
    * (se já existe proposta, o modal abre em "Atualização").
    */
-  async listForConversation(organizationId: string, conversationId: string) {
+  async listForConversation(
+    organizationId: string,
+    conversationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
       select: { organizationId: true, contactId: true },
@@ -168,7 +202,34 @@ export class ProposalsService {
     if (!conversation || conversation.organizationId !== organizationId) {
       return [];
     }
-    return this.repo.listForContact(organizationId, conversation.contactId);
+    const proposals = await this.repo.listForContact(organizationId, conversation.contactId);
+    return this.scopeToAssignedConversation(proposals, role, currentUserId);
+  }
+
+  /**
+   * Filtra propostas pra AGENT: um contato pode ter propostas espalhadas por
+   * várias conversas (dele e de colegas). Sem isso, `GET /proposals/contact/:id`
+   * vazava valor, datas e nº de pedido da conversa de outro atendente pra
+   * qualquer AGENT que soubesse o contactId. OWNER/ADMIN não filtra.
+   */
+  private async scopeToAssignedConversation(
+    proposals: Proposal[],
+    role: OrgRole | undefined,
+    currentUserId: string | undefined,
+  ): Promise<Proposal[]> {
+    const scopedUserId = currentUserId
+      ? resolveAssignmentScope(role, currentUserId)
+      : undefined;
+    if (!scopedUserId) return proposals;
+    if (proposals.length === 0) return proposals;
+
+    const conversationIds = [...new Set(proposals.map((p) => p.conversationId))];
+    const owned = await this.prisma.conversation.findMany({
+      where: { id: { in: conversationIds }, assignedToId: scopedUserId },
+      select: { id: true },
+    });
+    const ownedIds = new Set(owned.map((c) => c.id));
+    return proposals.filter((p) => ownedIds.has(p.conversationId));
   }
 
   /**

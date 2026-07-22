@@ -97,7 +97,8 @@ describe('AgentAvailabilityService.onInboundReply', () => {
     expect(orgId).toBe('org1');
     // Enviado como mensagem AUTOMÁTICA — não deve acionar os efeitos de
     // "humano respondeu" (sai de Esperando / cancela watchdog / marca lido).
-    expect(opts).toEqual({ automated: true });
+    // `system: true` pula a checagem de atribuição (chamador de sistema).
+    expect(opts).toEqual({ automated: true, system: true });
     expect(prisma.conversation.update).toHaveBeenCalledWith({
       where: { id: 'conv1' },
       data: { offHoursNoticeAt: now },

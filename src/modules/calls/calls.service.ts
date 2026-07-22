@@ -1,9 +1,11 @@
 import { BadGatewayException, BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { OrgRole } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { SonaxSettingsService } from './sonax-settings.service';
 import { SonaxClient } from './sonax-client';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { normalizeBrazilNumber } from './phone.util';
+import { ConversationsService } from '../messaging/conversations/conversations.service';
 
 @Injectable()
 export class CallsService {
@@ -12,9 +14,26 @@ export class CallsService {
     private readonly settings: SonaxSettingsService,
     private readonly sonax: SonaxClient,
     private readonly realtime: RealtimeGateway,
+    // CallsModule já importa MessagingModule direto (sem forwardRef — não há
+    // ciclo, MessagingModule não depende de CallsModule), então
+    // ConversationsService sai normal daqui.
+    private readonly conversations: ConversationsService,
   ) {}
 
-  async initiateCall(conversationId: string, userId: string, organizationId: string) {
+  async initiateCall(
+    conversationId: string,
+    userId: string,
+    organizationId: string,
+    role?: OrgRole,
+  ) {
+    // Liga o telefone de verdade e grava a transcrição — mesma barreira de
+    // atribuição do resto do app antes de qualquer coisa acontecer.
+    await this.conversations.assertConversationAccess(
+      conversationId,
+      organizationId,
+      role,
+      userId,
+    );
     const conversation = await this.prisma.conversation.findFirst({
       where: { id: conversationId, organizationId },
       include: { contact: true },
@@ -71,7 +90,18 @@ export class CallsService {
   }
 
   /** Resumo da última ligação ATENDIDA da conversa (pro Card do Cliente / Painel). */
-  async getLatestInsight(conversationId: string, organizationId: string) {
+  async getLatestInsight(
+    conversationId: string,
+    organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
+    await this.conversations.assertConversationAccess(
+      conversationId,
+      organizationId,
+      role,
+      currentUserId,
+    );
     const call = await this.prisma.call.findFirst({
       where: { conversationId, organizationId, answered: true },
       orderBy: { startedAt: 'desc' },
@@ -91,7 +121,19 @@ export class CallsService {
   }
 
   /** Transcrição completa (sob demanda — não vai no payload do insight). */
-  async getTranscript(conversationId: string, callId: string, organizationId: string) {
+  async getTranscript(
+    conversationId: string,
+    callId: string,
+    organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
+    await this.conversations.assertConversationAccess(
+      conversationId,
+      organizationId,
+      role,
+      currentUserId,
+    );
     const call = await this.prisma.call.findFirst({
       where: { id: callId, conversationId, organizationId },
     });

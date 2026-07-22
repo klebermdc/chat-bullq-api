@@ -40,13 +40,21 @@ export class ContactsRepository {
     return { contacts, total };
   }
 
-  async findById(id: string) {
+  /**
+   * `scopedUserId`: quando presente (AGENT), filtra a relação `conversations`
+   * incluída pras que estão atribuídas a ele — sem isso, `GET /contacts/:id`
+   * (rota `contacts.view = ALL`, usada pelo Inbox) vazava as últimas 10
+   * conversas do contato COM o corpo da última mensagem de cada uma, mesmo
+   * as de colegas. `undefined` = sem filtro (OWNER/ADMIN).
+   */
+  async findById(id: string, scopedUserId?: string) {
     return this.prisma.contact.findFirst({
       where: { id, deletedAt: null },
       include: {
         channels: { include: { channel: { select: { id: true, type: true, name: true } } } },
         tags: { include: { tag: true } },
         conversations: {
+          where: scopedUserId ? { assignedToId: scopedUserId } : undefined,
           orderBy: { createdAt: 'desc' },
           take: 10,
           include: {

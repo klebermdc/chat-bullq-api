@@ -1,5 +1,19 @@
-import { BadRequestException, BadGatewayException } from '@nestjs/common';
+import { BadRequestException, BadGatewayException, NotFoundException } from '@nestjs/common';
 import { CallsService } from './calls.service';
+import { ConversationsService } from '../messaging/conversations/conversations.service';
+
+/**
+ * Instância REAL de ConversationsService (só com `prisma` montado) — mesmo
+ * padrão de messages.access.spec.ts.
+ */
+function makeConversationsService(conversationFound: unknown = { id: 'conv1' }) {
+  const guardPrisma: any = {
+    conversation: { findFirst: jest.fn().mockResolvedValue(conversationFound) },
+  };
+  const svc: ConversationsService = Object.create(ConversationsService.prototype);
+  Object.assign(svc, { prisma: guardPrisma });
+  return { conversations: svc, guardPrisma };
+}
 
 function makeDeps(over: any = {}) {
   const created: any = {};
@@ -27,7 +41,13 @@ function makeDeps(over: any = {}) {
   } as any;
   const sonax = { click2call: jest.fn(async () => undefined), ...over.sonax } as any;
   const realtime = { emitToConversation: jest.fn() } as any;
-  return { prisma, settings, sonax, realtime, created, svc: new CallsService(prisma, settings, sonax, realtime) };
+  const { conversations, guardPrisma } = makeConversationsService(
+    'conversationsGuardFinds' in over ? over.conversationsGuardFinds : { id: 'conv1' },
+  );
+  return {
+    prisma, settings, sonax, realtime, created, guardPrisma,
+    svc: new CallsService(prisma, settings, sonax, realtime, conversations),
+  };
 }
 
 describe('CallsService.initiateCall', () => {
@@ -58,5 +78,55 @@ describe('CallsService.initiateCall', () => {
     const d = makeDeps({ sonax: { click2call: jest.fn(async () => { throw new Error('Sonax 404'); }) } });
     await expect(d.svc.initiateCall('conv1', 'user1', 'org1')).rejects.toBeInstanceOf(BadGatewayException);
     expect(d.created.callUpdate.status).toBe('FAILED');
+  });
+});
+
+describe('CallsService — escopo por atribuição (AGENT só liga/lê ligação da própria conversa)', () => {
+  it('initiateCall: AGENT + conversa de colega → NotFound, sem discar', async () => {
+    const d = makeDeps({ conversationsGuardFinds: null });
+    await expect(
+      d.svc.initiateCall('conv1', 'agent-u1', 'org1', 'AGENT' as any),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(d.sonax.click2call).not.toHaveBeenCalled();
+    expect(d.prisma.call.create).not.toHaveBeenCalled();
+  });
+
+  it('initiateCall: AGENT + conversa própria → prossegue e disca', async () => {
+    const d = makeDeps({ conversationsGuardFinds: { id: 'conv1' } });
+    const res = await d.svc.initiateCall('conv1', 'agent-u1', 'org1', 'AGENT' as any);
+    expect(res.status).toBe('DIALING');
+    expect(d.sonax.click2call).toHaveBeenCalled();
+  });
+
+  it('getLatestInsight: AGENT + conversa de colega → NotFound', async () => {
+    const d = makeDeps({ conversationsGuardFinds: null });
+    d.prisma.call = { findFirst: jest.fn().mockResolvedValue(null) };
+    await expect(
+      d.svc.getLatestInsight('conv1', 'org1', 'AGENT' as any, 'agent-u1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('getLatestInsight: AGENT + conversa própria → prossegue (sem call = hasCall:false)', async () => {
+    const d = makeDeps({ conversationsGuardFinds: { id: 'conv1' } });
+    d.prisma.call = { findFirst: jest.fn().mockResolvedValue(null) };
+    const res = await d.svc.getLatestInsight('conv1', 'org1', 'AGENT' as any, 'agent-u1');
+    expect(res).toEqual({ hasCall: false });
+  });
+
+  it('getTranscript: AGENT + conversa de colega → NotFound, sem consultar a Call', async () => {
+    const d = makeDeps({ conversationsGuardFinds: null });
+    d.prisma.call = { findFirst: jest.fn() };
+    await expect(
+      d.svc.getTranscript('conv1', 'call1', 'org1', 'AGENT' as any, 'agent-u1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(d.prisma.call.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('ADMIN não escopa (findFirst do guard sem assignedToId)', async () => {
+    const d = makeDeps({ conversationsGuardFinds: { id: 'conv1' } });
+    await d.svc.initiateCall('conv1', 'admin-u1', 'org1', 'ADMIN' as any);
+    expect(d.guardPrisma.conversation.findFirst).toHaveBeenCalledWith({
+      where: { id: 'conv1', organizationId: 'org1' },
+    });
   });
 });

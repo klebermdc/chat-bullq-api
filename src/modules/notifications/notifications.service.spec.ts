@@ -66,3 +66,12 @@ describe('NotificationsService.notifyOrgAgents', () => {
     );
   });
 });
+
+describe('NotificationsService.markRead — repassa dono + org pro repositório', () => {
+  it('chama repository.markRead com (id, userId, orgId)', async () => {
+    const { svc, repository } = make();
+    (repository as any).markRead = jest.fn().mockResolvedValue({ id: 'n1', isRead: true });
+    await svc.markRead('n1', 'u1', 'org1');
+    expect(repository.markRead).toHaveBeenCalledWith('n1', 'u1', 'org1');
+  });
+});

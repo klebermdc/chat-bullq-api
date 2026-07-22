@@ -1,7 +1,8 @@
 import { Controller, Get, Post, Param, Query, Body, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { ApiKeyAuthGuard } from '../../../common/guards';
-import { CurrentOrg, CurrentUser } from '../../../common/decorators';
+import { CurrentOrg, CurrentUser, CurrentUserRole } from '../../../common/decorators';
+import { OrgRole } from '@prisma/client';
 import { ApiKeyThrottleGuard } from '../guards/api-key-throttle.guard';
 import { ConversationsService } from '../../messaging/conversations/conversations.service';
 import { MessagesService } from '../../messaging/messages/messages.service';
@@ -36,8 +37,13 @@ export class PublicConversationsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Detalha uma conversa' })
-  async get(@CurrentOrg('id') orgId: string, @Param('id') id: string) {
-    return mapConversation(await this.conversations.findOne(id, orgId, 'ALL'));
+  async get(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @CurrentUserRole() role: OrgRole,
+  ) {
+    return mapConversation(await this.conversations.findOne(id, orgId, 'ALL', userId, role));
   }
 
   @Get(':id/messages')
@@ -56,14 +62,24 @@ export class PublicConversationsController {
 
   @Post(':id/close')
   @ApiOperation({ summary: 'Fecha a conversa' })
-  async close(@CurrentOrg('id') orgId: string, @CurrentUser('id') userId: string, @Param('id') id: string) {
-    return mapConversation(await this.conversations.close(id, orgId, userId, 'ALL'));
+  async close(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @CurrentUserRole() role: OrgRole,
+  ) {
+    return mapConversation(await this.conversations.close(id, orgId, userId, 'ALL', role));
   }
 
   @Post(':id/reopen')
   @ApiOperation({ summary: 'Reabre a conversa' })
-  async reopen(@CurrentOrg('id') orgId: string, @CurrentUser('id') userId: string, @Param('id') id: string) {
-    return mapConversation(await this.conversations.reopen(id, orgId, userId, 'ALL'));
+  async reopen(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @CurrentUserRole() role: OrgRole,
+  ) {
+    return mapConversation(await this.conversations.reopen(id, orgId, userId, 'ALL', role));
   }
 
   @Post(':id/assign')
@@ -73,7 +89,8 @@ export class PublicConversationsController {
     @CurrentUser('id') userId: string,
     @Param('id') id: string,
     @Body() dto: AssignConversationPublicDto,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return mapConversation(await this.conversations.update(id, orgId, dto as any, userId, 'ALL'));
+    return mapConversation(await this.conversations.update(id, orgId, dto as any, userId, 'ALL', role));
   }
 }

@@ -22,6 +22,7 @@ import {
   CurrentOrg,
   CurrentChannelAccess,
   CurrentUserRole,
+  Feature,
   Roles,
 } from '../../../common/decorators';
 import type { ChannelAccess } from '../../iam/channel-access/channel-access.service';
@@ -302,8 +303,9 @@ export class ConversationsController {
     @Body() dto: UpdateConversationDto,
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.update(id, orgId, dto, userId, access);
+    return this.service.update(id, orgId, dto, userId, access, role);
   }
 
   @Post(':id/assign-me')
@@ -313,8 +315,9 @@ export class ConversationsController {
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.assignToMe(id, orgId, userId, access);
+    return this.service.assignToMe(id, orgId, userId, access, role);
   }
 
   @Post(':id/transfer')
@@ -328,11 +331,13 @@ export class ConversationsController {
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
     @Body() dto: TransferConversationDto,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.transfer(id, orgId, dto.toUserId, userId, dto.reason, access);
+    return this.service.transfer(id, orgId, dto.toUserId, userId, dto.reason, access, role);
   }
 
   @Patch(':id/ai')
+  @Feature('inbox.ai.toggle')
   @ApiOperation({
     summary:
       'Override AI behavior on this conversation. enabled=true forces AI on (overrides kill switch and business hours), false forces off, null clears the override (follows global rules).',
@@ -343,15 +348,17 @@ export class ConversationsController {
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
     @Body() body: { enabled: boolean | null },
+    @CurrentUserRole() role: OrgRole,
   ) {
     const value =
       body?.enabled === null || body?.enabled === undefined
         ? null
         : !!body.enabled;
-    return this.service.toggleAi(id, orgId, value, userId, access);
+    return this.service.toggleAi(id, orgId, value, userId, access, role);
   }
 
   @Post(':id/ai/engage')
+  @Feature('inbox.ai.toggle')
   @ApiOperation({
     summary:
       'Manually engage the AI on this conversation right now. The agent reads the full message history, decides what to do (reply, delegate, transfer) and acts. Useful when the inbound stream is silent but a human wants the AI to take over (e.g. after pausing then resuming).',
@@ -361,11 +368,13 @@ export class ConversationsController {
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.engageAi(id, orgId, userId, access);
+    return this.service.engageAi(id, orgId, userId, access, role);
   }
 
   @Post(':id/ai/set-agent')
+  @Feature('inbox.ai.toggle')
   @ApiOperation({
     summary:
       'Pin a specific AI agent to this conversation and immediately engage it. Sets activeAgentId + aiEnabled=true + fires the runner. Use case: human picks Lívia/André via UI when delegating manually.',
@@ -376,6 +385,7 @@ export class ConversationsController {
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
     @Body() body: { agentId: string },
+    @CurrentUserRole() role: OrgRole,
   ) {
     return this.service.setActiveAgent(
       id,
@@ -383,6 +393,7 @@ export class ConversationsController {
       body.agentId,
       userId,
       access,
+      role,
     );
   }
 
@@ -393,8 +404,9 @@ export class ConversationsController {
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.close(id, orgId, userId, access);
+    return this.service.close(id, orgId, userId, access, role);
   }
 
   @Post(':id/reopen')
@@ -404,8 +416,9 @@ export class ConversationsController {
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
     @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
   ) {
-    return this.service.reopen(id, orgId, userId, access);
+    return this.service.reopen(id, orgId, userId, access, role);
   }
 
   @Post(':id/sync')

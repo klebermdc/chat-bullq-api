@@ -77,6 +77,8 @@ export class ScheduledDispatchProcessor extends WorkerHost {
         row.createdById,
         row.organizationId,
         'ALL',
+        undefined,
+        { system: true },
       );
       await this.repo.update(row.id, {
         status: 'SENT',
