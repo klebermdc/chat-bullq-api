@@ -4,6 +4,7 @@ import { PrismaModule } from '../../database/prisma.module';
 import { CryptoModule } from '../../common/crypto/crypto.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { MessagingModule } from '../messaging/messaging.module';
+import { ConversationAccessModule } from '../messaging/conversations/conversation-access.module';
 import { AiProviderKeysModule } from '../ai-provider-keys/ai-provider-keys.module';
 import { CallsService } from './calls.service';
 import { SonaxSettingsService } from './sonax-settings.service';
@@ -23,6 +24,7 @@ import { CALL_INSIGHT_QUEUE } from './call-insight.constants';
     CryptoModule,
     RealtimeModule,
     MessagingModule,
+    ConversationAccessModule,
     AiProviderKeysModule,
     BullModule.registerQueue({ name: CALL_INSIGHT_QUEUE }),
   ],

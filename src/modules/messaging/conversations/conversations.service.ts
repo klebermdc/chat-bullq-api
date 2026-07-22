@@ -18,6 +18,7 @@ import {
 } from '@prisma/client';
 import { ConversationsRepository, InboxFilters } from './conversations.repository';
 import { resolveAssignmentScope } from './conversation-scope';
+import { ConversationAccessService } from './conversation-access.service';
 import { ConversationFsmService } from './conversation-fsm.service';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
@@ -68,6 +69,7 @@ export class ConversationsService {
     private readonly agentRunner: AiAgentRunnerService,
     private readonly segmentRead: SegmentReadService,
     private readonly projects: ProjectsService,
+    private readonly conversationAccess: ConversationAccessService,
     @Inject(forwardRef(() => ScheduledMessagesService))
     private readonly scheduled: ScheduledMessagesService,
     private readonly summarizer: ConversationSummaryService,
@@ -310,6 +312,11 @@ export class ConversationsService {
    * pelo MessagesService (send/revoke). Propositalmente NÃO reusa `findOne`:
    * esta checagem é barata (um único findFirst) e não faz o attachProjects
    * que as mutações não precisam.
+   *
+   * Implementação mora em `ConversationAccessService` (leaf service, só
+   * depende de PrismaService) — delega pra não duplicar a lógica nem
+   * reintroduzir o ciclo de DI que injetar `ConversationsService` inteiro
+   * causava nos outros módulos consumidores.
    */
   async assertConversationAccess(
     id: string,
@@ -317,20 +324,12 @@ export class ConversationsService {
     role?: OrgRole,
     currentUserId?: string,
   ) {
-    // Sem currentUserId = chamador de sistema (cadência, webhook, automação,
-    // agente de IA) — mantém irrestrito, igual ao resto do arquivo.
-    const scoped = currentUserId
-      ? resolveAssignmentScope(role, currentUserId)
-      : undefined;
-    const conversation = await this.prisma.conversation.findFirst({
-      where: {
-        id,
-        organizationId,
-        ...(scoped ? { assignedToId: scoped } : {}),
-      },
-    });
-    if (!conversation) throw new NotFoundException('Conversation not found');
-    return conversation;
+    return this.conversationAccess.assertConversationAccess(
+      id,
+      organizationId,
+      role,
+      currentUserId,
+    );
   }
 
   /**

@@ -1,18 +1,17 @@
 import { BadRequestException, BadGatewayException, NotFoundException } from '@nestjs/common';
 import { CallsService } from './calls.service';
-import { ConversationsService } from '../messaging/conversations/conversations.service';
+import { ConversationAccessService } from '../messaging/conversations/conversation-access.service';
 
 /**
- * Instância REAL de ConversationsService (só com `prisma` montado) — mesmo
- * padrão de messages.access.spec.ts.
+ * Instância REAL de ConversationAccessService (leaf service, só `prisma`) —
+ * mesmo padrão de messages.access.spec.ts.
  */
-function makeConversationsService(conversationFound: unknown = { id: 'conv1' }) {
+function makeConversationAccessService(conversationFound: unknown = { id: 'conv1' }) {
   const guardPrisma: any = {
     conversation: { findFirst: jest.fn().mockResolvedValue(conversationFound) },
   };
-  const svc: ConversationsService = Object.create(ConversationsService.prototype);
-  Object.assign(svc, { prisma: guardPrisma });
-  return { conversations: svc, guardPrisma };
+  const svc = new ConversationAccessService(guardPrisma);
+  return { conversationAccess: svc, guardPrisma };
 }
 
 function makeDeps(over: any = {}) {
@@ -41,12 +40,12 @@ function makeDeps(over: any = {}) {
   } as any;
   const sonax = { click2call: jest.fn(async () => undefined), ...over.sonax } as any;
   const realtime = { emitToConversation: jest.fn() } as any;
-  const { conversations, guardPrisma } = makeConversationsService(
+  const { conversationAccess, guardPrisma } = makeConversationAccessService(
     'conversationsGuardFinds' in over ? over.conversationsGuardFinds : { id: 'conv1' },
   );
   return {
     prisma, settings, sonax, realtime, created, guardPrisma,
-    svc: new CallsService(prisma, settings, sonax, realtime, conversations),
+    svc: new CallsService(prisma, settings, sonax, realtime, conversationAccess),
   };
 }
 

@@ -1,7 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { ProposalsService } from './proposals.service';
-import { ConversationsService } from '../messaging/conversations/conversations.service';
+import { ConversationAccessService } from '../messaging/conversations/conversation-access.service';
 import { ExtractedCart } from './proposals.types';
 
 const cart: ExtractedCart = {
@@ -12,17 +12,16 @@ const cart: ExtractedCart = {
 };
 
 /**
- * Instância REAL de ConversationsService (só com `prisma` montado), mesmo
- * padrão de messages.access.spec.ts / pipelines.card-access.spec.ts — prova
- * a integração de verdade com `assertConversationAccess`, não um double.
+ * Instância REAL de ConversationAccessService (leaf service, só `prisma`),
+ * mesmo padrão de messages.access.spec.ts / pipelines.card-access.spec.ts —
+ * prova a integração de verdade com `assertConversationAccess`, não um
+ * double.
  */
-function makeConversationsService(conversationFound: unknown) {
+function makeConversationAccessService(conversationFound: unknown) {
   const prisma: any = {
     conversation: { findFirst: jest.fn().mockResolvedValue(conversationFound) },
   };
-  const svc: ConversationsService = Object.create(ConversationsService.prototype);
-  Object.assign(svc, { prisma });
-  return svc;
+  return new ConversationAccessService(prisma);
 }
 
 function deps(opts: { conversationsGuardFinds?: unknown } = {}) {
@@ -37,7 +36,7 @@ function deps(opts: { conversationsGuardFinds?: unknown } = {}) {
     messages: { send: jest.fn().mockResolvedValue({ id: 'msg-1' }) } as any,
     pipelines: { ensureConversationAtStageByName: jest.fn().mockResolvedValue(undefined) } as any,
     orderFicha: { crossCheckOnProposal: jest.fn().mockResolvedValue(undefined) } as any,
-    conversations: makeConversationsService(
+    conversationAccess: makeConversationAccessService(
       'conversationsGuardFinds' in opts ? opts.conversationsGuardFinds : { id: 'conv-1' },
     ),
   };
@@ -52,7 +51,7 @@ function makeService(d: ReturnType<typeof deps>) {
     d.messages,
     d.pipelines,
     d.orderFicha,
-    d.conversations,
+    d.conversationAccess,
   );
 }
 

@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { MessageContentType } from '@prisma/client';
 import { ConversationsService } from './conversations.service';
+import { ConversationAccessService } from './conversation-access.service';
 
 /**
  * Cobre o fluxo de transferência intencional de cliente:
@@ -63,6 +64,7 @@ function makeService(opts: {
     prisma,
     channelAccess,
     attendantGreeting,
+    conversationAccess: new ConversationAccessService(prisma as any),
   });
 
   return {

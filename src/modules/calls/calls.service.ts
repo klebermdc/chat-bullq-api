@@ -5,7 +5,7 @@ import { SonaxSettingsService } from './sonax-settings.service';
 import { SonaxClient } from './sonax-client';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { normalizeBrazilNumber } from './phone.util';
-import { ConversationsService } from '../messaging/conversations/conversations.service';
+import { ConversationAccessService } from '../messaging/conversations/conversation-access.service';
 
 @Injectable()
 export class CallsService {
@@ -14,10 +14,9 @@ export class CallsService {
     private readonly settings: SonaxSettingsService,
     private readonly sonax: SonaxClient,
     private readonly realtime: RealtimeGateway,
-    // CallsModule já importa MessagingModule direto (sem forwardRef — não há
-    // ciclo, MessagingModule não depende de CallsModule), então
-    // ConversationsService sai normal daqui.
-    private readonly conversations: ConversationsService,
+    // Leaf service (só PrismaService) — sem o ciclo de DI que injetar
+    // ConversationsService inteiro aqui abria via AiAgentsModule.
+    private readonly conversationAccess: ConversationAccessService,
   ) {}
 
   async initiateCall(
@@ -28,7 +27,7 @@ export class CallsService {
   ) {
     // Liga o telefone de verdade e grava a transcrição — mesma barreira de
     // atribuição do resto do app antes de qualquer coisa acontecer.
-    await this.conversations.assertConversationAccess(
+    await this.conversationAccess.assertConversationAccess(
       conversationId,
       organizationId,
       role,
@@ -96,7 +95,7 @@ export class CallsService {
     role?: OrgRole,
     currentUserId?: string,
   ) {
-    await this.conversations.assertConversationAccess(
+    await this.conversationAccess.assertConversationAccess(
       conversationId,
       organizationId,
       role,
@@ -128,7 +127,7 @@ export class CallsService {
     role?: OrgRole,
     currentUserId?: string,
   ) {
-    await this.conversations.assertConversationAccess(
+    await this.conversationAccess.assertConversationAccess(
       conversationId,
       organizationId,
       role,

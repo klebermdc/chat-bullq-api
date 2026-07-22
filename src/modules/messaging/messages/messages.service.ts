@@ -25,7 +25,7 @@ import { WatchdogService } from '../../routing/watchdog/watchdog.service';
 import { SegmentReadService } from '../../segments/segment-read.service';
 import { ChannelAdapterRegistry } from '../../channel-hub/channel-adapter.registry';
 import { resolveAssignmentScope } from '../conversations/conversation-scope';
-import { ConversationsService } from '../conversations/conversations.service';
+import { ConversationAccessService } from '../conversations/conversation-access.service';
 import { shouldAutoAssignOnReply } from './auto-assign.util';
 
 @Injectable()
@@ -40,7 +40,7 @@ export class MessagesService {
     private readonly watchdog: WatchdogService,
     private readonly adapterRegistry: ChannelAdapterRegistry,
     private readonly segmentRead: SegmentReadService,
-    private readonly conversations: ConversationsService,
+    private readonly conversationAccess: ConversationAccessService,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
   ) {}
 
@@ -100,7 +100,7 @@ export class MessagesService {
     // trás) e se marcam `{ system: true }` para pular a barreira — ver
     // tabela de call sites no PR.
     if (opts?.system !== true) {
-      await this.conversations.assertConversationAccess(
+      await this.conversationAccess.assertConversationAccess(
         conversation.id,
         organizationId,
         role,
@@ -432,7 +432,7 @@ export class MessagesService {
     // acabou de mandar numa conversa alheia. Único chamador é o controller
     // (ator sempre é o usuário autenticado da request) — sem chamador de
     // sistema conhecido, então escopa sempre que houver actorId.
-    await this.conversations.assertConversationAccess(
+    await this.conversationAccess.assertConversationAccess(
       message.conversation.id,
       organizationId,
       role,

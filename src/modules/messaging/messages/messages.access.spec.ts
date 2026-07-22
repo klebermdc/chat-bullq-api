@@ -1,22 +1,21 @@
 import { NotFoundException } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { MessagesService } from './messages.service';
-import { ConversationsService } from '../conversations/conversations.service';
+import { ConversationAccessService } from '../conversations/conversation-access.service';
 
 /**
  * Cobre a mesma classe de bug de conversations.access.spec.ts, agora no
  * caminho de mensagens: `send` e `revokeForEveryone` reusam a guarda
- * compartilhada `ConversationsService.assertConversationAccess` — usa a
+ * compartilhada `ConversationAccessService.assertConversationAccess` — usa a
  * instância REAL do serviço (com prisma mockado), não um double, pra provar
  * a integração de verdade e não só "o mock foi chamado".
  */
-function makeConversationsService(conversationFound: unknown) {
+function makeConversationAccessService(conversationFound: unknown) {
   const prisma: any = {
     conversation: { findFirst: jest.fn().mockResolvedValue(conversationFound) },
   };
-  const svc: ConversationsService = Object.create(ConversationsService.prototype);
-  Object.assign(svc, { prisma });
-  return { conversations: svc, guardPrisma: prisma };
+  const svc = new ConversationAccessService(prisma);
+  return { conversationAccess: svc, guardPrisma: prisma };
 }
 
 function makeMessagesService(opts: {
@@ -26,12 +25,12 @@ function makeMessagesService(opts: {
   const prisma: any = {
     conversation: { findUnique: jest.fn().mockResolvedValue(opts.conversation) },
   };
-  const { conversations, guardPrisma } = makeConversationsService(
+  const { conversationAccess, guardPrisma } = makeConversationAccessService(
     opts.conversationsGuardFinds,
   );
   const channelAccess = { assertChannelAccess: jest.fn() };
   const svc: MessagesService = Object.create(MessagesService.prototype);
-  Object.assign(svc, { prisma, conversations, channelAccess });
+  Object.assign(svc, { prisma, conversationAccess, channelAccess });
   return { svc, prisma, channelAccess, guardPrisma };
 }
 
@@ -188,10 +187,10 @@ describe('MessagesService.revokeForEveryone — AGENT não revoga mensagem de co
     const prisma: any = {
       message: { findUnique: jest.fn().mockResolvedValue(opts.message) },
     };
-    const { conversations } = makeConversationsService(opts.conversationsGuardFinds);
+    const { conversationAccess } = makeConversationAccessService(opts.conversationsGuardFinds);
     const channelAccess = { assertChannelAccess: jest.fn() };
     const svc: MessagesService = Object.create(MessagesService.prototype);
-    Object.assign(svc, { prisma, conversations, channelAccess });
+    Object.assign(svc, { prisma, conversationAccess, channelAccess });
     return { svc, channelAccess };
   }
 

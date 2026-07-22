@@ -1,20 +1,19 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { ScheduledMessagesService } from './scheduled-messages.service';
-import { ConversationsService } from '../messaging/conversations/conversations.service';
+import { ConversationAccessService } from '../messaging/conversations/conversation-access.service';
 
 /**
- * Instância REAL de ConversationsService (só com `prisma` montado), mesmo
- * padrão de messages.access.spec.ts — prova a integração de verdade com
- * `assertConversationAccess`, não um double.
+ * Instância REAL de ConversationAccessService (leaf service, só `prisma`),
+ * mesmo padrão de messages.access.spec.ts — prova a integração de verdade
+ * com `assertConversationAccess`, não um double.
  */
-function makeConversationsService(conversationFound: unknown) {
+function makeConversationAccessService(conversationFound: unknown) {
   const guardPrisma: any = {
     conversation: { findFirst: jest.fn().mockResolvedValue(conversationFound) },
   };
-  const svc: ConversationsService = Object.create(ConversationsService.prototype);
-  Object.assign(svc, { prisma: guardPrisma });
-  return { conversations: svc, guardPrisma };
+  const svc = new ConversationAccessService(guardPrisma);
+  return { conversationAccess: svc, guardPrisma };
 }
 
 function makeDeps(opts: { conversationsGuardFinds?: unknown } = {}) {
@@ -55,7 +54,7 @@ function makeDeps(opts: { conversationsGuardFinds?: unknown } = {}) {
     remove: jest.fn(async () => undefined),
   };
   const realtime = { emitToConversation: jest.fn() };
-  const { conversations, guardPrisma } = makeConversationsService(
+  const { conversationAccess, guardPrisma } = makeConversationAccessService(
     'conversationsGuardFinds' in opts ? opts.conversationsGuardFinds : { id: 'c1' },
   );
   const service = new ScheduledMessagesService(
@@ -63,7 +62,7 @@ function makeDeps(opts: { conversationsGuardFinds?: unknown } = {}) {
     prisma as any,
     queue as any,
     realtime as any,
-    conversations,
+    conversationAccess,
   );
   return { service, repo, queue, prisma, rows, guardPrisma };
 }
