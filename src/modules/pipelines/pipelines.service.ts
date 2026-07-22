@@ -791,9 +791,12 @@ export class PipelinesService {
   async listCardsByConversation(
     conversationId: string,
     organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
   ) {
+    const scope = currentUserId ? pipelineCardScopeWhere(role, currentUserId) : {};
     return this.prisma.card.findMany({
-      where: { conversationId, organizationId },
+      where: { conversationId, organizationId, ...scope },
       orderBy: { createdAt: 'asc' },
       include: {
         pipeline: {

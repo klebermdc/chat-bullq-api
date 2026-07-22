@@ -20,6 +20,7 @@ function makeService(overrides: {
           : overrides.card,
       ),
       update: jest.fn().mockResolvedValue({ id: 'card-1' }),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     pipelineStage: {
       findFirst: jest.fn().mockImplementation((args: any) => {
@@ -135,6 +136,39 @@ describe('PipelinesService.markOrderSentForConversation — escopo por conversat
     await svc.markOrderSentForConversation('o1', 'conv-1');
     expect(prisma.card.findFirst).toHaveBeenCalledWith({
       where: { pipelineId: 'pipe-1', conversationId: 'conv-1' },
+    });
+  });
+});
+
+describe('PipelinesService.listCardsByConversation — escopo por conversationId', () => {
+  it('AGENT: lista com o OR de escopo mesclado', async () => {
+    const { svc, prisma } = makeService();
+    await svc.listCardsByConversation('conv-1', 'o1', OrgRole.AGENT, 'u1');
+    const call = prisma.card.findMany.mock.calls[0][0];
+    expect(call.where).toEqual({
+      conversationId: 'conv-1',
+      organizationId: 'o1',
+      OR: [{ conversation: { assignedToId: 'u1' } }, { assignedToId: 'u1' }],
+    });
+  });
+
+  it('ADMIN: lista SEM cláusula de escopo', async () => {
+    const { svc, prisma } = makeService();
+    await svc.listCardsByConversation('conv-1', 'o1', OrgRole.ADMIN, 'u1');
+    const call = prisma.card.findMany.mock.calls[0][0];
+    expect(call.where).toEqual({
+      conversationId: 'conv-1',
+      organizationId: 'o1',
+    });
+  });
+
+  it('chamador de sistema (sem currentUserId): lista sem cláusula de escopo', async () => {
+    const { svc, prisma } = makeService();
+    await svc.listCardsByConversation('conv-1', 'o1');
+    const call = prisma.card.findMany.mock.calls[0][0];
+    expect(call.where).toEqual({
+      conversationId: 'conv-1',
+      organizationId: 'o1',
     });
   });
 });

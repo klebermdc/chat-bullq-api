@@ -103,8 +103,15 @@ export class PipelinesController {
   cardsByConversation(
     @Param('conversationId') conversationId: string,
     @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.listCardsByConversation(conversationId, orgId);
+    return this.service.listCardsByConversation(
+      conversationId,
+      orgId,
+      role,
+      userId,
+    );
   }
 
   @Post(':id/cards')
