@@ -12,6 +12,7 @@ import { HandBackToOrchestratorTool } from './builtin/hand-back-to-orchestrator.
 import { GetProductPitchTool } from './builtin/get-product-pitch.tool';
 import { CheckBonusEligibilityTool } from './builtin/check-bonus-eligibility.tool';
 import { CheckMembersAccessTool } from './builtin/check-members-access.tool';
+import { CheckPurchaseTool } from './builtin/check-purchase.tool';
 import { ConsultarClickUpClienteTool } from './builtin/consultar-clickup-cliente.tool';
 import { ConsultarN8nClienteTool } from './builtin/consultar-n8n-cliente.tool';
 import { ListarReunioesClienteTool } from './builtin/listar-reunioes-cliente.tool';
@@ -50,6 +51,7 @@ export class ToolRegistry {
     lookupOffering: GetProductPitchTool,
     checkBonusEligibility: CheckBonusEligibilityTool,
     checkMembersAccess: CheckMembersAccessTool,
+    checkPurchase: CheckPurchaseTool,
     consultarClickUpCliente: ConsultarClickUpClienteTool,
     consultarN8nCliente: ConsultarN8nClienteTool,
     listarReunioesCliente: ListarReunioesClienteTool,
@@ -75,6 +77,10 @@ export class ToolRegistry {
     // Usado pra "não recebi o brinde" / "cadê o agente grátis" antes
     // de pedir email novamente ou prometer liberação.
     this.register(checkMembersAccess, ['ORCHESTRATOR', 'WORKER']);
+    // ETAPA ZERO do prompt de vendas: cliente já comprou? Lê o espelho
+    // local de pedidos do HUB. Sem ela, o prompt manda chamar checkPurchase
+    // e o runner responde "Unknown tool" — alerta falso a cada conversa.
+    this.register(checkPurchase, ['ORCHESTRATOR', 'WORKER']);
 
     // Client-ops (implementação): restritas aos agentes do env
     // CLIENT_OPS_AGENT_IDS (csv) — default Sofia. Mexem com credenciais
