@@ -124,6 +124,11 @@ export class ConversationsService {
       status?: string;
       /** Aba de atendimento: waiting | inbox | closed. */
       tab?: 'waiting' | 'inbox' | 'closed';
+      /**
+       * Mesmo sinal das abas, mas fixado por uma inbox view (que não usa
+       * abas). Tem precedência sobre `tab` quando os dois vierem.
+       */
+      awaitingHumanReply?: boolean;
       channelId?: string;
       channelIds?: string[];
       conversationIds?: string[];
@@ -170,6 +175,15 @@ export class ConversationsService {
       tabExcludeClosed = true;
     }
 
+    // Uma inbox view pode fixar o mesmo sinal sem passar por aba (views têm
+    // semântica própria e não usam as abas). Ex.: "Distribuição" = fila de
+    // handoff. Vale a mesma regra da aba: fechadas ficam de fora, porque um
+    // atendimento encerrado não está esperando ninguém.
+    const awaitingHumanReply =
+      filters.awaitingHumanReply ?? tabAwaitingHumanReply;
+    const excludeClosed =
+      tabExcludeClosed || filters.awaitingHumanReply !== undefined;
+
     // Filtros que unificam por grupo POR LEITURA (Segmento ou Projeto): pegam
     // uma conversa representante por grupo (JID) e listam só essas — uma linha
     // por grupo, sem duplicar. Resolvem para conversationIds + channelIds; o
@@ -215,8 +229,8 @@ export class ConversationsService {
     const inboxFilters: InboxFilters = {
       organizationId,
       status: effectiveStatuses?.length ? effectiveStatuses : undefined,
-      awaitingHumanReply: tabAwaitingHumanReply,
-      excludeClosed: tabExcludeClosed,
+      awaitingHumanReply,
+      excludeClosed,
       // Em filtro de grupo (segmento/projeto) o canal vira o conjunto de
       // canais resolvidos (necessário pro plano da query); senão, o do usuário.
       channelId: isGroupResolved ? undefined : filters.channelId,
