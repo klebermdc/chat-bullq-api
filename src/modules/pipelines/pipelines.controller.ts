@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { OrgRole } from '@prisma/client';
 import { PipelinesService } from './pipelines.service';
 import {
   CreateCardDto,
@@ -20,7 +21,12 @@ import {
   UpsertStageDto,
 } from './dto/pipeline.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentOrg, Feature } from '../../common/decorators';
+import {
+  CurrentOrg,
+  CurrentUser,
+  CurrentUserRole,
+  Feature,
+} from '../../common/decorators';
 
 @ApiTags('Pipelines (Kanban)')
 @ApiBearerAuth()
@@ -47,8 +53,13 @@ export class PipelinesController {
 
   @Get(':id/board')
   @ApiOperation({ summary: 'Get full kanban board (stages + cards by stage)' })
-  board(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
-    return this.service.getBoard(id, orgId);
+  board(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.getBoard(id, orgId, role, userId);
   }
 
   @Patch(':id')

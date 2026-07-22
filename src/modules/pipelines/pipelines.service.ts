@@ -7,11 +7,12 @@ import {
   NotFoundException,
   forwardRef,
 } from '@nestjs/common';
-import { CardStatus, PipelineStageType } from '@prisma/client';
+import { CardStatus, OrgRole, PipelineStageType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { CadenceRunner } from '../cadences/cadence-runner.service';
 import { MetaCapiQueue } from '../meta-capi/meta-capi.queue';
+import { pipelineCardScopeWhere } from './pipeline-scope';
 import {
   CreateCardDto,
   CreatePipelineDto,
@@ -77,15 +78,23 @@ export class PipelinesService {
     });
   }
 
-  async getBoard(pipelineId: string, organizationId: string) {
+  async getBoard(
+    pipelineId: string,
+    organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
     const pipeline = await this.assertPipeline(pipelineId, organizationId);
+    const cardScope = currentUserId
+      ? pipelineCardScopeWhere(role, currentUserId)
+      : {};
     const [stages, cards] = await this.prisma.$transaction([
       this.prisma.pipelineStage.findMany({
         where: { pipelineId },
         orderBy: { order: 'asc' },
       }),
       this.prisma.card.findMany({
-        where: { pipelineId },
+        where: { pipelineId, ...cardScope },
         orderBy: { order: 'asc' },
         include: {
           contact: { select: { id: true, name: true, phone: true, avatarUrl: true } },
