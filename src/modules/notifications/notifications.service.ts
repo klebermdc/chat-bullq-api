@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { NotificationType } from '@prisma/client';
+import { NotificationType, OrgRole } from '@prisma/client';
 import { NotificationsRepository } from './notifications.repository';
 import { PrismaService } from '../../database/prisma.service';
 
@@ -45,16 +45,30 @@ export class NotificationsService {
     return notification;
   }
 
+  /**
+   * Notifica membros da org. Por padrão vai pra todo mundo — é o que
+   * alertas operacionais (SLA, watchdog, transição de cadência) precisam:
+   * quem atende tem que ver.
+   *
+   * `roles` restringe a papéis específicos. Existe pros alertas TÉCNICOS
+   * (falha de skill da IA, webhook morrendo), que só quem administra pode
+   * resolver. Mandar isso pro atendente não gera ação — gera ruído, e ruído
+   * treina a equipe a ignorar o sino, inclusive quando o alerta importa.
+   */
   async notifyOrgAgents(params: {
     organizationId: string;
     excludeUserId?: string;
+    roles?: OrgRole[];
     type: NotificationType;
     title: string;
     body: string;
     data?: Record<string, any>;
   }) {
     const members = await this.prisma.userOrganization.findMany({
-      where: { organizationId: params.organizationId },
+      where: {
+        organizationId: params.organizationId,
+        ...(params.roles?.length ? { role: { in: params.roles } } : {}),
+      },
       select: { userId: true },
     });
 

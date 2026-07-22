@@ -122,6 +122,14 @@ export class OrganizationsRepository {
     });
   }
 
+  async updateUserEmail(userId: string, email: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { email },
+      select: { id: true, email: true, name: true },
+    });
+  }
+
   async countMembers(organizationId: string) {
     return this.prisma.userOrganization.count({ where: { organizationId } });
   }

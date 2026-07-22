@@ -259,4 +259,55 @@ export class OrganizationsService {
       `Password reset for member ${memberId} in org ${orgId} by a ${actorRole}`,
     );
   }
+
+  /**
+   * Troca o e-mail de login de um membro.
+   *
+   * RBAC diferente do reset de senha de propósito: lá o OWNER é blindado
+   * de todo mundo (ninguém sequestra a conta do dono). Aqui, trocar o
+   * e-mail de um dono é operação legítima de dono — quem não alcança é o
+   * ADMIN, que só mexe em AGENT.
+   *
+   * Efeitos que o chamador precisa saber: o membro passa a logar com o
+   * e-mail novo (a senha não muda) e o JWT já emitido segue válido até
+   * expirar, carregando o e-mail antigo.
+   */
+  async updateMemberEmail(
+    orgId: string,
+    memberId: string,
+    dto: { email: string },
+    actorRole: OrgRole,
+  ) {
+    const membership = await this.repository.findMembership(memberId, orgId);
+    if (!membership) {
+      throw new NotFoundException('Member not found in this organization');
+    }
+
+    if (actorRole === OrgRole.ADMIN && membership.role !== OrgRole.AGENT) {
+      throw new ForbiddenException(
+        'Admins can only change the e-mail of operators',
+      );
+    }
+
+    const email = dto.email.trim().toLowerCase();
+
+    // User.email é @unique. Sem esta checagem o Prisma devolve um P2002
+    // cru, que não diz nada pra quem está na tela de Membros.
+    const existing = await this.repository.findUserByEmail(email);
+    if (existing && existing.id !== membership.userId) {
+      throw new ConflictException(
+        'Este e-mail já está em uso por outro usuário.',
+      );
+    }
+    if (existing) {
+      // Já é o e-mail dele — nada a fazer, e não é erro.
+      return { id: membership.userId, email };
+    }
+
+    const user = await this.repository.updateUserEmail(membership.userId, email);
+    this.logger.log(
+      `E-mail changed for member ${memberId} in org ${orgId} by a ${actorRole}`,
+    );
+    return { id: user.id, email: user.email };
+  }
 }

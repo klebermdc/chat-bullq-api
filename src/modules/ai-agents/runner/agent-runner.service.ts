@@ -7,6 +7,7 @@ import {
   AiSkill,
   AiTool,
   NotificationType,
+  OrgRole,
 } from '@prisma/client';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
@@ -869,6 +870,10 @@ export class AiAgentRunnerService {
 
     await this.notifications.notifyOrgAgents({
       organizationId: ctx.organizationId,
+      // Alerta técnico: só quem administra consegue agir (revisar prompt,
+      // religar skill, checar integração). Atendente não tem o que fazer
+      // com isso — e o sino cheio de ruído é um sino que ninguém lê.
+      roles: [OrgRole.OWNER, OrgRole.ADMIN],
       type: NotificationType.AI_TOOL_FAILURE,
       title: `Skill ${toolName} falhou`,
       body: `Conversa atendida pela IA teve falha em ${toolName}: ${summary}`,
