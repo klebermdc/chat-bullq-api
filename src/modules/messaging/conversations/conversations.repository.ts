@@ -429,7 +429,12 @@ export class ConversationsRepository {
       where: { id },
       include: {
         contact: { include: { channels: true, tags: { include: { tag: true } } } },
-        channel: true,
+        // Só id/type/name — igual à listagem (findMany acima). O front só usa
+        // esses 3 campos (ícone/nome/tipo do canal no header e no painel).
+        // NUNCA `config`/`webhookSecret`: essa linha vaza pro websocket
+        // (broadcastUpdate emite este mesmo objeto em `conversation:updated`)
+        // e pra qualquer membro da org com acesso à conversa, incluindo AGENT.
+        channel: { select: { id: true, type: true, name: true } },
         assignedTo: { select: { id: true, name: true, avatarUrl: true } },
         department: true,
         tags: { include: { tag: true } },
