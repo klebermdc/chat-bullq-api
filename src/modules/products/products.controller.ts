@@ -17,11 +17,12 @@ import {
   UpdateProductDto,
 } from './dto/product.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentOrg } from '../../common/decorators';
+import { CurrentOrg, Feature } from '../../common/decorators';
 
 @ApiTags('Products')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
+@Feature('products.view')
 @Controller('products')
 export class ProductsController {
   constructor(private readonly service: ProductsService) {}
