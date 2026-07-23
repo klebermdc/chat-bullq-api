@@ -11,6 +11,21 @@ const AD_TAG_NAME = 'Anúncio Meta';
 /** Frase-marca padrão no texto pré-preenchido do link wa.me (configurável). */
 const DEFAULT_MARKER = 'vim pelo instagram';
 
+/**
+ * Frases automáticas que o Meta pré-preenche em anúncios Click-to-WhatsApp.
+ * Servem de REDE DE SEGURANÇA: quando o Meta não anexa o `ctwa_clid` (anúncio
+ * mal configurado, ou o Meta simplesmente engole o referral), ainda dá pra
+ * reconhecer o lead pela frase e marcá-lo "Anúncio Meta" para o time enxergar.
+ *
+ * Não recupera a ATRIBUIÇÃO (qual anúncio) — isso só o ctwa_clid dá — mas
+ * resolve a visibilidade. Sobrescrevível por org via env CTWA_AD_MARKERS
+ * (lista separada por `|`).
+ */
+const DEFAULT_AD_MARKERS = [
+  'quero fazer uma cotação',
+  'olá! posso ter mais informações sobre isso?',
+];
+
 function normalize(s?: string | null): string {
   return (s || '')
     .toLowerCase()
@@ -33,15 +48,57 @@ function normalize(s?: string | null): string {
 export class LeadSourceTaggerService {
   private readonly logger = new Logger(LeadSourceTaggerService.name);
   private readonly marker: string;
+  /** Frases de anúncio normalizadas, para match exato. */
+  private readonly adMarkers: string[];
 
   constructor(private readonly prisma: PrismaService) {
     this.marker = normalize(process.env.INSTAGRAM_LEAD_MARKER || DEFAULT_MARKER);
+    const raw = process.env.CTWA_AD_MARKERS
+      ? process.env.CTWA_AD_MARKERS.split('|')
+      : DEFAULT_AD_MARKERS;
+    this.adMarkers = raw.map((m) => normalize(m)).filter(Boolean);
   }
 
   /** True se o texto contém a frase-marca (case/acento-insensitive). */
   matches(text?: string | null): boolean {
     if (!text) return false;
     return normalize(text).includes(this.marker);
+  }
+
+  /**
+   * True se a mensagem É (exatamente, normalizada) uma das frases automáticas
+   * de anúncio. Match EXATO de propósito: a frase pré-preenchida chega como a
+   * mensagem inteira; exigir igualdade evita marcar como anúncio um humano que
+   * só mencionou "cotação" no meio de um texto maior.
+   */
+  matchesAdMarker(text?: string | null): boolean {
+    if (!text) return false;
+    return this.adMarkers.includes(normalize(text));
+  }
+
+  /** Aplica uma tag na conversa. Idempotente (P2002 = já tinha) e best-effort. */
+  private async applyTag(
+    organizationId: string,
+    conversationId: string,
+    tagName: string,
+    logMsg: string,
+  ): Promise<boolean> {
+    const tag = await this.prisma.tag.upsert({
+      where: { organizationId_name: { organizationId, name: tagName } },
+      update: {},
+      create: { organizationId, name: tagName },
+      select: { id: true },
+    });
+
+    try {
+      await this.prisma.conversationTag.create({
+        data: { conversationId, tagId: tag.id },
+      });
+      this.logger.log(logMsg);
+    } catch (err: any) {
+      if (err?.code !== 'P2002') throw err;
+    }
+    return true;
   }
 
   /**
@@ -55,31 +112,12 @@ export class LeadSourceTaggerService {
     body?: string | null;
   }): Promise<boolean> {
     if (!this.matches(params.body)) return false;
-
-    const tag = await this.prisma.tag.upsert({
-      where: {
-        organizationId_name: {
-          organizationId: params.organizationId,
-          name: INSTAGRAM_TAG_NAME,
-        },
-      },
-      update: {},
-      create: { organizationId: params.organizationId, name: INSTAGRAM_TAG_NAME },
-      select: { id: true },
-    });
-
-    try {
-      await this.prisma.conversationTag.create({
-        data: { conversationId: params.conversationId, tagId: tag.id },
-      });
-      this.logger.log(
-        `lead Instagram orgânico: conversa ${params.conversationId} marcada`,
-      );
-    } catch (err: any) {
-      // Já tinha a tag (PK composta conversationId+tagId) → no-op.
-      if (err?.code !== 'P2002') throw err;
-    }
-    return true;
+    return this.applyTag(
+      params.organizationId,
+      params.conversationId,
+      INSTAGRAM_TAG_NAME,
+      `lead Instagram orgânico: conversa ${params.conversationId} marcada`,
+    );
   }
 
   /**
@@ -98,29 +136,35 @@ export class LeadSourceTaggerService {
     ctwaClid?: string | null;
   }): Promise<boolean> {
     if (!params.ctwaClid) return false;
+    return this.applyTag(
+      params.organizationId,
+      params.conversationId,
+      AD_TAG_NAME,
+      `lead de anúncio (CTWA): conversa ${params.conversationId} marcada`,
+    );
+  }
 
-    const tag = await this.prisma.tag.upsert({
-      where: {
-        organizationId_name: {
-          organizationId: params.organizationId,
-          name: AD_TAG_NAME,
-        },
-      },
-      update: {},
-      create: { organizationId: params.organizationId, name: AD_TAG_NAME },
-      select: { id: true },
-    });
-
-    try {
-      await this.prisma.conversationTag.create({
-        data: { conversationId: params.conversationId, tagId: tag.id },
-      });
-      this.logger.log(
-        `lead de anúncio (CTWA): conversa ${params.conversationId} marcada`,
-      );
-    } catch (err: any) {
-      if (err?.code !== 'P2002') throw err;
-    }
-    return true;
+  /**
+   * Rede de segurança: marca "Anúncio Meta" quando a mensagem É uma frase
+   * automática de anúncio, mesmo sem `ctwa_clid`. Cobre o caso real em que o
+   * Meta não anexa o referral — o lead chega com a frase padrão do anúncio mas
+   * sem a identificação. Aplica a MESMA tag que o caminho por referral, então
+   * o filtro na caixa de entrada é único.
+   *
+   * Não substitui o referral: quando o `ctwa_clid` vem, ele é a fonte da
+   * atribuição pra Meta; a frase só garante a visibilidade interna.
+   */
+  async tagAdLeadIfMarkerPhrase(params: {
+    organizationId: string;
+    conversationId: string;
+    body?: string | null;
+  }): Promise<boolean> {
+    if (!this.matchesAdMarker(params.body)) return false;
+    return this.applyTag(
+      params.organizationId,
+      params.conversationId,
+      AD_TAG_NAME,
+      `lead de anúncio (frase): conversa ${params.conversationId} marcada`,
+    );
   }
 }

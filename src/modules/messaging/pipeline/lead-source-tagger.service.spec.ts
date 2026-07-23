@@ -107,4 +107,63 @@ describe('LeadSourceTaggerService', () => {
       ).resolves.toBe(true);
     });
   });
+
+  describe('matchesAdMarker (frase automática de anúncio)', () => {
+    it('casa a frase EXATA do anúncio, ignorando caixa/acento', () => {
+      const { service } = make();
+      expect(service.matchesAdMarker('Quero fazer uma cotação')).toBe(true);
+      expect(service.matchesAdMarker('quero fazer uma cotacao')).toBe(true);
+      expect(
+        service.matchesAdMarker('Olá! Posso ter mais informações sobre isso?'),
+      ).toBe(true);
+    });
+
+    it('NÃO casa quando a frase é só parte de um texto maior (evita falso positivo)', () => {
+      const { service } = make();
+      expect(
+        service.matchesAdMarker('bom dia, quero fazer uma cotação de ingressos pra 4'),
+      ).toBe(false);
+      expect(service.matchesAdMarker('olá, tudo bem?')).toBe(false);
+      expect(service.matchesAdMarker(null)).toBe(false);
+    });
+  });
+
+  describe('tagAdLeadIfMarkerPhrase', () => {
+    const base = { organizationId: 'org1', conversationId: 'cv1' };
+
+    it('aplica "Anúncio Meta" quando a mensagem é a frase do anúncio', async () => {
+      const { service, prisma } = make();
+      const out = await service.tagAdLeadIfMarkerPhrase({
+        ...base,
+        body: 'Quero fazer uma cotação',
+      });
+      expect(out).toBe(true);
+      expect(prisma.tag.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: { organizationId: 'org1', name: 'Anúncio Meta' },
+        }),
+      );
+    });
+
+    it('NÃO marca mensagem comum', async () => {
+      const { service, prisma } = make();
+      expect(
+        await service.tagAdLeadIfMarkerPhrase({ ...base, body: 'oi, quero ingressos' }),
+      ).toBe(false);
+      expect(prisma.conversationTag.create).not.toHaveBeenCalled();
+    });
+
+    it('respeita CTWA_AD_MARKERS do ambiente', async () => {
+      const anterior = process.env.CTWA_AD_MARKERS;
+      process.env.CTWA_AD_MARKERS = 'fale com a gente|promo de verão';
+      try {
+        const { service } = make();
+        expect(service.matchesAdMarker('Fale com a gente')).toBe(true);
+        expect(service.matchesAdMarker('Quero fazer uma cotação')).toBe(false);
+      } finally {
+        if (anterior === undefined) delete process.env.CTWA_AD_MARKERS;
+        else process.env.CTWA_AD_MARKERS = anterior;
+      }
+    });
+  });
 });
