@@ -44,4 +44,30 @@ export class NotificationsRepository {
       data: { isRead: true, readAt: new Date() },
     });
   }
+
+  async findPreferences(userId: string, orgId: string) {
+    return this.prisma.notificationPreference.findMany({
+      where: { userId, organizationId: orgId },
+    });
+  }
+
+  async upsertPreference(
+    userId: string,
+    orgId: string,
+    pref: {
+      type: NotificationType;
+      inApp: boolean;
+      browserPush: boolean;
+      sound: boolean;
+      dndStart: string | null;
+      dndEnd: string | null;
+    },
+  ) {
+    const { type, inApp, browserPush, sound, dndStart, dndEnd } = pref;
+    return this.prisma.notificationPreference.upsert({
+      where: { userId_organizationId_type: { userId, organizationId: orgId, type } },
+      create: { userId, organizationId: orgId, type, inApp, browserPush, sound, dndStart, dndEnd },
+      update: { inApp, browserPush, sound, dndStart, dndEnd },
+    });
+  }
 }
