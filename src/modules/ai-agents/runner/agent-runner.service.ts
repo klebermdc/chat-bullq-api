@@ -873,7 +873,11 @@ export class AiAgentRunnerService {
       // Alerta técnico: só quem administra consegue agir (revisar prompt,
       // religar skill, checar integração). Atendente não tem o que fazer
       // com isso — e o sino cheio de ruído é um sino que ninguém lê.
-      roles: [OrgRole.OWNER, OrgRole.ADMIN],
+      //
+      // Só OWNER, não ADMIN: na OFP há ADMIN que atende no inbox (a Bárbara
+      // aparece no placar de distribuição de leads). Incluir ADMIN mandava
+      // o alerta justamente pra quem a regra existe pra poupar.
+      roles: [OrgRole.OWNER],
       type: NotificationType.AI_TOOL_FAILURE,
       title: `Skill ${toolName} falhou`,
       body: `Conversa atendida pela IA teve falha em ${toolName}: ${summary}`,
