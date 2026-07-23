@@ -1002,10 +1002,22 @@ export class ConversationsService {
     role?: OrgRole,
   ) {
     await this.assertConversationAccess(id, organizationId, role, userId);
-    await this.findOne(id, organizationId, access);
+    const conversation = await this.findOne(id, organizationId, access);
+    // Só saúda quando o atendente EFETIVAMENTE passa a ser o responsável
+    // (assumir a própria conversa que já é sua vira no-op — sem saudação).
+    const assigneeChanged = conversation.assignedToId !== userId;
     await this.fsm.assign(id, userId, userId);
     const updated = await this.repository.findById(id);
     this.broadcastUpdate(updated as Conversation | null);
+
+    if (assigneeChanged) {
+      await this.attendantGreeting.greet({
+        conversationId: id,
+        attendantUserId: userId,
+        source: 'MANUAL_ASSIGN',
+      });
+    }
+
     return updated;
   }
 
