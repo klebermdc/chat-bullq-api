@@ -96,4 +96,33 @@ export class NotificationsService {
   async getUnreadCount(userId: string, orgId: string) {
     return this.repository.countUnread(userId, orgId);
   }
+
+  async getPreferences(userId: string, orgId: string) {
+    return this.repository.findPreferences(userId, orgId);
+  }
+
+  async updatePreferences(
+    userId: string,
+    orgId: string,
+    items: {
+      type: NotificationType;
+      inApp: boolean;
+      browserPush: boolean;
+      sound: boolean;
+      dndStart?: string | null;
+      dndEnd?: string | null;
+    }[],
+  ) {
+    for (const item of items) {
+      await this.repository.upsertPreference(userId, orgId, {
+        type: item.type,
+        inApp: item.inApp,
+        browserPush: item.browserPush,
+        sound: item.sound,
+        dndStart: item.dndStart ?? null,
+        dndEnd: item.dndEnd ?? null,
+      });
+    }
+    return this.repository.findPreferences(userId, orgId);
+  }
 }
