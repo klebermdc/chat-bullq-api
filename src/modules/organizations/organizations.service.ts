@@ -226,10 +226,11 @@ export class OrganizationsService {
   }
 
   // Admin-driven password reset (set a member's password without knowing the
-  // old one). Redefinir senha = tomar a conta, então o RBAC é mais estrito que
-  // o de role/remoção: NINGUÉM redefine um OWNER por aqui (owners trocam a
-  // própria senha via self-service em /users/me/change-password), e um ADMIN só
-  // pode redefinir AGENTE — não outro ADMIN — pra evitar tomada lateral.
+  // old one). Redefinir senha = tomar a conta, então o RBAC é estrito: um OWNER
+  // pode redefinir qualquer membro (inclusive outro OWNER — donos se gerenciam
+  // entre si, mesma lógica da troca de e-mail). Um ADMIN só alcança AGENTE — não
+  // outro ADMIN nem um OWNER — pra evitar tomada lateral / sequestro da conta
+  // dona a partir de uma sessão admin comprometida.
   async resetMemberPassword(
     orgId: string,
     memberId: string,
@@ -241,13 +242,7 @@ export class OrganizationsService {
       throw new NotFoundException('Member not found in this organization');
     }
 
-    if (membership.role === 'OWNER') {
-      throw new ForbiddenException(
-        'Cannot reset the password of an organization owner',
-      );
-    }
-
-    if (actorRole === 'ADMIN' && membership.role === 'ADMIN') {
+    if (actorRole !== 'OWNER' && membership.role !== 'AGENT') {
       throw new ForbiddenException(
         'Admins can only reset the password of operators',
       );

@@ -77,7 +77,20 @@ describe('OrganizationsService.resetMemberPassword', () => {
     expect(repo.updateUserPassword).not.toHaveBeenCalled();
   });
 
-  it('never lets anyone reset an OWNER password (owners use self-service)', async () => {
+  it('lets an OWNER reset another OWNER password', async () => {
+    repo.findMembership.mockResolvedValue(membership(OrgRole.OWNER) as any);
+
+    await service.resetMemberPassword(
+      'org-1',
+      'membership-1',
+      { newPassword: 'novaSenha123' },
+      OrgRole.OWNER,
+    );
+
+    expect(repo.updateUserPassword).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks an ADMIN from resetting an OWNER (lateral takeover)', async () => {
     repo.findMembership.mockResolvedValue(membership(OrgRole.OWNER) as any);
 
     await expect(
@@ -85,7 +98,7 @@ describe('OrganizationsService.resetMemberPassword', () => {
         'org-1',
         'membership-1',
         { newPassword: 'novaSenha123' },
-        OrgRole.OWNER,
+        OrgRole.ADMIN,
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(repo.updateUserPassword).not.toHaveBeenCalled();
