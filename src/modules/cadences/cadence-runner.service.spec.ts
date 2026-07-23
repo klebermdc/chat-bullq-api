@@ -50,6 +50,16 @@ function makeDeps(opts: any = {}) {
           (e) => e.conversationId === cid && e.status === 'ACTIVE',
         ) ?? null,
     ),
+    // Guarda de idempotência do `start`: enrollment PAUSED também ocupa a
+    // conversa (o índice único parcial cobre ACTIVE+PAUSED).
+    findLiveByConversation: jest.fn(
+      async (cid: string) =>
+        enrollmentsStore.find(
+          (e) =>
+            e.conversationId === cid &&
+            (e.status === 'ACTIVE' || e.status === 'PAUSED'),
+        ) ?? null,
+    ),
     update: jest.fn(async (id: string, data: any) => {
       const e = enrollmentsStore.find((x) => x.id === id);
       Object.assign(e, data);
@@ -261,6 +271,28 @@ describe('CadenceRunner.start', () => {
     const enrollment = await runner.start('conv1', 'cad1', 'MANUAL', 'org1');
     expect(enrollment).toBeTruthy();
     expect(enrollments.create).toHaveBeenCalledTimes(1);
+  });
+
+  // Regressão: o índice único parcial cobre ACTIVE+PAUSED. Se a guarda de
+  // idempotência só olhasse ACTIVE, um enrollment PAUSED (revive armado) caía
+  // no `create` e estourava P2002 — reentrar na etapa gatilho virava erro.
+  it('enrollment PAUSED na conversa → devolve o existente, não cria outro', async () => {
+    const { runner, enrollments, enrollmentsStore, schedRepo } = makeDeps();
+    enrollmentsStore.push({
+      id: 'enrPaused',
+      organizationId: 'org1',
+      cadenceId: 'cad1',
+      conversationId: 'conv1',
+      contactId: 'ct1',
+      currentStep: 2,
+      status: 'PAUSED',
+    });
+
+    const result = await runner.start('conv1', 'cad1', 'MANUAL', 'org1');
+
+    expect(result).toMatchObject({ id: 'enrPaused', status: 'PAUSED' });
+    expect(enrollments.create).not.toHaveBeenCalled();
+    expect(schedRepo.create).not.toHaveBeenCalled();
   });
 
   it('opt-out: contato tem a tag de opt-out → pula (retorna null)', async () => {
@@ -744,5 +776,67 @@ describe('CadenceRunner.resumeAtStep', () => {
     );
     await runner.resumeAtStep('e1', new Date());
     expect(schedRepo.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('CadenceRunner.resumeNow', () => {
+  /** Runner com só o `findById` do enrollment mockado + resumeAtStep espionado. */
+  function makeRunner(enrollment: any) {
+    const enrollments = {
+      findById: jest.fn().mockResolvedValue(enrollment),
+      resumeIfPaused: jest.fn().mockResolvedValue(false),
+    };
+    const runner: any = new CadenceRunner(
+      enrollments as any, {} as any, {} as any, {} as any,
+      {} as any, {} as any, { emitToConversation: jest.fn() } as any, {} as any,
+    );
+    jest.spyOn(runner, 'resumeAtStep').mockResolvedValue(undefined);
+    return runner;
+  }
+
+  const paused = {
+    id: 'e1',
+    organizationId: 'org1',
+    status: 'PAUSED',
+  };
+
+  it('PAUSED da própria org → chama resumeAtStep', async () => {
+    const runner = makeRunner(paused);
+    await runner.resumeNow('e1', 'org1');
+    expect(runner.resumeAtStep).toHaveBeenCalledWith('e1', expect.any(Date));
+  });
+
+  it('respeita quiet hours: às 23h BRT agenda pra 8h, não pra agora', async () => {
+    const runner = makeRunner(paused);
+    // 2026-07-22 23:30 BRT == 2026-07-23 02:30Z
+    jest.useFakeTimers().setSystemTime(new Date('2026-07-23T02:30:00Z'));
+    await runner.resumeNow('e1', 'org1');
+    const [, dispatchAt] = (runner.resumeAtStep as jest.Mock).mock.calls[0];
+    // 8h BRT do dia seguinte == 11:00Z
+    expect(dispatchAt.toISOString()).toBe('2026-07-23T11:00:00.000Z');
+    jest.useRealTimers();
+  });
+
+  it('enrollment de outra org → ForbiddenException', async () => {
+    const runner = makeRunner(paused);
+    await expect(runner.resumeNow('e1', 'orgX')).rejects.toThrow(
+      'enrollment_not_in_org',
+    );
+    expect(runner.resumeAtStep).not.toHaveBeenCalled();
+  });
+
+  it('enrollment ACTIVE (não pausado) → BadRequestException', async () => {
+    const runner = makeRunner({ ...paused, status: 'ACTIVE' });
+    await expect(runner.resumeNow('e1', 'org1')).rejects.toThrow(
+      'enrollment_not_paused',
+    );
+    expect(runner.resumeAtStep).not.toHaveBeenCalled();
+  });
+
+  it('enrollment inexistente → NotFoundException', async () => {
+    const runner = makeRunner(null);
+    await expect(runner.resumeNow('e1', 'org1')).rejects.toThrow(
+      'enrollment_not_found',
+    );
   });
 });
