@@ -190,7 +190,11 @@ export class InboundMessageProcessor extends WorkerHost {
         }
       }
 
-      const { conversationId, status } = await this.conversationResolver.resolve(
+      const {
+        conversationId,
+        status,
+        isNew: conversationIsNew,
+      } = await this.conversationResolver.resolve(
         organizationId,
         channelId,
         contactId,
@@ -327,7 +331,7 @@ export class InboundMessageProcessor extends WorkerHost {
             convo?.contact?.name || convo?.contact?.phone || 'Cliente',
           preview: String(preview),
           assignedToId: convo?.assignedToId ?? null,
-          isNewConversation: isNew === true,
+          isNewConversation: conversationIsNew === true,
         });
       }
 
