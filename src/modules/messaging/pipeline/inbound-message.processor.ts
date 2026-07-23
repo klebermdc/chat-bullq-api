@@ -332,6 +332,16 @@ export class InboundMessageProcessor extends WorkerHost {
           .catch((err) =>
             this.logger.warn(`ad-source tag falhou (não crítico): ${err.message}`),
           );
+
+        // Rede de segurança: quando o Meta NÃO manda o referral (anúncio mal
+        // configurado, ou o Meta engole o ctwa_clid), o lead ainda chega com a
+        // frase automática do anúncio. Marca "Anúncio Meta" pela frase para não
+        // perder a visibilidade — aplica a MESMA tag do caminho por referral.
+        this.leadSourceTagger
+          .tagAdLeadIfMarkerPhrase({ organizationId, conversationId, body })
+          .catch((err) =>
+            this.logger.warn(`ad-phrase tag falhou (não crítico): ${err.message}`),
+          );
       }
 
       if (
