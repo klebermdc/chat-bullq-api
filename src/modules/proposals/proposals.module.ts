@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { LlmModule } from '../ai-agents/llm/llm.module';
 import { MessagingModule } from '../messaging/messaging.module';
+import { ConversationAccessModule } from '../messaging/conversations/conversation-access.module';
 import { PipelinesModule } from '../pipelines/pipelines.module';
 import { OrderFichaModule } from '../order-ficha/order-ficha.module';
 import { ProposalsController } from './proposals.controller';
@@ -14,7 +15,7 @@ import { ExtractionService } from './extraction.service';
 // tipo ExtractedCart de proposals.types, import type-only) — sem ciclo, não
 // precisa de forwardRef.
 @Module({
-  imports: [LlmModule, MessagingModule, PipelinesModule, OrderFichaModule],
+  imports: [LlmModule, MessagingModule, ConversationAccessModule, PipelinesModule, OrderFichaModule],
   controllers: [ProposalsController],
   providers: [
     ProposalsService,

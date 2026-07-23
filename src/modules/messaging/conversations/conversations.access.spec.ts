@@ -1,19 +1,27 @@
 import { NotFoundException } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { ConversationsService } from './conversations.service';
+import { ConversationAccessService } from './conversation-access.service';
 
 /**
  * Cobre a guarda compartilhada `assertConversationAccess` — a peça que fecha
  * a classe de bug em que os caminhos de ESCRITA (assign-me, transfer, close,
  * toggleAi, etc.) não checavam atribuição, permitindo que um AGENT "roubasse"
  * pra si uma conversa que a leitura (`findOne`) já negava.
+ *
+ * A implementação da guarda mora em `ConversationAccessService` (leaf
+ * service — ver conversation-access.service.spec.ts pra cobertura exaustiva
+ * da matriz de papéis). Aqui montamos uma instância real dela e a injetamos
+ * em `ConversationsService`, que só delega — prova a integração de verdade,
+ * não um double.
  */
 function makeService(conversationFound: unknown) {
   const prisma: any = {
     conversation: { findFirst: jest.fn().mockResolvedValue(conversationFound) },
   };
+  const conversationAccess = new ConversationAccessService(prisma);
   const svc: ConversationsService = Object.create(ConversationsService.prototype);
-  Object.assign(svc, { prisma });
+  Object.assign(svc, { prisma, conversationAccess });
   return { svc, prisma };
 }
 

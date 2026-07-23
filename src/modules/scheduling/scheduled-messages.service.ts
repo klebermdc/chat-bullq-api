@@ -1,11 +1,9 @@
 import {
   BadRequestException,
   ForbiddenException,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
-  forwardRef,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -17,7 +15,7 @@ import { CreateScheduledMessageDto } from './dto/create-scheduled-message.dto';
 import { UpdateScheduledMessageDto } from './dto/update-scheduled-message.dto';
 import { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { SCHEDULED_DISPATCH_QUEUE, SCHEDULED_DISPATCH_JOB } from './scheduling.constants';
-import { ConversationsService } from '../messaging/conversations/conversations.service';
+import { ConversationAccessService } from '../messaging/conversations/conversation-access.service';
 
 @Injectable()
 export class ScheduledMessagesService {
@@ -28,11 +26,10 @@ export class ScheduledMessagesService {
     private readonly prisma: PrismaService,
     @InjectQueue(SCHEDULED_DISPATCH_QUEUE) private readonly queue: Queue,
     private readonly realtime: RealtimeGateway,
-    // MessagingModule ↔ SchedulingModule já é um ciclo forwardRef nos dois
-    // lados (dispatch processor chama CadenceRunner etc.) — mesma dobra
-    // aqui pra pegar ConversationsService.
-    @Inject(forwardRef(() => ConversationsService))
-    private readonly conversations: ConversationsService,
+    // Leaf service (só PrismaService) — não fecha ciclo com MessagingModule,
+    // então não precisa do forwardRef que a injeção de ConversationsService
+    // (inteiro) exigia aqui antes.
+    private readonly conversationAccess: ConversationAccessService,
   ) {}
 
   async create(
@@ -54,7 +51,7 @@ export class ScheduledMessagesService {
     if (conversation.organizationId !== organizationId) throw new ForbiddenException();
     // AGENT normalmente TEM acesso de canal — sem isso, dava pra agendar um
     // outbound de WhatsApp na conversa de um colega.
-    await this.conversations.assertConversationAccess(
+    await this.conversationAccess.assertConversationAccess(
       conversation.id,
       organizationId,
       role,
@@ -110,7 +107,7 @@ export class ScheduledMessagesService {
     });
     if (!conversation) throw new NotFoundException('Conversation not found');
     if (conversation.organizationId !== organizationId) throw new ForbiddenException();
-    await this.conversations.assertConversationAccess(
+    await this.conversationAccess.assertConversationAccess(
       conversation.id,
       organizationId,
       role,
@@ -135,7 +132,7 @@ export class ScheduledMessagesService {
     if (row.organizationId !== organizationId) throw new ForbiddenException();
     // Carrega a mensagem agendada primeiro, guarda na conversationId dela —
     // sem isso, um AGENT cancelava o envio pendente de um colega.
-    await this.conversations.assertConversationAccess(
+    await this.conversationAccess.assertConversationAccess(
       row.conversationId,
       organizationId,
       role,
@@ -199,7 +196,7 @@ export class ScheduledMessagesService {
     const row = await this.repo.findById(id);
     if (!row) throw new NotFoundException('Scheduled message not found');
     if (row.organizationId !== organizationId) throw new ForbiddenException();
-    await this.conversations.assertConversationAccess(
+    await this.conversationAccess.assertConversationAccess(
       row.conversationId,
       organizationId,
       role,

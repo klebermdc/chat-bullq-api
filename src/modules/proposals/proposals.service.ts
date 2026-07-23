@@ -11,7 +11,7 @@ import { RenderService } from './render.service';
 import { ExtractionService } from './extraction.service';
 import { ProposalsRepository } from './proposals.repository';
 import { MessagesService } from '../messaging/messages/messages.service';
-import { ConversationsService } from '../messaging/conversations/conversations.service';
+import { ConversationAccessService } from '../messaging/conversations/conversation-access.service';
 import { resolveAssignmentScope } from '../messaging/conversations/conversation-scope';
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { buildProposalMessage } from './message-builder';
@@ -34,7 +34,7 @@ export class ProposalsService {
     private readonly messages: MessagesService,
     private readonly pipelines: PipelinesService,
     private readonly orderFicha: OrderFichaService,
-    private readonly conversations: ConversationsService,
+    private readonly conversationAccess: ConversationAccessService,
   ) {}
 
   async create(
@@ -52,7 +52,7 @@ export class ProposalsService {
     // AGENT só cria proposta em conversa atribuída a si — mesma barreira
     // compartilhada do resto do app (NotFound, não Forbidden: não confirma
     // a existência do registro pra quem não tem acesso).
-    await this.conversations.assertConversationAccess(
+    await this.conversationAccess.assertConversationAccess(
       conversation.id,
       organizationId,
       role,

@@ -22,6 +22,7 @@ import { HistoryImportService } from './pipeline/history-import.service';
 import { InboundMessageProcessor } from './pipeline/inbound-message.processor';
 import { OutboundMessageProcessor } from './pipeline/outbound-message.processor';
 import { ConversationFsmService } from './conversations/conversation-fsm.service';
+import { ConversationAccessModule } from './conversations/conversation-access.module';
 import { ConversationsController } from './conversations/conversations.controller';
 import { ConversationsService } from './conversations/conversations.service';
 import { ConversationsRepository } from './conversations/conversations.repository';
@@ -47,6 +48,7 @@ import { ContactsRepository } from './contacts/contacts.repository';
       { name: 'chatbot-processor' },
     ),
     forwardRef(() => ChannelHubModule),
+    ConversationAccessModule,
     RatingsModule,
     AiAgentsModule,
     WatchdogModule,

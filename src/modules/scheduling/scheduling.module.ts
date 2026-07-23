@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { MessagingModule } from '../messaging/messaging.module';
+import { ConversationAccessModule } from '../messaging/conversations/conversation-access.module';
 import { CadencesModule } from '../cadences/cadences.module';
 import { LlmModule } from '../ai-agents/llm/llm.module';
 import {
@@ -32,6 +33,7 @@ import { ReengageSuggestionController } from './inactivity/reengage-suggestion.c
     BullModule.registerQueue({ name: CADENCE_SILENCE_QUEUE }),
     RealtimeModule,
     forwardRef(() => MessagingModule),
+    ConversationAccessModule,
     // Task 8: dispatch processor chama CadenceRunner.onStepSent → ciclo
     // scheduling↔cadences → forwardRef nos dois lados.
     forwardRef(() => CadencesModule),
