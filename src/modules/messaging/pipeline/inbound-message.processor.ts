@@ -20,6 +20,7 @@ import { TranscriptionService } from '../messages/transcription.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
 import { WatchdogService } from '../../routing/watchdog/watchdog.service';
 import { SalesRecoveryService } from '../../sales-recovery/sales-recovery.service';
+import { InboundNotifierService } from '../../notifications/inbound-notifier.service';
 import {
   AutomationTrigger,
   ChannelType,
@@ -109,6 +110,7 @@ export class InboundMessageProcessor extends WorkerHost {
     @InjectQueue('chatbot-processor') private readonly chatbotQueue: Queue,
     private readonly shadowObserver: ShadowObserverService,
     private readonly leadSourceTagger: LeadSourceTaggerService,
+    private readonly inboundNotifier: InboundNotifierService,
   ) {
     super();
   }
@@ -267,6 +269,32 @@ export class InboundMessageProcessor extends WorkerHost {
       this.realtimeGateway.emitToConversation(conversationId, 'message:new', {
         message: savedMessage,
       });
+
+      // Notificação persistente NEW_MESSAGE (sino/badge). Best-effort e só
+      // para mensagem genuína do cliente (INBOUND, não-echo).
+      if (direction === MessageDirection.INBOUND && !isEcho) {
+        const c = (message.content ?? {}) as Record<string, any>;
+        const preview =
+          (typeof c.text === 'string' && c.text) ||
+          (typeof c.caption === 'string' && c.caption) ||
+          '[mídia]';
+        const convo = await this.prisma.conversation.findUnique({
+          where: { id: conversationId },
+          select: {
+            assignedToId: true,
+            contact: { select: { name: true, phone: true } },
+          },
+        });
+        void this.inboundNotifier.onInboundMessage({
+          organizationId,
+          conversationId,
+          contactName:
+            convo?.contact?.name || convo?.contact?.phone || 'Cliente',
+          preview: String(preview),
+          assignedToId: convo?.assignedToId ?? null,
+          isNewConversation: isNew === true,
+        });
+      }
 
       // Atribuição de origem: lead que veio do link rastreado do Instagram
       // orgânico (frase-marca no texto pré-preenchido do wa.me) ganha a tag
