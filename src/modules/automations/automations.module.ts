@@ -17,11 +17,18 @@ import { AddToPipelineHandler } from './actions/handlers/add-to-pipeline.handler
 import { MovePipelineStageHandler } from './actions/handlers/move-pipeline-stage.handler';
 import { AssignUserHandler } from './actions/handlers/assign-user.handler';
 import { SendMessageHandler } from './actions/handlers/send-message.handler';
+import { DelayHandler } from './actions/handlers/delay.handler';
 import { AutomationsService } from './automations.service';
 import { AutomationsController } from './automations.controller';
 import { AutomationsRunsController } from './automations-runs.controller';
 import { AutomationsValidator } from './automations.validator';
-import { AUTOMATION_QUEUE } from './automations.constants';
+import {
+  AUTOMATION_QUEUE,
+  AUTOMATION_RESUME_QUEUE,
+  AUTOMATION_RESUME_WATCHDOG_QUEUE,
+} from './automations.constants';
+import { AutomationResumeWatchdogCron } from './workers/automation-resume-watchdog.cron';
+import { AutomationResumeProcessor } from './workers/automation-resume.processor';
 
 @Global()
 @Module({
@@ -35,6 +42,10 @@ import { AUTOMATION_QUEUE } from './automations.constants';
       // here pulls it into this module's scope so the handler can inject.
       { name: 'outbound-messages' },
     ),
+    BullModule.registerQueue(
+      { name: AUTOMATION_RESUME_QUEUE },
+      { name: AUTOMATION_RESUME_WATCHDOG_QUEUE },
+    ),
   ],
   controllers: [AutomationsController, AutomationsRunsController],
   providers: [
@@ -45,6 +56,7 @@ import { AUTOMATION_QUEUE } from './automations.constants';
     ConditionsEvaluator,
     AutomationExecutorService,
     AutomationEventProcessor,
+    AutomationResumeProcessor,
     AutomationsService,
     AutomationsValidator,
     // Handlers + registry
@@ -54,7 +66,9 @@ import { AUTOMATION_QUEUE } from './automations.constants';
     MovePipelineStageHandler,
     AssignUserHandler,
     SendMessageHandler,
+    DelayHandler,
     ActionRegistryService,
+    AutomationResumeWatchdogCron,
   ],
   exports: [OutboxService, KillSwitchService],
 })

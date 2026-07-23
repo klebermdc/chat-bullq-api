@@ -108,3 +108,11 @@ export interface AutomationJobData {
   // serializes through Redis cleanly.
   visitedAutomations: string[];
 }
+
+// ─── Resume job (fila dedicada de retomada) ──────────────────────────
+// Emitido pelo watchdog quando um run WAITING vence. Carrega só o id do
+// run — todo o resto (payload, trace, índice, resumeState) vem do row.
+export interface AutomationResumeJobData {
+  runId: string;
+  organizationId: string;
+}
