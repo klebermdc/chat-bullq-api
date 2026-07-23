@@ -28,7 +28,10 @@ function make(actionOverrides: Record<string, unknown> = {}) {
     },
     user: { findUnique: jest.fn().mockResolvedValue({ name: 'Renata' }) },
     tag: { upsert: jest.fn().mockResolvedValue({ id: 'tag1' }) },
-    conversationTag: { upsert: jest.fn().mockResolvedValue({}) },
+    conversationTag: {
+      upsert: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
     card: {
       findFirst: jest.fn().mockResolvedValue(null),
       aggregate: jest.fn().mockResolvedValue({ _max: { order: 0 } }),
@@ -88,6 +91,50 @@ describe('PendingActionService.distribute', () => {
       name: 'Renata',
     });
     expect(prisma.conversationTag.upsert).toHaveBeenCalled();
+  });
+
+  it('re-distribuir troca a tag: tira a do atendente antigo e põe a do novo', async () => {
+    const { svc, prisma } = make();
+    // Conversa já estava com um atendente (distribuída antes).
+    prisma.conversation.findUnique.mockResolvedValue({
+      status: 'OPEN',
+      firstResponseAt: new Date(),
+      organizationId: 'org1',
+      assignedToId: 'atendente-antigo',
+    });
+    prisma.user.findUnique.mockImplementation(({ where }: any) =>
+      Promise.resolve(
+        where.id === 'atendente-antigo' ? { name: 'Bárbara' } : { name: 'Pedro' },
+      ),
+    );
+
+    await svc.distribute('pa1', 'op1', 'atendente-novo');
+
+    // Removeu a tag do atendente anterior (match exato pelo nome).
+    expect(prisma.conversationTag.deleteMany).toHaveBeenCalledWith({
+      where: { conversationId: 'conv1', tag: { organizationId: 'org1', name: 'Bárbara' } },
+    });
+    // E aplicou a do novo.
+    expect(prisma.tag.upsert.mock.calls[0][0].create).toMatchObject({ name: 'Pedro' });
+    expect(prisma.conversationTag.upsert).toHaveBeenCalled();
+  });
+
+  it('1ª distribuição (sem atendente anterior) não remove tag nenhuma', async () => {
+    const { svc, prisma } = make(); // findUnique base não traz assignedToId
+    await svc.distribute('pa1', 'op1', 'atendente9');
+    expect(prisma.conversationTag.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('re-distribuir pro MESMO atendente não remove a própria tag', async () => {
+    const { svc, prisma } = make();
+    prisma.conversation.findUnique.mockResolvedValue({
+      status: 'OPEN',
+      firstResponseAt: new Date(),
+      organizationId: 'org1',
+      assignedToId: 'atendente9',
+    });
+    await svc.distribute('pa1', 'op1', 'atendente9');
+    expect(prisma.conversationTag.deleteMany).not.toHaveBeenCalled();
   });
 
   it('NÃO move o card no distribuir (Coletando só no Iniciar atendimento)', async () => {

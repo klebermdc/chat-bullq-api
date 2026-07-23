@@ -234,9 +234,18 @@ export class PendingActionService {
 
     const conv = await this.prisma.conversation.findUnique({
       where: { id: action.conversationId },
-      select: { status: true, firstResponseAt: true, organizationId: true },
+      select: {
+        status: true,
+        firstResponseAt: true,
+        organizationId: true,
+        assignedToId: true,
+      },
     });
     if (!conv) throw new NotFoundException('Conversation not found');
+
+    // Guarda quem estava atribuído ANTES de sobrescrever, pra sincronizar a
+    // tag do atendente ao re-distribuir (tirar a do antigo, pôr a do novo).
+    const previousAssigneeId = conv.assignedToId;
 
     await this.prisma.conversation.update({
       where: { id: action.conversationId },
@@ -262,6 +271,7 @@ export class PendingActionService {
           action.conversationId,
           conv.organizationId,
           assignedToId,
+          previousAssigneeId,
         )) ?? attendantName;
     } catch (e) {
       this.logger.warn(`distribute: falha ao taguear atendente (conv=${action.conversationId}): ${(e as Error)?.message}`);
@@ -301,12 +311,36 @@ export class PendingActionService {
    * Aplica uma tag com o nome do atendente na conversa (cria a tag se não
    * existir). Retorna o nome do atendente (ou null se não achou), pra o
    * chamador reusar sem re-buscar.
+   *
+   * Quando `previousAssigneeId` é informado e diferente do novo, remove a tag
+   * do atendente anterior (match exato pelo nome — a mesma que este método
+   * teria criado). Necessário no RE-distribuir: sem isso a tag do atendente
+   * antigo fica colada no card, já que o distribuir NÃO passa pelo
+   * ConversationFsmService.assign/syncAttendantTag.
    */
   private async tagWithAttendant(
     conversationId: string,
     organizationId: string,
     assignedToId: string,
+    previousAssigneeId?: string | null,
   ): Promise<string | null> {
+    // Tira a tag do atendente anterior ao trocar de atendente.
+    if (previousAssigneeId && previousAssigneeId !== assignedToId) {
+      const prev = await this.prisma.user.findUnique({
+        where: { id: previousAssigneeId },
+        select: { name: true },
+      });
+      const prevName = (prev?.name ?? '').trim();
+      if (prevName) {
+        await this.prisma.conversationTag.deleteMany({
+          where: {
+            conversationId,
+            tag: { organizationId, name: prevName },
+          },
+        });
+      }
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: assignedToId },
       select: { name: true },
