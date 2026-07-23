@@ -18,9 +18,29 @@ describe('StartConversationService.start', () => {
   }
   const creator = { userOrganizationId: 'uo1', role: 'OWNER' as any };
 
-  it('recusa canal WhatsApp Oficial', async () => {
+  it('recusa canal WhatsApp Oficial SEM template', async () => {
     const { svc } = make({ channelType: ChannelType.WHATSAPP_OFFICIAL });
     await expect(svc.start('org1', { channelId: 'ch1', phone: '5511982015967', message: 'oi' }, 'ALL', creator)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('canal WhatsApp Oficial COM template cria conversa e enfileira mensagem TEMPLATE', async () => {
+    const { svc, prisma, resolver, queue } = make({ channelType: ChannelType.WHATSAPP_OFFICIAL });
+    const template = {
+      name: 'reengajamento',
+      language: { code: 'pt_BR' },
+      components: [{ type: 'body', parameters: [{ type: 'text', text: 'João' }] }],
+    };
+    const res = await svc.start('org1', { channelId: 'ch1', phone: '+55 (11) 98201-5967', name: 'João', template }, 'ALL', creator);
+    expect(res).toEqual({ conversationId: 'conv1', contactId: 'c-new' });
+    expect(resolver.resolve).toHaveBeenCalledWith('org1', 'ch1', 'c-new');
+    // Meta usa só os dígitos como external id (sem @s.whatsapp.net)
+    expect(prisma.message.create).toHaveBeenCalledWith({ data: expect.objectContaining({ conversationId: 'conv1', direction: MessageDirection.OUTBOUND, type: MessageContentType.TEMPLATE, content: template, status: MessageStatus.QUEUED }) });
+    expect(queue.add).toHaveBeenCalledWith('send-outbound', expect.objectContaining({ messageId: 'm1', channelId: 'ch1', contactExternalId: '5511982015967', message: { type: MessageContentType.TEMPLATE, content: template } }), expect.any(Object));
+  });
+
+  it('recusa canal nao-oficial SEM mensagem', async () => {
+    const { svc } = make({ channelType: ChannelType.WHATSAPP_WASENDER });
+    await expect(svc.start('org1', { channelId: 'ch1', phone: '5511982015967' } as any, 'ALL', creator)).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('recusa quando nao ha phone nem contactId', async () => {
