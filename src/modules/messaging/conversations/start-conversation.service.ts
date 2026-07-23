@@ -42,8 +42,14 @@ export class StartConversationService {
     if (access !== 'ALL' && !access.has(channel.id)) {
       throw new ForbiddenException('Você não tem acesso a este canal.');
     }
-    if (channel.type === ChannelType.WHATSAPP_OFFICIAL) {
-      throw new BadRequestException('Iniciar conversa no canal oficial exige template (HSM) — disponível em breve.');
+    const isOfficial = channel.type === ChannelType.WHATSAPP_OFFICIAL;
+    // No canal oficial (Meta) o 1º contato NÃO pode ser texto livre — a janela de
+    // 24h nunca abriu, então só um template (HSM) aprovado inicia a conversa.
+    if (isOfficial && !dto.template) {
+      throw new BadRequestException('Iniciar conversa no canal oficial exige um template (HSM) aprovado.');
+    }
+    if (!isOfficial && !dto.message?.trim()) {
+      throw new BadRequestException('Informe a mensagem inicial.');
     }
     if (!dto.phone && !dto.contactId) {
       throw new BadRequestException('Informe um telefone ou um contato.');
@@ -66,7 +72,10 @@ export class StartConversationService {
     });
 
     const { conversationId } = await this.resolver.resolve(organizationId, channel.id, contactId);
-    await this.enqueue(channel.id, conversationId, externalId, dto.message);
+    const payload = isOfficial
+      ? { type: MessageContentType.TEMPLATE, content: dto.template as Prisma.InputJsonValue }
+      : { type: MessageContentType.TEXT, content: { text: dto.message as string } as Prisma.InputJsonValue };
+    await this.enqueue(channel.id, conversationId, externalId, payload);
     return { conversationId, contactId };
   }
 
@@ -121,9 +130,13 @@ export class StartConversationService {
     }
   }
 
-  private async enqueue(channelId: string, conversationId: string, externalId: string, text: string) {
-    const type = MessageContentType.TEXT;
-    const content: Prisma.InputJsonValue = { text };
+  private async enqueue(
+    channelId: string,
+    conversationId: string,
+    externalId: string,
+    payload: { type: MessageContentType; content: Prisma.InputJsonValue },
+  ) {
+    const { type, content } = payload;
     const message = await this.prisma.message.create({
       data: {
         conversationId,

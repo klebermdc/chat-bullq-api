@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEmail } from 'class-validator';
+import { IsString, IsOptional, IsEmail, IsObject } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class StartConversationDto {
@@ -31,7 +31,16 @@ export class StartConversationDto {
   @IsString()
   notes?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ description: 'Mensagem de texto livre. Obrigatória em canais não-oficiais (Baileys/Wasender).' })
+  @IsOptional()
   @IsString()
-  message: string;
+  message?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Payload de template HSM no formato da Graph API { name, language: { code }, components }. Obrigatório para iniciar conversa no canal WhatsApp Oficial (1º contato exige template aprovado).',
+  })
+  @IsOptional()
+  @IsObject()
+  template?: Record<string, any>;
 }
