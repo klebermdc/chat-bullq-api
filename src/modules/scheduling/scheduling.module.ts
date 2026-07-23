@@ -25,6 +25,7 @@ import { InactivityWatchdogCron } from './inactivity/inactivity-watchdog.cron';
 import { InactivityReportService } from './inactivity/inactivity-report.service';
 import { InactivityReportController } from './inactivity/inactivity-report.controller';
 import { ReengageSuggestionController } from './inactivity/reengage-suggestion.controller';
+import { ScheduleDraftController } from './inactivity/schedule-draft.controller';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { ReengageSuggestionController } from './inactivity/reengage-suggestion.c
     InactivitySettingsController,
     InactivityReportController,
     ReengageSuggestionController,
+    ScheduleDraftController,
   ],
   providers: [
     ScheduledMessagesRepository,
