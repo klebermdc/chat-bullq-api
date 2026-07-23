@@ -3,12 +3,13 @@ import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger'
 import { OrgRole } from '@prisma/client';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentOrg, CurrentUser, CurrentUserRole } from '../../common/decorators';
+import { CurrentOrg, CurrentUser, CurrentUserRole, Feature } from '../../common/decorators';
 import { resolveAssignmentScope } from '../messaging/conversations/conversation-scope';
 
 @ApiTags('Dashboard')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
+@Feature('dashboard.view')
 @Controller('dashboard')
 export class DashboardController {
   constructor(private readonly service: DashboardService) {}
@@ -224,6 +225,21 @@ export class DashboardController {
     return this.service.getReopens(
       orgId,
       this.parseRange(from, to),
+      this.assignmentScope(userId, role),
+    );
+  }
+
+  @Get('lead-distribution-scoreboard')
+  @ApiOperation({
+    summary: 'Placar de leads distribuídos por atendente (Hoje + Este mês + 14d)',
+  })
+  getLeadDistributionScoreboard(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+  ) {
+    return this.service.getLeadDistributionScoreboard(
+      orgId,
       this.assignmentScope(userId, role),
     );
   }

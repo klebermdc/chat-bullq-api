@@ -2,10 +2,12 @@ import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
 import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
 import { ScheduledMessagesService } from '../../scheduling/scheduled-messages.service';
+import { CadenceInboundService } from '../../cadences/cadence-inbound.service';
 import { PrismaService } from '../../../database/prisma.service';
 import { IdempotencyService } from './idempotency.service';
 import { ContactResolverService } from './contact-resolver.service';
 import { ConversationResolverService } from './conversation-resolver.service';
+import { LeadSourceTaggerService } from './lead-source-tagger.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { NormalizedInboundMessage, StatusUpdate } from '../../channel-hub/ports/types';
 import { InstagramContactEnricherService } from '../../channel-hub/adapters/instagram/instagram-contact-enricher.service';
@@ -13,10 +15,15 @@ import { ZappfyContactEnricherService } from '../../channel-hub/adapters/zappfy/
 import { WebhookEventsService } from '../../channel-hub/webhook-events.service';
 import { AgentRouterService } from '../../ai-agents/router/agent-router.service';
 import { AiAgentRunnerService } from '../../ai-agents/runner/agent-runner.service';
+import { ShadowObserverService } from '../../ai-agents/shadow-learning/shadow-observer.service';
 import { TranscriptionService } from '../messages/transcription.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
 import { WatchdogService } from '../../routing/watchdog/watchdog.service';
+import { AgentAvailabilityService } from '../../routing/availability/agent-availability.service';
 import { SalesRecoveryService } from '../../sales-recovery/sales-recovery.service';
+import { ChannelUsageService } from '../../channel-usage/channel-usage.service';
+import { ORDER_FICHA_QUEUE } from '../../order-ficha/order-ficha.processor';
+import { IngestInput as OrderFichaIngestInput } from '../../order-ficha/order-ficha.service';
 import {
   AutomationTrigger,
   ChannelType,
@@ -99,9 +106,16 @@ export class InboundMessageProcessor extends WorkerHost {
     private readonly outbox: OutboxService,
     private readonly watchdog: WatchdogService,
     private readonly salesRecovery: SalesRecoveryService,
+    private readonly agentAvailability: AgentAvailabilityService,
     @Inject(forwardRef(() => ScheduledMessagesService))
     private readonly scheduled: ScheduledMessagesService,
+    @Inject(forwardRef(() => CadenceInboundService))
+    private readonly cadenceInbound: CadenceInboundService,
     @InjectQueue('chatbot-processor') private readonly chatbotQueue: Queue,
+    private readonly shadowObserver: ShadowObserverService,
+    private readonly leadSourceTagger: LeadSourceTaggerService,
+    @InjectQueue(ORDER_FICHA_QUEUE) private readonly orderFichaQueue: Queue,
+    private readonly channelUsage: ChannelUsageService,
   ) {
     super();
   }
@@ -252,6 +266,34 @@ export class InboundMessageProcessor extends WorkerHost {
         },
       );
 
+      // Ficha do Pedido: mensagem nova do cliente pode descrever ou alterar
+      // um pedido concreto — enfileira o job DEPOIS do commit (nunca de
+      // dentro do $transaction: se ela der rollback, não queremos ter
+      // enfileirado um job fantasma referenciando dados que não existem).
+      if (isNew && direction === MessageDirection.INBOUND) {
+        const content = (message.content ?? {}) as Record<string, any>;
+        const text =
+          typeof content.text === 'string'
+            ? content.text
+            : typeof content.caption === 'string'
+              ? content.caption
+              : '';
+        const jobData: OrderFichaIngestInput = {
+          organizationId,
+          contactId,
+          conversationId,
+          messageId: savedMessage.id,
+          text,
+        };
+        this.orderFichaQueue
+          .add('ingest', jobData, { removeOnComplete: 100, removeOnFail: 50 })
+          .catch((err) =>
+            this.logger.warn(
+              `order_ficha_enqueue_failed conv=${conversationId}: ${err?.message ?? err}`,
+            ),
+          );
+      }
+
       this.realtimeGateway.emitToChannel(channelId, 'message:new', {
         message: savedMessage,
         conversationId,
@@ -260,6 +302,37 @@ export class InboundMessageProcessor extends WorkerHost {
       this.realtimeGateway.emitToConversation(conversationId, 'message:new', {
         message: savedMessage,
       });
+
+      // Atribuição de origem: lead que veio do link rastreado do Instagram
+      // orgânico (frase-marca no texto pré-preenchido do wa.me) ganha a tag
+      // "Instagram Orgânico". Best-effort — nunca quebra o pipeline.
+      if (direction === MessageDirection.INBOUND) {
+        const c = (message.content ?? {}) as Record<string, any>;
+        const body =
+          typeof c.text === 'string'
+            ? c.text
+            : typeof c.caption === 'string'
+              ? c.caption
+              : null;
+        this.leadSourceTagger
+          .tagInstagramOrganicIfMatch({ organizationId, conversationId, body })
+          .catch((err) =>
+            this.logger.warn(`lead-source tag falhou (não crítico): ${err.message}`),
+          );
+
+        // Lead vindo de anúncio Click-to-WhatsApp: a Meta manda o referral
+        // junto da 1ª mensagem. Marca a conversa para o time enxergar e
+        // filtrar na caixa de entrada sem depender de relatório.
+        this.leadSourceTagger
+          .tagAdLeadIfReferral({
+            organizationId,
+            conversationId,
+            ctwaClid: message.referral?.ctwaClid,
+          })
+          .catch((err) =>
+            this.logger.warn(`ad-source tag falhou (não crítico): ${err.message}`),
+          );
+      }
 
       if (
         !isEcho &&
@@ -315,6 +388,14 @@ export class InboundMessageProcessor extends WorkerHost {
             `Recovery onInboundReply failed for conv ${conversationId}: ${err?.message ?? err}`,
           ),
         );
+        // Aviso de fora-de-horário: se a conversa já tem atendente humano e o
+        // cliente escreveu fora do horário dele, manda 1x o aviso. No-op fora
+        // disso. Best-effort — nunca derruba o pipeline.
+        this.agentAvailability.onInboundReply(conversationId).catch((err) =>
+          this.logger.warn(
+            `agent_availability_failed conv=${conversationId}: ${(err as Error).message}`,
+          ),
+        );
         // Cliente respondeu → cancela reengajamentos automáticos pendentes e
         // agendamentos manuais marcados com cancelOnReply.
         this.scheduled
@@ -329,6 +410,25 @@ export class InboundMessageProcessor extends WorkerHost {
           .catch((e) =>
             this.logger.warn(
               `scheduled_autocancel_failed conv=${conversationId}: ${(e as Error).message}`,
+            ),
+          );
+        // Toques de cadência (origin CADENCE) são cancelados imediatamente em
+        // QUALQUER resposta do cliente — independente do path de classificação/
+        // transição, para não disparar um toque após o cliente já ter falado.
+        this.scheduled
+          .cancelPendingForConversation(conversationId, 'client_replied', 'CADENCE')
+          .catch((e) =>
+            this.logger.warn(
+              `scheduled_autocancel_failed conv=${conversationId}: ${(e as Error).message}`,
+            ),
+          );
+        // Cadência: se a conversa tem enrollment ACTIVE, classifica a resposta
+        // e aplica a transição (Sim/Não/Descadastrar/engajou). No-op fora disso.
+        this.cadenceInbound
+          .handleInbound(conversationId, savedMessage)
+          .catch((err) =>
+            this.logger.warn(
+              `cadence_inbound_failed conv=${conversationId}: ${(err as Error).message}`,
             ),
           );
       } else if (isEcho) {
@@ -380,8 +480,10 @@ export class InboundMessageProcessor extends WorkerHost {
         await this.webhookEvents.markFailed(webhookEventId, err.message);
       }
       // Release the claim so retries can try again — next attempt re-acquires.
+      // (markProcessed apenas re-grava a chave via SET, o que fazia todo retry
+      // cair em duplicate_claim e perder a mensagem; releaseClaim faz DEL.)
       await this.idempotency
-        .markProcessed(message.externalMessageId, channelId)
+        .releaseClaim(message.externalMessageId, channelId)
         .catch(() => undefined);
       throw err;
     }
@@ -575,6 +677,9 @@ export class InboundMessageProcessor extends WorkerHost {
       });
       if (!conv) return;
 
+      // Observação SHADOW: aprende independentemente de a IA responder ou não.
+      void this.shadowObserver.observe(conversationId);
+
       const decision = await this.agentRouter.shouldHandle(conv);
       if (!decision.handle) {
         this.logger.debug(
@@ -650,10 +755,29 @@ export class InboundMessageProcessor extends WorkerHost {
       return this.processInstagramReadWatermark(channelId, status, webhookEventId);
     }
 
+    // Escopo por canal: IDs de mensagem de provedores Baileys (Wasender/Zappfy)
+    // não são globalmente únicos e podem colidir entre canais/orgs. Sem o filtro
+    // de canal, um recibo de status podia casar a mensagem de OUTRO tenant.
+    // (Espelha o escopo `conversation: { channelId }` de processInstagramReadWatermark.)
     const message = await this.prisma.message.findFirst({
-      where: { externalId: status.externalMessageId },
+      where: {
+        externalId: status.externalMessageId,
+        conversation: { channelId },
+      },
+      orderBy: { createdAt: 'desc' },
     });
     if (!message) return;
+
+    // Contador de janelas (canal oficial): best-effort, NUNCA derruba o status.
+    if (data.organizationId && data.status.conversation?.id) {
+      this.channelUsage
+        .recordWindow(data.organizationId, channelId, data.status)
+        .catch((err) =>
+          this.logger.warn(
+            `recordWindow falhou (conv ${data.status.conversation?.id}): ${err?.message ?? err}`,
+          ),
+        );
+    }
 
     const updateData: Record<string, any> = {
       status: this.maxStatus(message.status, dbStatus),

@@ -139,7 +139,7 @@ export class StartConversationService {
     await this.outboundQueue.add(
       'send-outbound',
       { messageId: message.id, channelId, contactExternalId: externalId, message: { type, content } },
-      { attempts: 3, backoff: { type: 'exponential', delay: 5_000 }, removeOnComplete: true, removeOnFail: false },
+      { attempts: 6, backoff: { type: 'fixed', delay: 6_000 }, removeOnComplete: true, removeOnFail: false },
     );
   }
 }

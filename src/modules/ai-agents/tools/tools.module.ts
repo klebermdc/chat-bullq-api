@@ -11,12 +11,14 @@ import { HandBackToOrchestratorTool } from './builtin/hand-back-to-orchestrator.
 import { GetProductPitchTool } from './builtin/get-product-pitch.tool';
 import { CheckBonusEligibilityTool } from './builtin/check-bonus-eligibility.tool';
 import { CheckMembersAccessTool } from './builtin/check-members-access.tool';
+import { CheckPurchaseTool } from './builtin/check-purchase.tool';
 import { ConsultarClickUpClienteTool } from './builtin/consultar-clickup-cliente.tool';
 import { ConsultarN8nClienteTool } from './builtin/consultar-n8n-cliente.tool';
 import { ListarReunioesClienteTool } from './builtin/listar-reunioes-cliente.tool';
 import { LerTranscricaoReuniaoTool } from './builtin/ler-transcricao-reuniao.tool';
 import { AgendarReuniaoTool } from './builtin/agendar-reuniao.tool';
 import { MoveRecoveryCardTool } from './builtin/move-recovery-card.tool';
+import { SetLeadTemperatureTool } from './builtin/set-lead-temperature.tool';
 import { HoppeClientService } from './client-ops/hoppe-client.service';
 import { GoogleAuthService } from './client-ops/google-auth.service';
 import { GoogleCalendarService } from './client-ops/google-calendar.service';
@@ -50,6 +52,7 @@ import { SalesRecoveryModule } from '../../sales-recovery/sales-recovery.module'
     GetProductPitchTool,
     CheckBonusEligibilityTool,
     CheckMembersAccessTool,
+    CheckPurchaseTool,
     HoppeClientService,
     GoogleAuthService,
     GoogleCalendarService,
@@ -63,6 +66,7 @@ import { SalesRecoveryModule } from '../../sales-recovery/sales-recovery.module'
     LerTranscricaoReuniaoTool,
     AgendarReuniaoTool,
     MoveRecoveryCardTool,
+    SetLeadTemperatureTool,
     ToolRegistry,
     HttpToolExecutorService,
     SqlToolExecutorService,

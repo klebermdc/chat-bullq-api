@@ -10,7 +10,19 @@ describe('WebhookDispatchService', () => {
       },
     };
     const queue = { add: jest.fn().mockResolvedValue(undefined) };
-    return { prisma, queue, service: new WebhookDispatchService(prisma as any, queue as any) };
+    const leadQualified = {
+      build: jest.fn().mockResolvedValue({ event: 'LEAD_QUALIFIED' }),
+    };
+    return {
+      prisma,
+      queue,
+      leadQualified,
+      service: new WebhookDispatchService(
+        prisma as any,
+        queue as any,
+        leadQualified as any,
+      ),
+    };
   };
 
   const event = { outboxEventId: 'evt1', organizationId: 'o', trigger: 'MESSAGE_RECEIVED', payload: { contactId: 'c', conversationId: 'cv', channelId: 'ch', messageId: 'm' } };

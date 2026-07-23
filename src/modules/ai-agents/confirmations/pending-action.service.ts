@@ -15,6 +15,8 @@ import type {
 } from './confirmation.types';
 import { PendingActionStorage } from './pending-action.storage';
 import { PENDING_ACTION_EXECUTOR_QUEUE } from './queue-names';
+import { PrismaService } from '../../../database/prisma.service';
+import { AttendantGreetingService } from '../../messaging/attendant-greeting/attendant-greeting.service';
 
 /**
  * Service that owns the lifecycle of `PendingAction` records.
@@ -32,6 +34,8 @@ export class PendingActionService {
     private readonly storage: PendingActionStorage,
     @InjectQueue(PENDING_ACTION_EXECUTOR_QUEUE)
     private readonly executorQueue: Queue,
+    private readonly prisma: PrismaService,
+    private readonly attendantGreeting: AttendantGreetingService,
   ) {}
 
   /** Create a new PENDING action for human review. */
@@ -120,6 +124,16 @@ export class PendingActionService {
       // Não rethrow — aprovação foi salva. Operador pode re-disparar via UI.
     }
 
+    // Saudação automática: só quando a pendência foi distribuída a um
+    // atendente (fluxo de handoff), não em approve genérico de outras tools.
+    if (action.conversationId && action.args?.distributedTo) {
+      await this.attendantGreeting.greet({
+        conversationId: action.conversationId,
+        attendantUserId: userId,
+        source: 'HANDOFF_APPROVE',
+      });
+    }
+
     return action;
   }
 
@@ -158,6 +172,22 @@ export class PendingActionService {
     action.rejectedReason = reason.trim();
     await this.storage.save(action, previous);
 
+    // Handoff rejeitado = o ADM devolveu o lead pro bot. Tira da aba "Esperando"
+    // (o transferToHuman marca awaitingHumanReply=true ao criar o card); senão o
+    // lead ficaria preso na fila de distribuição sem card.
+    if (action.toolName === 'transferToHuman' && action.conversationId) {
+      try {
+        await this.prisma.conversation.update({
+          where: { id: action.conversationId },
+          data: { awaitingHumanReply: false },
+        });
+      } catch (err: any) {
+        this.logger.warn(
+          `reject: falha ao limpar Esperando (conv=${action.conversationId}): ${err?.message ?? err}`,
+        );
+      }
+    }
+
     this.logger.log({
       msg: 'pending_action_rejected',
       id,
@@ -166,6 +196,136 @@ export class PendingActionService {
     });
 
     return action;
+  }
+
+  /**
+   * Distribui a conversa da pendência pra um atendente escolhido, sem passar
+   * pelo "Aprovar" genérico. Efetiva na hora: pausa a IA, atribui a conversa
+   * ao atendente (`assignedToId`) e move pra aba "Esperando"
+   * (`awaitingHumanReply=true`), carregando o que o lead já mandou. Resolve a
+   * pendência como EXECUTED. Usado pelo botão "Distribuir" no card de handoff.
+   */
+  async distribute(
+    id: string,
+    actorUserId: string,
+    assignedToId: string,
+  ): Promise<PendingAction> {
+    if (!assignedToId || !assignedToId.trim()) {
+      throw new BadRequestException('assignedToId é obrigatório');
+    }
+
+    const action = await this.storage.get(id);
+    if (!action) throw new NotFoundException('Pending action not found');
+
+    if (action.status !== 'PENDING') {
+      throw new BadRequestException(
+        `Action is ${action.status} and cannot be distributed`,
+      );
+    }
+    if (this.isExpired(action)) {
+      const previous = action.status;
+      action.status = 'EXPIRED';
+      await this.storage.save(action, previous);
+      throw new BadRequestException('Action expired');
+    }
+    if (!action.conversationId) {
+      throw new BadRequestException('Action has no conversation to distribute');
+    }
+
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: action.conversationId },
+      select: { status: true, firstResponseAt: true, organizationId: true },
+    });
+    if (!conv) throw new NotFoundException('Conversation not found');
+
+    await this.prisma.conversation.update({
+      where: { id: action.conversationId },
+      data: {
+        aiEnabled: false,
+        assignedToId,
+        awaitingHumanReply: true,
+        // Promove PENDING→OPEN (conversa entrou em atendimento humano); mantém
+        // o status quando já é outro. A aba "Esperando" é o flag acima.
+        ...(conv.status === 'PENDING'
+          ? { status: 'OPEN', firstResponseAt: conv.firstResponseAt ?? new Date() }
+          : {}),
+      },
+    });
+
+    // Tag com o nome do atendente (best-effort). O card fica na etapa
+    // "Distribuir"; só vai pra "Coletando Informação" quando o atendente
+    // clicar "Iniciar atendimento" (Aprovar → executor).
+    let attendantName = 'atendente';
+    try {
+      attendantName =
+        (await this.tagWithAttendant(
+          action.conversationId,
+          conv.organizationId,
+          assignedToId,
+        )) ?? attendantName;
+    } catch (e) {
+      this.logger.warn(`distribute: falha ao taguear atendente (conv=${action.conversationId}): ${(e as Error)?.message}`);
+    }
+
+    // NÃO resolve a pendência: ela fica VISÍVEL como "norte" pro atendente
+    // escolhido até ele clicar "Iniciar atendimento". Marca como distribuída,
+    // atualiza o texto do card e estende o prazo pra não expirar antes.
+    action.args = {
+      ...action.args,
+      distributedTo: assignedToId,
+      distributedToName: attendantName === 'atendente' ? null : attendantName,
+      distributedBy: actorUserId,
+      distributedAt: new Date().toISOString(),
+    };
+    action.preview = {
+      ...action.preview,
+      action: `Distribuído para ${attendantName} — o atendente clica "Aprovar" pra iniciar o atendimento.`,
+    };
+    action.expiresAt = new Date(
+      Date.now() + 7 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    await this.storage.save(action, action.status); // continua PENDING
+
+    this.logger.log({
+      msg: 'pending_action_distributed',
+      id,
+      actorUserId,
+      assignedToId,
+      conversationId: action.conversationId,
+    });
+
+    return action;
+  }
+
+  /**
+   * Aplica uma tag com o nome do atendente na conversa (cria a tag se não
+   * existir). Retorna o nome do atendente (ou null se não achou), pra o
+   * chamador reusar sem re-buscar.
+   */
+  private async tagWithAttendant(
+    conversationId: string,
+    organizationId: string,
+    assignedToId: string,
+  ): Promise<string | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: assignedToId },
+      select: { name: true },
+    });
+    const name = (user?.name ?? '').trim();
+    if (!name) return null;
+
+    const tag = await this.prisma.tag.upsert({
+      where: { organizationId_name: { organizationId, name } },
+      create: { organizationId, name },
+      update: {},
+      select: { id: true },
+    });
+    await this.prisma.conversationTag.upsert({
+      where: { conversationId_tagId: { conversationId, tagId: tag.id } },
+      create: { conversationId, tagId: tag.id },
+      update: {},
+    });
+    return name;
   }
 
   /** List PENDING actions, optionally filtered by conversation. */

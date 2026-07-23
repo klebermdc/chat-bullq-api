@@ -75,12 +75,18 @@ export class ZappfyMessageMapper {
       return new Date(num > 9999999999 ? num : num * 1000);
     };
 
+    // Semântica canônica do ack numérico do Baileys (a shape C é documentada
+    // acima como "baileys-style numeric ack"): 1=PENDING, 2=SERVER_ACK (enviado),
+    // 3=DELIVERY_ACK (entregue), 4=READ (lido), 5=PLAYED (áudio ouvido → lido).
+    // O mapa antigo estava deslocado (2→delivered, 3→read) e, pior, tratava
+    // 5=PLAYED como 'failed' — toda nota de voz ouvida aparecia como FALHOU.
+    // Alinhado com o adapter Wasender (mesma base Baileys).
     const numericAckMap: Record<number, StatusUpdate['status']> = {
       1: 'sent',
-      2: 'delivered',
-      3: 'read',
+      2: 'sent',
+      3: 'delivered',
       4: 'read',
-      5: 'failed',
+      5: 'read',
     };
 
     const stringStatusMap: Record<string, StatusUpdate['status']> = {

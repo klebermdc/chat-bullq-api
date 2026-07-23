@@ -8,22 +8,10 @@ import type {
   ClassifierMessage,
 } from '../classifier/intent.types';
 import { IntentType } from '../classifier/intent.types';
-
-interface BusinessHoursDay {
-  enabled: boolean;
-  windows?: Array<[string, string]>; // [["09:00","18:00"]]
-}
-type BusinessHoursConfig = Record<string, BusinessHoursDay>;
-
-const DAY_KEYS = [
-  'sunday',
-  'monday',
-  'tuesday',
-  'wednesday',
-  'thursday',
-  'friday',
-  'saturday',
-] as const;
+import {
+  isWithinHours,
+  type BusinessHoursConfig,
+} from '../../routing/availability/business-hours.util';
 
 export interface AgentSelection {
   agentId: string;
@@ -291,48 +279,10 @@ export class AgentRouterService {
   }
 
   private isWithinBusinessHours(org: Organization): boolean {
-    if (!org.aiBusinessHours) return true; // 24/7 default
-
-    const config = org.aiBusinessHours as unknown as BusinessHoursConfig;
-    const tz = org.aiTimezone || 'America/Sao_Paulo';
-
-    // Get day-of-week + HH:mm in the org's tz.
-    const fmt = new Intl.DateTimeFormat('en-US', {
-      timeZone: tz,
-      weekday: 'long',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-    const parts = fmt.formatToParts(new Date());
-    const weekday = parts
-      .find((p) => p.type === 'weekday')
-      ?.value.toLowerCase() ?? '';
-    const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
-    const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
-    // Alguns builds ICU emitem "24" para a meia-noite com hour12:false; o `% 24`
-    // normaliza para 0 e impede que nowMinutes (24*60=1440) estoure toda janela
-    // cujo fim é ≤ 23:59 (1439), o que faria a IA calar dentro do horário.
-    const nowMinutes = (parseInt(hour, 10) % 24) * 60 + parseInt(minute, 10);
-
-    if (!DAY_KEYS.includes(weekday as (typeof DAY_KEYS)[number])) {
-      return true;
-    }
-    const day = config[weekday];
-    if (!day || !day.enabled) return false;
-
-    const windows = day.windows ?? [];
-    if (windows.length === 0) return true;
-
-    return windows.some(([from, to]) => {
-      const fromMin = this.parseHourToMinutes(from);
-      const toMin = this.parseHourToMinutes(to);
-      return nowMinutes >= fromMin && nowMinutes < toMin;
-    });
-  }
-
-  private parseHourToMinutes(hhmm: string): number {
-    const [h, m] = hhmm.split(':').map((v) => parseInt(v, 10));
-    return (h || 0) * 60 + (m || 0);
+    return isWithinHours(
+      org.aiBusinessHours as unknown as BusinessHoursConfig | null,
+      org.aiTimezone || 'America/Sao_Paulo',
+      new Date(),
+    );
   }
 }

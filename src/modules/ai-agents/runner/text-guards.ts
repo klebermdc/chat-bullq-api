@@ -13,6 +13,40 @@
  */
 
 /**
+ * Remove blocos de raciocínio `<think>...</think>` que modelos de raciocínio
+ * (ex.: MiniMax M-series) emitem antes da resposta. Esse raciocínio JAMAIS
+ * pode ir pro cliente. Trata também tags soltas (bloco não fechado, ou só o
+ * fechamento) de forma conservadora: mantém apenas o texto de resposta real.
+ */
+export function stripThinkBlocks(text: string): string {
+  let out = (text ?? '').replace(/<think>[\s\S]*?<\/think>/gi, '');
+  // Fechamento solto (abertura ficou noutro pedaço): fica só o que vem depois.
+  const lastClose = out.toLowerCase().lastIndexOf('</think>');
+  if (lastClose !== -1) out = out.slice(lastClose + '</think>'.length);
+  // Abertura sem fechamento: tudo dali pra frente é raciocínio → descarta.
+  const open = out.toLowerCase().indexOf('<think>');
+  if (open !== -1) out = out.slice(0, open);
+  return out.trim();
+}
+
+/**
+ * Remove caracteres CJK (chinês/japonês/coreano) que modelos como o MiniMax
+ * às vezes vazam no meio de uma resposta em PT-BR (ex.: "成人 e crianças").
+ * O atendimento é 100% português — isso nunca vai pro cliente. Preserva
+ * letras latinas com acento, pontuação e emoji.
+ */
+export function stripForeignScripts(text: string): string {
+  return (text ?? '')
+    .replace(
+      /[　-〿぀-ヿ㐀-䶿一-鿿豈-﫿가-힯＀-￯]/g,
+      '',
+    )
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.!?:;])/g, '$1')
+    .trim();
+}
+
+/**
  * Padrões de "meta-talk" — o LLM saindo do modo de resposta e narrando
  * sua própria decisão/dúvida/regra interna. Tudo aqui é coisa que NUNCA
  * deve aparecer numa mensagem ao cliente final.

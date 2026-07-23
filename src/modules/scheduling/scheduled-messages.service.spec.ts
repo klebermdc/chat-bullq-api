@@ -1,7 +1,22 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { OrgRole } from '@prisma/client';
 import { ScheduledMessagesService } from './scheduled-messages.service';
+import { ConversationAccessService } from '../messaging/conversations/conversation-access.service';
 
-function makeDeps() {
+/**
+ * Instância REAL de ConversationAccessService (leaf service, só `prisma`),
+ * mesmo padrão de messages.access.spec.ts — prova a integração de verdade
+ * com `assertConversationAccess`, não um double.
+ */
+function makeConversationAccessService(conversationFound: unknown) {
+  const guardPrisma: any = {
+    conversation: { findFirst: jest.fn().mockResolvedValue(conversationFound) },
+  };
+  const svc = new ConversationAccessService(guardPrisma);
+  return { conversationAccess: svc, guardPrisma };
+}
+
+function makeDeps(opts: { conversationsGuardFinds?: unknown } = {}) {
   const rows: any[] = [];
   let seq = 0;
   const repo = {
@@ -39,13 +54,17 @@ function makeDeps() {
     remove: jest.fn(async () => undefined),
   };
   const realtime = { emitToConversation: jest.fn() };
+  const { conversationAccess, guardPrisma } = makeConversationAccessService(
+    'conversationsGuardFinds' in opts ? opts.conversationsGuardFinds : { id: 'c1' },
+  );
   const service = new ScheduledMessagesService(
     repo as any,
     prisma as any,
     queue as any,
     realtime as any,
+    conversationAccess,
   );
-  return { service, repo, queue, prisma, rows };
+  return { service, repo, queue, prisma, rows, guardPrisma };
 }
 
 describe('ScheduledMessagesService.create', () => {
@@ -155,5 +174,89 @@ describe('ScheduledMessagesService.cancel', () => {
     const n = await service.cancelPendingForConversationIfCancelOnReply('c1');
     expect(n).toBe(1);
     expect(repo.update).toHaveBeenCalledWith('s1', expect.objectContaining({ status: 'CANCELED' }));
+  });
+});
+
+describe('ScheduledMessagesService — escopo por atribuição (AGENT só mexe na própria conversa)', () => {
+  const future = '2999-01-01T00:00:00.000Z';
+
+  it('create: AGENT + conversa de colega → NotFound, sem persistir nem enfileirar', async () => {
+    const { service, repo, queue } = makeDeps({ conversationsGuardFinds: null });
+    await expect(
+      service.create(
+        { conversationId: 'c1', type: 'TEXT', content: { text: 'oi' }, scheduledAt: future },
+        'agent-u1', 'org1', 'ALL', OrgRole.AGENT,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(repo.create).not.toHaveBeenCalled();
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('create: AGENT + conversa própria → prossegue', async () => {
+    const { service } = makeDeps({ conversationsGuardFinds: { id: 'c1' } });
+    const result = await service.create(
+      { conversationId: 'c1', type: 'TEXT', content: { text: 'oi' }, scheduledAt: future },
+      'agent-u1', 'org1', 'ALL', OrgRole.AGENT,
+    );
+    expect(result.status).toBe('PENDING');
+  });
+
+  it('create: ADMIN não consulta o guard escopado (findFirst sem assignedToId)', async () => {
+    const { service, guardPrisma } = makeDeps({ conversationsGuardFinds: { id: 'c1' } });
+    await service.create(
+      { conversationId: 'c1', type: 'TEXT', content: { text: 'oi' }, scheduledAt: future },
+      'admin-u1', 'org1', 'ALL', OrgRole.ADMIN,
+    );
+    expect(guardPrisma.conversation.findFirst).toHaveBeenCalledWith({
+      where: { id: 'c1', organizationId: 'org1' },
+    });
+  });
+
+  it('listForConversation: AGENT + conversa de colega → NotFound', async () => {
+    const { service } = makeDeps({ conversationsGuardFinds: null });
+    await expect(
+      service.listForConversation('c1', 'org1', 'ALL', undefined, OrgRole.AGENT, 'agent-u1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('cancel: AGENT + agendamento de conversa de colega → NotFound, sem tocar na fila', async () => {
+    const created = await (async () => {
+      const { service } = makeDeps();
+      return service.create(
+        { conversationId: 'c1', type: 'TEXT', content: { text: 'oi' }, scheduledAt: future },
+        'user1', 'org1', 'ALL',
+      );
+    })();
+    const { service, repo, queue } = makeDeps({ conversationsGuardFinds: null });
+    repo.findById.mockResolvedValue({ ...created, conversationId: 'c1', organizationId: 'org1', channelId: 'ch1' });
+    await expect(
+      service.cancel(created.id, 'org1', 'manual', 'ALL', OrgRole.AGENT, 'agent-u1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(queue.remove).not.toHaveBeenCalled();
+  });
+
+  it('cancel: AGENT + agendamento da própria conversa → prossegue', async () => {
+    const { service, repo } = makeDeps({ conversationsGuardFinds: { id: 'c1' } });
+    const created = await service.create(
+      { conversationId: 'c1', type: 'TEXT', content: { text: 'oi' }, scheduledAt: future },
+      'agent-u1', 'org1', 'ALL', OrgRole.AGENT,
+    );
+    repo.findById.mockResolvedValueOnce({
+      ...created, conversationId: 'c1', organizationId: 'org1', channelId: 'ch1', status: 'PENDING',
+    });
+    const canceled = await service.cancel(created.id, 'org1', 'manual', 'ALL', OrgRole.AGENT, 'agent-u1');
+    expect(canceled.status).toBe('CANCELED');
+  });
+
+  it('reschedule: AGENT + agendamento de conversa de colega → NotFound', async () => {
+    const { service, repo } = makeDeps({ conversationsGuardFinds: null });
+    repo.findById.mockResolvedValue({
+      id: 's1', conversationId: 'c1', organizationId: 'org1', channelId: 'ch1', status: 'PENDING',
+    });
+    await expect(
+      service.reschedule(
+        's1', { scheduledAt: future } as any, 'org1', 'ALL', OrgRole.AGENT, 'agent-u1',
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

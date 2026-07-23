@@ -1,11 +1,12 @@
-import { Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentUser, CurrentUserRole, Roles } from '../../common/decorators';
+import { CurrentOrg, CurrentUser, CurrentUserRole, Roles } from '../../common/decorators';
 import { SalesReportsService } from './sales-reports.service';
 import { ReportQueryDto } from './dto/report-query.dto';
 import { OfpSyncService } from './ofp-sync.service';
+import { ReconciliationService } from './reconciliation.service';
 import { PrismaService } from '../../database/prisma.service';
 
 @ApiTags('sales-reports')
@@ -16,6 +17,7 @@ export class SalesReportsController {
   constructor(
     private readonly service: SalesReportsService,
     private readonly sync: OfpSyncService,
+    private readonly reconciliation: ReconciliationService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -28,6 +30,7 @@ export class SalesReportsController {
     return this.service.getReport({
       role, email,
       vendedor: q.vendedor,
+      day: q.day,
       month: q.month,
       year: q.year,
       status: q.status,
@@ -73,5 +76,25 @@ export class SalesReportsController {
   @Roles(OrgRole.OWNER, OrgRole.ADMIN)
   syncState() {
     return this.prisma.ofpSyncState.findUnique({ where: { id: 1 } });
+  }
+
+  // ── E5.2b — Reconciliação (pedidos do HUB sem card) ──────────────────
+  @Get('reconciliation')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  listReconciliation(@Query() q: { sinceDays?: string; limit?: string; minScore?: string }) {
+    return this.reconciliation.listOrphans({
+      sinceDays: q.sinceDays ? Number(q.sinceDays) : undefined,
+      limit: q.limit ? Number(q.limit) : undefined,
+      minScore: q.minScore ? Number(q.minScore) : undefined,
+    });
+  }
+
+  @Post('reconciliation/link')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  linkReconciliation(
+    @CurrentOrg('id') orgId: string,
+    @Body() body: { orderExternalId: string; cardId: string },
+  ) {
+    return this.reconciliation.link(body.orderExternalId, body.cardId, orgId);
   }
 }

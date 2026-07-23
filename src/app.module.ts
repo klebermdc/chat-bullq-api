@@ -12,6 +12,7 @@ import { RealtimeModule } from './modules/realtime/realtime.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { RoutingModule } from './modules/routing/routing.module';
 import { QuickRepliesModule } from './modules/quick-replies/quick-replies.module';
+import { MediaLibraryModule } from './modules/media-library/media-library.module';
 import { TagsModule } from './modules/tags/tags.module';
 import { ChatbotModule } from './modules/chatbot/chatbot.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
@@ -27,9 +28,17 @@ import { SegmentsModule } from './modules/segments/segments.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { SalesRecoveryModule } from './modules/sales-recovery/sales-recovery.module';
 import { SchedulingModule } from './modules/scheduling/scheduling.module';
+import { CadencesModule } from './modules/cadences/cadences.module';
 import { AutomationsModule } from './modules/automations/automations.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { SalesReportsModule } from './modules/sales-reports/sales-reports.module';
+import { ProposalsModule } from './modules/proposals/proposals.module';
+import { CrmReportsModule } from './modules/crm-reports/crm-reports.module';
+import { ChannelUsageModule } from './modules/channel-usage/channel-usage.module';
+import { CopilotModule } from './modules/copilot/copilot.module';
+import { CallsModule } from './modules/calls/calls.module';
+import { OrderFichaModule } from './modules/order-ficha/order-ficha.module';
+import { MetaCapiModule } from './modules/meta-capi/meta-capi.module';
 // ProductsModule removido — catálogo agora vive no Trivapp e é consumido
 // via skill HTTP getProductPitch + CatalogSyncService. Tabela `products`
 // fica órfã no DB (cleanup futuro). Não importar aqui.
@@ -67,6 +76,7 @@ import redisConfig from './config/redis.config';
     NotificationsModule,
     RoutingModule,
     QuickRepliesModule,
+    MediaLibraryModule,
     TagsModule,
     ChatbotModule,
     DashboardModule,
@@ -81,8 +91,16 @@ import redisConfig from './config/redis.config';
     ProjectsModule,
     SalesRecoveryModule,
     SchedulingModule,
+    CadencesModule,
     WebhooksModule,
     SalesReportsModule,
+    ProposalsModule,
+    CrmReportsModule,
+    ChannelUsageModule,
+    CopilotModule,
+    CallsModule,
+    OrderFichaModule,
+    MetaCapiModule,
   ],
 })
 export class AppModule {}

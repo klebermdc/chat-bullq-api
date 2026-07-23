@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { OfpSyncService } from './ofp-sync.service';
 import { OfpReportService } from './ofp-report.service';
 import { PrismaService } from '../../database/prisma.service';
+import { OrderCorrelationService } from './order-correlation.service';
 
 describe('OfpSyncService', () => {
   const orders = [
@@ -15,6 +16,9 @@ describe('OfpSyncService', () => {
     ofpSyncState: { upsert: stateUpsert },
   } as any;
   const ofp = { getOrders: jest.fn().mockResolvedValue(orders) } as any;
+  const correlation = {
+    correlateWonCards: jest.fn().mockResolvedValue({ matched: 0, checked: 0 }),
+  } as any;
 
   let service: OfpSyncService;
   beforeEach(async () => {
@@ -24,6 +28,7 @@ describe('OfpSyncService', () => {
         OfpSyncService,
         { provide: OfpReportService, useValue: ofp },
         { provide: PrismaService, useValue: prisma },
+        { provide: OrderCorrelationService, useValue: correlation },
       ],
     }).compile();
     service = mod.get(OfpSyncService);
@@ -62,5 +67,21 @@ describe('OfpSyncService', () => {
     ofp.getOrders.mockResolvedValueOnce([]);
     await service.sync();
     expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('retries a transient upsert failure (pool timeout) and still completes', async () => {
+    upsert
+      .mockRejectedValueOnce(
+        new Error('Timed out fetching a new connection from the connection pool'),
+      )
+      .mockResolvedValue({});
+    const res = await service.sync();
+    expect(res.count).toBe(1);
+    // one failed attempt + one successful retry for the single order
+    expect(upsert).toHaveBeenCalledTimes(2);
+    // state recorded without error
+    expect(stateUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: expect.objectContaining({ lastError: null }) }),
+    );
   });
 });

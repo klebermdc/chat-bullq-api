@@ -1,0 +1,142 @@
+import { BadGatewayException, BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { OrgRole } from '@prisma/client';
+import { PrismaService } from '../../database/prisma.service';
+import { SonaxSettingsService } from './sonax-settings.service';
+import { SonaxClient } from './sonax-client';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { normalizeBrazilNumber } from './phone.util';
+import { ConversationAccessService } from '../messaging/conversations/conversation-access.service';
+
+@Injectable()
+export class CallsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: SonaxSettingsService,
+    private readonly sonax: SonaxClient,
+    private readonly realtime: RealtimeGateway,
+    // Leaf service (só PrismaService) — sem o ciclo de DI que injetar
+    // ConversationsService inteiro aqui abria via AiAgentsModule.
+    private readonly conversationAccess: ConversationAccessService,
+  ) {}
+
+  async initiateCall(
+    conversationId: string,
+    userId: string,
+    organizationId: string,
+    role?: OrgRole,
+  ) {
+    // Liga o telefone de verdade e grava a transcrição — mesma barreira de
+    // atribuição do resto do app antes de qualquer coisa acontecer.
+    await this.conversationAccess.assertConversationAccess(
+      conversationId,
+      organizationId,
+      role,
+      userId,
+    );
+    const conversation = await this.prisma.conversation.findFirst({
+      where: { id: conversationId, organizationId },
+      include: { contact: true },
+    });
+    if (!conversation) throw new NotFoundException('Conversa não encontrada');
+
+    const rawPhone = conversation.contact?.phone;
+    if (!rawPhone) throw new BadRequestException('Conversa sem telefone para discar');
+    const numero = normalizeBrazilNumber(rawPhone);
+
+    const dial = await this.settings.getDecryptedForDial(organizationId);
+    if (!dial) throw new BadRequestException('Sonax não configurada ou desabilitada nesta organização');
+
+    const member = await this.prisma.userOrganization.findUnique({
+      where: { userId_organizationId: { userId, organizationId } },
+    });
+    if (!member?.sonaxRamal) {
+      throw new BadRequestException('Configure seu ramal Sonax na tela de Membros antes de ligar');
+    }
+
+    const call = await this.prisma.call.create({
+      data: { organizationId, conversationId, agentId: userId, ramal: member.sonaxRamal, numero, status: 'DIALING' },
+    });
+    const message = await this.prisma.message.create({
+      data: {
+        conversationId,
+        direction: 'OUTBOUND',
+        type: 'SYSTEM',
+        senderId: userId,
+        status: 'SENT',
+        content: { kind: 'call', callId: call.id, status: 'DIALING' },
+      },
+    });
+    await this.prisma.call.update({ where: { id: call.id }, data: { messageId: message.id } });
+    this.realtime.emitToConversation(conversationId, 'message:new', { message });
+
+    try {
+      await this.sonax.click2call({
+        baseUrl: dial.click2callBaseUrl,
+        numero,
+        ramal: member.sonaxRamal,
+        token: dial.token,
+        var1: call.id,
+      });
+    } catch (err) {
+      await this.prisma.call.update({ where: { id: call.id }, data: { status: 'FAILED', endedAt: new Date() } });
+      const failedContent = { kind: 'call', callId: call.id, status: 'FAILED' };
+      await this.prisma.message.update({ where: { id: message.id }, data: { content: failedContent } });
+      this.realtime.emitToConversation(conversationId, 'message:update', { messageId: message.id, content: failedContent });
+      throw new BadGatewayException('Falha ao iniciar a ligação na Sonax');
+    }
+
+    return { callId: call.id, status: 'DIALING' as const };
+  }
+
+  /** Resumo da última ligação ATENDIDA da conversa (pro Card do Cliente / Painel). */
+  async getLatestInsight(
+    conversationId: string,
+    organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
+    await this.conversationAccess.assertConversationAccess(
+      conversationId,
+      organizationId,
+      role,
+      currentUserId,
+    );
+    const call = await this.prisma.call.findFirst({
+      where: { conversationId, organizationId, answered: true },
+      orderBy: { startedAt: 'desc' },
+    });
+    if (!call) return { hasCall: false as const };
+    return {
+      hasCall: true as const,
+      callId: call.id,
+      status: call.status,
+      durationSec: call.durationSec,
+      recordingUrl: call.recordingUrl,
+      startedAt: call.startedAt,
+      insightState: call.insightState,
+      insight: call.insight,
+      hasTranscript: !!call.transcript,
+    };
+  }
+
+  /** Transcrição completa (sob demanda — não vai no payload do insight). */
+  async getTranscript(
+    conversationId: string,
+    callId: string,
+    organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
+    await this.conversationAccess.assertConversationAccess(
+      conversationId,
+      organizationId,
+      role,
+      currentUserId,
+    );
+    const call = await this.prisma.call.findFirst({
+      where: { id: callId, conversationId, organizationId },
+    });
+    if (!call) throw new NotFoundException('Ligação não encontrada');
+    return { callId: call.id, transcript: call.transcript ?? '' };
+  }
+}

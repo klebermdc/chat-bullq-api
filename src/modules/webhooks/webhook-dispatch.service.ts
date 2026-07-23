@@ -4,6 +4,7 @@ import { Queue } from 'bullmq';
 import { PrismaService } from '../../database/prisma.service';
 import { WEBHOOK_QUEUE, MAX_WEBHOOK_ATTEMPTS, WEBHOOK_BACKOFF_MS } from './webhooks.constants';
 import { mapWebhookData } from './webhook-payload.mapper';
+import { LeadQualifiedPayloadBuilder } from './payloads/lead-qualified.builder';
 
 interface DispatchEvent {
   outboxEventId: string;
@@ -17,6 +18,7 @@ export class WebhookDispatchService {
   constructor(
     private readonly prisma: PrismaService,
     @InjectQueue(WEBHOOK_QUEUE) private readonly queue: Queue,
+    private readonly leadQualified: LeadQualifiedPayloadBuilder,
   ) {}
 
   async dispatch(event: DispatchEvent): Promise<void> {
@@ -25,7 +27,12 @@ export class WebhookDispatchService {
     });
     if (!subs.length) return;
 
-    const data = mapWebhookData(event.trigger, event.payload);
+    // LEAD_QUALIFIED precisa ir enriquecido (ver o builder). Só montamos
+    // depois de saber que existe assinante — evita ida ao banco à toa.
+    const data =
+      event.trigger === 'LEAD_QUALIFIED'
+        ? await this.leadQualified.build(event.payload)
+        : mapWebhookData(event.trigger, event.payload);
     for (const sub of subs) {
       // Idempotência por (subscription, outbox event): o AutomationEventProcessor
       // chama dispatch() no topo de process() e re-executa em cada retry do BullMQ

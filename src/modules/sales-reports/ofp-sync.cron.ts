@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { OfpSyncService } from './ofp-sync.service';
 
 const HOUR_MS = 60 * 60 * 1000;
+const BOOT_DELAY_MS = 20 * 1000;
 
 @Injectable()
 export class OfpSyncCron implements OnModuleInit {
@@ -19,11 +20,16 @@ export class OfpSyncCron implements OnModuleInit {
       this.logger.log('OFP sync cron desativado (OFP_SYNC_CRON_ENABLED != true)');
       return;
     }
-    this.logger.log('OFP sync cron ativo — intervalo de 1h');
-    this.timer = setInterval(() => {
+    this.logger.log('OFP sync cron ativo — sync no boot + intervalo de 1h');
+    const run = () =>
       this.sync.sync().catch((e) => this.logger.error(`Cron sync falhou: ${e?.message}`));
-    }, HOUR_MS);
-    // Do not block process exit on this timer.
+
+    // Sync inicial pouco depois do boot (deixa a app subir primeiro / cobre pós-deploy).
+    const boot = setTimeout(run, BOOT_DELAY_MS);
+    if (boot.unref) boot.unref();
+
+    // Depois, de hora em hora.
+    this.timer = setInterval(run, HOUR_MS);
     if (this.timer.unref) this.timer.unref();
   }
 }

@@ -74,6 +74,20 @@ export class PendingActionController {
     return this.service.reject(id, userId, body?.reason ?? '');
   }
 
+  @Post(':id/distribute')
+  @ApiOperation({
+    summary:
+      'Distribui a conversa da pendência pro atendente escolhido: pausa a IA, atribui e move pra aba "Esperando". Alternativa ao approve genérico (handoff da IA).',
+  })
+  async distribute(
+    @Param('id') id: string,
+    @Req() req: AuthedRequest,
+    @Body() body: { assignedToId: string },
+  ): Promise<PendingAction> {
+    const userId = this.requireUserId(req);
+    return this.service.distribute(id, userId, body?.assignedToId ?? '');
+  }
+
   private requireUserId(req: AuthedRequest): string {
     const userId = req?.user?.id ?? req?.user?.sub;
     if (!userId) {

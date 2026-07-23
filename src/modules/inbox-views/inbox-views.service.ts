@@ -216,9 +216,14 @@ export class InboxViewsService {
     const filters = (view.filters ?? {}) as InboxViewFiltersDto;
 
     // Resolve "me"/"none"/"any" tokens against the current user.
+    // "none" NÃO vira um assignedToId sentinela: a string 'null' era enviada
+    // ao Prisma como se fosse um id e comparada contra uma coluna UUID, então
+    // toda view "Não atribuída" (ex.: "Distribuição") voltava vazia. Agora
+    // vira um flag próprio que o repositório traduz para `IS NULL`.
     let assignedToId: string | undefined;
+    let assignedToNone = false;
     if (filters.assignedTo === 'me') assignedToId = userId;
-    else if (filters.assignedTo === 'none') assignedToId = 'null';
+    else if (filters.assignedTo === 'none') assignedToNone = true;
     else if (filters.assignedTo && filters.assignedTo !== 'any')
       assignedToId = filters.assignedTo;
 
@@ -263,7 +268,10 @@ export class InboxViewsService {
         ? overrideTagIds
         : filters.tagIds;
 
+    // Override explícito de atendente vence o filtro salvo — inclusive o
+    // "sem responsável" da view.
     const finalAssignedToId = ov.assignedToId ?? assignedToId;
+    const finalAssignedToNone = ov.assignedToId ? false : assignedToNone;
     const finalStuck = ov.stuck === 'true' || ov.stuck === '1';
 
     return this.conversationsService.findInbox(
@@ -275,6 +283,8 @@ export class InboxViewsService {
         kind: finalKind,
         tagIds: finalTagIds,
         assignedToId: finalAssignedToId,
+        assignedToNone: finalAssignedToNone || undefined,
+        awaitingHumanReply: filters.awaitingHumanReply,
         search: extraSearch,
         archived: finalArchived,
         unreadOnly: finalUnread,

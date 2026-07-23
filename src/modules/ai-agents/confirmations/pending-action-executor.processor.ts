@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import type { Job } from 'bullmq';
 
 import { PrismaService } from '../../../database/prisma.service';
+import { enterLeadStage } from '../lead-stage.util';
 import { HttpToolExecutorService } from '../tools/http-tool-executor.service';
 import type { ToolContext } from '../tools/tool.types';
 import { PendingActionStorage } from './pending-action.storage';
@@ -126,12 +127,27 @@ export class PendingActionExecutorProcessor extends WorkerHost {
     args: Record<string, unknown>;
   }): Promise<unknown> {
     // Pausa a IA na conversa + sinaliza que aguarda atendente humano.
-    // Notificações em tempo real (banner no inbox) já foram emitidas no
-    // momento da criação do PendingAction — aqui só efetivamos a transição.
-    await this.prisma.conversation.update({
+    const conv = await this.prisma.conversation.update({
       where: { id: action.conversationId },
       data: { aiEnabled: false },
+      select: { organizationId: true, contactId: true },
     });
+
+    // Aprovar = o atendente INICIOU o atendimento → move o card do funil pra
+    // "Coletando Informação". Best-effort (não quebra a aprovação).
+    try {
+      await enterLeadStage(this.prisma, {
+        conversationId: action.conversationId,
+        organizationId: conv.organizationId,
+        contactId: conv.contactId,
+        stageContains: 'coletando',
+      });
+    } catch (e) {
+      this.logger.warn(
+        `executeTransferToHuman: falha ao mover card p/ Coletando (conv=${action.conversationId}): ${(e as Error)?.message}`,
+      );
+    }
+
     return {
       ok: true,
       transferredAt: new Date().toISOString(),

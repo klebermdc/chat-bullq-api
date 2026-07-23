@@ -25,6 +25,8 @@ import { WatchdogService } from '../../routing/watchdog/watchdog.service';
 import { SegmentReadService } from '../../segments/segment-read.service';
 import { ChannelAdapterRegistry } from '../../channel-hub/channel-adapter.registry';
 import { resolveAssignmentScope } from '../conversations/conversation-scope';
+import { ConversationAccessService } from '../conversations/conversation-access.service';
+import { shouldAutoAssignOnReply } from './auto-assign.util';
 
 @Injectable()
 export class MessagesService {
@@ -38,6 +40,7 @@ export class MessagesService {
     private readonly watchdog: WatchdogService,
     private readonly adapterRegistry: ChannelAdapterRegistry,
     private readonly segmentRead: SegmentReadService,
+    private readonly conversationAccess: ConversationAccessService,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
   ) {}
 
@@ -46,7 +49,26 @@ export class MessagesService {
     senderId: string,
     organizationId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
+    /**
+     * `automated`: mensagem automática de sistema (ex.: aviso de
+     * fora-de-horário) enviada em nome de um atendente, mas NÃO é uma
+     * resposta humana — não deve tirar a conversa de "Esperando", cancelar
+     * o watchdog de "ninguém respondeu", marcar como lida em nome do
+     * atendente offline nem reatribuir dono. Só persiste o OUTBOUND e
+     * dispara pro canal. Comportamento independente de `system` — mudar
+     * quem marca `automated` muda comportamento de produto, não é sobre
+     * autorização.
+     *
+     * `system`: chamada interna de sistema — pula a checagem de atribuição
+     * (`assertConversationAccess`). NUNCA use a partir de um handler HTTP:
+     * é só para chamadores server-to-server (cadência, agendamento,
+     * disponibilidade, saudação, propostas) que já validaram acesso por
+     * outro caminho ou não têm um usuário autenticado real por trás.
+     */
+    opts?: { automated?: boolean; system?: boolean },
   ) {
+    const automated = opts?.automated === true;
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: dto.conversationId },
       include: {
@@ -58,6 +80,32 @@ export class MessagesService {
     if (!conversation) throw new NotFoundException('Conversation not found');
     if (conversation.organizationId !== organizationId) {
       throw new ForbiddenException();
+    }
+    // Mesma classe de bug do write-path de conversations: sem isso, um AGENT
+    // conseguia mandar mensagem (e auto-atribuir a conversa pra si) numa
+    // conversa de colega que a leitura já negava.
+    //
+    // Fail-CLOSED: a barreira roda sempre, A MENOS que o chamador se marque
+    // explicitamente `system: true`. Isto é o oposto do que existia antes
+    // (só rodava quando `role` vinha preenchida) — aquilo era fail-open:
+    // qualquer handler HTTP futuro que esquecesse de passar `role` perdia a
+    // checagem silenciosamente no endpoint mais perigoso do app (entrega
+    // mensagem de verdade pro cliente no WhatsApp). Sem `role` e sem
+    // `system`, `resolveAssignmentScope(undefined, senderId)` escopa ao
+    // próprio remetente — o padrão seguro.
+    //
+    // Chamadores de sistema (cadência, dispatch de agendamento, aviso de
+    // fora-de-horário, saudação de atendente, propostas) já resolveram
+    // acesso por outro caminho (ou não têm usuário autenticado real por
+    // trás) e se marcam `{ system: true }` para pular a barreira — ver
+    // tabela de call sites no PR.
+    if (opts?.system !== true) {
+      await this.conversationAccess.assertConversationAccess(
+        conversation.id,
+        organizationId,
+        role,
+        senderId,
+      );
     }
     this.channelAccess.assertChannelAccess(access, conversation.channelId);
 
@@ -169,63 +217,82 @@ export class MessagesService {
     // replies are a no-op. Yes, this can "steal" from a teammate — but the
     // alternative (a conversation stuck on an inactive assignee while
     // someone else is actively replying) is worse for accountability.
-    const shouldAutoAssign = conversation.assignedToId !== senderId;
+    //
+    // EXCEÇÃO (ver shouldAutoAssignOnReply): ADM/Owner NÃO rouba conversa que
+    // já tem dono — quando um gestor entra só pra intervir/responder, o cliente
+    // permanece com o agente de direito. Para transferir de propósito existe o
+    // endpoint dedicado de transferência.
+    const shouldAutoAssign =
+      !automated &&
+      shouldAutoAssignOnReply({
+        currentAssigneeId: conversation.assignedToId,
+        senderId,
+        role,
+      });
 
     await this.prisma.conversation.update({
       where: { id: conversation.id },
       data: {
         lastMessageAt: new Date(),
-        // Humano respondeu → sai de "Esperando" pra "Caixa de entrada".
-        // Este é o caminho EXCLUSIVO do atendente (senderId é um user); bot/IA
-        // persistem via prisma.message.create e nunca passam por aqui, então o
-        // flag permanece true quando só o bot respondeu.
-        awaitingHumanReply: false,
         lastOutboundAt: new Date(),
-        inactivityBand: null,
-        reengageDismissedAt: null,
-        ...(shouldAutoAssign ? { assignedToId: senderId } : {}),
-        ...(shouldDisableAi
-          ? {
-              aiEnabled: false,
-              aiDisabledBy: senderId,
-              aiDisabledAt: new Date(),
-              activeAgentId: null,
-            }
-          : {}),
+        // Efeitos de "humano respondeu" — pulados para mensagens automáticas
+        // (o cliente continua esperando um atendente de verdade).
+        ...(automated
+          ? {}
+          : {
+              // Humano respondeu → sai de "Esperando" pra "Caixa de entrada".
+              // Este é o caminho EXCLUSIVO do atendente (senderId é um user);
+              // bot/IA persistem via prisma.message.create e nunca passam por
+              // aqui, então o flag permanece true quando só o bot respondeu.
+              awaitingHumanReply: false,
+              inactivityBand: null,
+              reengageDismissedAt: null,
+              ...(shouldAutoAssign ? { assignedToId: senderId } : {}),
+              ...(shouldDisableAi
+                ? {
+                    aiEnabled: false,
+                    aiDisabledBy: senderId,
+                    aiDisabledAt: new Date(),
+                    activeAgentId: null,
+                  }
+                : {}),
+            }),
       },
     });
 
-    // Humano respondeu — cancela qualquer timer de watchdog pendente e
-    // zera o contador de tentativas. Se a IA estava paralisada e quem
-    // resolveu foi a pessoa, conversa não deve aparecer como "presa".
-    this.watchdog.cancelCheck(conversation.id).catch(() => undefined);
+    if (!automated) {
+      // Humano respondeu — cancela qualquer timer de watchdog pendente e
+      // zera o contador de tentativas. Se a IA estava paralisada e quem
+      // resolveu foi a pessoa, conversa não deve aparecer como "presa".
+      this.watchdog.cancelCheck(conversation.id).catch(() => undefined);
 
-    // Replying = reading. The sender obviously saw the inbound stream
-    // before typing — bump their lastReadAt so the unread badge resets
-    // even if they never clicked the conversation first.
-    await this.prisma.conversationRead.upsert({
-      where: {
-        userId_conversationId: {
+      // Replying = reading. The sender obviously saw the inbound stream
+      // before typing — bump their lastReadAt so the unread badge resets
+      // even if they never clicked the conversation first.
+      await this.prisma.conversationRead.upsert({
+        where: {
+          userId_conversationId: {
+            userId: senderId,
+            conversationId: conversation.id,
+          },
+        },
+        create: {
           userId: senderId,
           conversationId: conversation.id,
+          lastReadMessageId: message.id,
+          lastReadAt: new Date(),
         },
-      },
-      create: {
-        userId: senderId,
+        update: {
+          lastReadMessageId: message.id,
+          lastReadAt: new Date(),
+        },
+      });
+      this.realtimeGateway.emitToUser(senderId, 'conversation:read', {
         conversationId: conversation.id,
-        lastReadMessageId: message.id,
+        userId: senderId,
         lastReadAt: new Date(),
-      },
-      update: {
-        lastReadMessageId: message.id,
-        lastReadAt: new Date(),
-      },
-    });
-    this.realtimeGateway.emitToUser(senderId, 'conversation:read', {
-      conversationId: conversation.id,
-      userId: senderId,
-      lastReadAt: new Date(),
-    });
+      });
+    }
 
     if (shouldAutoAssign) {
       this.realtimeGateway.emitToConversation(
@@ -311,8 +378,11 @@ export class MessagesService {
         },
       },
       {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 3000 },
+        // 6 tentativas com backoff FIXO de 6s: acima do limite do Wasender
+        // "account protection" (1 msg/5s), então cada retry cai fora da janela
+        // e a mensagem acaba entregue em vez de virar FAILED no 429.
+        attempts: 6,
+        backoff: { type: 'fixed', delay: 6_000 },
         removeOnComplete: true,
         removeOnFail: false,
       },
@@ -340,6 +410,7 @@ export class MessagesService {
     organizationId: string,
     actorId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ): Promise<{
     messageId: string;
     revokedAt: Date;
@@ -357,6 +428,16 @@ export class MessagesService {
     if (message.conversation.organizationId !== organizationId) {
       throw new ForbiddenException();
     }
+    // Mesma barreira: sem isso um AGENT revogava mensagem que outro colega
+    // acabou de mandar numa conversa alheia. Único chamador é o controller
+    // (ator sempre é o usuário autenticado da request) — sem chamador de
+    // sistema conhecido, então escopa sempre que houver actorId.
+    await this.conversationAccess.assertConversationAccess(
+      message.conversation.id,
+      organizationId,
+      role,
+      actorId,
+    );
     this.channelAccess.assertChannelAccess(access, message.conversation.channelId);
 
     if (message.direction !== MessageDirection.OUTBOUND) {

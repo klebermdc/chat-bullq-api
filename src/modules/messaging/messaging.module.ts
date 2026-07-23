@@ -4,18 +4,26 @@ import { ChannelHubModule } from '../channel-hub/channel-hub.module';
 import { RatingsModule } from '../ratings/ratings.module';
 import { AiAgentsModule } from '../ai-agents/ai-agents.module';
 import { WatchdogModule } from '../routing/watchdog/watchdog.module';
+import { RoutingModule } from '../routing/routing.module';
 import { SegmentsModule } from '../segments/segments.module';
 import { ProjectsModule } from '../projects/projects.module';
 import { SalesRecoveryModule } from '../sales-recovery/sales-recovery.module';
+import { ChannelUsageModule } from '../channel-usage/channel-usage.module';
 import { AiProviderKeysModule } from '../ai-provider-keys/ai-provider-keys.module';
 import { SchedulingModule } from '../scheduling/scheduling.module';
+import { CadencesModule } from '../cadences/cadences.module';
+import { AttendantGreetingModule } from './attendant-greeting/attendant-greeting.module';
+import { OrderFichaModule } from '../order-ficha/order-ficha.module';
 import { IdempotencyService } from './pipeline/idempotency.service';
 import { ContactResolverService } from './pipeline/contact-resolver.service';
 import { ConversationResolverService } from './pipeline/conversation-resolver.service';
+import { LeadSourceTaggerService } from './pipeline/lead-source-tagger.service';
+import { LeadOriginService } from './pipeline/lead-origin.service';
 import { HistoryImportService } from './pipeline/history-import.service';
 import { InboundMessageProcessor } from './pipeline/inbound-message.processor';
 import { OutboundMessageProcessor } from './pipeline/outbound-message.processor';
 import { ConversationFsmService } from './conversations/conversation-fsm.service';
+import { ConversationAccessModule } from './conversations/conversation-access.module';
 import { ConversationsController } from './conversations/conversations.controller';
 import { ConversationsService } from './conversations/conversations.service';
 import { ConversationsRepository } from './conversations/conversations.repository';
@@ -41,20 +49,34 @@ import { ContactsRepository } from './contacts/contacts.repository';
       { name: 'chatbot-processor' },
     ),
     forwardRef(() => ChannelHubModule),
+    ConversationAccessModule,
     RatingsModule,
     AiAgentsModule,
     WatchdogModule,
     SegmentsModule,
     ProjectsModule,
     SalesRecoveryModule,
+    ChannelUsageModule,
     AiProviderKeysModule,
     forwardRef(() => SchedulingModule),
+    // Task 8: inbound processor chama CadenceInboundService → ciclo
+    // messaging↔cadences → forwardRef nos dois lados.
+    forwardRef(() => CadencesModule),
+    forwardRef(() => AttendantGreetingModule),
+    OrderFichaModule,
+    // Task 4 (agent-hours): InboundMessageProcessor chama
+    // AgentAvailabilityService (Routing), e RoutingModule já importa
+    // MessagingModule → ciclo routing↔messaging → forwardRef nos dois lados
+    // (mesmo padrão de cadences↔messaging acima).
+    forwardRef(() => RoutingModule),
   ],
   controllers: [ConversationsController, MessagesController, ContactsController],
   providers: [
     IdempotencyService,
     ContactResolverService,
     ConversationResolverService,
+    LeadSourceTaggerService,
+    LeadOriginService,
     HistoryImportService,
     InboundMessageProcessor,
     OutboundMessageProcessor,
@@ -73,6 +95,6 @@ import { ContactsRepository } from './contacts/contacts.repository';
     ContactsService,
     ContactsRepository,
   ],
-  exports: [ConversationsService, MessagesService, ConversationFsmService, ContactsService, HistoryImportService, UploadsService],
+  exports: [ConversationsService, MessagesService, ConversationFsmService, ContactsService, HistoryImportService, UploadsService, TranscriptionService],
 })
 export class MessagingModule {}

@@ -20,6 +20,14 @@ export interface InboxFilters {
   tagIds?: string[];
   assignedToId?: string;
   /**
+   * Só conversas SEM responsável (`assignedToId IS NULL`) — os leads que
+   * ainda estão na fila pra distribuir. Precisa ser um flag próprio: um
+   * `assignedToId` com valor "vazio" não distingue "não filtra" de "filtra
+   * por ninguém", e mandar a string 'null' pro Prisma compara texto contra
+   * uma coluna UUID (nunca casa).
+   */
+  assignedToNone?: boolean;
+  /**
    * Barreira de segurança: quando setado, força `assignedToId = este valor`
    * independentemente do filtro opcional. Usado para escopar AGENTs às
    * conversas atribuídas a eles. OWNER/ADMIN não recebem este campo.
@@ -156,7 +164,8 @@ export class ConversationsRepository {
         { contact: { tags: { some: { tagId: { in: filters.tagIds } } } } },
       ];
     }
-    if (filters.assignedToId) where.assignedToId = filters.assignedToId;
+    if (filters.assignedToNone) where.assignedToId = null;
+    else if (filters.assignedToId) where.assignedToId = filters.assignedToId;
     if (filters.enforceAssignedToId) {
       // Precedência sobre o filtro opcional — barreira, não preferência.
       where.assignedToId = filters.enforceAssignedToId;
@@ -267,6 +276,14 @@ export class ConversationsRepository {
             },
           },
           tags: { include: { tag: true } },
+          // Cards do funil → selo da etapa atual (ex.: "Coletando Informação").
+          cards: {
+            select: {
+              id: true,
+              stage: { select: { id: true, name: true, color: true } },
+              pipeline: { select: { id: true, name: true } },
+            },
+          },
           _count: {
             select: {
               messages: true,
@@ -412,10 +429,22 @@ export class ConversationsRepository {
       where: { id },
       include: {
         contact: { include: { channels: true, tags: { include: { tag: true } } } },
-        channel: true,
+        // Só id/type/name — igual à listagem (findMany acima). O front só usa
+        // esses 3 campos (ícone/nome/tipo do canal no header e no painel).
+        // NUNCA `config`/`webhookSecret`: essa linha vaza pro websocket
+        // (broadcastUpdate emite este mesmo objeto em `conversation:updated`)
+        // e pra qualquer membro da org com acesso à conversa, incluindo AGENT.
+        channel: { select: { id: true, type: true, name: true } },
         assignedTo: { select: { id: true, name: true, avatarUrl: true } },
         department: true,
         tags: { include: { tag: true } },
+        cards: {
+          select: {
+            id: true,
+            stage: { select: { id: true, name: true, color: true } },
+            pipeline: { select: { id: true, name: true } },
+          },
+        },
         auditLogs: { orderBy: { createdAt: 'desc' }, take: 20 },
       },
     });

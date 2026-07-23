@@ -67,6 +67,44 @@ export class OrganizationsRepository {
     });
   }
 
+  async updateMemberRamal(membershipId: string, sonaxRamal: string | null) {
+    return this.prisma.userOrganization.update({
+      where: { id: membershipId },
+      data: { sonaxRamal },
+    });
+  }
+
+  async updateMemberWebphone(membershipId: string, sonaxWebphoneUrl: string | null) {
+    return this.prisma.userOrganization.update({
+      where: { id: membershipId },
+      data: { sonaxWebphoneUrl },
+    });
+  }
+
+  async updateMemberWorkingHours(
+    membershipId: string,
+    data: {
+      workingHours?: Record<string, unknown> | null;
+      offHoursNoticeEnabled?: boolean;
+    },
+  ) {
+    const { workingHours, ...rest } = data;
+    return this.prisma.userOrganization.update({
+      where: { id: membershipId },
+      data: {
+        ...rest,
+        ...('workingHours' in data
+          ? {
+              workingHours:
+                workingHours === null
+                  ? Prisma.JsonNull
+                  : (workingHours as Prisma.InputJsonValue),
+            }
+          : {}),
+      },
+    });
+  }
+
   async removeMember(membershipId: string) {
     return this.prisma.userOrganization.delete({
       where: { id: membershipId },
@@ -75,6 +113,21 @@ export class OrganizationsRepository {
 
   async findUserByEmail(email: string) {
     return this.prisma.user.findUnique({ where: { email } });
+  }
+
+  async updateUserPassword(userId: string, hashedPassword: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword },
+    });
+  }
+
+  async updateUserEmail(userId: string, email: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { email },
+      select: { id: true, email: true, name: true },
+    });
   }
 
   async countMembers(organizationId: string) {

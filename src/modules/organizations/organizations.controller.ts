@@ -15,6 +15,11 @@ import { OrganizationsService } from './organizations.service';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+import { ResetMemberPasswordDto } from './dto/reset-member-password.dto';
+import { UpdateMemberEmailDto } from './dto/update-member-email.dto';
+import { UpdateMemberRamalDto } from './dto/update-member-ramal.dto';
+import { UpdateMemberWebphoneDto } from './dto/update-member-webphone.dto';
+import { UpdateWorkingHoursDto } from './dto/update-working-hours.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentUser, CurrentOrg, Roles, Public } from '../../common/decorators';
 
@@ -49,10 +54,11 @@ export class OrganizationsController {
   @ApiOperation({ summary: 'Invite a member to the organization' })
   invite(
     @CurrentOrg('id') orgId: string,
+    @CurrentOrg('userRole') actorRole: OrgRole,
     @Body() dto: InviteMemberDto,
     @CurrentUser('id') userId: string,
   ) {
-    return this.service.inviteMember(orgId, dto, userId);
+    return this.service.inviteMember(orgId, dto, userId, actorRole);
   }
 
   @Get('invitations')
@@ -89,6 +95,69 @@ export class OrganizationsController {
     @Body() dto: UpdateMemberRoleDto,
   ) {
     return this.service.updateMemberRole(orgId, memberId, dto, actorRole);
+  }
+
+  @Patch('members/:memberId/password')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({ summary: "Reset a member's password (admin)" })
+  resetMemberPassword(
+    @CurrentOrg('id') orgId: string,
+    @CurrentOrg('userRole') actorRole: OrgRole,
+    @Param('memberId') memberId: string,
+    @Body() dto: ResetMemberPasswordDto,
+  ) {
+    return this.service.resetMemberPassword(orgId, memberId, dto, actorRole);
+  }
+
+  @Patch('members/:memberId/email')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({ summary: "Change a member's login e-mail (admin)" })
+  updateMemberEmail(
+    @CurrentOrg('id') orgId: string,
+    @CurrentOrg('userRole') actorRole: OrgRole,
+    @Param('memberId') memberId: string,
+    @Body() dto: UpdateMemberEmailDto,
+  ) {
+    return this.service.updateMemberEmail(orgId, memberId, dto, actorRole);
+  }
+
+  @Patch('members/:memberId/ramal')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({ summary: 'Define o ramal Sonax de um membro' })
+  updateMemberRamal(
+    @CurrentOrg('id') orgId: string,
+    @Param('memberId') memberId: string,
+    @Body() dto: UpdateMemberRamalDto,
+  ) {
+    return this.service.updateMemberRamal(orgId, memberId, dto);
+  }
+
+  @Patch('members/:memberId/webphone')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({ summary: 'Define o Webphone (widget Sonax) de um membro' })
+  updateMemberWebphone(
+    @CurrentOrg('id') orgId: string,
+    @Param('memberId') memberId: string,
+    @Body() dto: UpdateMemberWebphoneDto,
+  ) {
+    return this.service.updateMemberWebphone(orgId, memberId, dto);
+  }
+
+  @Patch('members/:memberId/working-hours')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({ summary: "Set a member's working hours + off-hours notice toggle" })
+  updateMemberWorkingHours(
+    @CurrentOrg('id') orgId: string,
+    @Param('memberId') memberId: string,
+    @Body() dto: UpdateWorkingHoursDto,
+  ) {
+    return this.service.updateMemberWorkingHours(orgId, memberId, dto);
+  }
+
+  @Get('members/me/webphone')
+  @ApiOperation({ summary: 'Webphone (widget Sonax) do atendente logado' })
+  getMyWebphone(@CurrentOrg('id') orgId: string, @CurrentUser('id') userId: string) {
+    return this.service.getMyWebphone(orgId, userId);
   }
 
   @Delete('members/:memberId')

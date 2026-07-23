@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { MessageContentType, ScheduledMessage } from '@prisma/client';
+import { MessageContentType, OrgRole, ScheduledMessage } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { ScheduledMessagesRepository } from './scheduled-messages.repository';
@@ -15,6 +15,7 @@ import { CreateScheduledMessageDto } from './dto/create-scheduled-message.dto';
 import { UpdateScheduledMessageDto } from './dto/update-scheduled-message.dto';
 import { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { SCHEDULED_DISPATCH_QUEUE, SCHEDULED_DISPATCH_JOB } from './scheduling.constants';
+import { ConversationAccessService } from '../messaging/conversations/conversation-access.service';
 
 @Injectable()
 export class ScheduledMessagesService {
@@ -25,6 +26,10 @@ export class ScheduledMessagesService {
     private readonly prisma: PrismaService,
     @InjectQueue(SCHEDULED_DISPATCH_QUEUE) private readonly queue: Queue,
     private readonly realtime: RealtimeGateway,
+    // Leaf service (só PrismaService) — não fecha ciclo com MessagingModule,
+    // então não precisa do forwardRef que a injeção de ConversationsService
+    // (inteiro) exigia aqui antes.
+    private readonly conversationAccess: ConversationAccessService,
   ) {}
 
   async create(
@@ -32,6 +37,7 @@ export class ScheduledMessagesService {
     createdById: string,
     organizationId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ): Promise<ScheduledMessage> {
     const when = new Date(dto.scheduledAt);
     if (isNaN(when.getTime()) || when.getTime() <= Date.now()) {
@@ -43,6 +49,14 @@ export class ScheduledMessagesService {
     });
     if (!conversation) throw new NotFoundException('Conversation not found');
     if (conversation.organizationId !== organizationId) throw new ForbiddenException();
+    // AGENT normalmente TEM acesso de canal — sem isso, dava pra agendar um
+    // outbound de WhatsApp na conversa de um colega.
+    await this.conversationAccess.assertConversationAccess(
+      conversation.id,
+      organizationId,
+      role,
+      createdById,
+    );
     if (access !== 'ALL' && !access.has(conversation.channelId)) {
       throw new ForbiddenException();
     }
@@ -85,12 +99,20 @@ export class ScheduledMessagesService {
     organizationId: string,
     access: ChannelAccess = 'ALL',
     status?: string,
+    role?: OrgRole,
+    currentUserId?: string,
   ): Promise<ScheduledMessage[]> {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
     });
     if (!conversation) throw new NotFoundException('Conversation not found');
     if (conversation.organizationId !== organizationId) throw new ForbiddenException();
+    await this.conversationAccess.assertConversationAccess(
+      conversation.id,
+      organizationId,
+      role,
+      currentUserId,
+    );
     if (access !== 'ALL' && !access.has(conversation.channelId)) {
       throw new ForbiddenException();
     }
@@ -102,10 +124,20 @@ export class ScheduledMessagesService {
     organizationId: string,
     reason: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
+    currentUserId?: string,
   ): Promise<ScheduledMessage> {
     const row = await this.repo.findById(id);
     if (!row) throw new NotFoundException('Scheduled message not found');
     if (row.organizationId !== organizationId) throw new ForbiddenException();
+    // Carrega a mensagem agendada primeiro, guarda na conversationId dela —
+    // sem isso, um AGENT cancelava o envio pendente de um colega.
+    await this.conversationAccess.assertConversationAccess(
+      row.conversationId,
+      organizationId,
+      role,
+      currentUserId,
+    );
     if (access !== 'ALL' && !access.has(row.channelId)) throw new ForbiddenException();
     if (row.status !== 'PENDING') return row; // idempotente
 
@@ -158,10 +190,18 @@ export class ScheduledMessagesService {
     dto: UpdateScheduledMessageDto,
     organizationId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
+    currentUserId?: string,
   ): Promise<ScheduledMessage> {
     const row = await this.repo.findById(id);
     if (!row) throw new NotFoundException('Scheduled message not found');
     if (row.organizationId !== organizationId) throw new ForbiddenException();
+    await this.conversationAccess.assertConversationAccess(
+      row.conversationId,
+      organizationId,
+      role,
+      currentUserId,
+    );
     if (access !== 'ALL' && !access.has(row.channelId)) throw new ForbiddenException();
     if (row.status !== 'PENDING') throw new BadRequestException('Só agendamentos pendentes podem ser editados');
 

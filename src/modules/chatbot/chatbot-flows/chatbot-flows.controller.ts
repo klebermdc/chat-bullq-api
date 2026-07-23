@@ -8,11 +8,12 @@ import {
   CreateChatbotFlowDto, UpdateChatbotFlowDto, SaveNodesDto, LinkChannelsDto,
 } from './dto/create-chatbot-flow.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../../common/guards';
-import { CurrentOrg, Roles } from '../../../common/decorators';
+import { CurrentOrg, Feature, Roles } from '../../../common/decorators';
 
 @ApiTags('Chatbot Flows')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
+@Feature('chatbot.view')
 @Controller('chatbot-flows')
 export class ChatbotFlowsController {
   constructor(private readonly service: ChatbotFlowsService) {}

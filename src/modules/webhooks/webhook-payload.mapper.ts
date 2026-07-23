@@ -14,6 +14,8 @@ export function mapWebhookData(type: string, payload: any): Record<string, any> 
       return { ...base, fromStatus: payload.fromStatus, toStatus: payload.toStatus };
     case 'CONVERSATION_ASSIGNED':
       return { ...base, fromAssigneeId: payload.fromAssigneeId, toAssigneeId: payload.toAssigneeId };
+    // LEAD_QUALIFIED não passa por aqui: é montado pelo
+    // LeadQualifiedPayloadBuilder, que precisa consultar o banco.
     case 'TAG_ADDED':
     case 'TAG_REMOVED':
       return { contactId: payload.contactId, conversationId: payload.conversationId, tagId: payload.tagId };

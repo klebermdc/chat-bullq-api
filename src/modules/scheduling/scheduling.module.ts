@@ -2,14 +2,18 @@ import { Module, forwardRef } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { MessagingModule } from '../messaging/messaging.module';
+import { ConversationAccessModule } from '../messaging/conversations/conversation-access.module';
+import { CadencesModule } from '../cadences/cadences.module';
 import { LlmModule } from '../ai-agents/llm/llm.module';
 import {
   SCHEDULED_DISPATCH_QUEUE,
   INACTIVITY_WATCHDOG_QUEUE,
+  CADENCE_SILENCE_QUEUE,
 } from './scheduling.constants';
 import { ScheduledMessagesRepository } from './scheduled-messages.repository';
 import { ScheduledMessagesService } from './scheduled-messages.service';
 import { ScheduledDispatchProcessor } from './scheduled-dispatch.processor';
+import { CadenceSilenceProcessor } from './cadence-silence.processor';
 import { ScheduledMessagesController } from './scheduled-messages.controller';
 import { InactivitySettingsRepository } from './inactivity/inactivity-settings.repository';
 import { InactivitySettingsService } from './inactivity/inactivity-settings.service';
@@ -21,13 +25,19 @@ import { InactivityWatchdogCron } from './inactivity/inactivity-watchdog.cron';
 import { InactivityReportService } from './inactivity/inactivity-report.service';
 import { InactivityReportController } from './inactivity/inactivity-report.controller';
 import { ReengageSuggestionController } from './inactivity/reengage-suggestion.controller';
+import { ScheduleDraftController } from './inactivity/schedule-draft.controller';
 
 @Module({
   imports: [
     BullModule.registerQueue({ name: SCHEDULED_DISPATCH_QUEUE }),
     BullModule.registerQueue({ name: INACTIVITY_WATCHDOG_QUEUE }),
+    BullModule.registerQueue({ name: CADENCE_SILENCE_QUEUE }),
     RealtimeModule,
     forwardRef(() => MessagingModule),
+    ConversationAccessModule,
+    // Task 8: dispatch processor chama CadenceRunner.onStepSent → ciclo
+    // scheduling↔cadences → forwardRef nos dois lados.
+    forwardRef(() => CadencesModule),
     LlmModule,
   ],
   controllers: [
@@ -35,11 +45,13 @@ import { ReengageSuggestionController } from './inactivity/reengage-suggestion.c
     InactivitySettingsController,
     InactivityReportController,
     ReengageSuggestionController,
+    ScheduleDraftController,
   ],
   providers: [
     ScheduledMessagesRepository,
     ScheduledMessagesService,
     ScheduledDispatchProcessor,
+    CadenceSilenceProcessor,
     InactivitySettingsRepository,
     InactivitySettingsService,
     InactivityRepository,
@@ -48,6 +60,6 @@ import { ReengageSuggestionController } from './inactivity/reengage-suggestion.c
     InactivityWatchdogCron,
     InactivityReportService,
   ],
-  exports: [ScheduledMessagesService],
+  exports: [ScheduledMessagesService, ScheduledMessagesRepository],
 })
 export class SchedulingModule {}

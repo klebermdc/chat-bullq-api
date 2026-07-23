@@ -7,6 +7,7 @@ import {
   AiSkill,
   AiTool,
   NotificationType,
+  OrgRole,
 } from '@prisma/client';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
@@ -36,6 +37,7 @@ import { IntentType } from '../classifier/intent.types';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { sanitizeAssistantText } from './text-guards';
 import { MediaUrlResolverService } from './media-url-resolver.service';
+import { isShadowMode } from '../shadow-learning/shadow-mode.util';
 
 const MAX_TOOL_ITERATIONS = 8;
 const MAX_RECENT_MESSAGES = 30;
@@ -138,6 +140,23 @@ export class AiAgentRunnerService {
     if (!agent) {
       this.logger.debug(
         `No agent resolved for conv ${conversation.id} — skipping run`,
+      );
+      return;
+    }
+
+    // Guard-rail: agente atribuído em modo SHADOW só observa — nunca responde.
+    const shadowAssignment = await this.prisma.aiAgentChannel.findUnique({
+      where: {
+        agentId_channelId: {
+          agentId: agent.id,
+          channelId: conversation.channelId,
+        },
+      },
+      select: { mode: true },
+    });
+    if (isShadowMode(shadowAssignment?.mode)) {
+      this.logger.log(
+        `agent ${agent.id} em SHADOW — observando, sem resposta (conv=${conversation.id})`,
       );
       return;
     }
@@ -851,6 +870,14 @@ export class AiAgentRunnerService {
 
     await this.notifications.notifyOrgAgents({
       organizationId: ctx.organizationId,
+      // Alerta técnico: só quem administra consegue agir (revisar prompt,
+      // religar skill, checar integração). Atendente não tem o que fazer
+      // com isso — e o sino cheio de ruído é um sino que ninguém lê.
+      //
+      // Só OWNER, não ADMIN: na OFP há ADMIN que atende no inbox (a Bárbara
+      // aparece no placar de distribuição de leads). Incluir ADMIN mandava
+      // o alerta justamente pra quem a regra existe pra poupar.
+      roles: [OrgRole.OWNER],
       type: NotificationType.AI_TOOL_FAILURE,
       title: `Skill ${toolName} falhou`,
       body: `Conversa atendida pela IA teve falha em ${toolName}: ${summary}`,

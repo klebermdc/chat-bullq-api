@@ -124,6 +124,7 @@ model User {
   conversationReads     ConversationRead[]
   assignedCards         Card[]             @relation("CardAssignee")
   scheduledMessages     ScheduledMessage[] @relation("ScheduledMessageCreator")
+  initiatedCalls        Call[]             @relation("CallAgent")
 
   @@map("users")
 }
@@ -144,6 +145,10 @@ model Organization {
   aiTimezone            String   @default("America/Sao_Paulo") @map("ai_timezone")
   aiBusinessHours       Json?    @map("ai_business_hours")
   aiOutOfHoursMessage   String?  @map("ai_out_of_hours_message")
+  /// Template do aviso enviado quando o cliente escreve fora do horário do
+  /// atendente responsável. Placeholders: {atendente} e {proximo_horario}.
+  /// NULL = usa o default do código (OFF_HOURS_DEFAULT_TEMPLATE).
+  offHoursMessageTemplate String? @map("off_hours_message_template")
   aiAutoDisableOnHuman  Boolean  @default(true) @map("ai_auto_disable_on_human")
   aiMonthlyTokenCap     Int?     @map("ai_monthly_token_cap")
   /// Notas livres do negócio injetadas no system prompt de TODOS os
@@ -180,45 +185,66 @@ model Organization {
   /// null = usa defaults do código (15, 15, 60, 3).
   watchdogConfig        Json?   @map("watchdog_config")
 
-  members       UserOrganization[]
-  channels      Channel[]
-  contacts      Contact[]
-  conversations Conversation[]
-  departments   Department[]
-  chatbotFlows  ChatbotFlow[]
-  quickReplies  QuickReply[]
-  tags          Tag[]
-  notifications Notification[]
-  invitations   Invitation[]
-  apiKeys       ApiKey[]
-  aiAgents      AiAgent[]
-  aiTools       AiTool[]
-  aiSkills      AiSkill[]
-  inboxViews    InboxView[]
-  pipelines     Pipeline[]
-  cards         Card[]
-  products      Product[]
-  segments      Segment[]
-  projects      Project[]
+  members              UserOrganization[]
+  channels             Channel[]
+  contacts             Contact[]
+  conversations        Conversation[]
+  departments          Department[]
+  chatbotFlows         ChatbotFlow[]
+  quickReplies         QuickReply[]
+  mediaFolders         MediaFolder[]
+  mediaAssets          MediaAsset[]
+  tags                 Tag[]
+  notifications        Notification[]
+  invitations          Invitation[]
+  apiKeys              ApiKey[]
+  aiAgents             AiAgent[]
+  aiTools              AiTool[]
+  aiSkills             AiSkill[]
+  aiKnowledge          AiAgentKnowledge[]
+  inboxViews           InboxView[]
+  pipelines            Pipeline[]
+  cards                Card[]
+  products             Product[]
+  segments             Segment[]
+  projects             Project[]
   webhookSubscriptions WebhookSubscription[]
-  aiProviderKeys AiProviderKey[]
-  scheduledMessages ScheduledMessage[]
-  inactivitySettings InactivitySettings?
-  messageTemplates MessageTemplate[]
-  recoverySettings RecoverySettings?
+  aiProviderKeys       AiProviderKey[]
+  scheduledMessages    ScheduledMessage[]
+  inactivitySettings   InactivitySettings?
+  attendantGreetingSettings AttendantGreetingSettings?
+  messageTemplates     MessageTemplate[]
+  recoverySettings     RecoverySettings?
+  cadences             Cadence[]
+  cadenceEnrollments   CadenceEnrollment[]
+  proposals            Proposal[]
+  sonaxSettings        SonaxSettings?
+  calls                Call[]
+  orderFichas          OrderFicha[]
+  whatsappWindows       WhatsappWindow[]
+  whatsappWindowPricing WhatsappWindowPricing?
+  metaCapiConfig        MetaCapiConfig?
+  metaCapiEvents        MetaCapiEvent[]
 
   @@map("organizations")
 }
 
 model UserOrganization {
-  id             String      @id @default(cuid())
-  userId         String      @map("user_id")
-  organizationId String      @map("organization_id")
-  role           OrgRole     @default(AGENT)
-  agentStatus    AgentStatus @default(OFFLINE) @map("agent_status")
-  maxConcurrent  Int         @default(5) @map("max_concurrent")
-  preferences    Json        @default("{}")
-  joinedAt       DateTime    @default(now()) @map("joined_at")
+  id               String      @id @default(cuid())
+  userId           String      @map("user_id")
+  organizationId   String      @map("organization_id")
+  role             OrgRole     @default(AGENT)
+  agentStatus      AgentStatus @default(OFFLINE) @map("agent_status")
+  maxConcurrent    Int         @default(5) @map("max_concurrent")
+  preferences      Json        @default("{}")
+  workingHours          Json?   @map("working_hours")
+  offHoursNoticeEnabled Boolean @default(false) @map("off_hours_notice_enabled")
+  sonaxRamal       String?     @map("sonax_ramal") // ramal Sonax do atendente; null = não pode ligar
+  /// URL completa do Widget de Webphone da Sonax deste atendente
+  /// (https://webphone2.sonax.cloud/widget?data=...&dataClient=...). Injetada no
+  /// chat pra ele atender/desligar sem softphone externo. null = usa softphone.
+  sonaxWebphoneUrl String?     @map("sonax_webphone_url") @db.Text
+  joinedAt         DateTime    @default(now()) @map("joined_at")
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -289,6 +315,7 @@ model Channel {
   primaryOfSegments  Segment[]            @relation("SegmentPrimaryChannel")
   scheduledMessages  ScheduledMessage[]
   messageTemplates   MessageTemplate[]
+  whatsappWindows    WhatsappWindow[]
 
   @@index([organizationId, type], name: "idx_channel_org_type")
   @@map("channels")
@@ -461,17 +488,26 @@ model Contact {
   avatarUrl      String?   @map("avatar_url")
   notes          String?
   metadata       Json      @default("{}")
+  // Atribuição Click-to-WhatsApp (Meta CAPI). Preenchido quando a 1ª mensagem
+  // do lead traz message.referral (veio de anúncio CTWA). Usado no evento
+  // Purchase enviado à Conversions API quando o card fecha em GANHO.
+  ctwaClid       String?   @map("ctwa_clid")
+  ctwaSourceId   String?   @map("ctwa_source_id")
+  ctwaSourceType String?   @map("ctwa_source_type")
+  ctwaClidAt     DateTime? @map("ctwa_clid_at")
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
   deletedAt      DateTime? @map("deleted_at")
 
-  organization  Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  channels      ContactChannel[]
-  conversations Conversation[]
-  tags          ContactTag[]
-  aiMemories    AiAgentMemory[]
-  cards         Card[]           @relation("CardContact")
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channels          ContactChannel[]
+  conversations     Conversation[]
+  tags              ContactTag[]
+  aiMemories        AiAgentMemory[]
+  cards             Card[]             @relation("CardContact")
   scheduledMessages ScheduledMessage[]
+  proposals         Proposal[]
+  orderFichas       OrderFicha[]
 
   @@index([organizationId, phone], name: "idx_contact_org_phone")
   @@index([organizationId, email], name: "idx_contact_org_email")
@@ -497,39 +533,40 @@ model ContactChannel {
 // ─── Conversations ───────────────────────────────
 
 model Conversation {
-  id              String             @id @default(cuid())
-  organizationId  String             @map("organization_id")
-  channelId       String             @map("channel_id")
+  id                  String             @id @default(cuid())
+  organizationId      String             @map("organization_id")
+  channelId           String             @map("channel_id")
   // Quando setado, a conversa pertence a um Segmento (apenas grupos).
   // channelId continua sendo o canal PRINCIPAL do segmento (usado p/ envio,
   // RBAC, realtime). segmentId serve para localizar/deduplicar a conversa de
   // grupo entre os vários canais membros via (segmentId, group_JID).
-  segmentId       String?            @map("segment_id")
-  contactId       String             @map("contact_id")
-  assignedToId    String?            @map("assigned_to_id")
-  departmentId    String?            @map("department_id")
-  status          ConversationStatus @default(PENDING)
-  subject         String?
-  protocol        String?
-  isGroup         Boolean            @default(false) @map("is_group")
+  segmentId           String?            @map("segment_id")
+  contactId           String             @map("contact_id")
+  assignedToId        String?            @map("assigned_to_id")
+  departmentId        String?            @map("department_id")
+  status              ConversationStatus @default(PENDING)
+  subject             String?
+  protocol            String?
+  isGroup             Boolean            @default(false) @map("is_group")
   // Sinal das ABAS de atendimento (independente do enum `status`, que a FSM
   // usa). true  = cliente aguardando resposta HUMANA (aba "Esperando").
   //        false = já respondido por humano (aba "Caixa de entrada").
   // Setado true em toda inbound do cliente; false quando um humano responde
   // via MessagesService.send. Resposta do bot/IA NÃO altera este flag.
   // Conversas CLOSED vão para a aba "Finalizados" independente deste valor.
-  awaitingHumanReply Boolean         @default(false) @map("awaiting_human_reply")
-  lastMessageAt   DateTime?          @map("last_message_at")
-  lastInboundAt       DateTime? @map("last_inbound_at")
-  lastOutboundAt      DateTime? @map("last_outbound_at")
-  inactivityBand      Int?      @map("inactivity_band")
-  reengageDismissedAt DateTime? @map("reengage_dismissed_at")
-  reengagedAt         DateTime? @map("reengaged_at")
-  firstResponseAt DateTime?          @map("first_response_at")
-  closedAt        DateTime?          @map("closed_at")
-  reopenedAt      DateTime?          @map("reopened_at")
-  reopenedCount   Int                @default(0) @map("reopened_count")
-  deletedAt       DateTime?          @map("deleted_at")
+  awaitingHumanReply  Boolean            @default(false) @map("awaiting_human_reply")
+  lastMessageAt       DateTime?          @map("last_message_at")
+  lastInboundAt       DateTime?          @map("last_inbound_at")
+  lastOutboundAt      DateTime?          @map("last_outbound_at")
+  inactivityBand      Int?               @map("inactivity_band")
+  reengageDismissedAt DateTime?          @map("reengage_dismissed_at")
+  reengagedAt         DateTime?          @map("reengaged_at")
+  offHoursNoticeAt    DateTime? @map("off_hours_notice_at")
+  firstResponseAt     DateTime?          @map("first_response_at")
+  closedAt            DateTime?          @map("closed_at")
+  reopenedAt          DateTime?          @map("reopened_at")
+  reopenedCount       Int                @default(0) @map("reopened_count")
+  deletedAt           DateTime?          @map("deleted_at")
 
   // ─── Archive state ──────────────────────────────
   // Orthogonal to `status` — archived conversations are hidden from the
@@ -539,6 +576,11 @@ model Conversation {
   archivedAt   DateTime? @map("archived_at")
   archivedById String?   @map("archived_by_id")
   metadata     Json      @default("{}")
+  // Ficha do Pedido + Alerta de Divergência: true quando a OrderFicha desta
+  // conversa detectou diferença entre o que o cliente pediu e o carrinho
+  // (Proposal) enviado. Espelha OrderFicha.status para leitura rápida na
+  // inbox sem precisar de join.
+  hasOrderDivergence Boolean @default(false) @map("has_order_divergence")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
@@ -550,6 +592,11 @@ model Conversation {
   aiDisabledBy  String?   @map("ai_disabled_by")
   aiDisabledAt  DateTime? @map("ai_disabled_at")
   activeAgentId String?   @map("active_agent_id")
+
+  // Termômetro do lead (SDR): 1=frio, 2=morno, 3=quente. Setado pelo agente
+  // via setLeadTemperature; exibido como selo no card do pipeline (via a
+  // relação Card→Conversation) e onde a conversa aparecer.
+  temperature Int? @map("temperature")
 
   // ─── Resumo IA (Painel Inteligente) ─────────────
   /// Resumo automático da conversa gerado por LLM. null = nunca gerado.
@@ -586,17 +633,18 @@ model Conversation {
   department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   activeAgent  AiAgent?     @relation("ActiveAgent", fields: [activeAgentId], references: [id], onDelete: SetNull)
 
-  messages         Message[]
-  tags             ConversationTag[]
-  internalNotes    InternalNote[]
-  auditLogs        ConversationAuditLog[]
-  rating           ConversationRating?
-  aiRuns           AiAgentRun[]
-  aiHandoffs       AiAgentHandoff[]
-  aiPendingActions AiPendingAction[]
-  reads            ConversationRead[]
-  cards            Card[]                 @relation("CardConversation")
+  messages          Message[]
+  tags              ConversationTag[]
+  internalNotes     InternalNote[]
+  auditLogs         ConversationAuditLog[]
+  rating            ConversationRating?
+  aiRuns            AiAgentRun[]
+  aiHandoffs        AiAgentHandoff[]
+  aiPendingActions  AiPendingAction[]
+  reads             ConversationRead[]
+  cards             Card[]                 @relation("CardConversation")
   scheduledMessages ScheduledMessage[]
+  calls             Call[]
 
   @@index([organizationId, status], name: "idx_conv_org_status")
   @@index([organizationId, status, awaitingHumanReply], name: "idx_conv_org_status_awaiting")
@@ -815,10 +863,14 @@ model Tag {
   organizationId String @map("organization_id")
   name           String
   color          String @default("#6B7280")
+  /// Marca esta tag como "lead qualificado": aplicá-la dispara, além do
+  /// TAG_ADDED, um evento LEAD_QUALIFIED com os dados de atribuição.
+  marksQualifiedLead Boolean @default(false) @map("marks_qualified_lead")
 
   organization  Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   conversations ConversationTag[]
   contacts      ContactTag[]
+  agentChannels AiAgentChannel[]  @relation("AgentChannelTagFilter")
 
   @@unique([organizationId, name])
   @@map("tags")
@@ -934,6 +986,7 @@ enum AiAgentMode {
   AUTONOMOUS
   COPILOT
   DISABLED
+  SHADOW
 }
 
 enum AiAgentTrigger {
@@ -968,6 +1021,12 @@ model AiAgent {
   kind         AiAgentKind @default(WORKER)
   category     String?
   capabilities String[]    @default([])
+
+  // Perfil de voz do agente no template global de sistema.
+  // null / "consultive" (default) = voz de venda consultiva seca (sem emoji,
+  // sem bullets). "warm" = voz calorosa/acolhedora (emojis com moderação),
+  // usada por agentes de captação/atendimento hospitaleiro (ex: SDR de viagens).
+  voiceProfile String? @map("voice_profile")
 
   // ─── Organograma matricial ágil ────────────────────────────
   // parentAgentId: chefia direta — quem este agent reporta. Null = raiz (CEO/diretoria).
@@ -1012,11 +1071,12 @@ model AiAgent {
 
   channels       AiAgentChannel[]
   memories       AiAgentMemory[]
+  knowledge      AiAgentKnowledge[]
   runs           AiAgentRun[]
-  handoffsFrom   AiAgentHandoff[]  @relation("HandoffFrom")
-  handoffsTo     AiAgentHandoff[]  @relation("HandoffTo")
+  handoffsFrom   AiAgentHandoff[]   @relation("HandoffFrom")
+  handoffsTo     AiAgentHandoff[]   @relation("HandoffTo")
   pendingActions AiPendingAction[]
-  activeOn       Conversation[]    @relation("ActiveAgent")
+  activeOn       Conversation[]     @relation("ActiveAgent")
   skills         AiAgentSkill[]
 
   @@index([organizationId], name: "idx_ai_agent_org")
@@ -1174,19 +1234,22 @@ model AiAgentSkill {
 }
 
 model AiAgentChannel {
-  id        String         @id @default(cuid())
-  agentId   String         @map("agent_id")
-  channelId String         @map("channel_id")
-  mode      AiAgentMode    @default(AUTONOMOUS)
-  trigger   AiAgentTrigger @default(ALWAYS)
+  id          String         @id @default(cuid())
+  agentId     String         @map("agent_id")
+  channelId   String         @map("channel_id")
+  tagFilterId String?        @map("tag_filter_id")
+  mode        AiAgentMode    @default(AUTONOMOUS)
+  trigger     AiAgentTrigger @default(ALWAYS)
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  agent   AiAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  agent     AiAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  channel   Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  tagFilter Tag?    @relation("AgentChannelTagFilter", fields: [tagFilterId], references: [id], onDelete: SetNull)
 
   @@unique([agentId, channelId])
   @@index([channelId], name: "idx_ai_agent_channel_channel")
+  @@index([tagFilterId], name: "idx_ai_agent_channel_tag")
   @@map("ai_agent_channels")
 }
 
@@ -1209,6 +1272,31 @@ model AiAgentMemory {
   @@index([agentId], name: "idx_ai_memory_agent")
   @@index([contactId], name: "idx_ai_memory_contact")
   @@map("ai_agent_memories")
+}
+
+model AiAgentKnowledge {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  agentId        String @map("agent_id")
+
+  kind           String // 'procedure' | 'qa'
+  category       String  @default("geral")
+  content        String
+  question       String?
+  occurrences    Int     @default(1)
+  sourceExamples Json    @default("[]") @map("source_examples")
+  confidence     Float   @default(0.8)
+  source         String  @default("learned") // 'learned' | 'faq'
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent        AiAgent      @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId], name: "idx_ai_knowledge_agent")
+  @@index([organizationId], name: "idx_ai_knowledge_org")
+  @@map("ai_agent_knowledge")
 }
 
 model AiAgentRun {
@@ -1594,6 +1682,9 @@ enum AutomationTrigger {
   CONVERSATION_STATUS_CHANGED
   CONVERSATION_ASSIGNED
   CONVERSATION_CREATED
+  // Emitido junto do TAG_ADDED quando a tag aplicada tem marksQualifiedLead.
+  // Carrega a atribuição do anúncio (ctwa_clid) para uso externo (CAPI/sGTM).
+  LEAD_QUALIFIED
 }
 
 enum AutomationRunStatus {
@@ -1601,6 +1692,7 @@ enum AutomationRunStatus {
   PARTIAL // uma ou mais actions falharam mas o run continuou (continueOnError)
   FAILED // run abortado (action critica falhou ou erro de infra)
   SKIPPED // condições não casaram, ou rate limit, ou kill switch
+  WAITING // run pausado por uma ação `delay`, aguardando resumeAt
 }
 
 enum OutboxEventStatus {
@@ -1725,12 +1817,22 @@ model AutomationRun {
   startedAt  DateTime  @default(now()) @map("started_at")
   finishedAt DateTime? @map("finished_at")
 
+  // ─── Retomada (ação `delay`) ────────────────────────────────────
+  // Quando status = WAITING, estes campos dizem QUANDO e ONDE continuar.
+  resumeAt          DateTime? @map("resume_at")
+  // Índice na lista de actions por onde o run deve continuar ao acordar.
+  resumeActionIndex Int?      @map("resume_action_index")
+  // Snapshot do contexto de execução para reconstruir o ctx no resume:
+  // { cascadeDepth, visitedAutomations }.
+  resumeState       Json?     @map("resume_state")
+
   automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
 
   @@index([automationId, startedAt(sort: Desc)], name: "idx_run_automation_time")
   @@index([organizationId, startedAt(sort: Desc)], name: "idx_run_org_time")
   @@index([traceId], name: "idx_run_trace")
   @@index([status, startedAt(sort: Desc)], name: "idx_run_status_time")
+  @@index([status, resumeAt], name: "idx_run_status_resume")
   @@map("automation_runs")
 }
 
@@ -1744,18 +1846,18 @@ enum WebhookDeliveryStatus {
 }
 
 model WebhookSubscription {
-  id                  String    @id @default(cuid())
-  organizationId      String    @map("organization_id")
+  id                  String              @id @default(cuid())
+  organizationId      String              @map("organization_id")
   url                 String
   secret              String
   events              AutomationTrigger[]
-  isActive            Boolean   @default(true) @map("is_active")
+  isActive            Boolean             @default(true) @map("is_active")
   description         String?
-  consecutiveFailures Int       @default(0) @map("consecutive_failures")
-  disabledAt          DateTime? @map("disabled_at")
-  createdById         String?   @map("created_by_id")
-  createdAt           DateTime  @default(now()) @map("created_at")
-  updatedAt           DateTime  @updatedAt @map("updated_at")
+  consecutiveFailures Int                 @default(0) @map("consecutive_failures")
+  disabledAt          DateTime?           @map("disabled_at")
+  createdById         String?             @map("created_by_id")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
 
   organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   deliveries   WebhookDelivery[]
@@ -1814,6 +1916,48 @@ model AiProviderKey {
   @@map("ai_provider_keys")
 }
 
+// ─── Meta Conversions API (CAPI) ─────────────────
+//
+// Credenciais por org da Conversions API (Events Manager). Token guardado
+// cifrado (AES-256-GCM) igual AiProviderKey. `enabled=false` desliga o
+// disparo do evento Purchase sem precisar de deploy (feature-flag por org).
+model MetaCapiConfig {
+  id             String   @id @default(cuid())
+  organizationId String   @unique @map("organization_id")
+  datasetId      String   @map("dataset_id")
+  encryptedToken String   @map("encrypted_token")
+  tokenPreview   String   @map("token_preview")
+  testEventCode  String?  @map("test_event_code")
+  enabled        Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("meta_capi_configs")
+}
+
+// Log append-only de cada evento enviado (ou pulado) à CAPI. Idempotência
+// via `eventId` único (`${cardId}:won`) — retry da fila e a dedup da Meta
+// usam o mesmo id, então a venda nunca conta 2x.
+model MetaCapiEvent {
+  id              String   @id @default(cuid())
+  organizationId  String   @map("organization_id")
+  cardId          String   @map("card_id")
+  eventId         String   @unique @map("event_id")
+  status          String   @default("PENDING")
+  value           Decimal? @db.Decimal(14, 2)
+  currency        String?
+  responsePayload Json?    @map("response_payload")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status], name: "idx_meta_capi_event_org_status")
+  @@index([cardId], name: "idx_meta_capi_event_card")
+  @@map("meta_capi_events")
+}
+
 enum ScheduledMessageStatus {
   PENDING
   SENDING
@@ -1825,29 +1969,33 @@ enum ScheduledMessageStatus {
 enum ScheduledMessageOrigin {
   MANUAL
   AUTO_REENGAGE
+  CADENCE
 }
 
 model ScheduledMessage {
-  id             String @id @default(cuid())
-  organizationId String @map("organization_id")
-  conversationId String @map("conversation_id")
-  contactId      String @map("contact_id")
-  channelId      String @map("channel_id")
-  createdById    String? @map("created_by_id")
+  id             String                 @id @default(cuid())
+  organizationId String                 @map("organization_id")
+  conversationId String                 @map("conversation_id")
+  contactId      String                 @map("contact_id")
+  channelId      String                 @map("channel_id")
+  createdById    String?                @map("created_by_id")
   origin         ScheduledMessageOrigin @default(MANUAL)
+
+  cadenceEnrollmentId String? @map("cadence_enrollment_id")
+  cadenceStepOrder    Int?    @map("cadence_step_order")
 
   contentType  MessageContentType @default(TEXT)
   content      Json
-  quickReplyId String? @map("quick_reply_id")
-  templateId   String? @map("template_id")
+  quickReplyId String?            @map("quick_reply_id")
+  templateId   String?            @map("template_id")
 
-  scheduledAt DateTime @map("scheduled_at")
+  scheduledAt DateTime               @map("scheduled_at")
   status      ScheduledMessageStatus @default(PENDING)
-  jobId       String? @map("job_id")
+  jobId       String?                @map("job_id")
 
-  attempt         Int  @default(1)
-  maxAttempts     Int  @default(1)
-  retryEveryHours Int? @map("retry_every_hours")
+  attempt         Int     @default(1)
+  maxAttempts     Int     @default(1)
+  retryEveryHours Int?    @map("retry_every_hours")
   cancelOnReply   Boolean @default(false) @map("cancel_on_reply")
 
   sentMessageId String?   @map("sent_message_id")
@@ -1969,4 +2117,302 @@ model OfpSyncState {
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
   @@map("ofp_sync_state")
+}
+
+enum CadenceTrigger {
+  STAGE_ENTER
+  MANUAL
+  BOTH
+  NO_REPLY
+}
+
+enum CadenceStepOption {
+  SIM
+  NAO
+  DESCADASTRAR
+}
+
+enum CadenceEnrollmentStatus {
+  ACTIVE
+  PAUSED
+  HANDED_OFF
+  STOPPED_OPTOUT
+  MOVED_LOST
+  COMPLETED_NO_REPLY
+  RESUMED_AI
+}
+
+model Cadence {
+  id              String         @id @default(cuid())
+  organizationId  String         @map("organization_id")
+  name            String
+  pipelineId      String?        @map("pipeline_id")
+  stageId         String?        @map("stage_id")
+  watchedStageIds String[]       @map("watched_stage_ids")
+  lostStageId     String?        @map("lost_stage_id")
+  hotTagId        String?        @map("hot_tag_id")
+  optOutTagId     String?        @map("opt_out_tag_id")
+  trigger         CadenceTrigger @default(BOTH)
+  enabled         Boolean        @default(false)
+  allowManual     Boolean        @default(true) @map("allow_manual")
+  onYesMessage    String?        @map("on_yes_message")
+  onNoMessage     String?        @map("on_no_message")
+  reviveEnabled        Boolean @default(true)  @map("revive_enabled")
+  silenceWindowMinutes Int     @default(1440)  @map("silence_window_minutes")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  steps        CadenceStep[]
+  enrollments  CadenceEnrollment[]
+
+  @@index([organizationId, stageId])
+  @@map("cadences")
+}
+
+model CadenceStep {
+  id           String              @id @default(cuid())
+  cadenceId    String              @map("cadence_id")
+  order        Int
+  delayMinutes Int                 @map("delay_minutes")
+  contentType  MessageContentType  @default(TEXT)
+  content      Json
+  options      CadenceStepOption[]
+  templateId   String?             @map("template_id")
+
+  cadence Cadence @relation(fields: [cadenceId], references: [id], onDelete: Cascade)
+
+  @@unique([cadenceId, order])
+  @@map("cadence_steps")
+}
+
+model CadenceEnrollment {
+  id             String                  @id @default(cuid())
+  organizationId String                  @map("organization_id")
+  cadenceId      String                  @map("cadence_id")
+  conversationId String                  @map("conversation_id")
+  cardId         String?                 @map("card_id")
+  contactId      String                  @map("contact_id")
+  currentStep    Int                     @default(1) @map("current_step")
+  status         CadenceEnrollmentStatus @default(ACTIVE)
+  startedAt      DateTime                @default(now()) @map("started_at")
+  lastStepAt     DateTime?               @map("last_step_at")
+  pausedAt       DateTime? @map("paused_at")
+  endedAt        DateTime?               @map("ended_at")
+  endReason      String?                 @map("end_reason")
+
+  cadence      Cadence      @relation(fields: [cadenceId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, status])
+  @@index([organizationId, status])
+  @@map("cadence_enrollments")
+}
+
+model Proposal {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  contactId      String   @map("contact_id")
+  conversationId String   @map("conversation_id")
+  checkoutUrl    String   @map("checkout_url")
+  adults         Int      @default(0)
+  children       Int      @default(0)
+  startDate      DateTime @map("start_date")
+  endDate        DateTime @map("end_date")
+  parks          Json     @default("[]")
+  totalValue     Decimal  @default(0) @map("total_value") @db.Decimal(12, 2)
+  currency       String   @default("BRL")
+  rawText        String   @map("raw_text")
+  createdById    String   @map("created_by_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, contactId], name: "idx_proposal_org_contact")
+  @@index([organizationId, createdAt], name: "idx_proposal_org_created")
+  @@map("proposals")
+}
+
+enum OrderFichaStatus {
+  NO_ORDER
+  ORDER_LOGGED
+  CART_SENT
+  DIVERGENT
+  MATCHED
+}
+
+model OrderFicha {
+  id              String           @id @default(cuid())
+  organizationId  String           @map("organization_id")
+  contactId       String           @map("contact_id")
+  conversationId  String           @unique @map("conversation_id")
+
+  items           Json             @default("[]")
+  travelDatesText String?          @map("travel_dates_text")
+  travelStart     DateTime?        @map("travel_start")
+  travelEnd       DateTime?        @map("travel_end")
+  requestedAt     DateTime?        @map("requested_at")
+  sourceMessageId String?          @map("source_message_id")
+
+  lastProposalId  String?          @map("last_proposal_id")
+  divergences     Json             @default("[]")
+  status          OrderFichaStatus @default(NO_ORDER)
+
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact         Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, contactId])
+  @@index([organizationId, status])
+  @@map("order_fichas")
+}
+
+model MediaFolder {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  name           String
+  createdById    String?   @map("created_by_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assets       MediaAsset[]
+
+  @@index([organizationId, deletedAt])
+  @@map("media_folders")
+}
+
+model MediaAsset {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  folderId       String?   @map("folder_id")
+  uploadedById   String?   @map("uploaded_by_id")
+  url            String
+  storageKey     String    @map("storage_key")
+  mimeType       String    @map("mime_type")
+  size           Int
+  filename       String
+  title          String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  folder       MediaFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, folderId, deletedAt])
+  @@map("media_assets")
+}
+
+// ─── Click to Call (Sonax) ───────────────────────
+
+enum CallStatus {
+  DIALING
+  RINGING
+  TALKING
+  ANSWERED
+  NO_ANSWER
+  BUSY
+  FAILED
+  FINISHED
+}
+
+model SonaxSettings {
+  id                String   @id @default(cuid())
+  organizationId    String   @unique @map("organization_id")
+  enabled           Boolean  @default(false)
+  idCliente         String   @map("id_cliente")
+  tokenEnc          String   @map("token_enc")
+  webhookSecret     String   @map("webhook_secret")
+  click2callBaseUrl String   @default("https://click2call.sonax.net.br/sonax-click2call.php") @map("click2call_base_url")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("sonax_settings")
+}
+
+model Call {
+  id             String     @id @default(cuid())
+  organizationId String     @map("organization_id")
+  conversationId String     @map("conversation_id")
+  agentId        String?    @map("agent_id")
+  ramal          String
+  numero         String
+  status         CallStatus @default(DIALING)
+  answered       Boolean    @default(false)
+  durationSec    Int?       @map("duration_sec")
+  recordingUrl   String?    @map("recording_url")
+  messageId      String?    @map("message_id")
+  startedAt      DateTime   @default(now()) @map("started_at")
+  endedAt        DateTime?  @map("ended_at")
+  raw            Json       @default("{}")
+  // ─── Resumo de ligação (transcrição + insight IA) ───
+  transcript     String?    @db.Text
+  /// { summary: string, nextSteps: string[], sentiment: 'positivo'|'neutro'|'negativo' }
+  insight        Json?
+  /// PENDING (enfileirado/processando) | READY | FAILED | SKIPPED (não-atendida/sem gravação)
+  insightState   String?    @default("PENDING") @map("insight_state")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  agent        User?        @relation("CallAgent", fields: [agentId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, startedAt])
+  @@index([conversationId])
+  @@map("calls")
+}
+
+model AttendantGreetingSettings {
+  organizationId String   @id @map("organization_id")
+  enabled        Boolean  @default(true)
+  template       String   @default("Oi! Sou o {atendente} e vou continuar seu atendimento por aqui 😊") @db.Text
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("attendant_greeting_settings")
+}
+
+/// Uma janela de conversa de 24h cobrada pela Meta (canal WHATSAPP_OFFICIAL).
+/// 1 linha por conversation.id — dedup pela chave única (webhooks reenviados
+/// não inflam a contagem). Só o adapter oficial popula isto.
+model WhatsappWindow {
+  id                 String    @id @default(cuid())
+  organizationId     String    @map("organization_id")
+  channelId          String    @map("channel_id")
+  metaConversationId String    @map("meta_conversation_id")
+  /// marketing | utility | authentication | service | unknown
+  category           String    @default("unknown")
+  billable           Boolean   @default(true)
+  /// CBP (conversation-based) | PMP (per-message). Null se a Meta não mandou.
+  pricingModel       String?   @map("pricing_model")
+  /// Quando a janela abriu: expiration_timestamp - 24h, ou o timestamp do status.
+  openedAt           DateTime  @map("opened_at")
+  expirationAt       DateTime? @map("expiration_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, metaConversationId], name: "uq_window_channel_conv")
+  @@index([organizationId, channelId, openedAt], name: "idx_window_org_channel_opened")
+  @@map("whatsapp_windows")
+}
+
+/// Tarifa por categoria (por org) usada pra estimar o custo das janelas.
+model WhatsappWindowPricing {
+  id             String   @id @default(cuid())
+  organizationId String   @unique @map("organization_id")
+  currency       String   @default("BRL")
+  /// { marketing: 0.35, utility: 0.10, authentication: 0.20, service: 0 }
+  rates          Json     @default("{}")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_window_pricing")
 }

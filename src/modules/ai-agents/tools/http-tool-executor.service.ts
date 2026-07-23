@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { AiSkill, AiTool } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
@@ -41,6 +41,7 @@ export class HttpToolExecutorService {
 
   constructor(
     private readonly config: ConfigService,
+    @Inject(forwardRef(() => PendingActionService))
     private readonly pendingActions: PendingActionService,
     private readonly prisma: PrismaService,
   ) {}

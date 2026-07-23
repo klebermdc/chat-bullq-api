@@ -1,12 +1,19 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
+  Logger,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
-import { CardStatus, PipelineStageType } from '@prisma/client';
+import { CardStatus, OrgRole, PipelineStageType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { CadenceRunner } from '../cadences/cadence-runner.service';
+import { MetaCapiQueue } from '../meta-capi/meta-capi.queue';
+import { pipelineCardScopeWhere } from './pipeline-scope';
+import { resolveAssignmentScope } from '../messaging/conversations/conversation-scope';
 import {
   CreateCardDto,
   CreatePipelineDto,
@@ -15,6 +22,29 @@ import {
   UpdatePipelineDto,
   UpsertStageDto,
 } from './dto/pipeline.dto';
+
+/** E6 — nome (contains) da etapa final de entrega. Não colide com "Proposta enviada". */
+const ORDER_SENT_STAGE_NAME = 'Pedido enviado';
+
+/**
+ * Dada a lista de propostas de um board, devolve um mapa
+ * `contactId -> startDate (ISO)` da proposta MAIS RECENTE (por createdAt) de
+ * cada contato. Alimenta o filtro "mês da viagem" no Kanban.
+ */
+export function latestTravelStartByContact(
+  proposals: { contactId: string; startDate: Date; createdAt: Date }[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const seenAt: Record<string, number> = {};
+  for (const p of proposals) {
+    const t = p.createdAt.getTime();
+    if (seenAt[p.contactId] === undefined || t > seenAt[p.contactId]) {
+      seenAt[p.contactId] = t;
+      out[p.contactId] = p.startDate.toISOString();
+    }
+  }
+  return out;
+}
 
 const DEFAULT_STAGES: UpsertStageDto[] = [
   { name: 'Novo', color: 'zinc', type: 'NORMAL', order: 0 },
@@ -26,33 +56,53 @@ const DEFAULT_STAGES: UpsertStageDto[] = [
 
 @Injectable()
 export class PipelinesService {
+  private readonly logger = new Logger(PipelinesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    @Inject(forwardRef(() => CadenceRunner))
+    private readonly cadenceRunner: CadenceRunner,
+    private readonly metaCapiQueue: MetaCapiQueue,
   ) {}
 
   // ─── Pipelines ─────────────────────────────────
 
-  async listPipelines(organizationId: string) {
+  /**
+   * `role`/`currentUserId` escopam a contagem de cards por funil pro AGENT —
+   * sem eles, `_count` batia a org toda, enquanto o board (getBoard) do
+   * vendedor só mostra os cards dele. O card dizia "42" e o board tinha 6.
+   * OWNER/ADMIN continuam vendo o total real (cardScope = `{}`).
+   */
+  async listPipelines(organizationId: string, role?: OrgRole, currentUserId?: string) {
+    const cardScope = currentUserId ? pipelineCardScopeWhere(role, currentUserId) : {};
     return this.prisma.pipeline.findMany({
       where: { organizationId, archived: false },
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
       include: {
         stages: { orderBy: { order: 'asc' } },
-        _count: { select: { cards: true } },
+        _count: { select: { cards: { where: cardScope } } },
       },
     });
   }
 
-  async getBoard(pipelineId: string, organizationId: string) {
+  async getBoard(
+    pipelineId: string,
+    organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
     const pipeline = await this.assertPipeline(pipelineId, organizationId);
+    const cardScope = currentUserId
+      ? pipelineCardScopeWhere(role, currentUserId)
+      : {};
     const [stages, cards] = await this.prisma.$transaction([
       this.prisma.pipelineStage.findMany({
         where: { pipelineId },
         orderBy: { order: 'asc' },
       }),
       this.prisma.card.findMany({
-        where: { pipelineId },
+        where: { pipelineId, ...cardScope },
         orderBy: { order: 'asc' },
         include: {
           contact: { select: { id: true, name: true, phone: true, avatarUrl: true } },
@@ -64,17 +114,50 @@ export class PipelinesService {
             select: {
               id: true,
               channelId: true,
+              temperature: true,
+              // Atendente que atende a conversa (o "responsável" real do lead).
+              // O card.assignedTo é a atribuição do card no pipeline, que
+              // costuma ficar vazia — a UI prefere este.
+              assignedTo: { select: { id: true, name: true, avatarUrl: true } },
               channel: { select: { id: true, type: true, name: true } },
+              // Tags da conversa — a UI deriva a ORIGEM do lead (ex.: "Instagram
+              // Orgânico") a partir daqui; sem isso o selo de origem fica cego.
+              tags: {
+                select: {
+                  tag: { select: { id: true, name: true, color: true } },
+                },
+              },
             },
           },
         },
       }),
     ]);
 
-    const cardsByStage: Record<string, typeof cards> = {};
+    // Data da viagem: proposta mais recente de cada contato presente no board.
+    const contactIds = [
+      ...new Set(
+        cards.map((c) => c.contactId).filter((x): x is string => !!x),
+      ),
+    ];
+    const travelByContact = contactIds.length
+      ? latestTravelStartByContact(
+          await this.prisma.proposal.findMany({
+            where: { organizationId, contactId: { in: contactIds } },
+            select: { contactId: true, startDate: true, createdAt: true },
+          }),
+        )
+      : {};
+
+    type BoardCard = (typeof cards)[number] & { travelStartDate: string | null };
+    const cardsByStage: Record<string, BoardCard[]> = {};
     for (const s of stages) cardsByStage[s.id] = [];
     for (const c of cards) {
-      (cardsByStage[c.stageId] ||= []).push(c);
+      (cardsByStage[c.stageId] ||= []).push({
+        ...c,
+        travelStartDate: c.contactId
+          ? (travelByContact[c.contactId] ?? null)
+          : null,
+      });
     }
 
     return { pipeline, stages, cards: cardsByStage };
@@ -224,8 +307,23 @@ export class PipelinesService {
     pipelineId: string,
     organizationId: string,
     dto: CreateCardDto,
+    role?: OrgRole,
+    currentUserId?: string,
   ) {
     await this.assertPipeline(pipelineId, organizationId);
+
+    // AGENT só pode criar card vinculado a conversa que é dela — card
+    // avulso (sem conversationId) é inofensivo e fica de fora do check.
+    const scoped = currentUserId
+      ? resolveAssignmentScope(role, currentUserId)
+      : undefined;
+    if (scoped && dto.conversationId) {
+      const owned = await this.prisma.conversation.findFirst({
+        where: { id: dto.conversationId, organizationId, assignedToId: scoped },
+        select: { id: true },
+      });
+      if (!owned) throw new NotFoundException('Conversation not found');
+    }
 
     // Cards represent conversations entering the pipeline. If the same
     // conversation is already in this pipeline (any stage), reject — the
@@ -320,15 +418,210 @@ export class PipelinesService {
     return card;
   }
 
+  /**
+   * Garante que a conversa esteja num card no estágio de nome `stageName`
+   * (ex.: "PROPOSTA ENVIADA"). Cria o card se a conversa ainda não tem um no
+   * pipeline; avança se está numa etapa anterior; NÃO puxa pra trás nem mexe em
+   * card ganho/perdido. Dispara a cadência ao criar/avançar. Atualiza o valor do
+   * card com o da proposta. Usado quando uma proposta é enviada — best-effort.
+   * No-op silencioso se não existir etapa com esse nome na org.
+   */
+  async ensureConversationAtStageByName(
+    organizationId: string,
+    conversationId: string,
+    stageName: string,
+    opts: { value?: number; currency?: string } = {},
+  ): Promise<void> {
+    const targetStage = await this.prisma.pipelineStage.findFirst({
+      where: {
+        name: { equals: stageName, mode: 'insensitive' },
+        pipeline: { organizationId },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!targetStage) return;
+
+    const value = opts.value != null ? (opts.value as any) : undefined;
+    const currency = opts.currency ?? 'BRL';
+
+    const existing = await this.prisma.card.findFirst({
+      where: { pipelineId: targetStage.pipelineId, conversationId },
+      include: { stage: { select: { order: true } } },
+    });
+
+    if (!existing) {
+      const card = await this.createCard(targetStage.pipelineId, organizationId, {
+        conversationId,
+        stageId: targetStage.id,
+        value,
+        currency,
+      } as any);
+      // createCard não dispara cadência — disparamos aqui (igual o moveCard faz).
+      this.cadenceRunner
+        .maybeStartForStage(conversationId, card.id, targetStage.id, organizationId)
+        .catch((err) =>
+          this.logger.warn(
+            `cadence_maybeStartForStage_failed card=${card.id}: ${(err as Error).message}`,
+          ),
+        );
+      return;
+    }
+
+    // Não mexe em negócio já ganho/perdido.
+    if (existing.status !== 'OPEN') return;
+
+    // Só avança: se está numa etapa anterior, move (moveCard dispara a cadência).
+    if (existing.stage.order < targetStage.order) {
+      await this.moveCard(existing.id, organizationId, {
+        toStageId: targetStage.id,
+        toIndex: 0,
+      } as any);
+    }
+
+    // Mantém o valor do card em dia com a proposta (mesmo sem trocar de etapa).
+    if (value !== undefined) {
+      await this.prisma.card.update({
+        where: { id: existing.id },
+        data: { value, currency },
+      });
+    }
+  }
+
+  /**
+   * E6 — Entrega: marca o pedido como enviado, movendo o card da conversa pra
+   * etapa final do funil (default "Pedido enviado"). Diferente de
+   * `ensureConversationAtStageByName`, a entrega é PÓS-fechamento (o card já
+   * pode estar ganho/WON) — por isso move via `moveCard` sem a guarda de
+   * "só OPEN". Por decisão de projeto é só ETAPA, sem tag redundante.
+   *
+   * Resolve a etapa por nome (contains, case-insensitive) — "Pedido enviado"
+   * não colide com "Proposta enviada". Lança se a etapa não existir na org ou
+   * se a conversa não tiver card no funil.
+   */
+  async markOrderSentForConversation(
+    organizationId: string,
+    conversationId: string,
+    stageName: string = ORDER_SENT_STAGE_NAME,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
+    const targetStage = await this.prisma.pipelineStage.findFirst({
+      where: {
+        name: { contains: stageName, mode: 'insensitive' },
+        pipeline: { organizationId },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!targetStage) {
+      throw new BadRequestException(
+        `Etapa "${stageName}" não existe no funil desta organização.`,
+      );
+    }
+
+    const scope = currentUserId ? pipelineCardScopeWhere(role, currentUserId) : {};
+    const card = await this.prisma.card.findFirst({
+      where: { pipelineId: targetStage.pipelineId, conversationId, ...scope },
+    });
+    if (!card) {
+      throw new BadRequestException(
+        'Este lead ainda não tem card no funil de vendas.',
+      );
+    }
+
+    return this.moveCard(card.id, organizationId, {
+      toStageId: targetStage.id,
+      toIndex: 0,
+    } as MoveCardDto);
+  }
+
+  /**
+   * E5.1 — Fechamento: marca o negócio como Ganho. Guarda o nº do pedido no
+   * card (chave de correlação futura com o HUB — `OfpSalesOrder.pedido`, fatia
+   * E5.2) em `metadata.orderNumber` e move o card pra a etapa Ganho (type WON)
+   * do funil da conversa. O `moveCard` já seta status=WON + closedAt.
+   *
+   * nº do pedido é opcional (o atendente pode não tê-lo ainda) — sem ele, só
+   * move pra WON. Lança se a conversa não tem card ou o funil não tem etapa WON.
+   */
+  async markWonForConversation(
+    organizationId: string,
+    conversationId: string,
+    orderNumber?: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
+    const scope = currentUserId ? pipelineCardScopeWhere(role, currentUserId) : {};
+    const card = await this.prisma.card.findFirst({
+      where: { conversationId, organizationId, ...scope },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!card) {
+      throw new BadRequestException(
+        'Este lead ainda não tem card no funil de vendas.',
+      );
+    }
+
+    const wonStage = await this.prisma.pipelineStage.findFirst({
+      where: { pipelineId: card.pipelineId, type: 'WON' },
+      orderBy: { order: 'asc' },
+    });
+    if (!wonStage) {
+      throw new BadRequestException(
+        'O funil não tem etapa de Ganho (tipo WON).',
+      );
+    }
+
+    const trimmed = orderNumber?.trim();
+    if (trimmed) {
+      await this.prisma.card.update({
+        where: { id: card.id },
+        data: {
+          metadata: {
+            ...((card.metadata as Record<string, unknown>) ?? {}),
+            orderNumber: trimmed,
+          },
+        },
+      });
+    }
+
+    return this.moveCard(card.id, organizationId, {
+      toStageId: wonStage.id,
+      toIndex: 0,
+    } as MoveCardDto);
+  }
+
+  /**
+   * Carrega o card garantindo que o usuário pode tocá-lo.
+   * AGENT só alcança card cuja conversa (ou o próprio card) é dele.
+   * Lança NotFound — e não Forbidden — para não vazar a existência do card alheio.
+   */
+  private async assertCardAccess(
+    cardId: string,
+    organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
+    const scope = currentUserId ? pipelineCardScopeWhere(role, currentUserId) : {};
+    const card = await this.prisma.card.findFirst({
+      where: { id: cardId, organizationId, ...scope },
+    });
+    if (!card) throw new NotFoundException('Card not found');
+    return card;
+  }
+
   async updateCard(
     cardId: string,
     organizationId: string,
     dto: UpdateCardDto,
+    role?: OrgRole,
+    currentUserId?: string,
   ) {
-    const card = await this.prisma.card.findUnique({ where: { id: cardId } });
-    if (!card || card.organizationId !== organizationId) {
-      throw new NotFoundException('Card not found');
-    }
+    const card = await this.assertCardAccess(
+      cardId,
+      organizationId,
+      role,
+      currentUserId,
+    );
 
     const updated = await this.prisma.card.update({
       where: { id: cardId },
@@ -361,11 +654,18 @@ export class PipelinesService {
     return updated;
   }
 
-  async removeCard(cardId: string, organizationId: string) {
-    const card = await this.prisma.card.findUnique({ where: { id: cardId } });
-    if (!card || card.organizationId !== organizationId) {
-      throw new NotFoundException('Card not found');
-    }
+  async removeCard(
+    cardId: string,
+    organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
+    const card = await this.assertCardAccess(
+      cardId,
+      organizationId,
+      role,
+      currentUserId,
+    );
     await this.prisma.card.delete({ where: { id: cardId } });
     this.realtime.emitToOrg(organizationId, 'card:deleted', {
       cardId,
@@ -383,11 +683,15 @@ export class PipelinesService {
     cardId: string,
     organizationId: string,
     dto: MoveCardDto,
+    role?: OrgRole,
+    currentUserId?: string,
   ) {
-    const card = await this.prisma.card.findUnique({ where: { id: cardId } });
-    if (!card || card.organizationId !== organizationId) {
-      throw new NotFoundException('Card not found');
-    }
+    const card = await this.assertCardAccess(
+      cardId,
+      organizationId,
+      role,
+      currentUserId,
+    );
     const targetStage = await this.prisma.pipelineStage.findUnique({
       where: { id: dto.toStageId },
     });
@@ -476,6 +780,37 @@ export class PipelinesService {
       status: newStatus,
     });
 
+    // Hook de cadência: card entrou numa nova etapa → dispara a cadência com
+    // gatilho STAGE_ENTER/BOTH cuja etapa casa (no-op se não houver). Só quando
+    // o card está vinculado a uma conversa. Fire-and-forget.
+    if (!sameStage && card.conversationId) {
+      this.cadenceRunner
+        .maybeStartForStage(
+          card.conversationId,
+          cardId,
+          dto.toStageId,
+          organizationId,
+        )
+        .catch((err) =>
+          this.logger.warn(
+            `cadence_maybeStartForStage_failed card=${cardId}: ${(err as Error).message}`,
+          ),
+        );
+    }
+
+    // Hook Meta CAPI: card fechou em GANHO → enfileira o evento Purchase pra
+    // Conversions API (atribuição do anúncio CTWA). No-op se a org não tiver
+    // config/enabled (o processor decide). Fire-and-forget: nunca trava o move.
+    if (newStatus === CardStatus.WON) {
+      this.metaCapiQueue
+        .enqueuePurchase({ cardId, organizationId })
+        .catch((err) =>
+          this.logger.warn(
+            `meta_capi_enqueue_failed card=${cardId}: ${(err as Error).message}`,
+          ),
+        );
+    }
+
     return this.prisma.card.findUnique({
       where: { id: cardId },
       include: {
@@ -493,9 +828,12 @@ export class PipelinesService {
   async listCardsByConversation(
     conversationId: string,
     organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
   ) {
+    const scope = currentUserId ? pipelineCardScopeWhere(role, currentUserId) : {};
     return this.prisma.card.findMany({
-      where: { conversationId, organizationId },
+      where: { conversationId, organizationId, ...scope },
       orderBy: { createdAt: 'asc' },
       include: {
         pipeline: {

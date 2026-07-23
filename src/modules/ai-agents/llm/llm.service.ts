@@ -61,7 +61,9 @@ export class LlmService {
     }
   }
 
-  private async clientFor(organizationId: string): Promise<OpenAI> {
+  private async clientFor(
+    organizationId: string,
+  ): Promise<{ client: OpenAI; providerModel?: string }> {
     const resolved = await this.providerKeys.resolve(
       organizationId,
       'AGENT_LLM',
@@ -77,20 +79,37 @@ export class LlmService {
       SAKANA_DEFAULT_BASE_URL;
     const fingerprint = `${resolved.apiKey}|${baseURL}`;
     const cached = this.clients.get(organizationId);
-    if (cached && cached.fingerprint === fingerprint) return cached.client;
+    if (cached && cached.fingerprint === fingerprint) {
+      return { client: cached.client, providerModel: resolved.model };
+    }
     const client = new OpenAI({
       apiKey: resolved.apiKey,
       baseURL,
       timeout: this.timeoutMs,
     });
     this.clients.set(organizationId, { client, fingerprint });
-    return client;
+    return { client, providerModel: resolved.model };
+  }
+
+  /**
+   * Modelo efetivo enviado ao provider. Se a chave de provedor da org fixa um
+   * `model` (ex.: MiniMax "plugado" via Configurações > Provedores IA), ele
+   * manda — usado como está, sem a restrição Sakana. Sem `model` na chave,
+   * cai no caminho Sakana (normaliza fugu/sakana, rejeita o resto).
+   */
+  private resolveEffectiveModel(
+    providerModel: string | undefined,
+    agentModelId: string,
+  ): string {
+    const pm = (providerModel ?? '').trim();
+    if (pm) return pm;
+    return this.normalizeModelId(agentModelId);
   }
 
   async complete(req: LlmCompletionRequest): Promise<LlmCompletionResponse> {
-    const client = await this.clientFor(req.organizationId);
+    const { client, providerModel } = await this.clientFor(req.organizationId);
 
-    const modelId = this.normalizeModelId(req.modelId);
+    const modelId = this.resolveEffectiveModel(providerModel, req.modelId);
     const messages = this.toOpenAiMessages(req.messages);
     const tools = req.tools
       ? this.toOpenAiTools(this.sanitizeTools(req.tools))

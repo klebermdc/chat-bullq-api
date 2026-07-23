@@ -73,10 +73,16 @@ export type AutomationEventPayload =
   | MessageReceivedPayload
   | ConversationStatusChangedPayload
   | ConversationAssignedPayload
-  | ConversationCreatedPayload;
+  | ConversationCreatedPayload
+  | LeadQualifiedPayload;
 
 // Discriminated union by trigger — used by the listener factory and by
 // tests to construct events with the correct payload shape.
+// Emitido junto do TAG_ADDED quando a tag tem marksQualifiedLead. Mesma
+// forma do TagAddedPayload — o enriquecimento (ctwa_clid, telefone hasheado)
+// acontece na montagem do webhook, não aqui, para o outbox seguir magro.
+export type LeadQualifiedPayload = TagAddedPayload;
+
 export type TriggerToPayload = {
   [AutomationTrigger.TAG_ADDED]: TagAddedPayload;
   [AutomationTrigger.TAG_REMOVED]: TagRemovedPayload;
@@ -84,6 +90,7 @@ export type TriggerToPayload = {
   [AutomationTrigger.CONVERSATION_STATUS_CHANGED]: ConversationStatusChangedPayload;
   [AutomationTrigger.CONVERSATION_ASSIGNED]: ConversationAssignedPayload;
   [AutomationTrigger.CONVERSATION_CREATED]: ConversationCreatedPayload;
+  [AutomationTrigger.LEAD_QUALIFIED]: LeadQualifiedPayload;
 };
 
 // ─── BullMQ job shape ────────────────────────────────────────────────
@@ -100,4 +107,12 @@ export interface AutomationJobData {
   // its own automationId appended. Encoded as array (not Set) so it
   // serializes through Redis cleanly.
   visitedAutomations: string[];
+}
+
+// ─── Resume job (fila dedicada de retomada) ──────────────────────────
+// Emitido pelo watchdog quando um run WAITING vence. Carrega só o id do
+// run — todo o resto (payload, trace, índice, resumeState) vem do row.
+export interface AutomationResumeJobData {
+  runId: string;
+  organizationId: string;
 }

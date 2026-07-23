@@ -72,6 +72,18 @@ export class InboxViewFiltersDto {
   @IsOptional()
   @IsBoolean()
   unreadOnly?: boolean;
+
+  /**
+   * Fila de atendimento — mesmo sinal das abas Esperando/Caixa de entrada:
+   *   true  → cliente aguardando resposta humana (fila de distribuição)
+   *   false → já respondido por humano
+   * Undefined = não filtra. Conversas CLOSED ficam de fora dos dois casos
+   * (um atendimento fechado não espera ninguém), a menos que a view fixe
+   * `statuses` explicitamente — status explícito tem precedência.
+   */
+  @IsOptional()
+  @IsBoolean()
+  awaitingHumanReply?: boolean;
 }
 
 export class CreateInboxViewDto {

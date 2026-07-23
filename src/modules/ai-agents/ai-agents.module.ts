@@ -28,6 +28,7 @@ import { ConfirmationsModule } from './confirmations/confirmations.module';
 import { ConfirmationExecutorModule } from './confirmations/confirmation-executor.module';
 import { RagModule } from './rag/rag.module';
 import { EvalsModule } from './evals/evals.module';
+import { ShadowLearningModule } from './shadow-learning/shadow-learning.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { EvalsModule } from './evals/evals.module';
     ConfirmationExecutorModule,
     RagModule,
     EvalsModule,
+    ShadowLearningModule,
   ],
   controllers: [AgentsController, AiCatalogController],
   providers: [
@@ -60,6 +62,6 @@ import { EvalsModule } from './evals/evals.module';
     CatalogSyncService,
     MediaUrlResolverService,
   ],
-  exports: [AiAgentRunnerService, AgentRouterService],
+  exports: [AiAgentRunnerService, AgentRouterService, ShadowLearningModule],
 })
 export class AiAgentsModule {}

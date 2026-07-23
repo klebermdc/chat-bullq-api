@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { OrgRole } from '@prisma/client';
 import { PipelinesService } from './pipelines.service';
 import {
   CreateCardDto,
@@ -20,7 +21,12 @@ import {
   UpsertStageDto,
 } from './dto/pipeline.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentOrg } from '../../common/decorators';
+import {
+  CurrentOrg,
+  CurrentUser,
+  CurrentUserRole,
+  Feature,
+} from '../../common/decorators';
 
 @ApiTags('Pipelines (Kanban)')
 @ApiBearerAuth()
@@ -31,11 +37,16 @@ export class PipelinesController {
 
   @Get()
   @ApiOperation({ summary: 'List pipelines for current org' })
-  list(@CurrentOrg('id') orgId: string) {
-    return this.service.listPipelines(orgId);
+  list(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.listPipelines(orgId, role, userId);
   }
 
   @Post()
+  @Feature('pipelines.manage')
   @ApiOperation({ summary: 'Create a pipeline (with default stages if empty)' })
   create(
     @CurrentOrg('id') orgId: string,
@@ -46,11 +57,17 @@ export class PipelinesController {
 
   @Get(':id/board')
   @ApiOperation({ summary: 'Get full kanban board (stages + cards by stage)' })
-  board(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
-    return this.service.getBoard(id, orgId);
+  board(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.getBoard(id, orgId, role, userId);
   }
 
   @Patch(':id')
+  @Feature('pipelines.manage')
   @ApiOperation({ summary: 'Update pipeline metadata' })
   update(
     @Param('id') id: string,
@@ -61,12 +78,14 @@ export class PipelinesController {
   }
 
   @Delete(':id')
+  @Feature('pipelines.manage')
   @ApiOperation({ summary: 'Delete pipeline (cascade stages + cards)' })
   remove(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
     return this.service.removePipeline(id, orgId);
   }
 
   @Put(':id/stages')
+  @Feature('pipelines.manage')
   @ApiOperation({
     summary: 'Replace stages in bulk (upsert + delete orphans w/o cards)',
   })
@@ -88,8 +107,15 @@ export class PipelinesController {
   cardsByConversation(
     @Param('conversationId') conversationId: string,
     @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.listCardsByConversation(conversationId, orgId);
+    return this.service.listCardsByConversation(
+      conversationId,
+      orgId,
+      role,
+      userId,
+    );
   }
 
   @Post(':id/cards')
@@ -98,8 +124,10 @@ export class PipelinesController {
     @Param('id') pipelineId: string,
     @CurrentOrg('id') orgId: string,
     @Body() dto: CreateCardDto,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.createCard(pipelineId, orgId, dto);
+    return this.service.createCard(pipelineId, orgId, dto, role, userId);
   }
 
   @Patch('cards/:cardId')
@@ -108,8 +136,10 @@ export class PipelinesController {
     @Param('cardId') cardId: string,
     @CurrentOrg('id') orgId: string,
     @Body() dto: UpdateCardDto,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.updateCard(cardId, orgId, dto);
+    return this.service.updateCard(cardId, orgId, dto, role, userId);
   }
 
   @Delete('cards/:cardId')
@@ -117,8 +147,10 @@ export class PipelinesController {
   removeCard(
     @Param('cardId') cardId: string,
     @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.removeCard(cardId, orgId);
+    return this.service.removeCard(cardId, orgId, role, userId);
   }
 
   @Post('cards/:cardId/move')
@@ -130,7 +162,50 @@ export class PipelinesController {
     @Param('cardId') cardId: string,
     @CurrentOrg('id') orgId: string,
     @Body() dto: MoveCardDto,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.service.moveCard(cardId, orgId, dto);
+    return this.service.moveCard(cardId, orgId, dto, role, userId);
+  }
+
+  @Post('conversations/:conversationId/order-sent')
+  @ApiOperation({
+    summary:
+      'E6 — Entrega: move o card da conversa pra etapa final "Pedido enviado".',
+  })
+  markOrderSent(
+    @Param('conversationId') conversationId: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.markOrderSentForConversation(
+      orgId,
+      conversationId,
+      undefined,
+      role,
+      userId,
+    );
+  }
+
+  @Post('conversations/:conversationId/won')
+  @ApiOperation({
+    summary:
+      'E5.1 — Fechamento: marca Ganho (guarda o nº do pedido) e move o card pra etapa WON.',
+  })
+  markWon(
+    @Param('conversationId') conversationId: string,
+    @CurrentOrg('id') orgId: string,
+    @Body() body: { orderNumber?: string },
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.markWonForConversation(
+      orgId,
+      conversationId,
+      body?.orderNumber,
+      role,
+      userId,
+    );
   }
 }

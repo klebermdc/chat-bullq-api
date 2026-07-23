@@ -4,3 +4,4 @@ export { CurrentChannelAccess } from './current-channel-access.decorator';
 export { CurrentUserRole } from './current-user-role.decorator';
 export { Roles, ROLES_KEY } from './roles.decorator';
 export { Public, IS_PUBLIC_KEY } from './public.decorator';
+export { Feature, FEATURE_KEY } from './feature.decorator';

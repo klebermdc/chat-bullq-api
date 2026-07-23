@@ -12,6 +12,7 @@ export const ACTION_TYPES = [
   'move_pipeline_stage',
   'assign_user',
   'send_message',
+  'delay',
 ] as const;
 
 export type ActionType = (typeof ACTION_TYPES)[number];
@@ -43,6 +44,17 @@ export interface ActionContext {
   actorId: string; // automation creator (snapshot)
 }
 
+// Sinal de controle de fluxo devolvido por ações especiais. Hoje só o
+// `delay`: pede ao executor para persistir o run como WAITING e parar,
+// retomando em `resumeAt`. O executor é o ÚNICO que age sobre isto — o
+// handler não persiste nada.
+export interface DelayControl {
+  type: 'delay';
+  resumeAt: string; // ISO-8601
+}
+
+export type ActionControl = DelayControl;
+
 export interface ActionExecutionResult {
   ok: boolean;
   // Short, machine-readable error code for UI grouping. Examples:
@@ -52,12 +64,23 @@ export interface ActionExecutionResult {
   // Free-form output used by tests/debug/run-log. Avoid putting anything
   // sensitive here — it gets persisted in `automation_runs.actions_log`.
   output?: Record<string, unknown>;
+  // Presente apenas em ações de controle de fluxo (ex.: delay). Quando
+  // setado, o executor NÃO segue para a próxima ação — trata o sinal.
+  control?: ActionControl;
 }
 
 export interface ActionHandler {
   readonly type: ActionType;
   // Default for `continueOnError` when the user didn't set it explicitly.
   readonly continueOnErrorDefault: boolean;
+
+  // Quando true, o executor grava um checkpoint (resumeActionIndex+log)
+  // logo após esta ação ter sucesso, para que um crash retome da PRÓXIMA
+  // ação em vez de re-executar esta. Ligar apenas em ações com efeito
+  // colateral EXTERNO irreversível (send_message, http_request). Ações
+  // internas idempotentes (add_tag via @@unique) não precisam. Ausente =
+  // false.
+  readonly checkpoint?: boolean;
 
   // Validate at save time (CRUD endpoint calls this). Throw with a clear
   // message — the controller turns it into a 400.

@@ -32,6 +32,17 @@ export class WhatsAppOfficialMessageMapper {
       result.replyTo = { externalMessageId: message.context.id };
     }
 
+    // Click-to-WhatsApp: o Cloud API só envia `referral` na 1ª mensagem depois
+    // que o lead clica no anúncio. `ctwa_clid` amarra a conversa ao anúncio e é
+    // o identificador forte de atribuição na Conversions API.
+    if (message.referral?.ctwa_clid) {
+      result.referral = {
+        ctwaClid: message.referral.ctwa_clid,
+        sourceId: message.referral.source_id,
+        sourceType: message.referral.source_type,
+      };
+    }
+
     return result;
   }
 
@@ -48,12 +59,31 @@ export class WhatsAppOfficialMessageMapper {
     const mapped = statusMap[status.status];
     if (!mapped) return null;
 
-    return {
+    const result: StatusUpdate = {
       externalMessageId: status.id,
       status: mapped,
       timestamp: new Date(parseInt(status.timestamp, 10) * 1000),
       errorMessage: status.errors?.[0]?.message,
     };
+
+    if (status.conversation?.id) {
+      const exp = status.conversation.expiration_timestamp;
+      result.conversation = {
+        id: status.conversation.id,
+        originType: status.conversation.origin?.type,
+        expirationTimestamp: exp != null ? parseInt(exp, 10) : undefined,
+      };
+    }
+
+    if (status.pricing) {
+      result.pricing = {
+        billable: status.pricing.billable,
+        category: status.pricing.category,
+        pricingModel: status.pricing.pricing_model,
+      };
+    }
+
+    return result;
   }
 
   denormalize(
@@ -240,6 +270,14 @@ export class WhatsAppOfficialMessageMapper {
           };
         }
         return { text: '[Interactive message]' };
+      // Toque em botão de quick-reply de TEMPLATE (HSM) chega como
+      // `type: "button"` (não `interactive`): o texto do botão está em
+      // `button.text` e o identificador do dev em `button.payload`.
+      case 'button':
+        return {
+          interactive: { type: 'button', payload: msg.button?.payload },
+          text: msg.button?.text,
+        };
       default:
         return { text: `[${msg.type || 'unknown'}]` };
     }

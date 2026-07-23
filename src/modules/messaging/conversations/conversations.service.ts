@@ -7,9 +7,18 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { Conversation, ConversationStatus, OrgRole, Prisma } from '@prisma/client';
+import {
+  Conversation,
+  ConversationStatus,
+  MessageContentType,
+  MessageDirection,
+  MessageStatus,
+  OrgRole,
+  Prisma,
+} from '@prisma/client';
 import { ConversationsRepository, InboxFilters } from './conversations.repository';
 import { resolveAssignmentScope } from './conversation-scope';
+import { ConversationAccessService } from './conversation-access.service';
 import { ConversationFsmService } from './conversation-fsm.service';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
@@ -30,9 +39,13 @@ import {
   ConversationSummaryService,
   SummaryTurn,
 } from '../messages/conversation-summary.service';
+import { AttendantGreetingService } from '../attendant-greeting/attendant-greeting.service';
 
 const SYNC_MESSAGE_PAGE_SIZE = 50;
 const SYNC_MAX_PAGES = 4;
+
+/** Valores de `assignedToId` que significam "sem responsável", não um id. */
+const UNASSIGNED_TOKENS = new Set(['none', 'null', 'unassigned']);
 
 function parseDate(v?: string): Date | undefined {
   if (!v) return undefined;
@@ -56,9 +69,12 @@ export class ConversationsService {
     private readonly agentRunner: AiAgentRunnerService,
     private readonly segmentRead: SegmentReadService,
     private readonly projects: ProjectsService,
+    private readonly conversationAccess: ConversationAccessService,
     @Inject(forwardRef(() => ScheduledMessagesService))
     private readonly scheduled: ScheduledMessagesService,
     private readonly summarizer: ConversationSummaryService,
+    @Inject(forwardRef(() => AttendantGreetingService))
+    private readonly attendantGreeting: AttendantGreetingService,
   ) {}
 
   /**
@@ -110,12 +126,19 @@ export class ConversationsService {
       status?: string;
       /** Aba de atendimento: waiting | inbox | closed. */
       tab?: 'waiting' | 'inbox' | 'closed';
+      /**
+       * Mesmo sinal das abas, mas fixado por uma inbox view (que não usa
+       * abas). Tem precedência sobre `tab` quando os dois vierem.
+       */
+      awaitingHumanReply?: boolean;
       channelId?: string;
       channelIds?: string[];
       conversationIds?: string[];
       kind?: 'INDIVIDUAL' | 'GROUP';
       tagIds?: string[];
       assignedToId?: string;
+      /** Só conversas sem responsável (fila de distribuição). */
+      assignedToNone?: boolean;
       search?: string;
       archived?: 'exclude' | 'only' | 'any';
       unreadOnly?: boolean;
@@ -153,6 +176,15 @@ export class ConversationsService {
       tabAwaitingHumanReply = false;
       tabExcludeClosed = true;
     }
+
+    // Uma inbox view pode fixar o mesmo sinal sem passar por aba (views têm
+    // semântica própria e não usam as abas). Ex.: "Distribuição" = fila de
+    // handoff. Vale a mesma regra da aba: fechadas ficam de fora, porque um
+    // atendimento encerrado não está esperando ninguém.
+    const awaitingHumanReply =
+      filters.awaitingHumanReply ?? tabAwaitingHumanReply;
+    const excludeClosed =
+      tabExcludeClosed || filters.awaitingHumanReply !== undefined;
 
     // Filtros que unificam por grupo POR LEITURA (Segmento ou Projeto): pegam
     // uma conversa representante por grupo (JID) e listam só essas — uma linha
@@ -199,8 +231,8 @@ export class ConversationsService {
     const inboxFilters: InboxFilters = {
       organizationId,
       status: effectiveStatuses?.length ? effectiveStatuses : undefined,
-      awaitingHumanReply: tabAwaitingHumanReply,
-      excludeClosed: tabExcludeClosed,
+      awaitingHumanReply,
+      excludeClosed,
       // Em filtro de grupo (segmento/projeto) o canal vira o conjunto de
       // canais resolvidos (necessário pro plano da query); senão, o do usuário.
       channelId: isGroupResolved ? undefined : filters.channelId,
@@ -208,7 +240,16 @@ export class ConversationsService {
       conversationIds,
       kind: isGroupResolved ? 'GROUP' : filters.kind,
       tagIds: filters.tagIds,
-      assignedToId: filters.assignedToId,
+      // Query string também pode pedir "sem responsável" (?assignedToId=none).
+      // Normalizar aqui garante que nenhum sentinel textual chegue ao Prisma
+      // como se fosse um id de usuário.
+      assignedToId: UNASSIGNED_TOKENS.has(filters.assignedToId ?? '')
+        ? undefined
+        : filters.assignedToId,
+      assignedToNone:
+        filters.assignedToNone ||
+        UNASSIGNED_TOKENS.has(filters.assignedToId ?? '') ||
+        undefined,
       enforceAssignedToId: currentUserId
         ? resolveAssignmentScope(role, currentUserId)
         : undefined,
@@ -259,6 +300,36 @@ export class ConversationsService {
     }
     await this.attachProjects(organizationId, [conversation as any]);
     return conversation;
+  }
+
+  /**
+   * Garante que o usuário pode agir sobre a conversa.
+   * AGENT só alcança conversa atribuída a ele. OWNER/ADMIN passam direto.
+   * Lança NotFound — e não Forbidden — para não confirmar a existência da conversa alheia.
+   *
+   * Guarda ÚNICA e compartilhada para os métodos de escrita (update, transfer,
+   * toggleAi, engageAi, setActiveAgent, close, reopen, assignToMe) e reusada
+   * pelo MessagesService (send/revoke). Propositalmente NÃO reusa `findOne`:
+   * esta checagem é barata (um único findFirst) e não faz o attachProjects
+   * que as mutações não precisam.
+   *
+   * Implementação mora em `ConversationAccessService` (leaf service, só
+   * depende de PrismaService) — delega pra não duplicar a lógica nem
+   * reintroduzir o ciclo de DI que injetar `ConversationsService` inteiro
+   * causava nos outros módulos consumidores.
+   */
+  async assertConversationAccess(
+    id: string,
+    organizationId: string,
+    role?: OrgRole,
+    currentUserId?: string,
+  ) {
+    return this.conversationAccess.assertConversationAccess(
+      id,
+      organizationId,
+      role,
+      currentUserId,
+    );
   }
 
   /**
@@ -424,9 +495,13 @@ export class ConversationsService {
     dto: UpdateConversationDto,
     actorId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ) {
+    await this.assertConversationAccess(id, organizationId, role, actorId);
     const conversation = await this.findOne(id, organizationId, access);
 
+    const assigneeChanged =
+      !!dto.assignedToId && dto.assignedToId !== conversation.assignedToId;
     if (dto.assignedToId) {
       await this.fsm.assign(id, dto.assignedToId, actorId);
     }
@@ -448,6 +523,109 @@ export class ConversationsService {
 
     const updated = await this.repository.findById(id);
     this.broadcastUpdate(updated as Conversation | null);
+
+    if (assigneeChanged) {
+      await this.attendantGreeting.greet({
+        conversationId: id,
+        attendantUserId: dto.assignedToId!,
+        source: 'MANUAL_ASSIGN',
+      });
+    }
+
+    return updated;
+  }
+
+  /**
+   * Transferência intencional do cliente para outro atendente. Diferente do
+   * auto-assign (que acontece implicitamente ao responder), aqui o ator move
+   * o card de propósito e a transferência fica REGISTRADA no thread como uma
+   * mensagem SYSTEM ("🔄 Cliente transferido de X para Y"), visível a todos.
+   *
+   * Reusa `fsm.assign` (audit log ASSIGNED + trigger de automação). A mensagem
+   * SYSTEM é criada direto no banco, com status SENT e sem entrar na fila de
+   * entrega — portanto NÃO é enviada ao cliente no WhatsApp/IG.
+   */
+  async transfer(
+    id: string,
+    organizationId: string,
+    toUserId: string,
+    actorId: string,
+    reason?: string,
+    access: ChannelAccess = 'ALL',
+    role?: OrgRole,
+  ) {
+    await this.assertConversationAccess(id, organizationId, role, actorId);
+    const conversation = await this.findOne(id, organizationId, access);
+
+    if (conversation.assignedToId === toUserId) {
+      throw new BadRequestException(
+        'A conversa já está atribuída a este atendente.',
+      );
+    }
+
+    // Destinatário precisa ser membro ativo da mesma org.
+    const target = await this.prisma.userOrganization.findFirst({
+      where: { organizationId, userId: toUserId, user: { isActive: true } },
+      select: { user: { select: { id: true, name: true } } },
+    });
+    if (!target) {
+      throw new NotFoundException('Atendente destino não encontrado na organização.');
+    }
+
+    const fromUser = conversation.assignedToId
+      ? await this.prisma.user.findUnique({
+          where: { id: conversation.assignedToId },
+          select: { name: true },
+        })
+      : null;
+
+    await this.fsm.assign(id, toUserId, actorId);
+
+    const fromLabel = fromUser?.name ?? 'ninguém';
+    const toLabel = target.user.name ?? 'atendente';
+    const trimmedReason = reason?.trim();
+    const text = trimmedReason
+      ? `🔄 Cliente transferido de ${fromLabel} para ${toLabel}. Motivo: ${trimmedReason}`
+      : `🔄 Cliente transferido de ${fromLabel} para ${toLabel}`;
+
+    const systemMessage = await this.prisma.message.create({
+      data: {
+        conversationId: id,
+        direction: MessageDirection.OUTBOUND,
+        type: MessageContentType.SYSTEM,
+        status: MessageStatus.SENT,
+        senderId: actorId,
+        sentAt: new Date(),
+        content: {
+          text,
+          transfer: {
+            fromId: conversation.assignedToId,
+            toId: toUserId,
+            reason: trimmedReason ?? null,
+          },
+        },
+      },
+    });
+
+    // Aparece no thread na hora (SYSTEM message não passa pelo fluxo de send).
+    this.realtimeGateway.emitToChannel(conversation.channelId, 'message:new', {
+      message: systemMessage,
+      conversationId: id,
+      contactId: conversation.contactId,
+    });
+    this.realtimeGateway.emitToConversation(id, 'message:new', {
+      message: systemMessage,
+    });
+
+    const updated = await this.repository.findById(id);
+    this.broadcastUpdate(updated as Conversation | null);
+
+    await this.attendantGreeting.greet({
+      conversationId: id,
+      attendantUserId: toUserId,
+      source: 'TRANSFER',
+    });
+
     return updated;
   }
 
@@ -457,7 +635,9 @@ export class ConversationsService {
     enabled: boolean | null,
     actorId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ) {
+    await this.assertConversationAccess(id, organizationId, role, actorId);
     await this.findOne(id, organizationId, access);
 
     // Tri-state:
@@ -519,7 +699,9 @@ export class ConversationsService {
     organizationId: string,
     actorId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ): Promise<{ engaged: boolean; reason?: string }> {
+    await this.assertConversationAccess(id, organizationId, role, actorId);
     const conversation = await this.findOne(id, organizationId, access);
 
     const decision = await this.agentRouter.shouldHandle(
@@ -585,7 +767,9 @@ export class ConversationsService {
     agentId: string,
     actorId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ): Promise<{ engaged: boolean; reason?: string; agentName?: string }> {
+    await this.assertConversationAccess(id, organizationId, role, actorId);
     const conversation = await this.findOne(id, organizationId, access);
 
     const agent = await this.prisma.aiAgent.findFirst({
@@ -664,7 +848,9 @@ export class ConversationsService {
     organizationId: string,
     actorId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ) {
+    await this.assertConversationAccess(id, organizationId, role, actorId);
     await this.findOne(id, organizationId, access);
     await this.fsm.transition(id, ConversationStatus.CLOSED, actorId);
     const updated = await this.repository.findById(id);
@@ -680,7 +866,9 @@ export class ConversationsService {
     organizationId: string,
     actorId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ) {
+    await this.assertConversationAccess(id, organizationId, role, actorId);
     const conversation = await this.findOne(id, organizationId, access);
     const target = conversation.assignedToId
       ? ConversationStatus.OPEN
@@ -798,12 +986,22 @@ export class ConversationsService {
     return updated;
   }
 
+  /**
+   * AGENT só "reivindica" a própria conversa — o guard abaixo é o MESMO usado
+   * nas demais mutações, sem caso especial: se `assertConversationAccess`
+   * passar, a conversa já é do usuário (ou ele é OWNER/ADMIN), então
+   * `fsm.assign(id, userId, userId)` vira um no-op. Isso torna IMPOSSÍVEL um
+   * AGENT reivindicar conversa alheia — decisão de produto: conversa sem
+   * dono é distribuída por Admin/Owner, não "roubada" via self-claim.
+   */
   async assignToMe(
     id: string,
     organizationId: string,
     userId: string,
     access: ChannelAccess = 'ALL',
+    role?: OrgRole,
   ) {
+    await this.assertConversationAccess(id, organizationId, role, userId);
     await this.findOne(id, organizationId, access);
     await this.fsm.assign(id, userId, userId);
     const updated = await this.repository.findById(id);

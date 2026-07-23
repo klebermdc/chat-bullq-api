@@ -40,7 +40,12 @@ export interface NormalizedMessageContent {
   latitude?: number;
   longitude?: number;
   reaction?: { emoji: string; targetMessageId: string };
-  interactive?: { type: string; buttonId?: string; listRowId?: string };
+  interactive?: {
+    type: string;
+    buttonId?: string;
+    listRowId?: string;
+    payload?: string;
+  };
   template?: {
     templateType?: string;
     text?: string;
@@ -77,7 +82,17 @@ export interface NormalizedInboundMessage {
   isGroup?: boolean;
   isEcho?: boolean;
   senderName?: string;
+  // Atribuição Click-to-WhatsApp: presente só na 1ª mensagem após o clique no
+  // anúncio (Cloud API entrega em message.referral). Persistido no Contact
+  // para o evento Purchase da Meta CAPI quando o lead fecha em GANHO.
+  referral?: InboundReferral;
   rawPayload: unknown;
+}
+
+export interface InboundReferral {
+  ctwaClid?: string;
+  sourceId?: string; // ad id / source_id do referral
+  sourceType?: string; // "ad" | "post"
 }
 
 export interface NormalizedOutboundMessage {
@@ -107,6 +122,31 @@ export interface StatusUpdate {
   status: 'sent' | 'delivered' | 'read' | 'failed';
   timestamp: Date;
   errorMessage?: string;
+  /**
+   * Janela de conversa de 24h da Meta (só WHATSAPP_OFFICIAL); presente no
+   * status que abre a janela, ausente em delivered/read repetidos.
+   */
+  conversation?: {
+    id: string;
+    /** conversation.origin.type: marketing|utility|authentication|service */
+    originType?: string;
+    /**
+     * conversation.expiration_timestamp — mantido como epoch SEGUNDOS cru
+     * (diferente do irmão `timestamp: Date`) pra casar direto com o campo da Meta.
+     */
+    expirationTimestamp?: number;
+  };
+  /**
+   * Dados de cobrança da Meta (só canal WHATSAPP_OFFICIAL). Presentes no
+   * status `sent` que abre uma janela; ausentes em delivered/read repetidos.
+   */
+  pricing?: {
+    billable?: boolean;
+    /** pricing.category */
+    category?: string;
+    /** pricing.pricing_model: CBP|PMP */
+    pricingModel?: string;
+  };
 }
 
 export interface WebhookParseResult {
