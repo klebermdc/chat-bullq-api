@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
-import { AutomationTrigger, ConversationStatus } from '@prisma/client';
+import { AutomationTrigger, ConversationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { RatingsService } from '../../ratings/ratings.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
@@ -171,6 +171,18 @@ export class ConversationFsmService {
       }
 
       if (!isNoOp) {
+        // A etiqueta do atendente no card é uma TAG de conversa (nome do
+        // atendente), não um derivado de assignedToId. Ao trocar de atendente
+        // precisamos sincronizar: tirar a tag do antigo e pôr a do novo —
+        // senão a tag do atendente anterior fica colada pra sempre.
+        await this.syncAttendantTag(
+          tx,
+          conversationId,
+          conversation.organizationId,
+          conversation.assignedToId,
+          agentId,
+        );
+
         await this.outbox.enqueue(
           tx,
           AutomationTrigger.CONVERSATION_ASSIGNED,
@@ -201,6 +213,58 @@ export class ConversationFsmService {
           },
         );
       }
+    });
+  }
+
+  /**
+   * Mantém a tag do atendente do card em sincronia com quem está atribuído.
+   * A tag é o NOME do atendente (mesma convenção do fluxo de distribuir):
+   * remove a do atendente anterior (match exato pelo nome) e adiciona a do
+   * novo (idempotente). Roda dentro da mesma transação do assign.
+   */
+  private async syncAttendantTag(
+    tx: Prisma.TransactionClient,
+    conversationId: string,
+    organizationId: string,
+    fromAssigneeId: string | null,
+    toAssigneeId: string,
+  ): Promise<void> {
+    // Tira a tag do atendente anterior. Casa exatamente pelo nome dele — que é
+    // justamente a tag que o fluxo de distribuir teria criado.
+    if (fromAssigneeId && fromAssigneeId !== toAssigneeId) {
+      const prev = await tx.user.findUnique({
+        where: { id: fromAssigneeId },
+        select: { name: true },
+      });
+      const prevName = (prev?.name ?? '').trim();
+      if (prevName) {
+        await tx.conversationTag.deleteMany({
+          where: {
+            conversationId,
+            tag: { organizationId, name: prevName },
+          },
+        });
+      }
+    }
+
+    // Adiciona a tag do novo atendente (cria a Tag se não existir).
+    const next = await tx.user.findUnique({
+      where: { id: toAssigneeId },
+      select: { name: true },
+    });
+    const nextName = (next?.name ?? '').trim();
+    if (!nextName) return;
+
+    const tag = await tx.tag.upsert({
+      where: { organizationId_name: { organizationId, name: nextName } },
+      create: { organizationId, name: nextName },
+      update: {},
+      select: { id: true },
+    });
+    await tx.conversationTag.upsert({
+      where: { conversationId_tagId: { conversationId, tagId: tag.id } },
+      create: { conversationId, tagId: tag.id },
+      update: {},
     });
   }
 }
