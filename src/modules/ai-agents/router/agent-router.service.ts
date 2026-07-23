@@ -48,10 +48,14 @@ export class AgentRouterService {
     latestMessageText: string,
     recentMessages: ClassifierMessage[] = [],
   ): Promise<AgentSelection | null> {
-    // 1. Conversa em andamento — mantém o agent atual
+    // 1. Conversa em andamento — mantém o agent atual, DESDE QUE ainda esteja
+    // ativo. Se o activeAgent foi desativado/removido, não o retornamos: caímos
+    // no classificador/orchestrator (steps 2-3) em vez de deixar a conversa
+    // muda. Sem o filtro isActive/deletedAt, o runner re-resolvia com esse mesmo
+    // filtro, achava null e abortava sem fallback — cliente ficava sem resposta.
     if (conversation.activeAgentId) {
-      const agent = await this.prisma.aiAgent.findUnique({
-        where: { id: conversation.activeAgentId },
+      const agent = await this.prisma.aiAgent.findFirst({
+        where: { id: conversation.activeAgentId, isActive: true, deletedAt: null },
         select: { id: true, name: true },
       });
       if (agent) {
