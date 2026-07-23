@@ -4,12 +4,14 @@ import {
   Patch,
   Param,
   Query,
+  Body,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentUser, CurrentOrg } from '../../common/decorators';
+import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
@@ -62,5 +64,24 @@ export class NotificationsController {
     @CurrentOrg('id') orgId: string,
   ) {
     return this.service.markAllRead(userId, orgId);
+  }
+
+  @Get('preferences')
+  @ApiOperation({ summary: 'Get notification preferences for current user' })
+  getPreferences(
+    @CurrentUser('id') userId: string,
+    @CurrentOrg('id') orgId: string,
+  ) {
+    return this.service.getPreferences(userId, orgId);
+  }
+
+  @Patch('preferences')
+  @ApiOperation({ summary: 'Upsert notification preferences for current user' })
+  updatePreferences(
+    @CurrentUser('id') userId: string,
+    @CurrentOrg('id') orgId: string,
+    @Body() dto: UpdatePreferencesDto,
+  ) {
+    return this.service.updatePreferences(userId, orgId, dto.preferences);
   }
 }

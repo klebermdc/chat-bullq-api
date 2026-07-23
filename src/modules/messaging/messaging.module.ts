@@ -14,6 +14,7 @@ import { SchedulingModule } from '../scheduling/scheduling.module';
 import { CadencesModule } from '../cadences/cadences.module';
 import { AttendantGreetingModule } from './attendant-greeting/attendant-greeting.module';
 import { OrderFichaModule } from '../order-ficha/order-ficha.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { IdempotencyService } from './pipeline/idempotency.service';
 import { ContactResolverService } from './pipeline/contact-resolver.service';
 import { ConversationResolverService } from './pipeline/conversation-resolver.service';
@@ -69,6 +70,10 @@ import { ContactsRepository } from './contacts/contacts.repository';
     // MessagingModule → ciclo routing↔messaging → forwardRef nos dois lados
     // (mesmo padrão de cadences↔messaging acima).
     forwardRef(() => RoutingModule),
+    // Task A5: inbound processor dispara notificação persistente NEW_MESSAGE.
+    // Aresta one-way (messaging → notifications): NotificationsModule só
+    // importa BullModule e não referencia MessagingModule, então sem ciclo.
+    NotificationsModule,
   ],
   controllers: [ConversationsController, MessagesController, ContactsController],
   providers: [

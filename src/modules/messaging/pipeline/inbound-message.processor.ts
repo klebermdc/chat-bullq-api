@@ -24,6 +24,7 @@ import { SalesRecoveryService } from '../../sales-recovery/sales-recovery.servic
 import { ChannelUsageService } from '../../channel-usage/channel-usage.service';
 import { ORDER_FICHA_QUEUE } from '../../order-ficha/order-ficha.processor';
 import { IngestInput as OrderFichaIngestInput } from '../../order-ficha/order-ficha.service';
+import { InboundNotifierService } from '../../notifications/inbound-notifier.service';
 import {
   AutomationTrigger,
   ChannelType,
@@ -116,6 +117,7 @@ export class InboundMessageProcessor extends WorkerHost {
     private readonly leadSourceTagger: LeadSourceTaggerService,
     @InjectQueue(ORDER_FICHA_QUEUE) private readonly orderFichaQueue: Queue,
     private readonly channelUsage: ChannelUsageService,
+    private readonly inboundNotifier: InboundNotifierService,
   ) {
     super();
   }
@@ -188,7 +190,11 @@ export class InboundMessageProcessor extends WorkerHost {
         }
       }
 
-      const { conversationId, status } = await this.conversationResolver.resolve(
+      const {
+        conversationId,
+        status,
+        isNew: conversationIsNew,
+      } = await this.conversationResolver.resolve(
         organizationId,
         channelId,
         contactId,
@@ -302,6 +308,42 @@ export class InboundMessageProcessor extends WorkerHost {
       this.realtimeGateway.emitToConversation(conversationId, 'message:new', {
         message: savedMessage,
       });
+
+      // Notificação persistente NEW_MESSAGE (sino/badge). Best-effort e só
+      // para mensagem genuína do cliente (INBOUND, não-echo). O guard `isNew`
+      // (dedup de persistência da mensagem) evita disparar item duplicado no
+      // sino quando o job BullMQ é reprocessado após a TX já ter persistido.
+      // Todo o bloco é try/catch: nada aqui pode estourar no pipeline (senão
+      // um erro transiente de DB reprocessaria uma mensagem já tratada).
+      if (direction === MessageDirection.INBOUND && !isEcho && isNew) {
+        try {
+          const c = (message.content ?? {}) as Record<string, any>;
+          const preview =
+            (typeof c.text === 'string' && c.text) ||
+            (typeof c.caption === 'string' && c.caption) ||
+            '[mídia]';
+          const convo = await this.prisma.conversation.findUnique({
+            where: { id: conversationId },
+            select: {
+              assignedToId: true,
+              contact: { select: { name: true, phone: true } },
+            },
+          });
+          void this.inboundNotifier.onInboundMessage({
+            organizationId,
+            conversationId,
+            contactName:
+              convo?.contact?.name || convo?.contact?.phone || 'Cliente',
+            preview: String(preview),
+            assignedToId: convo?.assignedToId ?? null,
+            isNewConversation: conversationIsNew === true,
+          });
+        } catch (err: any) {
+          this.logger.warn(
+            `inbound notify prep falhou (não crítico): ${err?.message ?? err}`,
+          );
+        }
+      }
 
       // Atribuição de origem: lead que veio do link rastreado do Instagram
       // orgânico (frase-marca no texto pré-preenchido do wa.me) ganha a tag
