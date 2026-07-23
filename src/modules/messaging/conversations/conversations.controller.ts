@@ -4,6 +4,7 @@ import {
   Get,
   Patch,
   Post,
+  Put,
   Param,
   Body,
   Query,
@@ -16,6 +17,8 @@ import { StartConversationService } from './start-conversation.service';
 import { StartConversationDto } from './dto/start-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { TransferConversationDto } from './dto/transfer-conversation.dto';
+import { SetOriginDto } from './dto/set-origin.dto';
+import { LeadOriginService } from '../pipeline/lead-origin.service';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../../common/guards';
 import {
   CurrentUser,
@@ -35,6 +38,7 @@ export class ConversationsController {
   constructor(
     private readonly service: ConversationsService,
     private readonly startConversation: StartConversationService,
+    private readonly leadOrigin: LeadOriginService,
   ) {}
 
   @Post('start')
@@ -334,6 +338,19 @@ export class ConversationsController {
     @CurrentUserRole() role: OrgRole,
   ) {
     return this.service.transfer(id, orgId, dto.toUserId, userId, dto.reason, access, role);
+  }
+
+  @Put(':id/origin')
+  @ApiOperation({
+    summary:
+      'Define a origem do lead (correção manual, ex: card antigo marcado como Instagram Orgânico). Single-valued: substitui a tag de origem atual.',
+  })
+  setOrigin(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @Body() dto: SetOriginDto,
+  ) {
+    return this.leadOrigin.setOrigin(orgId, id, dto.origin);
   }
 
   @Patch(':id/ai')
