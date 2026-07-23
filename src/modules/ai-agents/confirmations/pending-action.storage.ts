@@ -25,6 +25,26 @@ export class PendingActionStorage {
     action: PendingAction,
     _previousStatus?: PendingActionStatus,
   ): Promise<void> {
+    // Campos que mudam ao longo do ciclo de vida da ação. Precisam ser
+    // idênticos no create e no update — senão um caminho como distribute()
+    // (que altera args/preview/expiresAt mantendo o status PENDING) grava só
+    // no create e é silenciosamente ignorado no update, e o estado
+    // "distribuído" se perde (o botão "Distribuir" nunca some do card).
+    // Mantê-los num só objeto elimina a classe inteira dessa divergência.
+    const mutableFields = {
+      status: action.status,
+      args: action.args as Prisma.InputJsonValue,
+      preview: action.preview as unknown as Prisma.InputJsonValue,
+      expiresAt: new Date(action.expiresAt),
+      approvedBy: action.approvedBy ?? null,
+      approvedAt: action.approvedAt ? new Date(action.approvedAt) : null,
+      rejectedBy: action.rejectedBy ?? null,
+      rejectedAt: action.rejectedAt ? new Date(action.rejectedAt) : null,
+      rejectedReason: action.rejectedReason ?? null,
+      executionResult:
+        (action.executionResult as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+    };
+
     await this.prisma.aiPendingAction.upsert({
       where: { id: action.id },
       create: {
@@ -33,28 +53,9 @@ export class PendingActionStorage {
         conversationId: action.conversationId,
         agentId: action.agentId,
         toolName: action.toolName,
-        args: action.args as Prisma.InputJsonValue,
-        preview: action.preview as unknown as Prisma.InputJsonValue,
-        status: action.status,
-        expiresAt: new Date(action.expiresAt),
-        approvedBy: action.approvedBy ?? null,
-        approvedAt: action.approvedAt ? new Date(action.approvedAt) : null,
-        rejectedBy: action.rejectedBy ?? null,
-        rejectedAt: action.rejectedAt ? new Date(action.rejectedAt) : null,
-        rejectedReason: action.rejectedReason ?? null,
-        executionResult:
-          (action.executionResult as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        ...mutableFields,
       },
-      update: {
-        status: action.status,
-        approvedBy: action.approvedBy ?? null,
-        approvedAt: action.approvedAt ? new Date(action.approvedAt) : null,
-        rejectedBy: action.rejectedBy ?? null,
-        rejectedAt: action.rejectedAt ? new Date(action.rejectedAt) : null,
-        rejectedReason: action.rejectedReason ?? null,
-        executionResult:
-          (action.executionResult as Prisma.InputJsonValue) ?? Prisma.JsonNull,
-      },
+      update: mutableFields,
     });
   }
 
