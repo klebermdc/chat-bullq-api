@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { NotificationType } from '@prisma/client';
+import { NotificationType, OrgRole } from '@prisma/client';
 import { NotificationsService } from './notifications.service';
 
 export interface InboundNotifyInput {
@@ -23,9 +23,10 @@ export class InboundNotifierService {
    *
    * Roteamento POR ATENDENTE (só o dono ouve, não a org toda):
    *  - conversa ATRIBUÍDA → notifica APENAS o atendente responsável.
-   *  - conversa SEM DONO, só na 1ª mensagem (lead novo entrando) → avisa a
-   *    org pra alguém pegar. Mensagens seguintes de conversa sem dono NÃO
-   *    re-notificam a org (evita barulho na fila de distribuição).
+   *  - conversa SEM DONO, só na 1ª mensagem (lead novo entrando) → notifica
+   *    APENAS o OWNER. Atendentes não têm acesso à fila de distribuição, então
+   *    não faz sentido alertá-los de lead que ainda não é deles. Mensagens
+   *    seguintes de conversa sem dono NÃO re-notificam (evita barulho).
    */
   async onInboundMessage(input: InboundNotifyInput): Promise<void> {
     try {
@@ -48,6 +49,7 @@ export class InboundNotifierService {
       if (input.isNewConversation) {
         await this.notifications.notifyOrgAgents({
           organizationId: input.organizationId,
+          roles: [OrgRole.OWNER],
           type: NotificationType.NEW_MESSAGE,
           title,
           body,
