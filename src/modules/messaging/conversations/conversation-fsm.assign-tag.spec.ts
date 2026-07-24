@@ -42,6 +42,7 @@ function makeFsm(conversationOverrides: Record<string, unknown> = {}) {
     },
     tag: {
       upsert: jest.fn().mockResolvedValue({ id: 'tag-pedro' }),
+      update: jest.fn().mockResolvedValue({}),
     },
   };
 
@@ -72,18 +73,45 @@ describe('ConversationFsmService.assign — sync da tag do atendente', () => {
       },
     });
 
-    // Adiciona (idempotente) a tag do novo atendente.
+    // Adiciona (idempotente) a tag do novo atendente, com uma cor estável e
+    // não-cinza pra o selo ficar distinto no inbox.
     expect(tx.tag.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { organizationId_name: { organizationId: 'org1', name: 'Pedro' } },
-        create: { organizationId: 'org1', name: 'Pedro' },
+        create: expect.objectContaining({ organizationId: 'org1', name: 'Pedro' }),
       }),
     );
+    const createArg = tx.tag.upsert.mock.calls[0][0].create;
+    expect(createArg.color).toMatch(/^#[0-9A-F]{6}$/i);
+    expect(createArg.color).not.toBe('#6B7280');
     expect(tx.conversationTag.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { conversationId_tagId: { conversationId: 'conv1', tagId: 'tag-pedro' } },
       }),
     );
+  });
+
+  it('recolore selo antigo que ficou no cinza padrão (sem sobrescrever cor manual)', async () => {
+    const { svc, tx } = makeFsm({ assignedToId: 'u-barbara' });
+    tx.tag.upsert.mockResolvedValue({ id: 'tag-pedro', color: '#6B7280' });
+
+
+    await svc.assign('conv1', 'u-pedro', 'actor1');
+
+    expect(tx.tag.update).toHaveBeenCalledWith({
+      where: { id: 'tag-pedro' },
+      data: { color: expect.stringMatching(/^#[0-9A-F]{6}$/i) },
+    });
+  });
+
+  it('não sobrescreve cor de selo já colorido', async () => {
+    const { svc, tx } = makeFsm({ assignedToId: 'u-barbara' });
+    tx.tag.upsert.mockResolvedValue({ id: 'tag-pedro', color: '#123456' });
+
+
+    await svc.assign('conv1', 'u-pedro', 'actor1');
+
+    expect(tx.tag.update).not.toHaveBeenCalled();
   });
 
   it('não mexe em tag nenhuma quando reatribui pro MESMO atendente (no-op)', async () => {

@@ -3,6 +3,10 @@ import { AutomationTrigger, ConversationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { RatingsService } from '../../ratings/ratings.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
+import {
+  attendantTagColor,
+  DEFAULT_TAG_COLOR,
+} from '../../../common/utils/attendant-tag-color.util';
 
 type Transition = {
   from: ConversationStatus;
@@ -255,12 +259,19 @@ export class ConversationFsmService {
     const nextName = (next?.name ?? '').trim();
     if (!nextName) return;
 
+    // Cor estável por atendente pra os selos ficarem distintos no inbox.
+    const color = attendantTagColor(toAssigneeId);
     const tag = await tx.tag.upsert({
       where: { organizationId_name: { organizationId, name: nextName } },
-      create: { organizationId, name: nextName },
+      create: { organizationId, name: nextName, color },
       update: {},
-      select: { id: true },
+      select: { id: true, color: true },
     });
+    // Backfill: selos antigos ficaram no cinza padrão. Recolore só esses —
+    // nunca sobrescreve uma cor escolhida à mão.
+    if (tag.color === DEFAULT_TAG_COLOR) {
+      await tx.tag.update({ where: { id: tag.id }, data: { color } });
+    }
     await tx.conversationTag.upsert({
       where: { conversationId_tagId: { conversationId, tagId: tag.id } },
       create: { conversationId, tagId: tag.id },
