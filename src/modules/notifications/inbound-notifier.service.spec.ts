@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { InboundNotifierService } from './inbound-notifier.service';
 import { NotificationsService } from './notifications.service';
-import { NotificationType } from '@prisma/client';
+import { NotificationType, OrgRole } from '@prisma/client';
 
 describe('InboundNotifierService', () => {
   let svc: InboundNotifierService;
@@ -32,10 +32,10 @@ describe('InboundNotifierService', () => {
     expect(notifications.notifyOrgAgents).not.toHaveBeenCalled();
   });
 
-  it('sem dono, 1ª mensagem (lead novo) → avisa a org', async () => {
+  it('sem dono, 1ª mensagem (lead novo) → notifica SÓ o OWNER', async () => {
     await svc.onInboundMessage({ ...base, assignedToId: null, isNewConversation: true });
     expect(notifications.notifyOrgAgents).toHaveBeenCalledWith(expect.objectContaining({
-      organizationId: 'o1', type: NotificationType.NEW_MESSAGE,
+      organizationId: 'o1', roles: [OrgRole.OWNER], type: NotificationType.NEW_MESSAGE,
     }));
     expect(notifications.notify).not.toHaveBeenCalled();
   });
