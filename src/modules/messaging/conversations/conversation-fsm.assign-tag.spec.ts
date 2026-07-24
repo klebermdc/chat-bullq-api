@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { ConversationFsmService } from './conversation-fsm.service';
 
 /**
@@ -29,7 +30,10 @@ function makeFsm(conversationOverrides: Record<string, unknown> = {}) {
   };
 
   const tx = {
-    conversation: { update: jest.fn().mockResolvedValue({}) },
+    conversation: {
+      update: jest.fn().mockResolvedValue({}),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
     conversationAuditLog: { create: jest.fn().mockResolvedValue({}) },
     user: {
       findUnique: jest.fn(({ where }: any) =>
@@ -56,7 +60,7 @@ function makeFsm(conversationOverrides: Record<string, unknown> = {}) {
   const ratings = { requestRating: jest.fn() } as any;
   const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) } as any;
 
-  return { svc: new ConversationFsmService(prisma, ratings, outbox), tx };
+  return { svc: new ConversationFsmService(prisma, ratings, outbox), tx, outbox };
 }
 
 describe('ConversationFsmService.assign — sync da tag do atendente', () => {
@@ -147,5 +151,44 @@ describe('ConversationFsmService.assign — sync da tag do atendente', () => {
     });
     expect(tx.tag.upsert).not.toHaveBeenCalled();
     expect(tx.conversationTag.upsert).not.toHaveBeenCalled();
+  });
+});
+
+// ── Lock otimista: fsm.assign é o funil de troca de assignedToId, usado por
+// assumir ("assign to me"), transferir e round-robin. Dois cliques concorrentes
+// no mesmo lead não podem ambos "vencer".
+describe('ConversationFsmService.assign — trava otimista (compare-and-set)', () => {
+  it('faz compare-and-set pelo assignedToId lido (não update cru por id)', async () => {
+    const { svc, tx } = makeFsm({ assignedToId: 'u-barbara' });
+
+    await svc.assign('conv1', 'u-pedro', 'actor1');
+
+    const call = tx.conversation.updateMany.mock.calls[0][0];
+    // Só grava se o dono ainda for exatamente quem foi lido antes da transação.
+    expect(call.where).toEqual({ id: 'conv1', assignedToId: 'u-barbara' });
+    expect(call.data).toMatchObject({ assignedToId: 'u-pedro' });
+  });
+
+  it('1ª atribuição casa where assignedToId:null (guarda "ainda sem dono")', async () => {
+    const { svc, tx } = makeFsm({ assignedToId: null, status: 'PENDING' });
+
+    await svc.assign('conv1', 'u-pedro', 'actor1');
+
+    const call = tx.conversation.updateMany.mock.calls[0][0];
+    expect(call.where).toEqual({ id: 'conv1', assignedToId: null });
+  });
+
+  it('perdeu a corrida (count 0) → ConflictException e NÃO grava audit/outbox', async () => {
+    const { svc, tx, outbox } = makeFsm({ assignedToId: 'u-barbara' });
+    tx.conversation.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      svc.assign('conv1', 'u-pedro', 'actor1'),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // Corrida perdida = transação inteira aborta: sem trilha de auditoria
+    // fantasma e sem disparar automações (CONVERSATION_ASSIGNED).
+    expect(tx.conversationAuditLog.create).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
   });
 });

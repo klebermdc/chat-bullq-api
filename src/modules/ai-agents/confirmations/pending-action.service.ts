@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -248,11 +249,19 @@ export class PendingActionService {
     if (!conv) throw new NotFoundException('Conversation not found');
 
     // Guarda quem estava atribuído ANTES de sobrescrever, pra sincronizar a
-    // tag do atendente ao re-distribuir (tirar a do antigo, pôr a do novo).
-    const previousAssigneeId = conv.assignedToId;
+    // tag do atendente ao re-distribuir (tirar a do antigo, pôr a do novo) E
+    // pra usar como guarda otimista no update abaixo. `?? null` é essencial:
+    // um `undefined` no where faria o Prisma IGNORAR o filtro, anulando a
+    // trava — precisa ser `null` pra casar "ainda sem dono".
+    const previousAssigneeId = conv.assignedToId ?? null;
 
-    await this.prisma.conversation.update({
-      where: { id: action.conversationId },
+    // Compare-and-set: só efetiva a distribuição se o dono da conversa ainda
+    // for exatamente quem lemos acima. Se dois atendentes clicam "Distribuir"
+    // no mesmo lead ~ao mesmo tempo, o primeiro grava (count=1) e o segundo
+    // não casa o where (o dono já mudou) → count=0 → 409. Sem isso, o segundo
+    // sobrescrevia o primeiro em silêncio e os dois "ganhavam" o mesmo lead.
+    const claimed = await this.prisma.conversation.updateMany({
+      where: { id: action.conversationId, assignedToId: previousAssigneeId },
       data: {
         aiEnabled: false,
         assignedToId,
@@ -264,6 +273,11 @@ export class PendingActionService {
           : {}),
       },
     });
+    if (claimed.count === 0) {
+      throw new ConflictException(
+        'Esta conversa já foi distribuída por outra pessoa. Atualize a lista e tente de novo.',
+      );
+    }
 
     // Tag com o nome do atendente (best-effort). O card fica na etapa
     // "Distribuir"; só vai pra "Coletando Informação" quando o atendente
