@@ -59,19 +59,18 @@ export class WasenderInboundAdapter implements InboundChannelPort {
   }
 
   validateWebhook(
-    headers: Record<string, string>,
+    _headers: Record<string, string>,
     _rawBody: Buffer,
-    webhookSecret?: string,
+    _webhookSecret?: string,
     _channel?: Channel,
   ): boolean {
-    // Assinatura do Wasender é comparação simples do secret via header
-    // `X-Webhook-Signature` (NÃO é HMAC). Se o canal não tem secret
-    // configurado, aceitamos (o match por sessionId já roteou o evento).
-    if (!webhookSecret) return true;
-    const candidate =
-      headers['x-webhook-signature'] || headers['x-wasender-signature'];
-    if (!candidate) return false;
-    return this.timingSafeEqualStr(webhookSecret, String(candidate));
+    // A "assinatura" do Wasender é só um secret comparado num header
+    // (`X-Webhook-Signature`) — NÃO é HMAC — e nem sempre está configurada.
+    // Decisão de produto (2026-07-24): a verificação foi REMOVIDA. O
+    // roteamento seguro já acontece por `sessionId` em `matchesChannel`;
+    // Wasender é canal não-oficial, então aceitamos o payload e o parse
+    // cuida do resto. (`timingSafeEqualStr` segue em uso no matchesChannel.)
+    return true;
   }
 
   parseWebhook(payload: unknown, _channel?: Channel): WebhookParseResult {
