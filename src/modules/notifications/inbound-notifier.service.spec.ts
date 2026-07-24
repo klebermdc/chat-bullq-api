@@ -23,16 +23,16 @@ describe('InboundNotifierService', () => {
     preview: 'oi', assignedToId: null as string | null, isNewConversation: false,
   };
 
-  it('conversa atribuída → notifica a org toda (não só o atendente)', async () => {
+  it('conversa atribuída → notifica SÓ o atendente dono (não a org)', async () => {
     await svc.onInboundMessage({ ...base, assignedToId: 'agent-9' });
-    expect(notifications.notifyOrgAgents).toHaveBeenCalledWith(expect.objectContaining({
-      organizationId: 'o1', type: NotificationType.NEW_MESSAGE,
+    expect(notifications.notify).toHaveBeenCalledWith(expect.objectContaining({
+      recipientId: 'agent-9', organizationId: 'o1', type: NotificationType.NEW_MESSAGE,
       data: expect.objectContaining({ conversationId: 'c1' }),
     }));
-    expect(notifications.notify).not.toHaveBeenCalled();
+    expect(notifications.notifyOrgAgents).not.toHaveBeenCalled();
   });
 
-  it('sem atribuição, 1ª mensagem → notifica a org', async () => {
+  it('sem dono, 1ª mensagem (lead novo) → avisa a org', async () => {
     await svc.onInboundMessage({ ...base, assignedToId: null, isNewConversation: true });
     expect(notifications.notifyOrgAgents).toHaveBeenCalledWith(expect.objectContaining({
       organizationId: 'o1', type: NotificationType.NEW_MESSAGE,
@@ -40,14 +40,14 @@ describe('InboundNotifierService', () => {
     expect(notifications.notify).not.toHaveBeenCalled();
   });
 
-  it('sem atribuição, mensagem seguinte → TAMBÉM notifica a org (não fica mudo)', async () => {
+  it('sem dono, mensagem seguinte → não notifica ninguém (sem barulho na fila)', async () => {
     await svc.onInboundMessage({ ...base, assignedToId: null, isNewConversation: false });
-    expect(notifications.notifyOrgAgents).toHaveBeenCalledTimes(1);
     expect(notifications.notify).not.toHaveBeenCalled();
+    expect(notifications.notifyOrgAgents).not.toHaveBeenCalled();
   });
 
   it('nunca lança — erros são engolidos (best-effort)', async () => {
-    notifications.notifyOrgAgents.mockRejectedValueOnce(new Error('boom'));
+    notifications.notify.mockRejectedValueOnce(new Error('boom'));
     await expect(
       svc.onInboundMessage({ ...base, assignedToId: 'agent-9' }),
     ).resolves.toBeUndefined();
