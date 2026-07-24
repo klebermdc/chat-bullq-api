@@ -49,7 +49,12 @@ describe('WasenderInboundAdapter', () => {
   describe('validateWebhook', () => {
     const body = Buffer.from('{}');
 
-    it('aceita assinatura correta', () => {
+    // Decisão de produto (2026-07-24): a "assinatura" do Wasender é só um
+    // secret comparado num header (não é HMAC) e nem sempre está configurada.
+    // O roteamento seguro já é feito por sessionId em matchesChannel, então a
+    // verificação foi REMOVIDA — validateWebhook sempre aceita. Ver PR.
+    it('sempre aceita — assinatura do Wasender não é verificada (rota por sessionId)', () => {
+      // secret configurado + assinatura correta → aceita
       expect(
         adapter.validateWebhook(
           { 'x-webhook-signature': 'top-secret' },
@@ -57,23 +62,17 @@ describe('WasenderInboundAdapter', () => {
           'top-secret',
         ),
       ).toBe(true);
-    });
-
-    it('rejeita assinatura incorreta', () => {
+      // secret configurado + assinatura ERRADA → ainda aceita (não verifica)
       expect(
         adapter.validateWebhook(
           { 'x-webhook-signature': 'errado' },
           body,
           'top-secret',
         ),
-      ).toBe(false);
-    });
-
-    it('rejeita quando secret configurado mas header ausente', () => {
-      expect(adapter.validateWebhook({}, body, 'top-secret')).toBe(false);
-    });
-
-    it('aceita quando não há webhookSecret configurado (roteado por sessionId)', () => {
+      ).toBe(true);
+      // secret configurado + header AUSENTE → ainda aceita
+      expect(adapter.validateWebhook({}, body, 'top-secret')).toBe(true);
+      // sem secret → aceita (como antes)
       expect(adapter.validateWebhook({}, body, undefined)).toBe(true);
     });
   });
