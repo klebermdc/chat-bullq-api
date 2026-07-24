@@ -21,13 +21,11 @@ export class InboundNotifierService {
    * Best-effort: cria a notificação NEW_MESSAGE. Nunca lança — notificação
    * quebrada não pode derrubar o pipeline de mensagem.
    *
-   * Regra "tudo que chega na org": TODA mensagem genuína de cliente notifica
-   * TODOS os atendentes da org (atribuída a quem for). Assim o som não fica
-   * intermitente — quem estiver disponível é alertado de qualquer mensagem
-   * nova. O barulho é contido em duas camadas: a supressão no frontend
-   * (não toca na conversa que o atendente já está olhando) e o som/DND por
-   * usuário. `assignedToId`/`isNewConversation` no input são mantidos por
-   * compatibilidade do chamador, mas não influenciam mais o roteamento.
+   * Roteamento POR ATENDENTE (só o dono ouve, não a org toda):
+   *  - conversa ATRIBUÍDA → notifica APENAS o atendente responsável.
+   *  - conversa SEM DONO, só na 1ª mensagem (lead novo entrando) → avisa a
+   *    org pra alguém pegar. Mensagens seguintes de conversa sem dono NÃO
+   *    re-notificam a org (evita barulho na fila de distribuição).
    */
   async onInboundMessage(input: InboundNotifyInput): Promise<void> {
     try {
@@ -35,13 +33,27 @@ export class InboundNotifierService {
       const body = input.preview?.slice(0, 140) || 'Enviou uma mensagem';
       const data = { conversationId: input.conversationId };
 
-      await this.notifications.notifyOrgAgents({
-        organizationId: input.organizationId,
-        type: NotificationType.NEW_MESSAGE,
-        title,
-        body,
-        data,
-      });
+      if (input.assignedToId) {
+        await this.notifications.notify({
+          recipientId: input.assignedToId,
+          organizationId: input.organizationId,
+          type: NotificationType.NEW_MESSAGE,
+          title,
+          body,
+          data,
+        });
+        return;
+      }
+
+      if (input.isNewConversation) {
+        await this.notifications.notifyOrgAgents({
+          organizationId: input.organizationId,
+          type: NotificationType.NEW_MESSAGE,
+          title,
+          body,
+          data,
+        });
+      }
     } catch (err: any) {
       this.logger.warn(`inbound notify falhou (não crítico): ${err?.message}`);
     }
