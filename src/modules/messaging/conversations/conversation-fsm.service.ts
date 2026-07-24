@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ConflictException,
+  Logger,
+} from '@nestjs/common';
 import { AutomationTrigger, ConversationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { RatingsService } from '../../ratings/ratings.service';
@@ -147,10 +152,22 @@ export class ConversationFsmService {
     const isNoOp = conversation.assignedToId === agentId;
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.conversation.update({
-        where: { id: conversationId },
+      // Compare-and-set: só grava se o dono ainda for exatamente quem lemos
+      // acima (`conversation.assignedToId`, que é `null` quando sem dono). Se
+      // dois caminhos concorrentes (assumir / transferir / round-robin) tentam
+      // atribuir o mesmo lead, só o primeiro casa o where; o segundo pega
+      // count=0 → 409, e a transação inteira aborta (nada de audit/outbox
+      // fantasma). Sem isso era last-write-wins silencioso e dois atendentes
+      // "ganhavam" o mesmo lead.
+      const claimed = await tx.conversation.updateMany({
+        where: { id: conversationId, assignedToId: conversation.assignedToId },
         data: updates,
       });
+      if (claimed.count === 0) {
+        throw new ConflictException(
+          'A atribuição desta conversa mudou enquanto você agia. Atualize e tente de novo.',
+        );
+      }
 
       await tx.conversationAuditLog.create({
         data: {

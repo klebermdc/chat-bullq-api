@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { PendingActionService } from './pending-action.service';
 
 function make(actionOverrides: Record<string, unknown> = {}) {
@@ -25,6 +25,7 @@ function make(actionOverrides: Record<string, unknown> = {}) {
         organizationId: 'org1',
       }),
       update: jest.fn().mockResolvedValue({ id: 'conv1' }),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     user: { findUnique: jest.fn().mockResolvedValue({ name: 'Renata' }) },
     tag: { upsert: jest.fn().mockResolvedValue({ id: 'tag1' }) },
@@ -54,8 +55,8 @@ describe('PendingActionService.distribute', () => {
     const { svc, storage, prisma } = make();
     await svc.distribute('pa1', 'operador1', 'atendente9');
 
-    const upd = prisma.conversation.update.mock.calls[0][0];
-    expect(upd.where).toEqual({ id: 'conv1' });
+    const upd = prisma.conversation.updateMany.mock.calls[0][0];
+    expect(upd.where).toEqual({ id: 'conv1', assignedToId: null });
     expect(upd.data).toMatchObject({
       aiEnabled: false,
       assignedToId: 'atendente9',
@@ -74,7 +75,7 @@ describe('PendingActionService.distribute', () => {
     const { svc, prisma } = make();
     prisma.conversation.findUnique.mockResolvedValue({ status: 'OPEN', firstResponseAt: new Date() });
     await svc.distribute('pa1', 'op1', 'at1');
-    const upd = prisma.conversation.update.mock.calls[0][0];
+    const upd = prisma.conversation.updateMany.mock.calls[0][0];
     expect(upd.data.status).toBeUndefined();
     expect(upd.data).toMatchObject({ aiEnabled: false, awaitingHumanReply: true });
   });
@@ -178,6 +179,43 @@ describe('PendingActionService.distribute', () => {
   it('rejeita se a pendência não está PENDING', async () => {
     const { svc } = make({ status: 'EXECUTED' });
     await expect(svc.distribute('pa1', 'op1', 'at1')).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  // ── Lock otimista contra corrida de distribuição ──────────────────────
+  // Dois atendentes clicam "Distribuir" no mesmo lead ~ao mesmo tempo. O
+  // segundo a gravar NÃO pode sobrescrever silenciosamente o primeiro.
+
+  it('CAS: o where do update casa pelo assignedToId lido (guarda de corrida)', async () => {
+    const { svc, prisma } = make();
+    prisma.conversation.findUnique.mockResolvedValue({
+      status: 'OPEN',
+      firstResponseAt: new Date(),
+      organizationId: 'org1',
+      assignedToId: 'atendente-antigo',
+    });
+    await svc.distribute('pa1', 'op1', 'atendente-novo');
+    const call = prisma.conversation.updateMany.mock.calls[0][0];
+    // Só atualiza se o dono ainda for exatamente quem lemos antes.
+    expect(call.where).toEqual({ id: 'conv1', assignedToId: 'atendente-antigo' });
+    expect(call.data).toMatchObject({ assignedToId: 'atendente-novo' });
+  });
+
+  it('1ª distribuição usa assignedToId:null no where (não undefined)', async () => {
+    const { svc, prisma } = make(); // base findUnique não traz assignedToId
+    await svc.distribute('pa1', 'op1', 'atendente9');
+    const call = prisma.conversation.updateMany.mock.calls[0][0];
+    // undefined faria o Prisma ignorar o filtro → guarda anulada. Tem que ser null.
+    expect(call.where).toEqual({ id: 'conv1', assignedToId: null });
+  });
+
+  it('aborta com ConflictException quando outra pessoa já distribuiu (CAS count 0)', async () => {
+    const { svc, prisma, storage } = make();
+    prisma.conversation.updateMany.mockResolvedValue({ count: 0 });
+    await expect(
+      svc.distribute('pa1', 'op1', 'atendente9'),
+    ).rejects.toBeInstanceOf(ConflictException);
+    // Perdeu a corrida → NÃO marca a pendência como distribuída.
+    expect(storage.save).not.toHaveBeenCalled();
   });
 });
 
