@@ -17,6 +17,10 @@ import { PendingActionStorage } from './pending-action.storage';
 import { PENDING_ACTION_EXECUTOR_QUEUE } from './queue-names';
 import { PrismaService } from '../../../database/prisma.service';
 import { AttendantGreetingService } from '../../messaging/attendant-greeting/attendant-greeting.service';
+import {
+  attendantTagColor,
+  DEFAULT_TAG_COLOR,
+} from '../../../common/utils/attendant-tag-color.util';
 
 /**
  * Service that owns the lifecycle of `PendingAction` records.
@@ -348,12 +352,22 @@ export class PendingActionService {
     const name = (user?.name ?? '').trim();
     if (!name) return null;
 
+    // Cor estável por atendente pra os selos ficarem distintos no inbox.
+    const color = attendantTagColor(assignedToId);
     const tag = await this.prisma.tag.upsert({
       where: { organizationId_name: { organizationId, name } },
-      create: { organizationId, name },
+      create: { organizationId, name, color },
       update: {},
-      select: { id: true },
+      select: { id: true, color: true },
     });
+    // Backfill: selos antigos ficaram no cinza padrão. Recolore só esses —
+    // nunca sobrescreve uma cor escolhida à mão.
+    if (tag.color === DEFAULT_TAG_COLOR) {
+      await this.prisma.tag.update({
+        where: { id: tag.id },
+        data: { color },
+      });
+    }
     await this.prisma.conversationTag.upsert({
       where: { conversationId_tagId: { conversationId, tagId: tag.id } },
       create: { conversationId, tagId: tag.id },
