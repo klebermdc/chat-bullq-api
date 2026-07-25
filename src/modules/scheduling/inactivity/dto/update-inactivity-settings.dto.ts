@@ -12,4 +12,5 @@ export class UpdateInactivitySettingsDto {
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) retryEveryHours?: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(23) quietHoursStart?: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(23) quietHoursEnd?: number;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() reengageOnlyAiParked?: boolean;
 }

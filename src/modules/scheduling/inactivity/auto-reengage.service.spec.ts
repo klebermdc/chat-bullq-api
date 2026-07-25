@@ -28,6 +28,7 @@ const cfg: any = {
   quietHoursStart: null,
   quietHoursEnd: null,
   reengageFromBand: 1,
+  reengageOnlyAiParked: false,
 };
 
 describe('AutoReengageService.maybeCreate', () => {
@@ -90,6 +91,14 @@ describe('AutoReengageService.maybeCreate', () => {
     const { service, schedRepo } = makeDeps({ draft: null });
     await service.maybeCreate('org1', conv, 2, cfg);
     expect(schedRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('grava requireAiParked = valor do cfg', async () => {
+    const { service, schedRepo } = makeDeps();
+    await service.maybeCreate('org1', conv, 2, { ...cfg, reengageOnlyAiParked: true });
+    expect(schedRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ requireAiParked: true }),
+    );
   });
 });
 

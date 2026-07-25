@@ -12,6 +12,7 @@ export const DEFAULT_INACTIVITY_SETTINGS = {
   retryEveryHours: 48,
   quietHoursStart: null as number | null,
   quietHoursEnd: null as number | null,
+  reengageOnlyAiParked: false,
 };
 
 export type ResolvedInactivitySettings = typeof DEFAULT_INACTIVITY_SETTINGS & {
@@ -37,6 +38,7 @@ export class InactivitySettingsService {
             retryEveryHours: row.retryEveryHours,
             quietHoursStart: row.quietHoursStart,
             quietHoursEnd: row.quietHoursEnd,
+            reengageOnlyAiParked: row.reengageOnlyAiParked,
           }
         : {}),
     };
