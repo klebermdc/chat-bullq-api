@@ -606,6 +606,20 @@ describe('CadenceRunner.maybeStartForNoReply', () => {
     expect(result).toEqual({ id: 'e1' });
   });
 
+  it('NÃO inscreve quando a IA foi desligada na conversa (aiEnabled=false)', async () => {
+    const { runner, cadences, prisma } = makeDeps();
+    prisma.conversation.findUnique.mockResolvedValue({ ...conv, aiEnabled: false });
+    cadences.findNoReply.mockResolvedValue(
+      makeCadence({ id: 'cad-nr', trigger: 'NO_REPLY', enabled: true, watchedStageIds: [] }),
+    );
+    const startSpy = jest.spyOn(runner, 'start').mockResolvedValue({ id: 'e1' } as any);
+
+    const result = await runner.maybeStartForNoReply('c1');
+
+    expect(startSpy).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+
   it('NÃO inscreve quando a conversa já foi para um humano (assignedToId setado)', async () => {
     const { runner, cadences, prisma } = makeDeps();
     prisma.conversation.findUnique.mockResolvedValue({
