@@ -2,10 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { InactivitySettings } from '@prisma/client';
 import { InactivitySettingsRepository } from './inactivity-settings.repository';
 import { UpdateInactivitySettingsDto } from './dto/update-inactivity-settings.dto';
+import type { BandsUnit } from './inactivity.util';
 
 export const DEFAULT_INACTIVITY_SETTINGS = {
   enabled: true,
   bandsDays: [3, 7, 15, 30] as number[],
+  bandsUnit: 'DAYS' as BandsUnit,
   autoReengage: false,
   reengageFromBand: 1,
   maxAttempts: 2,
@@ -32,6 +34,7 @@ export class InactivitySettingsService {
         ? {
             enabled: row.enabled,
             bandsDays: row.bandsDays as number[],
+            bandsUnit: row.bandsUnit as BandsUnit,
             autoReengage: row.autoReengage,
             reengageFromBand: row.reengageFromBand,
             maxAttempts: row.maxAttempts,
