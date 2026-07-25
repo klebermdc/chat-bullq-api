@@ -7,6 +7,7 @@ import { ChannelAdapterRegistry } from '../../channel-hub/channel-adapter.regist
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { NormalizedOutboundMessage } from '../../channel-hub/ports/types';
 import { IdempotencyService } from './idempotency.service';
+import { WhatsappWindowGate } from './whatsapp-window-gate.service';
 import { CadenceRunner } from '../../cadences/cadence-runner.service';
 
 interface OutboundJobData {
@@ -25,6 +26,7 @@ export class OutboundMessageProcessor extends WorkerHost {
     private readonly adapterRegistry: ChannelAdapterRegistry,
     private readonly realtimeGateway: RealtimeGateway,
     private readonly idempotency: IdempotencyService,
+    private readonly windowGate: WhatsappWindowGate,
     @Inject(forwardRef(() => CadenceRunner))
     private readonly cadenceRunner: CadenceRunner,
   ) {
@@ -39,6 +41,19 @@ export class OutboundMessageProcessor extends WorkerHost {
     });
 
     const adapter = this.adapterRegistry.getOutbound(channel.type);
+
+    // Backstop de janela: não deixa texto livre sair fora das 24h/72h num
+    // canal oficial (a Meta rejeitaria com 131047). Marca a msg e encerra o
+    // job com SUCESSO — janela fechada não é transitório, não re-tentar.
+    const blocked = await this.windowGate.blockIfClosed({
+      messageId,
+      channelType: channel.type,
+      messageType: message.type,
+      now: new Date(),
+    });
+    if (blocked) {
+      return { success: false, skipped: 'window_closed' };
+    }
 
     // Humanize: if this message was sent by an AI agent, simulate typing
     // delay proportional to text length before actually sending. Customers

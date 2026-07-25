@@ -53,6 +53,9 @@ describe('OutboundMessageProcessor — gatilho de reengajamento NO_REPLY', () =>
     const idempotency = {
       markProcessed: jest.fn().mockResolvedValue(undefined),
     };
+    const windowGate = {
+      blockIfClosed: jest.fn().mockResolvedValue(false),
+    };
     const cadenceRunner = {
       maybeStartForNoReply: jest.fn().mockResolvedValue(null),
     };
@@ -62,10 +65,11 @@ describe('OutboundMessageProcessor — gatilho de reengajamento NO_REPLY', () =>
       adapterRegistry as any,
       realtimeGateway as any,
       idempotency as any,
+      windowGate as any,
       cadenceRunner as any,
     );
 
-    return { processor, prisma, adapter, adapterRegistry, realtimeGateway, idempotency, cadenceRunner };
+    return { processor, prisma, adapter, adapterRegistry, realtimeGateway, idempotency, windowGate, cadenceRunner };
   }
 
   function buildJob() {

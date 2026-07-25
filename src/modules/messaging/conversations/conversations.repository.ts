@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConversationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
+import { attachWindowExpiry } from './attach-window-expiry';
 
 export interface InboxFilters {
   organizationId: string;
@@ -253,6 +254,7 @@ export class ConversationsRepository {
               phone: true,
               avatarUrl: true,
               notes: true,
+              ctwaClidAt: true,
               tags: { include: { tag: true } },
               // Canais do contato → deriva o JID do grupo p/ anexar o Projeto.
               channels: { select: { channelId: true, externalId: true } },
@@ -307,7 +309,11 @@ export class ConversationsRepository {
       ? await this.attachUnreadCounts(conversations, currentUserId)
       : conversations.map((c) => ({ ...c, unreadCount: 0 }));
 
-    return { conversations: enriched, total };
+    const now = new Date();
+    return {
+      conversations: enriched.map((c) => attachWindowExpiry(c as any, now)),
+      total,
+    };
   }
 
   private async attachUnreadCounts<
