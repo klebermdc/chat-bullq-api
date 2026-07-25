@@ -87,6 +87,7 @@ export class InactivityWatchdogCron
           lastOutboundAt: c.lastOutboundAt,
           lastInboundAt: c.lastInboundAt,
           bandsDays: cfg.bandsDays,
+          unit: cfg.bandsUnit,
           now,
         });
 

@@ -20,6 +20,13 @@ describe('InactivitySettingsService', () => {
     expect(s.enabled).toBe(true);
     expect(s.bandsDays).toEqual([3, 7, 15, 30]);
     expect(s.autoReengage).toBe(false);
+    expect(s.bandsUnit).toBe('DAYS');
+  });
+  it('bandsUnit default DAYS; persiste HOURS quando setado', async () => {
+    const { service } = makeDeps();
+    expect((await service.get('org1')).bandsUnit).toBe('DAYS');
+    await service.update('org1', { bandsUnit: 'HOURS', bandsDays: [3, 6, 12, 24] });
+    expect((await service.get('org1')).bandsUnit).toBe('HOURS');
   });
   it('update persiste e mescla', async () => {
     const { service } = makeDeps();
