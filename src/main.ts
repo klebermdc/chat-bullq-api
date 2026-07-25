@@ -97,8 +97,17 @@ async function bootstrap() {
       else res.destroy();
     }
   });
+  // CORS aceita uma LISTA de origens separada por vírgula em CORS_ORIGIN
+  // (ex.: "https://ofpchat.explotek.pro,https://sendtur.com.br"). Passar a
+  // string crua com vírgula quebra o header Access-Control-Allow-Origin e
+  // derruba o app em TODOS os domínios — por isso o split(',').
+  const corsOrigins = config
+    .get<string>('CORS_ORIGIN', 'http://localhost:3000')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: config.get<string>('CORS_ORIGIN', 'http://localhost:3000'),
+    origin: corsOrigins,
     credentials: true,
   });
   app.useGlobalPipes(
