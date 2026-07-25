@@ -90,4 +90,17 @@ describe('WhatsappWindowGate.blockIfClosed', () => {
     });
     expect(blocked).toBe(false);
   });
+
+  it('fail-open: erro inesperado no Prisma → não lança e retorna false', async () => {
+    const { gate, prisma } = make({ lastInboundAt: hoursAgo(30), ctwaClidAt: null });
+    prisma.message.findUnique.mockRejectedValue(new Error('db pool timeout'));
+    await expect(
+      gate.blockIfClosed({
+        messageId: 'msg1',
+        channelType: 'WHATSAPP_OFFICIAL',
+        messageType: MessageContentType.TEXT,
+        now,
+      }),
+    ).resolves.toBe(false);
+  });
 });
