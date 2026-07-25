@@ -27,6 +27,8 @@ export class InactivityRepository {
         lastOutboundAt: true,
         inactivityBand: true,
         assignedToId: true,
+        awaitingHumanReply: true,
+        aiEnabled: true,
         reengageDismissedAt: true,
         reengagedAt: true,
       },

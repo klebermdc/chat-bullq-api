@@ -439,8 +439,13 @@ export class CadenceRunner {
     });
     if (!conversation) return null;
 
-    // Pré-humano: ninguém dono da conversa e não está na fila de espera humana.
-    if (conversation.assignedToId || conversation.awaitingHumanReply) {
+    // Pré-humano e IA ativa (parado na fase da Aline). aiEnabled=false = IA
+    // desligada manualmente na conversa → não reengaja.
+    if (
+      conversation.assignedToId ||
+      conversation.awaitingHumanReply ||
+      conversation.aiEnabled === false
+    ) {
       return null;
     }
 
@@ -529,6 +534,7 @@ export class CadenceRunner {
       scheduledAt,
       maxAttempts: 1,
       attempt: 1,
+      requireAiParked: true,
     });
 
     // IMPORTANTE: jobId custom do BullMQ NÃO pode conter ':' → `sched-<id>`.

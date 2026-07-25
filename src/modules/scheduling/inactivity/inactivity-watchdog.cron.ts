@@ -7,6 +7,7 @@ import { InactivitySettingsRepository } from './inactivity-settings.repository';
 import { InactivitySettingsService } from './inactivity-settings.service';
 import { computeBand, isEligibleForReengage } from './inactivity.util';
 import { AutoReengageService } from './auto-reengage.service';
+import { isAiParked } from '../../../common/utils/ai-parked.util';
 import {
   INACTIVITY_WATCHDOG_QUEUE,
   INACTIVITY_WATCHDOG_JOB,
@@ -102,7 +103,8 @@ export class InactivityWatchdogCron
 
         if (
           cfg.autoReengage &&
-          isEligibleForReengage(band, cfg.reengageFromBand)
+          isEligibleForReengage(band, cfg.reengageFromBand) &&
+          (!cfg.reengageOnlyAiParked || isAiParked(c))
         ) {
           await this.autoReengage
             .maybeCreate(organizationId, c, band as number, cfg)

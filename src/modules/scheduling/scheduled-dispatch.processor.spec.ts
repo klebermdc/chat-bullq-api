@@ -115,6 +115,60 @@ describe('ScheduledDispatchProcessor', () => {
     expect(repo.update).toHaveBeenCalledWith('s1', expect.objectContaining({ status: 'FAILED' }));
   });
 
+  it('cancela not_ai_parked quando requireAiParked e a conversa foi para humano', async () => {
+    const row = { ...base, origin: 'AUTO_REENGAGE', requireAiParked: true };
+    const repo = {
+      findById: jest.fn(async () => row),
+      update: jest.fn(async (id: string, d: any) => ({ ...row, ...d })),
+      claimForDispatch: jest.fn(async () => true),
+    };
+    const prisma = {
+      conversation: {
+        findUnique: jest.fn(async () => ({
+          id: 'c1', status: 'OPEN', isArchived: false, lastInboundAt: null,
+          assignedToId: 'u1', awaitingHumanReply: false, aiEnabled: null,
+        })),
+      },
+    };
+    const messages = { send: jest.fn() };
+    const queue = { add: jest.fn(async () => ({ id: 'j' })) };
+    const processor = new ScheduledDispatchProcessor(
+      repo as any, prisma as any, messages as any, queue as any,
+      { onStepSent: jest.fn(async () => undefined) } as any,
+    );
+    await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+    expect(messages.send).not.toHaveBeenCalled();
+    expect(repo.claimForDispatch).not.toHaveBeenCalled();
+    expect(repo.update).toHaveBeenCalledWith('s1', expect.objectContaining({
+      status: 'CANCELED', cancelReason: 'not_ai_parked',
+    }));
+  });
+
+  it('envia normalmente quando requireAiParked e a conversa ainda está parada na IA', async () => {
+    const row = { ...base, origin: 'CADENCE', requireAiParked: true, cadenceEnrollmentId: 'e1', cadenceStepOrder: 1 };
+    const repo = {
+      findById: jest.fn(async () => row),
+      update: jest.fn(async (id: string, d: any) => ({ ...row, ...d })),
+      claimForDispatch: jest.fn(async () => true),
+    };
+    const prisma = {
+      conversation: {
+        findUnique: jest.fn(async () => ({
+          id: 'c1', status: 'OPEN', isArchived: false, lastInboundAt: null,
+          assignedToId: null, awaitingHumanReply: false, aiEnabled: null,
+        })),
+      },
+    };
+    const messages = { send: jest.fn(async () => ({ id: 'm1' })) };
+    const queue = { add: jest.fn(async () => ({ id: 'j' })) };
+    const processor = new ScheduledDispatchProcessor(
+      repo as any, prisma as any, messages as any, queue as any,
+      { onStepSent: jest.fn(async () => undefined) } as any,
+    );
+    await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+    expect(messages.send).toHaveBeenCalled();
+  });
+
   it('AUTO_REENGAGE com tentativas restantes: agenda o próximo (attempt+1) após SENT', async () => {
     const row = {
       ...base,

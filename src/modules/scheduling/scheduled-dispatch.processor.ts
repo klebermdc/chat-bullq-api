@@ -6,6 +6,7 @@ import { MessagesService } from '../messaging/messages/messages.service';
 import { CadenceRunner } from '../cadences/cadence-runner.service';
 import { ScheduledMessagesRepository } from './scheduled-messages.repository';
 import { SCHEDULED_DISPATCH_QUEUE, SCHEDULED_DISPATCH_JOB } from './scheduling.constants';
+import { isAiParked } from '../../common/utils/ai-parked.util';
 
 @Processor(SCHEDULED_DISPATCH_QUEUE, { concurrency: 5 })
 export class ScheduledDispatchProcessor extends WorkerHost {
@@ -28,7 +29,10 @@ export class ScheduledDispatchProcessor extends WorkerHost {
 
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: row.conversationId },
-      select: { id: true, status: true, isArchived: true, lastInboundAt: true },
+      select: {
+        id: true, status: true, isArchived: true, lastInboundAt: true,
+        assignedToId: true, awaitingHumanReply: true, aiEnabled: true,
+      },
     });
     if (!conversation || conversation.status === 'CLOSED' || conversation.isArchived) {
       await this.repo.update(row.id, {
@@ -60,6 +64,25 @@ export class ScheduledDispatchProcessor extends WorkerHost {
         status: 'CANCELED',
         canceledAt: new Date(),
         cancelReason: 'client_replied',
+      });
+      return;
+    }
+
+    // Corte "parado na IA": se o agendamento exige lead sob a IA e um humano
+    // assumiu (ou a IA foi desligada) depois de criado, não envia. No
+    // AUTO_REENGAGE isso também impede o próximo toque (return antes do retry).
+    if (
+      row.requireAiParked &&
+      !isAiParked({
+        assignedToId: conversation.assignedToId,
+        awaitingHumanReply: conversation.awaitingHumanReply,
+        aiEnabled: conversation.aiEnabled,
+      })
+    ) {
+      await this.repo.update(row.id, {
+        status: 'CANCELED',
+        canceledAt: new Date(),
+        cancelReason: 'not_ai_parked',
       });
       return;
     }
@@ -116,6 +139,7 @@ export class ScheduledDispatchProcessor extends WorkerHost {
           attempt: row.attempt + 1,
           maxAttempts: row.maxAttempts,
           retryEveryHours: row.retryEveryHours,
+          requireAiParked: row.requireAiParked,
         });
         const job = await this.queue.add(
           SCHEDULED_DISPATCH_JOB,

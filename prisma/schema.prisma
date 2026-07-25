@@ -1997,6 +1997,7 @@ model ScheduledMessage {
   maxAttempts     Int     @default(1)
   retryEveryHours Int?    @map("retry_every_hours")
   cancelOnReply   Boolean @default(false) @map("cancel_on_reply")
+  requireAiParked Boolean @default(false) @map("require_ai_parked")
 
   sentMessageId String?   @map("sent_message_id")
   sentAt        DateTime? @map("sent_at")
@@ -2028,6 +2029,7 @@ model InactivitySettings {
   retryEveryHours  Int      @default(48) @map("retry_every_hours")
   quietHoursStart  Int?     @map("quiet_hours_start")
   quietHoursEnd    Int?     @map("quiet_hours_end")
+  reengageOnlyAiParked Boolean @default(false) @map("reengage_only_ai_parked")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)

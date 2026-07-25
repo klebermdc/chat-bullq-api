@@ -27,4 +27,10 @@ describe('InactivitySettingsService', () => {
     expect(s.autoReengage).toBe(true);
     expect(s.bandsDays).toEqual([2, 5]);
   });
+  it('expõe reengageOnlyAiParked no get (default false; persiste quando setado)', async () => {
+    const { service } = makeDeps();
+    expect((await service.get('org1')).reengageOnlyAiParked).toBe(false);
+    await service.update('org1', { reengageOnlyAiParked: true });
+    expect((await service.get('org1')).reengageOnlyAiParked).toBe(true);
+  });
 });
