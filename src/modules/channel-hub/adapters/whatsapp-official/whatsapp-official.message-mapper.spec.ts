@@ -62,6 +62,36 @@ describe('WhatsAppOfficialMessageMapper.normalizeStatus', () => {
     });
     expect(out?.pricing?.billable).toBe(false);
   });
+
+  it('inclui code e title do erro Meta no errorMessage (não só a message)', () => {
+    const out = mapper.normalizeStatus({
+      id: 'wamid.FAIL',
+      status: 'failed',
+      timestamp: '1700000000',
+      errors: [
+        {
+          code: 131047,
+          title: 'Re-engagement message',
+          message:
+            'Message failed to send because more than 24 hours have passed since the customer last replied.',
+        },
+      ],
+    });
+    // O code numérico (131047) é o que diferencia janela expirada de outros
+    // erros de envio — precisa sobreviver pro failedReason.
+    expect(out?.errorMessage).toContain('131047');
+    expect(out?.errorMessage).toContain('Re-engagement message');
+    expect(out?.errorMessage).toContain('24 hours');
+  });
+
+  it('errorMessage fica undefined quando não há errors', () => {
+    const out = mapper.normalizeStatus({
+      id: 'wamid.OK',
+      status: 'delivered',
+      timestamp: '1700000000',
+    });
+    expect(out?.errorMessage).toBeUndefined();
+  });
 });
 
 describe('WhatsAppOfficialMessageMapper — captura de referral (Click-to-WhatsApp)', () => {

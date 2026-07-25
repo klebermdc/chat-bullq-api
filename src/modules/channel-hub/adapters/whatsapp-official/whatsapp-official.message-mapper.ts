@@ -63,7 +63,7 @@ export class WhatsAppOfficialMessageMapper {
       externalMessageId: status.id,
       status: mapped,
       timestamp: new Date(parseInt(status.timestamp, 10) * 1000),
-      errorMessage: status.errors?.[0]?.message,
+      errorMessage: this.formatMetaError(status.errors?.[0]),
     };
 
     if (status.conversation?.id) {
@@ -84,6 +84,31 @@ export class WhatsAppOfficialMessageMapper {
     }
 
     return result;
+  }
+
+  /**
+   * Compõe o erro da Meta preservando o `code` numérico e o `title` — não só
+   * a `message`. O code é o que distingue "janela expirada" (131047) de outros
+   * motivos de falha, e sem ele o `failedReason` da mensagem vira um texto
+   * genérico impossível de triar. Formato: `[code] title: message`, degradando
+   * bem quando falta alguma parte. Retorna undefined quando não há erro.
+   */
+  private formatMetaError(err?: {
+    code?: number;
+    title?: string;
+    message?: string;
+    error_data?: { details?: string };
+  }): string | undefined {
+    if (!err) return undefined;
+    const head = [
+      err.code != null ? `[${err.code}]` : null,
+      err.title || null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const detail = err.message || err.error_data?.details || '';
+    if (head && detail) return `${head}: ${detail}`;
+    return head || detail || undefined;
   }
 
   denormalize(

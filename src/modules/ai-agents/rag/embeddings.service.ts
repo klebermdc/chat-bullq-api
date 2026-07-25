@@ -43,6 +43,9 @@ export class EmbeddingsService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ model: this.MODEL, input: text }),
+      // fetch nativo do Node não tem timeout default: sem isto, uma conexão
+      // travada com a OpenAI pendura o run do agente (e o worker) para sempre.
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!response.ok) {
@@ -101,6 +104,8 @@ export class EmbeddingsService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ model: this.MODEL, input: texts }),
+      // Timeout de rede — ver comentário no embed() acima.
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!response.ok) {
