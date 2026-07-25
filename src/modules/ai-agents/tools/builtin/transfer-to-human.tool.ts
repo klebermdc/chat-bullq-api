@@ -201,7 +201,7 @@ export class TransferToHumanTool implements AiTool {
   private async createVendasOfpCard(ctx: ToolContext): Promise<void> {
     // Lead qualificado entra no funil "Vendas OFP" na etapa "Distribuir"
     // (aguardando o ADM distribuir pra um atendente).
-    const stageId = await enterLeadStage(this.prisma, {
+    const stageId = await enterLeadStage(this.prisma, this.realtime, {
       conversationId: ctx.conversationId,
       organizationId: ctx.organizationId,
       contactId: ctx.contactId,

@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import type { Job } from 'bullmq';
 
 import { PrismaService } from '../../../database/prisma.service';
+import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { enterLeadStage } from '../lead-stage.util';
 import { HttpToolExecutorService } from '../tools/http-tool-executor.service';
 import type { ToolContext } from '../tools/tool.types';
@@ -43,6 +44,7 @@ export class PendingActionExecutorProcessor extends WorkerHost {
     private readonly prisma: PrismaService,
     private readonly httpExecutor: HttpToolExecutorService,
     private readonly storage: PendingActionStorage,
+    private readonly realtime: RealtimeGateway,
   ) {
     super();
   }
@@ -136,7 +138,7 @@ export class PendingActionExecutorProcessor extends WorkerHost {
     // Aprovar = o atendente INICIOU o atendimento → move o card do funil pra
     // "Coletando Informação". Best-effort (não quebra a aprovação).
     try {
-      await enterLeadStage(this.prisma, {
+      await enterLeadStage(this.prisma, this.realtime, {
         conversationId: action.conversationId,
         organizationId: conv.organizationId,
         contactId: conv.contactId,
