@@ -33,6 +33,12 @@ describe('InactivitySettingsService', () => {
     expect(s.bandsDays).toEqual([6, 12, 3]);
     expect(s.bandsUnits).toEqual(['HOURS', 'HOURS', 'DAYS']);
   });
+  it('exhaustedStageId default null; persiste quando setado', async () => {
+    const { service } = makeDeps();
+    expect((await service.get('org1')).exhaustedStageId).toBeNull();
+    await service.update('org1', { exhaustedStageId: 'stg-nao-respondeu' });
+    expect((await service.get('org1')).exhaustedStageId).toBe('stg-nao-respondeu');
+  });
   it('bandsUnit global (legado) preenche todas as faixas', async () => {
     const { service } = makeDeps();
     await service.update('org1', { bandsUnit: 'HOURS', bandsDays: [3, 6, 12] });

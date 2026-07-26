@@ -169,6 +169,54 @@ describe('ScheduledDispatchProcessor', () => {
     expect(messages.send).toHaveBeenCalled();
   });
 
+  it('AUTO_REENGAGE esgotado (último toque): move o card para exhaustedStageId (LOST)', async () => {
+    const row = { ...base, origin: 'AUTO_REENGAGE', attempt: 2, maxAttempts: 2, exhaustedStageId: 'stg1', contactId: 'ct1', channelId: 'ch1' };
+    const repo = {
+      findById: jest.fn(async () => row),
+      update: jest.fn(async (id: string, d: any) => ({ ...row, ...d })),
+      claimForDispatch: jest.fn(async () => true),
+      create: jest.fn(),
+    };
+    const prisma = {
+      conversation: { findUnique: jest.fn(async () => ({ id: 'c1', status: 'OPEN', isArchived: false, lastInboundAt: null, assignedToId: null, awaitingHumanReply: false, aiEnabled: null })) },
+      pipelineStage: { findUnique: jest.fn(async () => ({ id: 'stg1', pipelineId: 'pl1' })) },
+      card: { findFirst: jest.fn(async () => ({ id: 'card1' })), update: jest.fn(async () => ({})), create: jest.fn(async () => ({})) },
+      contact: { findUnique: jest.fn(async () => ({ name: 'Fulano' })) },
+    };
+    const messages = { send: jest.fn(async () => ({ id: 'm1' })) };
+    const queue = { add: jest.fn(async () => ({ id: 'j' })) };
+    const processor = new ScheduledDispatchProcessor(repo as any, prisma as any, messages as any, queue as any, { onStepSent: jest.fn() } as any);
+    await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+    expect(prisma.card.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'card1' },
+      data: expect.objectContaining({ stageId: 'stg1', status: 'LOST' }),
+    }));
+    expect(prisma.card.create).not.toHaveBeenCalled();
+  });
+
+  it('AUTO_REENGAGE esgotado sem card: cria card na etapa (LOST)', async () => {
+    const row = { ...base, origin: 'AUTO_REENGAGE', attempt: 2, maxAttempts: 2, exhaustedStageId: 'stg1', contactId: 'ct1', channelId: 'ch1' };
+    const repo = {
+      findById: jest.fn(async () => row),
+      update: jest.fn(async (id: string, d: any) => ({ ...row, ...d })),
+      claimForDispatch: jest.fn(async () => true),
+      create: jest.fn(),
+    };
+    const prisma = {
+      conversation: { findUnique: jest.fn(async () => ({ id: 'c1', status: 'OPEN', isArchived: false, lastInboundAt: null, assignedToId: null, awaitingHumanReply: false, aiEnabled: null })) },
+      pipelineStage: { findUnique: jest.fn(async () => ({ id: 'stg1', pipelineId: 'pl1' })) },
+      card: { findFirst: jest.fn(async () => null), update: jest.fn(async () => ({})), create: jest.fn(async () => ({})) },
+      contact: { findUnique: jest.fn(async () => ({ name: 'Fulano' })) },
+    };
+    const messages = { send: jest.fn(async () => ({ id: 'm1' })) };
+    const queue = { add: jest.fn(async () => ({ id: 'j' })) };
+    const processor = new ScheduledDispatchProcessor(repo as any, prisma as any, messages as any, queue as any, { onStepSent: jest.fn() } as any);
+    await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+    expect(prisma.card.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ stageId: 'stg1', pipelineId: 'pl1', status: 'LOST', conversationId: 'c1' }),
+    }));
+  });
+
   it('AUTO_REENGAGE com tentativas restantes: agenda o próximo (attempt+1) após SENT', async () => {
     const row = {
       ...base,

@@ -2002,6 +2002,8 @@ model ScheduledMessage {
   retryEveryHours Int?    @map("retry_every_hours")
   cancelOnReply   Boolean @default(false) @map("cancel_on_reply")
   requireAiParked Boolean @default(false) @map("require_ai_parked")
+  // Snapshot: etapa p/ mover o card quando o burst AUTO_REENGAGE esgota.
+  exhaustedStageId String? @map("exhausted_stage_id")
 
   sentMessageId String?   @map("sent_message_id")
   sentAt        DateTime? @map("sent_at")
@@ -2036,6 +2038,9 @@ model InactivitySettings {
   quietHoursStart  Int?     @map("quiet_hours_start")
   quietHoursEnd    Int?     @map("quiet_hours_end")
   reengageOnlyAiParked Boolean @default(false) @map("reengage_only_ai_parked")
+  // Etapa do pipeline p/ mover o card quando o reengajamento esgota sem
+  // resposta. null = não mexe no pipeline.
+  exhaustedStageId String? @map("exhausted_stage_id")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
