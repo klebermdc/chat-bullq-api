@@ -1,4 +1,4 @@
-import { BadRequestException, GoneException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, GoneException, Logger, NotFoundException } from '@nestjs/common';
 import { AcceptancesService } from './acceptances.service';
 
 function makePrisma(over: any = {}) {
@@ -106,6 +106,22 @@ describe('AcceptancesService.sign', () => {
     await expect(svc.sign('tok', { name: 'x', ip: '', userAgent: '' })).rejects.toBeInstanceOf(GoneException);
   });
 
+  it('assina mesmo se os efeitos pós-assinatura falharem (não-fatal)', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const prisma = {
+      orderAcceptance: {
+        findUnique: jest.fn().mockResolvedValue(baseAcc()),
+        update: jest.fn().mockImplementation(({ data }: any) => ({ ...baseAcc(), ...data, status: 'SIGNED' })),
+      },
+    } as any;
+    const pdf = { render: jest.fn().mockResolvedValue(Buffer.from('pdf')) } as any;
+    const storage = { put: jest.fn().mockResolvedValue(undefined) } as any;
+    const effects = { onSigned: jest.fn().mockRejectedValue(new Error('boom')) } as any;
+    const svc = new AcceptancesService(prisma, pdf, effects, storage);
+    const res = await svc.sign('tok', { name: 'João', ip: '', userAgent: '' });
+    expect(res.status).toBe('SIGNED');
+  });
+
   it('expirado → Gone e marca EXPIRED', async () => {
     const prisma = {
       orderAcceptance: {
@@ -139,5 +155,39 @@ describe('AcceptancesService.getByToken', () => {
     const view = await svc.getByToken('tok');
     expect(view.status).toBe('EXPIRED');
     expect(view.organizationName).toBe('OFP');
+  });
+});
+
+describe('AcceptancesService.resend / status', () => {
+  const env = process.env;
+  beforeEach(() => { process.env = { ...env, APP_PUBLIC_URL: 'https://x.test' }; });
+  afterEach(() => { process.env = env; });
+
+  it('resend renova expiresAt de um PENDING e devolve o link', async () => {
+    const prisma = {
+      orderAcceptance: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'acc-1', token: 'tok', status: 'PENDING', organizationId: 'org-1' }),
+        update: jest.fn().mockResolvedValue({ id: 'acc-1', token: 'tok', status: 'PENDING' }),
+      },
+    } as any;
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any);
+    const { link } = await svc.resend('org-1', 'acc-1');
+    expect(link).toBe('https://x.test/aceite/tok');
+    expect(prisma.orderAcceptance.update).toHaveBeenCalled();
+  });
+
+  it('resend de um já assinado → Gone', async () => {
+    const prisma = { orderAcceptance: {
+      findFirst: jest.fn().mockResolvedValue({ id: 'acc-1', token: 'tok', status: 'SIGNED', organizationId: 'org-1' }),
+      update: jest.fn(),
+    } } as any;
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any);
+    await expect(svc.resend('org-1', 'acc-1')).rejects.toBeInstanceOf(GoneException);
+  });
+
+  it('status devolve o aceite mais recente da conversa (ou null)', async () => {
+    const prisma = { orderAcceptance: { findFirst: jest.fn().mockResolvedValue(null) } } as any;
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any);
+    expect(await svc.getStatusForConversation('org-1', 'conv-1')).toBeNull();
   });
 });

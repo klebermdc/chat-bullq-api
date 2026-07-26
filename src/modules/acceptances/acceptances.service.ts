@@ -1,4 +1,4 @@
-import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AcceptancePdfService } from './acceptance-pdf.service';
 import { AcceptanceEffectsService } from './acceptance-effects.service';
@@ -12,6 +12,8 @@ const ACCEPTANCE_TTL_DAYS = 30;
 
 @Injectable()
 export class AcceptancesService {
+  private readonly logger = new Logger(AcceptancesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly pdf: AcceptancePdfService,
@@ -125,10 +127,39 @@ export class AcceptancesService {
       },
     });
 
-    await this.effects.onSigned({
-      id: signed.id, organizationId: signed.organizationId, conversationId: signed.conversationId,
-      cardId: signed.cardId, signerName: input.name, signedAt,
-    });
+    try {
+      await this.effects.onSigned({
+        id: signed.id, organizationId: signed.organizationId, conversationId: signed.conversationId,
+        cardId: signed.cardId, signerName: input.name, signedAt,
+      });
+    } catch (err) {
+      this.logger.error(`Aceite ${signed.id} assinado, mas efeitos pós-assinatura falharam: ${err instanceof Error ? err.message : err}`);
+    }
     return signed;
+  }
+
+  async resend(organizationId: string, id: string): Promise<{ acceptance: any; link: string }> {
+    const base = this.baseUrl();
+    const acc = await this.prisma.orderAcceptance.findFirst({ where: { id, organizationId } });
+    if (!acc) throw new NotFoundException('Aceite não encontrado.');
+    if (acc.status === 'SIGNED') throw new GoneException('Este aceite já foi assinado.');
+    const expiresAt = new Date(Date.now() + ACCEPTANCE_TTL_DAYS * 24 * 60 * 60 * 1000);
+    const updated = await this.prisma.orderAcceptance.update({
+      where: { id: acc.id }, data: { status: 'PENDING', expiresAt },
+    });
+    return { acceptance: updated, link: `${base}/aceite/${acc.token}` };
+  }
+
+  async getStatusForConversation(organizationId: string, conversationId: string) {
+    const acc = await this.prisma.orderAcceptance.findFirst({
+      where: { organizationId, conversationId }, orderBy: { createdAt: 'desc' },
+    });
+    if (!acc) return null;
+    return {
+      id: acc.id, status: acc.status, items: acc.items,
+      signedAt: acc.signedAt, signerName: acc.signerName,
+      signerIp: acc.signerIp, signerUserAgent: acc.signerUserAgent,
+      pdfUrl: this.pdfUrl(acc.pdfKey), createdAt: acc.createdAt, expiresAt: acc.expiresAt,
+    };
   }
 }
