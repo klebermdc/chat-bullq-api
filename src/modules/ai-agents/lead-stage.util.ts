@@ -1,4 +1,5 @@
 import type { PrismaService } from '../../database/prisma.service';
+import type { RealtimeGateway } from '../realtime/realtime.gateway';
 
 /**
  * Move (ou cria) o card do lead de uma conversa pra uma etapa do funil de
@@ -19,6 +20,7 @@ import type { PrismaService } from '../../database/prisma.service';
  */
 export async function enterLeadStage(
   prisma: PrismaService,
+  realtime: RealtimeGateway,
   params: {
     conversationId: string;
     organizationId: string;
@@ -71,6 +73,16 @@ export async function enterLeadStage(
       where: { id: existing.id },
       data: { stageId: stage.id, order },
     });
+    // Kanban atualiza ao vivo: mesmo evento que o moveCard emite. O board
+    // refetcha ao receber card:moved. Sem isto, Distribuir/Coletando eram
+    // update silencioso e o quadro só atualizava no próximo refresh manual.
+    realtime.emitToOrg(organizationId, 'card:moved', {
+      cardId: existing.id,
+      pipelineId: pipeline.id,
+      fromStageId: existing.stageId,
+      toStageId: stage.id,
+      toIndex: order,
+    });
   } else {
     const contact = contactId
       ? await prisma.contact.findUnique({
@@ -78,7 +90,7 @@ export async function enterLeadStage(
           select: { name: true },
         })
       : null;
-    await prisma.card.create({
+    const card = await prisma.card.create({
       data: {
         organizationId,
         pipelineId: pipeline.id,
@@ -89,6 +101,7 @@ export async function enterLeadStage(
         order,
       },
     });
+    realtime.emitToOrg(organizationId, 'card:created', { card });
   }
   return stage.id;
 }
