@@ -225,6 +225,7 @@ model Organization {
   sonaxSettings        SonaxSettings?
   calls                Call[]
   orderFichas          OrderFicha[]
+  orderAcceptances     OrderAcceptance[]
   whatsappWindows       WhatsappWindow[]
   whatsappWindowPricing WhatsappWindowPricing?
   metaCapiConfig        MetaCapiConfig?
@@ -512,6 +513,7 @@ model Contact {
   scheduledMessages ScheduledMessage[]
   proposals         Proposal[]
   orderFichas       OrderFicha[]
+  orderAcceptances  OrderAcceptance[]
 
   @@index([organizationId, phone], name: "idx_contact_org_phone")
   @@index([organizationId, email], name: "idx_contact_org_email")
@@ -2276,6 +2278,44 @@ model OrderFicha {
   @@index([organizationId, contactId])
   @@index([organizationId, status])
   @@map("order_fichas")
+}
+
+enum AcceptanceStatus {
+  PENDING
+  SIGNED
+  EXPIRED
+  CANCELED
+}
+
+model OrderAcceptance {
+  id              String           @id @default(cuid())
+  organizationId  String           @map("organization_id")
+  conversationId  String           @map("conversation_id")
+  contactId       String           @map("contact_id")
+  cardId          String?          @map("card_id")
+
+  token           String           @unique
+  items           Json             @default("[]")
+  termText        String           @map("term_text")
+  status          AcceptanceStatus @default(PENDING)
+
+  createdById     String           @map("created_by_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  expiresAt       DateTime?        @map("expires_at")
+
+  signedAt        DateTime?        @map("signed_at")
+  signerName      String?          @map("signer_name")
+  signerIp        String?          @map("signer_ip")
+  signerUserAgent String?          @map("signer_user_agent")
+  pdfKey          String?          @map("pdf_key")
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact         Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, conversationId])
+  @@index([organizationId, status])
+  @@map("order_acceptances")
 }
 
 model MediaFolder {
