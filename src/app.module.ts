@@ -6,6 +6,7 @@ import { CryptoModule } from './common/crypto/crypto.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
+import { PlatformModule } from './modules/platform/platform.module';
 import { ChannelHubModule } from './modules/channel-hub/channel-hub.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
@@ -70,6 +71,7 @@ import redisConfig from './config/redis.config';
     AuthModule,
     UsersModule,
     OrganizationsModule,
+    PlatformModule,
     RealtimeModule,
     ChannelHubModule,
     MessagingModule,

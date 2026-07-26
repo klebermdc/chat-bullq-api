@@ -17,7 +17,8 @@
     "typecheck": "tsc --noEmit",
     "evals": "ts-node -P tsconfig.json --transpile-only src/modules/ai-agents/evals/cli.ts",
     "evals:agent": "ts-node -P tsconfig.json --transpile-only src/modules/ai-agents/evals/cli.ts --agent",
-    "ai:migrate-sakana": "ts-node prisma/scripts/migrate-agents-to-sakana.ts"
+    "ai:migrate-sakana": "ts-node prisma/scripts/migrate-agents-to-sakana.ts",
+    "set-super-admin": "ts-node scripts/set-super-admin.ts"
   },
   "type": "commonjs",
   "prisma": {

@@ -48,6 +48,10 @@ export class OrgGuard implements CanActivate {
       throw new ForbiddenException('You are not a member of this organization');
     }
 
+    if (membership.organization.suspendedAt) {
+      throw new ForbiddenException('Esta empresa está suspensa. Fale com o suporte.');
+    }
+
     request.organization = {
       id: membership.organizationId,
       name: membership.organization.name,
