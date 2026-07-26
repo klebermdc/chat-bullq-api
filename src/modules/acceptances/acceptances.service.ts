@@ -93,7 +93,7 @@ export class AcceptancesService {
     };
   }
 
-  async sign(token: string, input: { name: string; ip: string; userAgent: string }): Promise<any> {
+  async sign(token: string, input: { name: string; ip: string; userAgent: string }): Promise<PublicAcceptanceView> {
     const acc = await this.prisma.orderAcceptance.findUnique({
       where: { token }, include: { organization: { select: { name: true } } },
     });
@@ -135,7 +135,15 @@ export class AcceptancesService {
     } catch (err) {
       this.logger.error(`Aceite ${signed.id} assinado, mas efeitos pós-assinatura falharam: ${err instanceof Error ? err.message : err}`);
     }
-    return signed;
+    return {
+      status: signed.status,
+      organizationName: acc.organization.name,
+      items: (signed.items as any) ?? [],
+      termText: signed.termText,
+      signedAt: signed.signedAt ? signed.signedAt.toISOString() : null,
+      signerName: signed.signerName ?? null,
+      pdfUrl: this.pdfUrl(signed.pdfKey),
+    };
   }
 
   async resend(organizationId: string, id: string): Promise<{ acceptance: any; link: string }> {
