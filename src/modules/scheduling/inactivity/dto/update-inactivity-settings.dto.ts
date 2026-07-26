@@ -1,4 +1,4 @@
-import { IsOptional, IsBoolean, IsInt, IsArray, ArrayNotEmpty, Min, Max, IsIn } from 'class-validator';
+import { IsOptional, IsBoolean, IsInt, IsArray, ArrayNotEmpty, Min, Max, IsIn, IsString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateInactivitySettingsDto {
@@ -19,4 +19,6 @@ export class UpdateInactivitySettingsDto {
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(23) quietHoursStart?: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(23) quietHoursEnd?: number;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() reengageOnlyAiParked?: boolean;
+  // Etapa ao esgotar o reengajamento (null = não mover no pipeline).
+  @ApiPropertyOptional({ nullable: true }) @IsOptional() @IsString() exhaustedStageId?: string | null;
 }

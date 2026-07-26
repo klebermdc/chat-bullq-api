@@ -79,6 +79,7 @@ export class AutoReengageService {
       attempt: 1,
       retryEveryHours: cfg.retryEveryHours,
       requireAiParked: cfg.reengageOnlyAiParked,
+      exhaustedStageId: cfg.exhaustedStageId,
     });
 
     const job = await this.queue.add(

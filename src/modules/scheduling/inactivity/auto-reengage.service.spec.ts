@@ -29,6 +29,7 @@ const cfg: any = {
   quietHoursEnd: null,
   reengageFromBand: 1,
   reengageOnlyAiParked: false,
+  exhaustedStageId: null,
 };
 
 describe('AutoReengageService.maybeCreate', () => {
@@ -98,6 +99,14 @@ describe('AutoReengageService.maybeCreate', () => {
     await service.maybeCreate('org1', conv, 2, { ...cfg, reengageOnlyAiParked: true });
     expect(schedRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({ requireAiParked: true }),
+    );
+  });
+
+  it('grava exhaustedStageId (snapshot) = valor do cfg', async () => {
+    const { service, schedRepo } = makeDeps();
+    await service.maybeCreate('org1', conv, 2, { ...cfg, exhaustedStageId: 'stg1' });
+    expect(schedRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ exhaustedStageId: 'stg1' }),
     );
   });
 });

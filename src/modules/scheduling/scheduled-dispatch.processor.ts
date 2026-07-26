@@ -140,6 +140,7 @@ export class ScheduledDispatchProcessor extends WorkerHost {
           maxAttempts: row.maxAttempts,
           retryEveryHours: row.retryEveryHours,
           requireAiParked: row.requireAiParked,
+          exhaustedStageId: row.exhaustedStageId,
         });
         const job = await this.queue.add(
           SCHEDULED_DISPATCH_JOB,
@@ -152,6 +153,14 @@ export class ScheduledDispatchProcessor extends WorkerHost {
           },
         );
         await this.repo.update(next.id, { jobId: String(job.id) });
+      } else if (row.origin === 'AUTO_REENGAGE' && row.exhaustedStageId) {
+        // Esgotou o burst (último toque enviado, sem resposta) → move/cria o
+        // card do lead na etapa configurada (ex.: "Não respondeu").
+        await this.moveCardToExhaustedStage(row, row.exhaustedStageId).catch((err) =>
+          this.logger.warn(
+            `exhausted_stage_move_failed conv=${row.conversationId}: ${(err as Error).message}`,
+          ),
+        );
       }
     } catch (err) {
       this.logger.error(`scheduled_dispatch_failed id=${row.id}: ${(err as Error).message}`);
@@ -160,5 +169,41 @@ export class ScheduledDispatchProcessor extends WorkerHost {
         failedReason: (err as Error).message.slice(0, 500),
       });
     }
+  }
+
+  /**
+   * Move o card do lead para a etapa "ao esgotar" (status LOST). Se o lead
+   * ainda não tem card (comum em leads parados na IA), cria um nessa etapa.
+   */
+  private async moveCardToExhaustedStage(
+    row: { organizationId: string; conversationId: string; contactId: string },
+    stageId: string,
+  ): Promise<void> {
+    const stage = await this.prisma.pipelineStage.findUnique({ where: { id: stageId } });
+    if (!stage) return;
+    const card = await this.prisma.card.findFirst({
+      where: { conversationId: row.conversationId },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (card) {
+      await this.prisma.card.update({
+        where: { id: card.id },
+        data: { stageId, status: 'LOST', closedAt: new Date() },
+      });
+      return;
+    }
+    const contact = await this.prisma.contact.findUnique({ where: { id: row.contactId } });
+    await this.prisma.card.create({
+      data: {
+        organizationId: row.organizationId,
+        pipelineId: stage.pipelineId,
+        stageId,
+        title: contact?.name || 'Lead sem resposta',
+        contactId: row.contactId,
+        conversationId: row.conversationId,
+        status: 'LOST',
+        closedAt: new Date(),
+      },
+    });
   }
 }

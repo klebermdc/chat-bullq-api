@@ -16,6 +16,7 @@ export const DEFAULT_INACTIVITY_SETTINGS = {
   quietHoursStart: null as number | null,
   quietHoursEnd: null as number | null,
   reengageOnlyAiParked: false,
+  exhaustedStageId: null as string | null,
 };
 
 export type ResolvedInactivitySettings = typeof DEFAULT_INACTIVITY_SETTINGS & {
@@ -60,6 +61,7 @@ export class InactivitySettingsService {
       quietHoursStart: row.quietHoursStart,
       quietHoursEnd: row.quietHoursEnd,
       reengageOnlyAiParked: row.reengageOnlyAiParked,
+      exhaustedStageId: row.exhaustedStageId,
     };
   }
 
