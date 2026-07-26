@@ -12,6 +12,8 @@ describe('PipelinesService.assertCardAccess', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
+      {} as any,
     ) as any;
     return { svc, prisma };
   }
@@ -101,6 +103,8 @@ describe('PipelinesService.createCard — escopo por atribuição', () => {
     const svc = new PipelinesService(
       prisma,
       realtime,
+      {} as any,
+      {} as any,
       {} as any,
       {} as any,
     ) as any;

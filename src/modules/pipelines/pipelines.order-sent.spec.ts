@@ -31,17 +31,22 @@ function make(overrides: {
   const realtime = { emitToOrg: jest.fn() } as any;
   const cadenceRunner = { maybeStartForStage: jest.fn() } as any;
   const metaCapiQueue = { enqueuePurchase: jest.fn() } as any;
+  // Task 10: novas deps injetadas — geração do aceite + envio do link no WhatsApp.
+  const acceptances = { createForConversation: jest.fn() } as any;
+  const messages = { send: jest.fn() } as any;
   const service = new PipelinesService(
     prisma,
     realtime,
     cadenceRunner,
     metaCapiQueue,
+    acceptances,
+    messages,
   );
   // moveCard é testado noutro lugar — aqui espiamos que E6 o chama certo.
   const moveSpy = jest
     .spyOn(service, 'moveCard')
     .mockResolvedValue({ id: 'card-1' } as any);
-  return { service, prisma, moveSpy };
+  return { service, prisma, moveSpy, acceptances, messages };
 }
 
 describe('PipelinesService.markOrderSentForConversation (E6)', () => {
@@ -71,5 +76,47 @@ describe('PipelinesService.markOrderSentForConversation (E6)', () => {
       service.markOrderSentForConversation('org-1', 'conv-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(moveSpy).not.toHaveBeenCalled();
+  });
+
+  it('com withAcceptance cria aceite, envia link no WhatsApp e ainda move o card', async () => {
+    const { service, moveSpy, acceptances, messages } = make();
+    const created = { acceptance: { id: 'acc-1' }, link: 'https://x.test/aceite/tok' };
+    acceptances.createForConversation.mockResolvedValue(created);
+    messages.send.mockResolvedValue({ id: 'm1' });
+    const res = await service.markOrderSentForConversation('org-1', 'conv-1', undefined, {
+      withAcceptance: true,
+      items: [{ description: 'Ingresso' }],
+      createdById: 'user-1',
+    });
+    expect(moveSpy).toHaveBeenCalled();
+    expect(acceptances.createForConversation).toHaveBeenCalledWith(
+      'org-1',
+      'conv-1',
+      expect.objectContaining({
+        items: [{ description: 'Ingresso' }],
+        createdById: 'user-1',
+      }),
+    );
+    expect(messages.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'conv-1',
+        type: 'TEXT',
+        content: expect.objectContaining({
+          text: expect.stringContaining('https://x.test/aceite/tok'),
+        }),
+      }),
+      'user-1',
+      'org-1',
+    );
+    expect(res.acceptanceLink).toBe('https://x.test/aceite/tok');
+  });
+
+  it('withAcceptance=false mantém o legado: só move o card, sem aceite', async () => {
+    const { service, acceptances } = make();
+    const res = await service.markOrderSentForConversation('org-1', 'conv-1', undefined, {
+      withAcceptance: false,
+    });
+    expect(acceptances.createForConversation).not.toHaveBeenCalled();
+    expect(res.acceptanceLink).toBeUndefined();
   });
 });

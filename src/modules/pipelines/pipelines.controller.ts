@@ -20,6 +20,7 @@ import {
   UpdatePipelineDto,
   UpsertStageDto,
 } from './dto/pipeline.dto';
+import { OrderSentDto } from '../acceptances/dto/create-acceptance.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import {
   CurrentOrg,
@@ -171,11 +172,12 @@ export class PipelinesController {
   @Post('conversations/:conversationId/order-sent')
   @ApiOperation({
     summary:
-      'E6 — Entrega: move o card da conversa pra etapa final "Pedido enviado".',
+      'E6 — Entrega: move o card pra "Pedido enviado" e, se withAcceptance, gera o aceite e envia o link no WhatsApp.',
   })
   markOrderSent(
     @Param('conversationId') conversationId: string,
     @CurrentOrg('id') orgId: string,
+    @Body() body: OrderSentDto,
     @CurrentUserRole() role: OrgRole,
     @CurrentUser('id') userId: string,
   ) {
@@ -183,6 +185,12 @@ export class PipelinesController {
       orgId,
       conversationId,
       undefined,
+      {
+        withAcceptance: body?.withAcceptance,
+        items: body?.items,
+        termText: body?.termText,
+        createdById: userId,
+      },
       role,
       userId,
     );

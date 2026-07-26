@@ -48,6 +48,8 @@ function makeService(overrides: {
     realtime,
     cadenceRunner,
     metaCapiQueue,
+    {} as any,
+    {} as any,
   );
   jest.spyOn(svc, 'moveCard').mockResolvedValue({ id: 'card-1' } as any);
   return { svc, prisma };
@@ -105,6 +107,7 @@ describe('PipelinesService.markOrderSentForConversation — escopo por conversat
       'o1',
       'conv-1',
       undefined,
+      undefined,
       OrgRole.AGENT,
       'u1',
     );
@@ -122,6 +125,7 @@ describe('PipelinesService.markOrderSentForConversation — escopo por conversat
     await svc.markOrderSentForConversation(
       'o1',
       'conv-1',
+      undefined,
       undefined,
       OrgRole.ADMIN,
       'u1',

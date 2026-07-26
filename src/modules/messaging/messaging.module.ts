@@ -57,7 +57,11 @@ import { ContactsRepository } from './contacts/contacts.repository';
     WatchdogModule,
     SegmentsModule,
     ProjectsModule,
-    SalesRecoveryModule,
+    // Task 10 (hardening): SalesRecoveryModule importa (forwardRef) o
+    // PipelinesModule, que importa (forwardRef) este MessagingModule -> ciclo
+    // pipelines->messaging->sales-recovery->pipelines. Todas as 3 arestas usam
+    // forwardRef pra ficar auto-documentado e imune a reordenacao de imports.
+    forwardRef(() => SalesRecoveryModule),
     ChannelUsageModule,
     AiProviderKeysModule,
     forwardRef(() => SchedulingModule),

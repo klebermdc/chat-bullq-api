@@ -11,7 +11,7 @@ describe('PipelinesService.listPipelines — escopo da contagem de cards', () =>
     const prisma: any = {
       pipeline: { findMany: jest.fn().mockResolvedValue([]) },
     };
-    const svc = new PipelinesService(prisma, {} as any, {} as any, {} as any) as any;
+    const svc = new PipelinesService(prisma, {} as any, {} as any, {} as any, {} as any, {} as any) as any;
     return { svc, prisma };
   }
 
