@@ -2024,6 +2024,7 @@ model InactivitySettings {
   enabled          Boolean  @default(true)
   bandsDays        Json     @default("[3, 7, 15, 30]")
   bandsUnit        String   @default("DAYS") @map("bands_unit")
+  bandsUnits       String[] @default([]) @map("bands_units")
   autoReengage     Boolean  @default(false) @map("auto_reengage")
   reengageFromBand Int      @default(1) @map("reengage_from_band")
   maxAttempts      Int      @default(2) @map("max_attempts")

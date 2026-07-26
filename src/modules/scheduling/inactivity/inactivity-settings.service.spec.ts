@@ -20,13 +20,23 @@ describe('InactivitySettingsService', () => {
     expect(s.enabled).toBe(true);
     expect(s.bandsDays).toEqual([3, 7, 15, 30]);
     expect(s.autoReengage).toBe(false);
-    expect(s.bandsUnit).toBe('DAYS');
+    expect(s.bandsUnits).toEqual(['DAYS', 'DAYS', 'DAYS', 'DAYS']);
   });
-  it('bandsUnit default DAYS; persiste HOURS quando setado', async () => {
+  it('unidade por faixa: persiste bandsUnits e ordena por tempo absoluto', async () => {
     const { service } = makeDeps();
-    expect((await service.get('org1')).bandsUnit).toBe('DAYS');
-    await service.update('org1', { bandsUnit: 'HOURS', bandsDays: [3, 6, 12, 24] });
-    expect((await service.get('org1')).bandsUnit).toBe('HOURS');
+    // escada mista fora de ordem: 3d, 6h, 12h → deve reordenar p/ 6h,12h,3d
+    await service.update('org1', {
+      bandsDays: [3, 6, 12],
+      bandsUnits: ['DAYS', 'HOURS', 'HOURS'],
+    });
+    const s = await service.get('org1');
+    expect(s.bandsDays).toEqual([6, 12, 3]);
+    expect(s.bandsUnits).toEqual(['HOURS', 'HOURS', 'DAYS']);
+  });
+  it('bandsUnit global (legado) preenche todas as faixas', async () => {
+    const { service } = makeDeps();
+    await service.update('org1', { bandsUnit: 'HOURS', bandsDays: [3, 6, 12] });
+    expect((await service.get('org1')).bandsUnits).toEqual(['HOURS', 'HOURS', 'HOURS']);
   });
   it('update persiste e mescla', async () => {
     const { service } = makeDeps();

@@ -31,17 +31,29 @@ describe('inactivity.util', () => {
       // 40 dias → última faixa índice 3 (30+)
       expect(computeBand({ lastOutboundAt: t('2025-12-22T00:00:00Z'), lastInboundAt: null, bandsDays: bands, now })).toBe(3);
     });
-    it('unit=HOURS classifica pela faixa de horas parado', () => {
+    it('units por faixa: escada só em horas', () => {
       const hb = [3, 6, 12, 24];
+      const hu: ('DAYS' | 'HOURS')[] = ['HOURS', 'HOURS', 'HOURS', 'HOURS'];
       const nowH = t('2026-01-02T00:00:00Z');
       // 2h parado → abaixo da 1ª faixa (3h) → null
-      expect(computeBand({ lastOutboundAt: t('2026-01-01T22:00:00Z'), lastInboundAt: null, bandsDays: hb, now: nowH, unit: 'HOURS' })).toBeNull();
+      expect(computeBand({ lastOutboundAt: t('2026-01-01T22:00:00Z'), lastInboundAt: null, bandsDays: hb, units: hu, now: nowH })).toBeNull();
       // 5h → faixa índice 0 (3-6h)
-      expect(computeBand({ lastOutboundAt: t('2026-01-01T19:00:00Z'), lastInboundAt: null, bandsDays: hb, now: nowH, unit: 'HOURS' })).toBe(0);
+      expect(computeBand({ lastOutboundAt: t('2026-01-01T19:00:00Z'), lastInboundAt: null, bandsDays: hb, units: hu, now: nowH })).toBe(0);
       // 13h → faixa índice 2 (12-24h)
-      expect(computeBand({ lastOutboundAt: t('2026-01-01T11:00:00Z'), lastInboundAt: null, bandsDays: hb, now: nowH, unit: 'HOURS' })).toBe(2);
+      expect(computeBand({ lastOutboundAt: t('2026-01-01T11:00:00Z'), lastInboundAt: null, bandsDays: hb, units: hu, now: nowH })).toBe(2);
     });
-    it('sem unit assume DAYS (mesmo resultado de antes)', () => {
+    it('escada MISTA (3h, 6h, 3d): classifica pelo tempo absoluto', () => {
+      const mb = [3, 6, 3];
+      const mu: ('DAYS' | 'HOURS')[] = ['HOURS', 'HOURS', 'DAYS'];
+      const now3 = t('2026-01-10T00:00:00Z');
+      // 4h parado → índice 0 (3h-6h)
+      expect(computeBand({ lastOutboundAt: t('2026-01-09T20:00:00Z'), lastInboundAt: null, bandsDays: mb, units: mu, now: now3 })).toBe(0);
+      // 10h parado → índice 1 (6h-3d)
+      expect(computeBand({ lastOutboundAt: t('2026-01-09T14:00:00Z'), lastInboundAt: null, bandsDays: mb, units: mu, now: now3 })).toBe(1);
+      // 4 dias parado → índice 2 (3d+)
+      expect(computeBand({ lastOutboundAt: t('2026-01-06T00:00:00Z'), lastInboundAt: null, bandsDays: mb, units: mu, now: now3 })).toBe(2);
+    });
+    it('sem units assume DAYS (mesmo resultado de antes)', () => {
       expect(computeBand({ lastOutboundAt: t('2026-01-26T00:00:00Z'), lastInboundAt: null, bandsDays: bands, now })).toBe(0);
     });
   });
