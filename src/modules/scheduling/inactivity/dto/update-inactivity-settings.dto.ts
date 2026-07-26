@@ -6,6 +6,10 @@ export class UpdateInactivitySettingsDto {
   @ApiPropertyOptional({ type: [Number], example: [3, 7, 15, 30] })
   @IsOptional() @IsArray() @ArrayNotEmpty() @IsInt({ each: true }) @Min(1, { each: true })
   bandsDays?: number[];
+  @ApiPropertyOptional({ enum: ['DAYS', 'HOURS'], isArray: true, description: 'Unidade por faixa, paralela a bandsDays' })
+  @IsOptional() @IsArray() @IsIn(['DAYS', 'HOURS'], { each: true })
+  bandsUnits?: ('DAYS' | 'HOURS')[];
+  // Legado: unidade global única (ainda aceita como fallback).
   @ApiPropertyOptional({ enum: ['DAYS', 'HOURS'] })
   @IsOptional() @IsIn(['DAYS', 'HOURS']) bandsUnit?: 'DAYS' | 'HOURS';
   @ApiPropertyOptional() @IsOptional() @IsBoolean() autoReengage?: boolean;
