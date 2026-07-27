@@ -107,6 +107,9 @@ describe('PipelinesService.markOrderSentForConversation (E6)', () => {
       }),
       'user-1',
       'org-1',
+      'ALL',
+      undefined,
+      expect.objectContaining({ system: true, automated: true }),
     );
     expect(res.acceptanceLink).toBe('https://x.test/aceite/tok');
   });

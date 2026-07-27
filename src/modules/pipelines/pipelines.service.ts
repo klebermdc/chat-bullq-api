@@ -564,11 +564,14 @@ export class PipelinesService {
         },
       );
       acceptanceLink = link;
-      const text = `Prontinho! Pra fechar, confira os itens que você recebeu e confirme o aceite neste link:\n${link}`;
+      const text = `Prontinho! ✅ Já enviamos tudo pra você.\n\nPra finalizar, é só dar uma conferida nos itens que você recebeu e confirmar o recebimento neste link (leva menos de 1 minuto):\n\n${link}\n\nEle também serve como seu comprovante. Qualquer coisa, é só chamar por aqui! 😊`;
       await this.messages.send(
         { conversationId, type: 'TEXT', content: { text } } as any,
         opts.createdById,
         organizationId,
+        'ALL',
+        role,
+        { system: true, automated: true },
       );
     }
 
