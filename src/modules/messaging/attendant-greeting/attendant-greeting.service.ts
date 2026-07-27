@@ -30,9 +30,32 @@ export class AttendantGreetingService {
     try {
       const conversation = await this.prisma.conversation.findUnique({
         where: { id: conversationId },
-        select: { id: true, organizationId: true, isGroup: true },
+        select: {
+          id: true,
+          organizationId: true,
+          isGroup: true,
+          metadata: true,
+        },
       });
       if (!conversation || conversation.isGroup) return;
+
+      // Anti-duplicidade: o mesmo atendente só se apresenta UMA vez por
+      // conversa. Sem isso, os gatilhos se somam no dia a dia — aprovar o
+      // handoff e logo depois clicar "Assumir" mandaria a mesma saudação duas
+      // vezes pro cliente. Outro atendente assumindo depois saúda normalmente.
+      const metadata = (conversation.metadata ?? {}) as Record<string, unknown>;
+      const lastGreeting = metadata.attendantGreeting as
+        | { userId?: string }
+        | undefined;
+      if (lastGreeting?.userId === attendantUserId) {
+        this.logger.log({
+          msg: 'attendant_greeting_skipped_duplicate',
+          conversationId,
+          attendantUserId,
+          source,
+        });
+        return;
+      }
 
       const settings = await this.settings.get(conversation.organizationId);
       if (!settings.enabled) return;
@@ -53,6 +76,22 @@ export class AttendantGreetingService {
         undefined,
         { system: true },
       );
+
+      // Marca quem já se apresentou (alimenta a guarda acima). Mesclado pra
+      // não pisar em outras chaves do metadata da conversa.
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: {
+          metadata: {
+            ...metadata,
+            attendantGreeting: {
+              userId: attendantUserId,
+              at: new Date().toISOString(),
+              source,
+            },
+          },
+        },
+      });
 
       this.logger.log({
         msg: 'attendant_greeting_sent',
