@@ -7,7 +7,7 @@ import { generateAcceptanceToken } from './acceptance-token.util';
 import { AcceptanceItem, PublicAcceptanceView } from './acceptances.types';
 
 const DEFAULT_TERM = (org: string) =>
-  `Declaro que recebi de ${org} os itens listados abaixo, que conferi cada um deles e que está tudo correto.`;
+  `Confirmo que recebi de ${org} os produtos/serviços listados abaixo e que conferi cada item — datas, quantidades e informações — estando tudo correto e de acordo com o combinado.`;
 const ACCEPTANCE_TTL_DAYS = 30;
 
 @Injectable()
