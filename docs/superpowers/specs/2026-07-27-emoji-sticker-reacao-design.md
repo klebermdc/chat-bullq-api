@@ -97,8 +97,10 @@ Props:
 
 **`chat-input.tsx`** (alterado)
 
-- Botão `Smile` (lucide) ao lado do clipe. No mobile entra como item do
-  BottomSheet "+", não como ícone novo na barra.
+- Botão `Smile` (lucide) ao lado do clipe, **só no desktop** (`hidden lg:flex`).
+  No celular o teclado do sistema já tem tecla de emoji: um picker próprio seria
+  redundante e abriria um popover dentro do BottomSheet. A aba de figurinhas
+  (Fatia 2) segue a mesma regra.
 - `onPickEmoji` → insere o emoji **na posição do cursor** do textarea (o
   componente já expõe `ref` via `useImperativeHandle`), mantém o foco e **não
   fecha** o painel, permitindo escolher vários seguidos.
