@@ -46,12 +46,17 @@ envio de reação.
 **Consequência:** figurinha funciona em todos os canais; reação só em Meta oficial
 e Zappfy.
 
+**Decisão de escopo:** a feature é desenhada para o **canal Meta oficial**, que é
+o caminho daqui pra frente. Não há UI condicional por canal — reação aparece
+sempre. O que sobra do Wasender é apenas um guard defensivo no servidor, para o
+caso de restar canal Wasender no banco (ver *Guard defensivo* abaixo).
+
 ## Decisões
 
 | Decisão | Escolha | Motivo |
 |---|---|---|
 | Fonte da figurinha | Pasta marcada na Biblioteca de Arquivos | Reusa `MediaAsset` + `MediaFolder`; nenhuma conversão de imagem na API; figurinha de marca padronizada. |
-| Reação onde não há suporte | Esconder o botão | Nada de controle que falha. Canal sem suporte nem mostra a opção. |
+| Canal alvo da reação | Meta oficial | É o canal para onde a operação está indo. Sem flag de capacidade na UI e sem plumbing de canal até o inbox — bem menos código. |
 | Entrada na UI | Um botão 😀 com abas `[Emojis｜Figurinhas]` | O compositor já tem 8 controles e passou por um declutter. Um botão novo, padrão que o atendente já conhece do WhatsApp Web. |
 | Biblioteca de emoji | `emoji-mart` via `next/dynamic` | Busca e i18n pt-BR; dados vêm de pacote npm, não de CDN em runtime (evita a classe de falha de rede/CORS que já derrubou o app antes); carrega só ao abrir o painel. |
 | Identificar figurinha | `MediaFolder.isStickerFolder` | Coluna booleana, migration trivial, sem backfill. Sobrevive a renomear a pasta — diferente de convenção de nome — e não confunde um logo `.webp` com figurinha. |
@@ -64,7 +69,7 @@ Três entregas independentes, no formato de PR já usado no projeto:
 |---|---|---|
 | **1 — Emoji** | Painel 😀 no compositor; emoji entra no textarea e vira mensagem `TEXT`. | Web |
 | **2 — Figurinha** | Aba "Figurinhas"; envia `STICKER` da Biblioteca. | API + Web |
-| **3 — Reação** | 👍 na bolha, só em canal capaz. | API + Web |
+| **3 — Reação** | 👍 na bolha, no canal Meta oficial. | API + Web |
 
 A Fatia 1 não toca a API e sobe sozinha. A Fatia 3 é a de maior risco e vai por último.
 
@@ -104,7 +109,7 @@ Props:
 
 - Aparece no hover da bolha (desktop) e no long-press (mobile).
 - Seis emojis rápidos: 👍 ❤️ 😂 😮 😢 🙏, mais um "…" que abre o mesmo picker.
-- Só renderiza quando o canal da conversa tem `capabilities.reactions === true`.
+- Sempre visível (respeitando o gate de janela de 24h) — sem condicional por canal.
 - A leitura da reação já existe em `chat-panel.tsx:970`; o envio reaproveita o
   mesmo caminho de render.
 
@@ -114,18 +119,14 @@ Props:
 lugares: o `@ApiProperty({ enum: [...] })` e o `@IsEnum([...])`. Alterar só um
 deles deixa o Swagger mentindo ou a validação frouxa.
 
-**Capabilities por canal** — mapa estático em `channel-hub`:
+**Guard defensivo** — não há mapa de capabilities exposto para a UI. O servidor
+recusa `REACTION` quando o adapter da conversa não sabe enviá-la, respondendo
+`400` com mensagem clara. Isso cobre o caso de sobrar canal Wasender no banco sem
+custar nenhuma plumbing de canal até o inbox.
 
-| Adapter | stickers | reactions |
-|---|---|---|
-| `wasender` | ✅ | ❌ |
-| `whatsapp-official` | ✅ | ✅ |
-| `zappfy` | ✅ | ✅ |
-
-Exposto no payload de `GET /channels` (que o inbox já carrega) como
-`capabilities: { stickers: boolean; reactions: boolean }`, para a UI decidir o que
-mostrar — **e** validado no envio. Esconder o botão é conveniência de interface; a
-autoridade é o servidor: canal sem suporte responde `400`.
+Concretamente: `whatsapp-official` e `zappfy` já tratam `MessageContentType.REACTION`
+no `denormalize()`; `wasender` não trata e passa a lançar erro explícito em vez de
+cair no `default`.
 
 **Validação de conteúdo por tipo** — hoje `content` é `Record<string, any>` sem
 guarda alguma. Passa a valer:
@@ -175,14 +176,14 @@ junto com os demais controles de envio.
 |---|---|
 | Asset de figurinha de outra organização | `403` |
 | `REACTION` sem `replyToMessageId` ou sem emoji válido | `400` |
-| Canal não suporta o tipo | `400` (e o controle nem aparece na UI) |
+| Reação numa conversa de canal que não envia reação | `400` — toast no inbox. Só acontece se restar canal Wasender. |
 | Falha no envio ao provedor | mensagem entra como `FAILED` pelo fluxo existente |
 
 ## Testes
 
 - `send-message.dto` — aceita `STICKER` e `REACTION`; rejeita tipo desconhecido.
-- `messages.service` — asset de outra org → `403`; reação sem alvo → `400`; canal
-  sem capability → `400`.
+- `messages.service` — asset de outra org → `403`; reação sem alvo → `400`; reação
+  em canal que não envia reação → `400`.
 - `wasender.message-mapper` — **regressão**: `REACTION` nunca vira mensagem de
   texto. Este é o teste que mais importa: protege contra o bug latente voltar.
 - `wasender.message-mapper` — `STICKER` produz `{ to, stickerUrl }`.
