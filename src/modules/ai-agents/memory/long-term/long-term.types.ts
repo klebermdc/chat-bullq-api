@@ -91,6 +91,10 @@ export interface EnrichedContext {
     nowIso: string;
     timezone: string;
     businessHours: boolean;
+    /** Resumo legível do horário de atendimento (null se 24/7 ou vazio). */
+    hoursSummary?: string | null;
+    /** Quando um humano retorna, ex "amanhã às 09h" (null se aberto/24-7). */
+    nextOpenLabel?: string | null;
   };
   memory?: {
     summary?: string;
