@@ -17,7 +17,9 @@ export {}; // isola o escopo do módulo
  *   APPLY=1 API_URL=... EMAIL=... PASSWORD=... npx ts-node scripts/backfill-lead-cards.ts
  *
  * Opcionais: PIPELINE_NAME (default "vendas"), STAGE_NAME (default "lead"),
- * MAX_DAYS (só conversas com atividade nos últimos N dias), PAGE_SIZE (100).
+ * MAX_DAYS (só conversas com atividade nos últimos N dias), PAGE_SIZE (100),
+ * CHANNEL_NAME (só conversas de um canal, match por trecho do nome) ou
+ * CHANNEL_ID (id exato, tem precedência).
  */
 
 const PIPELINE_MATCH = (process.env.PIPELINE_NAME || 'vendas').toLowerCase();
@@ -25,6 +27,8 @@ const STAGE_MATCH = (process.env.STAGE_NAME || 'lead').toLowerCase();
 const APPLY = process.env.APPLY === '1' || process.env.APPLY === 'true';
 const PAGE_SIZE = Number(process.env.PAGE_SIZE || 100);
 const MAX_DAYS = process.env.MAX_DAYS ? Number(process.env.MAX_DAYS) : null;
+const CHANNEL_MATCH = (process.env.CHANNEL_NAME || '').toLowerCase().trim();
+const CHANNEL_ID = (process.env.CHANNEL_ID || '').trim();
 
 async function resolveAuth(apiUrl: string): Promise<{ token: string; orgId: string }> {
   const email = (process.env.EMAIL || '').trim();
@@ -117,6 +121,31 @@ async function main() {
   }
   console.log(`🃏 ${withCard.size} conversas já têm card (serão puladas).`);
 
+  // ── 2b. Canal (opcional) ──────────────────────────────────────
+  let channelId = CHANNEL_ID;
+  if (!channelId && CHANNEL_MATCH) {
+    const channels: any[] = await api('GET', '/channels');
+    const hits = channels.filter((c) =>
+      (c.name ?? '').toLowerCase().includes(CHANNEL_MATCH),
+    );
+    if (hits.length === 0) {
+      throw new Error(
+        `Nenhum canal com nome contendo "${CHANNEL_MATCH}". Canais: ${channels
+          .map((c) => c.name)
+          .join(' | ')}`,
+      );
+    }
+    if (hits.length > 1) {
+      throw new Error(
+        `"${CHANNEL_MATCH}" casou ${hits.length} canais: ${hits
+          .map((c) => `${c.name} (${c.id})`)
+          .join(' | ')}. Use CHANNEL_ID pra escolher.`,
+      );
+    }
+    channelId = hits[0].id;
+    console.log(`📡 Canal "${hits[0].name}" (${channelId}).`);
+  }
+
   // ── 3. Conversas abertas sem card ─────────────────────────────
   // Sem filtro `status` a API devolve tudo que não está CLOSED; `groups=exclude`
   // tira os grupos (grupo não é lead).
@@ -134,6 +163,7 @@ async function main() {
       page: String(page),
       limit: String(PAGE_SIZE),
       ...(dateFrom ? { dateFrom } : {}),
+      ...(channelId ? { channelId } : {}),
     });
     const res = await api('GET', `/conversations?${qs}`);
     const list: any[] = res.conversations ?? [];
