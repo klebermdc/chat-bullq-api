@@ -1,12 +1,26 @@
 import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
 import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
+import { MessageContentType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { MessagesService } from '../messaging/messages/messages.service';
 import { CadenceRunner } from '../cadences/cadence-runner.service';
 import { ScheduledMessagesRepository } from './scheduled-messages.repository';
 import { SCHEDULED_DISPATCH_QUEUE, SCHEDULED_DISPATCH_JOB } from './scheduling.constants';
 import { isAiParked } from '../../common/utils/ai-parked.util';
+import { computeWhatsappWindow } from '../messaging/conversations/whatsapp-window.util';
+import { buildHsmTemplateContent } from './hsm-template-payload';
+
+/** Conversa (parcial) que o dispatch carrega para decidir texto vs template. */
+interface DispatchConversation {
+  lastInboundAt: Date | null;
+  channel?: { type: string } | null;
+  contact?: { name: string | null; ctwaClidAt: Date | null } | null;
+}
+
+type OutboundPayload =
+  | { ok: true; type: MessageContentType; content: Record<string, any> }
+  | { ok: false; reason: string };
 
 @Processor(SCHEDULED_DISPATCH_QUEUE, { concurrency: 5 })
 export class ScheduledDispatchProcessor extends WorkerHost {
@@ -32,6 +46,8 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       select: {
         id: true, status: true, isArchived: true, lastInboundAt: true,
         assignedToId: true, awaitingHumanReply: true, aiEnabled: true,
+        channel: { select: { type: true } },
+        contact: { select: { name: true, ctwaClidAt: true } },
       },
     });
     if (!conversation || conversation.status === 'CLOSED' || conversation.isArchived) {
@@ -87,6 +103,24 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       return;
     }
 
+    // Fora da janela de 24h/72h (canal oficial) texto livre é recusado pela
+    // Meta — o envio só passa como template HSM. Resolve aqui qual dos dois vai.
+    const outbound = await this.resolveOutboundPayload(row, conversation);
+    if (!outbound.ok) {
+      this.logger.warn(
+        `scheduled_dispatch_window_blocked id=${row.id} conv=${row.conversationId}: ${outbound.reason}`,
+      );
+      await this.repo.update(row.id, {
+        status: 'FAILED',
+        failedReason: outbound.reason,
+      });
+      // Mesmo bloqueado, a cadência precisa andar: uma matrícula parada em
+      // ACTIVE bloqueia qualquer cadência futura naquela conversa (a guarda de
+      // idempotência do `start` recusa enquanto houver enrollment vivo).
+      this.advanceCadence(row);
+      return;
+    }
+
     const claimed = await this.repo.claimForDispatch(row.id);
     if (!claimed) return; // canceled or already picked up between read and now
 
@@ -94,8 +128,8 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       const sent = await this.messages.send(
         {
           conversationId: row.conversationId,
-          type: row.contentType,
-          content: row.content as Record<string, any>,
+          type: outbound.type,
+          content: outbound.content,
         },
         row.createdById,
         row.organizationId,
@@ -111,15 +145,7 @@ export class ScheduledDispatchProcessor extends WorkerHost {
 
       // Hook de cadência: toque CADENCE enviado → avisa o runner para agendar
       // o próximo passo (ou encerrar como esgotado). Fire-and-forget.
-      if (row.origin === 'CADENCE' && row.cadenceEnrollmentId) {
-        this.cadenceRunner
-          .onStepSent(row.cadenceEnrollmentId, row.cadenceStepOrder ?? 0)
-          .catch((err) =>
-            this.logger.warn(
-              `cadence_onStepSent_failed enrollment=${row.cadenceEnrollmentId}: ${(err as Error).message}`,
-            ),
-          );
-      }
+      this.advanceCadence(row);
 
       // Auto-retry (só AUTO_REENGAGE): agenda o próximo disparo se ainda há
       // tentativas. O auto-cancel no inbound (Fase 1) cancela esse próximo se
@@ -169,6 +195,88 @@ export class ScheduledDispatchProcessor extends WorkerHost {
         failedReason: (err as Error).message.slice(0, 500),
       });
     }
+  }
+
+  /**
+   * Avisa o runner que este toque terminou (enviado ou bloqueado) para ele
+   * agendar o próximo passo ou encerrar a matrícula. Fire-and-forget.
+   */
+  private advanceCadence(row: {
+    origin: string;
+    cadenceEnrollmentId?: string | null;
+    cadenceStepOrder?: number | null;
+  }): void {
+    if (row.origin !== 'CADENCE' || !row.cadenceEnrollmentId) return;
+    this.cadenceRunner
+      .onStepSent(row.cadenceEnrollmentId, row.cadenceStepOrder ?? 0)
+      .catch((err) =>
+        this.logger.warn(
+          `cadence_onStepSent_failed enrollment=${row.cadenceEnrollmentId}: ${(err as Error).message}`,
+        ),
+      );
+  }
+
+  /**
+   * Decide o que sai de fato: o conteúdo agendado (texto livre/mídia) ou o
+   * template HSM configurado no passo.
+   *
+   * Só troca quando a janela do canal oficial está fechada — aí texto livre não
+   * é entregue pela Meta. Sem template utilizável, falha com motivo legível em
+   * vez de queimar um envio que já se sabe recusado.
+   */
+  private async resolveOutboundPayload(
+    row: {
+      contentType: MessageContentType;
+      content: unknown;
+      templateId?: string | null;
+      organizationId: string;
+    },
+    conversation: DispatchConversation,
+  ): Promise<OutboundPayload> {
+    const content = (row.content ?? {}) as Record<string, any>;
+    // Já é template: nada a decidir (a Meta aceita HSM dentro e fora da janela).
+    if (row.contentType === MessageContentType.TEMPLATE) {
+      return { ok: true, type: row.contentType, content };
+    }
+
+    const window = computeWhatsappWindow({
+      channelType: conversation.channel?.type ?? '',
+      lastInboundAt: conversation.lastInboundAt ?? null,
+      ctwaClidAt: conversation.contact?.ctwaClidAt ?? null,
+      now: new Date(),
+    });
+    if (window.open) return { ok: true, type: row.contentType, content };
+
+    if (!row.templateId) {
+      return {
+        ok: false,
+        reason:
+          'Janela de 24h/72h fechada e o passo não tem template HSM configurado — nada foi enviado.',
+      };
+    }
+
+    const template = await this.prisma.messageTemplate.findFirst({
+      where: { id: row.templateId, organizationId: row.organizationId },
+    });
+    if (!template || template.status !== 'APPROVED') {
+      return {
+        ok: false,
+        reason: `Janela de 24h/72h fechada e o template HSM do passo não está aprovado (status=${template?.status ?? 'inexistente'}).`,
+      };
+    }
+
+    const built = buildHsmTemplateContent(
+      template,
+      conversation.contact?.name ?? null,
+    );
+    if (!built) {
+      return {
+        ok: false,
+        reason:
+          'Janela de 24h/72h fechada e o template HSM do passo exige cabeçalho de mídia — não suportado em envio automático.',
+      };
+    }
+    return { ok: true, type: MessageContentType.TEMPLATE, content: built };
   }
 
   /**
