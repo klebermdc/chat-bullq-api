@@ -31,7 +31,8 @@ export function buildProposalMessage(
 
   const parkLines = cart.parks
     .map((p) => `${p.nome} [${p.dias} dias] - ${formatDateBR(p.data)}`)
-    .join('\n');
+    // linha em branco entre cada produto, para dar respiro na leitura no WhatsApp
+    .join('\n\n');
 
   return (
     `${INTRO[mode]}\n\n` +
