@@ -8,6 +8,7 @@ import { IdempotencyService } from './idempotency.service';
 import { ContactResolverService } from './contact-resolver.service';
 import { ConversationResolverService } from './conversation-resolver.service';
 import { LeadSourceTaggerService } from './lead-source-tagger.service';
+import { LeadCardService } from './lead-card.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { NormalizedInboundMessage, StatusUpdate } from '../../channel-hub/ports/types';
 import { InstagramContactEnricherService } from '../../channel-hub/adapters/instagram/instagram-contact-enricher.service';
@@ -115,6 +116,7 @@ export class InboundMessageProcessor extends WorkerHost {
     @InjectQueue('chatbot-processor') private readonly chatbotQueue: Queue,
     private readonly shadowObserver: ShadowObserverService,
     private readonly leadSourceTagger: LeadSourceTaggerService,
+    private readonly leadCard: LeadCardService,
     @InjectQueue(ORDER_FICHA_QUEUE) private readonly orderFichaQueue: Queue,
     private readonly channelUsage: ChannelUsageService,
     private readonly inboundNotifier: InboundNotifierService,
@@ -384,6 +386,23 @@ export class InboundMessageProcessor extends WorkerHost {
           .catch((err) =>
             this.logger.warn(`ad-phrase tag falhou (não crítico): ${err.message}`),
           );
+
+        // Card na porta de entrada: o lead já entra no funil de vendas na
+        // primeira etapa ("Lead") enquanto a Aline ainda está triando. Antes
+        // disso o card só nascia no handoff (`transferToHuman`) e o lead ficava
+        // invisível no Kanban durante toda a triagem.
+        //
+        // Roda em TODA mensagem do cliente (não só na primeira): o SELECT é
+        // indexado e barato, e assim lead antigo que responde também ganha
+        // card. O serviço só CRIA — card já em "Proposta enviada" não volta.
+        // Grupo não é lead: fica de fora.
+        if (!message.isGroup) {
+          this.leadCard
+            .ensureLeadCard({ organizationId, conversationId, contactId })
+            .catch((err) =>
+              this.logger.warn(`lead-card falhou (não crítico): ${err.message}`),
+            );
+        }
       }
 
       if (

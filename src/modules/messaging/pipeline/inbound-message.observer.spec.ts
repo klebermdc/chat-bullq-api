@@ -19,8 +19,8 @@ describe('InboundMessageProcessor — observação SHADOW independe do gate', ()
     //  8 webhookEvents, 9 agentRouter, 10 agentRunner, 11 transcription,
     //  12 outbox, 13 watchdog, 14 salesRecovery, 15 agentAvailability,
     //  16 scheduled, 17 cadenceInbound, 18 chatbotQueue, 19 shadowObserver,
-    //  20 leadSourceTagger, 21 orderFichaQueue, 22 channelUsage,
-    //  23 inboundNotifier.
+    //  20 leadSourceTagger, 21 leadCard, 22 orderFichaQueue,
+    //  23 channelUsage, 24 inboundNotifier.
     return new InboundMessageProcessor(
       overrides.prisma, // 1 prisma
       {} as any, // 2 idempotency
@@ -44,9 +44,10 @@ describe('InboundMessageProcessor — observação SHADOW independe do gate', ()
       {} as any, // 18 chatbotQueue
       overrides.shadowObserver, // 19 shadowObserver
       { tagInstagramOrganicIfMatch: jest.fn().mockResolvedValue(false) } as any, // 20 leadSourceTagger
-      { add: jest.fn().mockResolvedValue(undefined) } as any, // 21 orderFichaQueue
-      { recordWindow: jest.fn().mockResolvedValue(undefined) } as any, // 22 channelUsage
-      { onInboundMessage: jest.fn().mockResolvedValue(undefined) } as any, // 23 inboundNotifier
+      { ensureLeadCard: jest.fn().mockResolvedValue(null) } as any, // 21 leadCard
+      { add: jest.fn().mockResolvedValue(undefined) } as any, // 22 orderFichaQueue
+      { recordWindow: jest.fn().mockResolvedValue(undefined) } as any, // 23 channelUsage
+      { onInboundMessage: jest.fn().mockResolvedValue(undefined) } as any, // 24 inboundNotifier
     );
   }
 
