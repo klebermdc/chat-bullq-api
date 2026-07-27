@@ -21,6 +21,7 @@ import { TranscriptionService } from '../messages/transcription.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
 import { WatchdogService } from '../../routing/watchdog/watchdog.service';
 import { AgentAvailabilityService } from '../../routing/availability/agent-availability.service';
+import { OrgOffHoursNoticeService } from '../../routing/availability/org-off-hours-notice.service';
 import { SalesRecoveryService } from '../../sales-recovery/sales-recovery.service';
 import { ChannelUsageService } from '../../channel-usage/channel-usage.service';
 import { ORDER_FICHA_QUEUE } from '../../order-ficha/order-ficha.processor';
@@ -120,6 +121,7 @@ export class InboundMessageProcessor extends WorkerHost {
     @InjectQueue(ORDER_FICHA_QUEUE) private readonly orderFichaQueue: Queue,
     private readonly channelUsage: ChannelUsageService,
     private readonly inboundNotifier: InboundNotifierService,
+    private readonly orgOffHours: OrgOffHoursNoticeService,
   ) {
     super();
   }
@@ -465,6 +467,13 @@ export class InboundMessageProcessor extends WorkerHost {
         this.agentAvailability.onInboundReply(conversationId).catch((err) =>
           this.logger.warn(
             `agent_availability_failed conv=${conversationId}: ${(err as Error).message}`,
+          ),
+        );
+        // Fora-de-horário nível org (sem humano): manda a mensagem fixa 1x se
+        // aiOffHoursMode=MESSAGE. No-op nos demais modos. Best-effort.
+        this.orgOffHours.onInboundReply(conversationId).catch((err) =>
+          this.logger.warn(
+            `org_off_hours_failed conv=${conversationId}: ${(err as Error).message}`,
           ),
         );
         // Cliente respondeu → cancela reengajamentos automáticos pendentes e
