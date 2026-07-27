@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsObject,
   IsOptional,
@@ -53,6 +54,14 @@ export class UpdateOrganizationDto {
   @IsString()
   @MaxLength(500)
   aiOutOfHoursMessage?: string;
+
+  @ApiPropertyOptional({
+    description: 'Comportamento da IA fora do horário: SILENT | MESSAGE | ATTEND.',
+    enum: ['SILENT', 'MESSAGE', 'ATTEND'],
+  })
+  @IsOptional()
+  @IsIn(['SILENT', 'MESSAGE', 'ATTEND'])
+  aiOffHoursMode?: string;
 
   @ApiPropertyOptional({
     description:
