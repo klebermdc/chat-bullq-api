@@ -430,8 +430,18 @@ export class ConversationsRepository {
     return { lastReadAt: newLastReadAt, unreadCount };
   }
 
+  /**
+   * Detalhe de UMA conversa. Passa pelo MESMO `attachWindowExpiry` da listagem
+   * (findMany acima) — o front trata `windowExpiresAt` como fonte única da
+   * janela 24h/72h e, sem ele, cai num fallback de 24h a partir do último
+   * inbound. O inbox re-busca este endpoint a cada 5s e sobrescreve o objeto
+   * que veio da lista, então a ausência do campo aqui apagava a janela de 72h
+   * de CTWA no chat aberto (selo errado + compositor exigindo template das
+   * 24h às 72h). O `include` abaixo já traz `contact` inteiro (logo
+   * `ctwaClidAt`) e `channel.type`, que é tudo que o helper lê.
+   */
   async findById(id: string) {
-    return this.prisma.conversation.findUnique({
+    const conversation = await this.prisma.conversation.findUnique({
       where: { id },
       include: {
         contact: { include: { channels: true, tags: { include: { tag: true } } } },
@@ -454,6 +464,7 @@ export class ConversationsRepository {
         auditLogs: { orderBy: { createdAt: 'desc' }, take: 20 },
       },
     });
+    return conversation ? attachWindowExpiry(conversation, new Date()) : null;
   }
 
   async update(id: string, data: Prisma.ConversationUpdateInput) {

@@ -50,6 +50,74 @@ describe('ConversationsRepository.countByStatus (RN-05 assignment scope)', () =>
   });
 });
 
+describe('ConversationsRepository.findById (janela 24h/72h no detalhe)', () => {
+  const buildRepo = (findUnique: jest.Mock) => {
+    const prisma = { conversation: { findUnique } };
+    return new ConversationsRepository(prisma as any);
+  };
+
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000);
+
+  it('anexa windowExpiresAt/windowKind — o front usa isto como fonte única', async () => {
+    const lastInboundAt = hoursAgo(1);
+    const findUnique = jest.fn().mockResolvedValue({
+      id: 'c1',
+      lastInboundAt,
+      channel: { id: 'ch-1', type: 'WHATSAPP_OFFICIAL', name: 'Comercial' },
+      contact: { ctwaClidAt: null },
+    });
+    const repo = buildRepo(findUnique);
+
+    const out: any = await repo.findById('c1');
+
+    expect(out.windowKind).toBe('csw24');
+    expect(out.windowExpiresAt).toBe(
+      new Date(lastInboundAt.getTime() + 24 * 3600_000).toISOString(),
+    );
+  });
+
+  // Regressão: o detalhe vinha SEM windowExpiresAt e o inbox (refetch de 5s)
+  // sobrescrevia o objeto da lista, derrubando a janela de CTWA pro fallback
+  // de 24h — selo errado e compositor exigindo template das 24h às 72h.
+  it('mantém a janela de 72h do CTWA mesmo com o inbound mais recente', async () => {
+    const ctwaClidAt = hoursAgo(2);
+    const findUnique = jest.fn().mockResolvedValue({
+      id: 'c1',
+      lastInboundAt: hoursAgo(1),
+      channel: { id: 'ch-1', type: 'WHATSAPP_OFFICIAL', name: 'Comercial' },
+      contact: { ctwaClidAt },
+    });
+    const repo = buildRepo(findUnique);
+
+    const out: any = await repo.findById('c1');
+
+    expect(out.windowKind).toBe('ctwa72');
+    expect(out.windowExpiresAt).toBe(
+      new Date(ctwaClidAt.getTime() + 72 * 3600_000).toISOString(),
+    );
+  });
+
+  it('preserva os demais campos e devolve null quando a conversa não existe', async () => {
+    const findUnique = jest.fn().mockResolvedValue({
+      id: 'c1',
+      organizationId: 'org-1',
+      assignedToId: 'user-1',
+      lastInboundAt: null,
+      channel: { id: 'ch-1', type: 'WHATSAPP_WASENDER', name: 'Zap' },
+      contact: { ctwaClidAt: null },
+    });
+    const repo = buildRepo(findUnique);
+
+    const out: any = await repo.findById('c1');
+    expect(out.organizationId).toBe('org-1');
+    expect(out.assignedToId).toBe('user-1');
+    expect(out.windowExpiresAt).toBeNull();
+
+    const missing = buildRepo(jest.fn().mockResolvedValue(null));
+    expect(await missing.findById('nope')).toBeNull();
+  });
+});
+
 describe('ConversationsRepository.countByTab (abas de atendimento)', () => {
   const buildRepo = (groupBy: jest.Mock) => {
     const prisma = { conversation: { groupBy } };
