@@ -7,7 +7,9 @@ function makeDeps(overrides: any = {}) {
         id: 'c1',
         organizationId: 'org1',
         isGroup: false,
+        metadata: {},
       }),
+      update: jest.fn().mockResolvedValue({}),
     },
     user: {
       findUnique: jest.fn().mockResolvedValue({ name: 'Bárbara Silva' }),
@@ -70,6 +72,48 @@ describe('AttendantGreetingService', () => {
     const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
     await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'TRANSFER' });
     expect(messages.send.mock.calls[0][0].content.text).toContain('Sou o atendente');
+  });
+
+  it('registra o atendente saudado no metadata da conversa', async () => {
+    const { prisma, messages, settings } = makeDeps();
+    const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+    await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'HANDOFF_APPROVE' });
+    expect(prisma.conversation.update).toHaveBeenCalledTimes(1);
+    const arg = prisma.conversation.update.mock.calls[0][0];
+    expect(arg.where).toEqual({ id: 'c1' });
+    expect(arg.data.metadata.attendantGreeting.userId).toBe('u1');
+  });
+
+  it('NÃO saúda de novo quando o mesmo atendente já se apresentou nesta conversa', async () => {
+    const { prisma, messages, settings } = makeDeps();
+    prisma.conversation.findUnique.mockResolvedValue({
+      id: 'c1',
+      organizationId: 'org1',
+      isGroup: false,
+      metadata: { attendantGreeting: { userId: 'u1', at: '2026-07-27T10:00:00.000Z' } },
+    });
+    const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+    await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'MANUAL_ASSIGN' });
+    expect(messages.send).not.toHaveBeenCalled();
+  });
+
+  it('saúda quando quem assume é OUTRO atendente (preserva o resto do metadata)', async () => {
+    const { prisma, messages, settings } = makeDeps();
+    prisma.conversation.findUnique.mockResolvedValue({
+      id: 'c1',
+      organizationId: 'org1',
+      isGroup: false,
+      metadata: {
+        attendantGreeting: { userId: 'u1', at: '2026-07-27T10:00:00.000Z' },
+        requestNotes: 'quer 3 dias de parque',
+      },
+    });
+    const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+    await svc.greet({ conversationId: 'c1', attendantUserId: 'u2', source: 'TRANSFER' });
+    expect(messages.send).toHaveBeenCalledTimes(1);
+    const data = prisma.conversation.update.mock.calls[0][0].data;
+    expect(data.metadata.requestNotes).toBe('quer 3 dias de parque');
+    expect(data.metadata.attendantGreeting.userId).toBe('u2');
   });
 
   it('engole erro de send (best-effort, não relança)', async () => {

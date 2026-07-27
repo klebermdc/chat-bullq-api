@@ -129,17 +129,53 @@ export class PendingActionService {
       // Não rethrow — aprovação foi salva. Operador pode re-disparar via UI.
     }
 
-    // Saudação automática: só quando a pendência foi distribuída a um
-    // atendente (fluxo de handoff), não em approve genérico de outras tools.
-    if (action.conversationId && action.args?.distributedTo) {
+    // Saudação automática: aprovar o card de handoff É o "iniciar atendimento"
+    // — o momento em que um humano assume o lead. Vale para TODO handoff, não
+    // só o distribuído: antes exigíamos `args.distributedTo`, então quem
+    // aprovava direto (sem o ADM clicar "Distribuir" antes) nunca apresentava
+    // o atendente ao cliente. Outras tools (grantAccess/resetPassword) seguem
+    // sem saudação.
+    const isHandoff =
+      action.toolName === 'transferToHuman' || !!action.args?.distributedTo;
+    if (action.conversationId && isHandoff) {
       await this.attendantGreeting.greet({
         conversationId: action.conversationId,
-        attendantUserId: userId,
+        attendantUserId: await this.resolveGreetingAttendant(action, userId),
         source: 'HANDOFF_APPROVE',
       });
     }
 
     return action;
+  }
+
+  /**
+   * Quem se apresenta ao cliente na saudação do handoff. Ordem: o atendente da
+   * distribuição → o responsável atual da conversa → quem clicou aprovar.
+   *
+   * Usar o clicador como 1ª opção estaria errado: quando o ADM aprova em nome
+   * do atendente distribuído, o cliente receberia o nome do ADM (que não vai
+   * atender). Best-effort — falha na leitura cai pro aprovador.
+   */
+  private async resolveGreetingAttendant(
+    action: PendingAction,
+    approverUserId: string,
+  ): Promise<string> {
+    const distributedTo = action.args?.distributedTo;
+    if (typeof distributedTo === 'string' && distributedTo.trim()) {
+      return distributedTo;
+    }
+    try {
+      const conversation = await this.prisma.conversation.findUnique({
+        where: { id: action.conversationId },
+        select: { assignedToId: true },
+      });
+      if (conversation?.assignedToId) return conversation.assignedToId;
+    } catch (err: any) {
+      this.logger.warn(
+        `approve: falha ao ler responsável da conversa ${action.conversationId}: ${err?.message ?? err}`,
+      );
+    }
+    return approverUserId;
   }
 
   /**
