@@ -9,6 +9,13 @@ import {
   Organization,
 } from '@prisma/client';
 import { LlmMessage, LlmContentPart } from '../llm/llm.types';
+import {
+  isWithinHours,
+  nextOpenAt,
+  formatReturn,
+  formatHoursSummary,
+  type BusinessHoursConfig,
+} from '../../routing/availability/business-hours.util';
 
 export interface PromptContext {
   organization: Organization;
@@ -453,9 +460,11 @@ export class PromptBuilderService {
           // byte-identical between turns and hit the provider's prefix cache.
           {
             type: 'text',
-            text: `\n═══ Agora ═══\n- Hora atual: ${this.formatNow(
-              ctx.organization.aiTimezone,
-            )} (${ctx.organization.aiTimezone})`,
+            text:
+              `\n═══ Agora ═══\n- Hora atual: ${this.formatNow(
+                ctx.organization.aiTimezone,
+              )} (${ctx.organization.aiTimezone})` +
+              this.formatOffHoursBlock(ctx.organization),
             cache: false,
           },
         ],
@@ -658,6 +667,32 @@ export class PromptBuilderService {
 
     if (message.type !== 'TEXT') return `${prefix}[${message.type.toLowerCase()}]`;
     return '';
+  }
+
+  /**
+   * Bloco de "fora do horário" pro prompt vivo: só aparece quando a org tem
+   * agenda (`aiBusinessHours`) e agora está fechado. Instrui a Aline a avisar
+   * o horário e o próximo retorno humano. 24/7 (aiBusinessHours null) = vazio.
+   */
+  private formatOffHoursBlock(org: Organization): string {
+    const tz = org.aiTimezone || 'America/Sao_Paulo';
+    const bh = (org.aiBusinessHours ?? null) as BusinessHoursConfig | null;
+    const now = new Date();
+    if (isWithinHours(bh, tz, now)) return '';
+    const parts = ['\n- ESTAMOS FORA DO HORÁRIO DE ATENDIMENTO HUMANO.'];
+    const summary = formatHoursSummary(bh);
+    if (summary) parts.push(`\n- Horário de atendimento humano: ${summary}.`);
+    const next = nextOpenAt(bh, tz, now);
+    if (next)
+      parts.push(
+        `\n- Um atendente humano volta a responder ${formatReturn(next, tz, now)}.`,
+      );
+    parts.push(
+      '\n- Continue qualificando o lead normalmente e, em algum momento natural, ' +
+        'avise o horário de atendimento e quando um humano retorna. Nunca invente ' +
+        'horários — use só os informados acima.',
+    );
+    return parts.join('');
   }
 
   private formatNow(timezone: string): string {
