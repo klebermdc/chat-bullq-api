@@ -3,6 +3,7 @@ import {
   nextOpenAt,
   previousCloseAt,
   formatReturn,
+  formatHoursSummary,
   type BusinessHoursConfig,
 } from './business-hours.util';
 
@@ -87,5 +88,25 @@ describe('formatReturn', () => {
     const now = spDate('2026-07-23T07:00:00');
     const at = spDate('2026-07-23T09:30:00');
     expect(formatReturn(at, TZ, now)).toBe('hoje às 09h30');
+  });
+});
+
+describe('formatHoursSummary', () => {
+  it('null quando config é null (24/7)', () => {
+    expect(formatHoursSummary(null)).toBeNull();
+  });
+  it('null quando nenhum dia habilitado', () => {
+    expect(formatHoursSummary({ monday: { enabled: false } })).toBeNull();
+  });
+  it('resume dias habilitados, hora cheia sem minutos', () => {
+    const cfg = {
+      monday: { enabled: true, windows: [['09:00', '18:00']] as Array<[string, string]> },
+      saturday: { enabled: true, windows: [['09:00', '13:30']] as Array<[string, string]> },
+      sunday: { enabled: false },
+    };
+    expect(formatHoursSummary(cfg)).toBe('seg: 09h às 18h; sáb: 09h às 13h30');
+  });
+  it('dia habilitado sem janelas = o dia todo', () => {
+    expect(formatHoursSummary({ tuesday: { enabled: true } })).toBe('ter: o dia todo');
   });
 });
