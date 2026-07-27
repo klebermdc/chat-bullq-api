@@ -254,4 +254,235 @@ describe('ScheduledDispatchProcessor', () => {
     await processor.process({ data: { scheduledMessageId: 's1' } } as any);
     expect(repo.create).not.toHaveBeenCalled();
   });
+
+  // ─── Template HSM fora da janela (canal oficial) ────────────
+  describe('fallback para template HSM fora da janela', () => {
+    const OFICIAL = {
+      id: 'c1',
+      status: 'OPEN',
+      isArchived: false,
+      assignedToId: null,
+      awaitingHumanReply: false,
+      aiEnabled: null,
+      channel: { type: 'WHATSAPP_OFFICIAL' },
+      contact: { name: 'Maria Souza', ctwaClidAt: null },
+    };
+
+    /** Deps com canal/contato e um template aprovado disponível. */
+    function makeOfficialDeps(
+      row: any,
+      conversation: any,
+      template: any = {
+        id: 'tpl1',
+        name: 'candecia1',
+        language: 'pt_BR',
+        status: 'APPROVED',
+        components: { body: { text: 'Oi {{1}}, viu a proposta?' } },
+        variableExamples: {},
+      },
+    ) {
+      const repo = {
+        findById: jest.fn(async () => row),
+        create: jest.fn(async (d: any) => ({ id: 's2', ...d })),
+        update: jest.fn(async (id: string, d: any) => ({ ...row, ...d })),
+        claimForDispatch: jest.fn(async () => true),
+      };
+      const prisma = {
+        conversation: { findUnique: jest.fn(async () => conversation) },
+        messageTemplate: { findFirst: jest.fn(async () => template) },
+      };
+      const messages = { send: jest.fn(async () => ({ id: 'm1' })) };
+      const queue = { add: jest.fn(async () => ({ id: 'j' })) };
+      const cadenceRunner = { onStepSent: jest.fn(async () => undefined) };
+      const processor = new ScheduledDispatchProcessor(
+        repo as any,
+        prisma as any,
+        messages as any,
+        queue as any,
+        cadenceRunner as any,
+      );
+      return { processor, repo, messages, prisma, cadenceRunner };
+    }
+
+    const cadenceRow = {
+      ...base,
+      origin: 'CADENCE',
+      cadenceEnrollmentId: 'e1',
+      cadenceStepOrder: 1,
+      templateId: 'tpl1',
+      content: { text: 'Oi! Tudo bem?\n\n1 - Sim\n2 - Não' },
+      // agendado depois da última entrada do cliente (senão o backstop
+      // `client_replied` cancela antes de chegar na janela).
+      createdAt: new Date(Date.now() - 3600_000),
+    };
+
+    it('envia o template HSM quando a janela de 24h já fechou', async () => {
+      const conversation = {
+        ...OFICIAL,
+        lastInboundAt: new Date(Date.now() - 30 * 3600_000),
+      };
+      const { processor, messages } = makeOfficialDeps(cadenceRow, conversation);
+
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+
+      expect(messages.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'TEMPLATE',
+          content: {
+            name: 'candecia1',
+            language: { code: 'pt_BR' },
+            components: [
+              { type: 'body', parameters: [{ type: 'text', text: 'Maria' }] },
+            ],
+          },
+        }),
+        'user1',
+        'org1',
+        'ALL',
+        undefined,
+        { system: true },
+      );
+    });
+
+    it('mantém o texto livre quando a janela ainda está aberta', async () => {
+      const conversation = {
+        ...OFICIAL,
+        lastInboundAt: new Date(Date.now() - 2 * 3600_000),
+      };
+      const { processor, messages } = makeOfficialDeps(cadenceRow, conversation);
+
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+
+      expect(messages.send).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'TEXT', content: cadenceRow.content }),
+        'user1',
+        'org1',
+        'ALL',
+        undefined,
+        { system: true },
+      );
+    });
+
+    it('mantém o texto livre em canal não-oficial (sem regra de janela)', async () => {
+      const conversation = {
+        ...OFICIAL,
+        channel: { type: 'WHATSAPP_WASENDER' },
+        lastInboundAt: new Date(Date.now() - 30 * 3600_000),
+      };
+      const { processor, messages, prisma } = makeOfficialDeps(
+        cadenceRow,
+        conversation,
+      );
+
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+
+      expect(prisma.messageTemplate.findFirst).not.toHaveBeenCalled();
+      expect(messages.send).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'TEXT' }),
+        'user1',
+        'org1',
+        'ALL',
+        undefined,
+        { system: true },
+      );
+    });
+
+    it('janela fechada e template não aprovado: não envia e falha com motivo claro', async () => {
+      const conversation = {
+        ...OFICIAL,
+        lastInboundAt: new Date(Date.now() - 30 * 3600_000),
+      };
+      const { processor, repo, messages } = makeOfficialDeps(
+        cadenceRow,
+        conversation,
+        { id: 'tpl1', name: 'candecia1', language: 'pt_BR', status: 'PENDING', components: { body: { text: 'Oi' } } },
+      );
+
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+
+      expect(messages.send).not.toHaveBeenCalled();
+      expect(repo.update).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({
+          status: 'FAILED',
+          failedReason: expect.stringContaining('template'),
+        }),
+      );
+    });
+
+    it('janela fechada e passo sem template: não envia e falha com motivo claro', async () => {
+      const conversation = {
+        ...OFICIAL,
+        lastInboundAt: new Date(Date.now() - 30 * 3600_000),
+      };
+      const { processor, repo, messages } = makeOfficialDeps(
+        { ...cadenceRow, templateId: null },
+        conversation,
+      );
+
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+
+      expect(messages.send).not.toHaveBeenCalled();
+      expect(repo.update).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({
+          status: 'FAILED',
+          failedReason: expect.stringContaining('template'),
+        }),
+      );
+    });
+
+    it('toque bloqueado ainda avança a cadência (matrícula não fica ACTIVE para sempre)', async () => {
+      const conversation = {
+        ...OFICIAL,
+        lastInboundAt: new Date(Date.now() - 30 * 3600_000),
+      };
+      const { processor, cadenceRunner } = makeOfficialDeps(
+        { ...cadenceRow, templateId: null },
+        conversation,
+      );
+
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+
+      expect(cadenceRunner.onStepSent).toHaveBeenCalledWith('e1', 1);
+    });
+
+    it('preenche as variáveis extras do template com os exemplos cadastrados', async () => {
+      const conversation = {
+        ...OFICIAL,
+        lastInboundAt: new Date(Date.now() - 30 * 3600_000),
+      };
+      const { processor, messages } = makeOfficialDeps(cadenceRow, conversation, {
+        id: 'tpl1',
+        name: 'candecia2',
+        language: 'pt_BR',
+        status: 'APPROVED',
+        components: { body: { text: 'Oi {{1}}, sua viagem para {{2}}' } },
+        variableExamples: { '2': 'Orlando' },
+      });
+
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+
+      expect(messages.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.objectContaining({
+            components: [
+              {
+                type: 'body',
+                parameters: [
+                  { type: 'text', text: 'Maria' },
+                  { type: 'text', text: 'Orlando' },
+                ],
+              },
+            ],
+          }),
+        }),
+        'user1',
+        'org1',
+        'ALL',
+        undefined,
+        { system: true },
+      );
+    });
+  });
 });
