@@ -569,6 +569,9 @@ export class PipelinesService {
         { conversationId, type: 'TEXT', content: { text } } as any,
         opts.createdById,
         organizationId,
+        'ALL',
+        role,
+        { system: true, automated: true },
       );
     }
 
