@@ -12,6 +12,9 @@ import { PrismaService } from '../../database/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { CadenceRunner } from '../cadences/cadence-runner.service';
 import { MetaCapiQueue } from '../meta-capi/meta-capi.queue';
+import { AcceptancesService } from '../acceptances/acceptances.service';
+import { AcceptanceItem } from '../acceptances/acceptances.types';
+import { MessagesService } from '../messaging/messages/messages.service';
 import { pipelineCardScopeWhere } from './pipeline-scope';
 import { resolveAssignmentScope } from '../messaging/conversations/conversation-scope';
 import {
@@ -64,6 +67,12 @@ export class PipelinesService {
     @Inject(forwardRef(() => CadenceRunner))
     private readonly cadenceRunner: CadenceRunner,
     private readonly metaCapiQueue: MetaCapiQueue,
+    private readonly acceptances: AcceptancesService,
+    // MessagingModule importa (transitivamente, via SalesRecovery) o
+    // PipelinesModule → ciclo pipelines↔messaging. forwardRef nos módulos +
+    // aqui no provider quebra o ciclo (mesmo padrão de CadenceRunner acima).
+    @Inject(forwardRef(() => MessagesService))
+    private readonly messages: MessagesService,
   ) {}
 
   // ─── Pipelines ─────────────────────────────────
@@ -502,6 +511,12 @@ export class PipelinesService {
     organizationId: string,
     conversationId: string,
     stageName: string = ORDER_SENT_STAGE_NAME,
+    opts?: {
+      withAcceptance?: boolean;
+      items?: AcceptanceItem[];
+      termText?: string;
+      createdById?: string;
+    },
     role?: OrgRole,
     currentUserId?: string,
   ) {
@@ -528,10 +543,36 @@ export class PipelinesService {
       );
     }
 
-    return this.moveCard(card.id, organizationId, {
+    // Comportamento legado (preservado): mover o card pra etapa final.
+    const moved = await this.moveCard(card.id, organizationId, {
       toStageId: targetStage.id,
       toIndex: 0,
     } as MoveCardDto);
+
+    // E-aceite (opcional): se o atendente pediu o aceite (withAcceptance !==
+    // false) e mandou os itens + quem cria, gera o aceite e envia o link no
+    // WhatsApp. Sem isso, é só o legado (acceptanceLink undefined).
+    let acceptanceLink: string | undefined;
+    if (opts?.withAcceptance !== false && opts?.items && opts.createdById) {
+      const { link } = await this.acceptances.createForConversation(
+        organizationId,
+        conversationId,
+        {
+          items: opts.items,
+          termText: opts.termText,
+          createdById: opts.createdById,
+        },
+      );
+      acceptanceLink = link;
+      const text = `Prontinho! Pra fechar, confira os itens que você recebeu e confirme o aceite neste link:\n${link}`;
+      await this.messages.send(
+        { conversationId, type: 'TEXT', content: { text } } as any,
+        opts.createdById,
+        organizationId,
+      );
+    }
+
+    return { ...(moved as any), acceptanceLink };
   }
 
   /**

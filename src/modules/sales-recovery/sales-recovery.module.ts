@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { PipelinesModule } from '../pipelines/pipelines.module';
 import { RealtimeModule } from '../realtime/realtime.module';
@@ -34,7 +34,11 @@ import {
       { name: RECOVERY_OUTREACH_QUEUE },
       { name: 'outbound-messages' },
     ),
-    PipelinesModule,
+    // Task 10: PipelinesModule agora importa (forwardRef) MessagingModule, e
+    // MessagingModule importa este SalesRecoveryModule → ciclo de 3 módulos
+    // pipelines→messaging→sales-recovery→pipelines. Este forwardRef quebra a
+    // aresta de volta (sales-recovery→pipelines) pra Nest resolver a ordem.
+    forwardRef(() => PipelinesModule),
     RealtimeModule,
   ],
   controllers: [KirvanoWebhookController, RecoverySettingsController],

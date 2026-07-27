@@ -32,6 +32,8 @@ function make(overrides: { card?: unknown; wonStage?: unknown } = {}) {
     realtime,
     cadenceRunner,
     metaCapiQueue,
+    {} as any,
+    {} as any,
   );
   const moveSpy = jest
     .spyOn(service, 'moveCard')
