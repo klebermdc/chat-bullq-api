@@ -1,5 +1,7 @@
 import { Module, OnModuleInit, forwardRef } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
+import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
 import { ChannelAdapterRegistry } from './channel-adapter.registry';
 import { WebhookGatewayController } from './webhook-gateway.controller';
 import { ChannelsController } from './channels/channels.controller';
@@ -28,6 +30,10 @@ import { CoexistenceHistoryService } from './coexistence-history.service';
 import { CoexistenceContactsService } from './coexistence-contacts.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { MessageTemplatesModule } from './message-templates/message-templates.module';
+import {
+  InboundDropReporter,
+  INBOUND_DROP_REDIS,
+} from './inbound-drop-reporter.service';
 
 @Module({
   imports: [
@@ -47,8 +53,9 @@ import { MessageTemplatesModule } from './message-templates/message-templates.mo
     forwardRef(() => MessagingModule),
     forwardRef(() => MessageTemplatesModule),
     // AccountUpdateService avisa OWNER/ADMIN quando a Meta desconecta ou
-    // restringe a conta. forwardRef por segurança: notifications puxa
-    // messaging, que puxa channel-hub.
+    // restringe a conta, e o InboundDropReporter alerta descarte de inbound.
+    // forwardRef por segurança: notifications puxa messaging, que puxa
+    // channel-hub.
     forwardRef(() => NotificationsModule),
   ],
   controllers: [WebhookGatewayController, ChannelsController],
@@ -64,6 +71,17 @@ import { MessageTemplatesModule } from './message-templates/message-templates.mo
     CoexistenceHistoryService,
     CoexistenceContactsService,
     WhatsAppEmbeddedSignupService,
+    InboundDropReporter,
+    {
+      provide: INBOUND_DROP_REDIS,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        new Redis({
+          host: config.get<string>('redis.host', 'localhost'),
+          port: config.get<number>('redis.port', 6379),
+          password: config.get<string>('redis.password') || undefined,
+        }),
+    },
   ],
   exports: [
     ChannelAdapterRegistry,
