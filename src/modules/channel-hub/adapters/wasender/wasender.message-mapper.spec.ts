@@ -186,6 +186,31 @@ describe('WasenderMessageMapper', () => {
       expect(payload).toEqual({ to: '5511999999999', text: 'oi' });
     });
 
+    it('figurinha → { to, stickerUrl }', () => {
+      const { payload } = mapper.denormalize(
+        out(MessageContentType.STICKER, { mediaUrl: 'https://x/a.webp' }),
+        jid,
+      );
+      expect(payload).toEqual({
+        to: '5511999999999',
+        stickerUrl: 'https://x/a.webp',
+      });
+    });
+
+    it('NAO transforma REACTION em mensagem de texto', () => {
+      // A WasenderAPI não tem endpoint de enviar reação. Antes desta guarda o
+      // default devolvia { text: '' } e o cliente receberia uma bolha solta
+      // em vez de uma reação. Falhar alto é o comportamento honesto.
+      expect(() =>
+        mapper.denormalize(
+          out(MessageContentType.REACTION, {
+            reaction: { emoji: '👍', targetMessageId: 'ext-1' },
+          }),
+          jid,
+        ),
+      ).toThrow(/não suporta/i);
+    });
+
     it('imagem → { to, imageUrl, text? }', () => {
       const { payload } = mapper.denormalize(
         out(MessageContentType.IMAGE, { mediaUrl: 'https://x/a.jpg', caption: 'leg' }),
