@@ -22,13 +22,18 @@ import {
   Roles,
 } from '../../../common/decorators';
 import type { ChannelAccess } from '../../iam/channel-access/channel-access.service';
+import { WhatsAppEmbeddedSignupService } from '../adapters/whatsapp-official/whatsapp-embedded-signup.service';
+import { EmbeddedSignupDto } from './dto/embedded-signup.dto';
 
 @ApiTags('Channels')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
 @Controller('channels')
 export class ChannelsController {
-  constructor(private readonly service: ChannelsService) {}
+  constructor(
+    private readonly service: ChannelsService,
+    private readonly embeddedSignup: WhatsAppEmbeddedSignupService,
+  ) {}
 
   @Post()
   @Roles(OrgRole.OWNER, OrgRole.ADMIN)
@@ -43,6 +48,21 @@ export class ChannelsController {
     return this.service.create(org.id, dto, {
       userOrganizationId: org.userOrganizationId,
       role: org.userRole,
+    });
+  }
+
+  @Post('whatsapp/embedded-signup')
+  @ApiOperation({ summary: 'Conecta um WhatsApp via Embedded Signup (popup Meta) e cria o canal.' })
+  connectWhatsApp(
+    @CurrentOrg() org: { id: string; userOrganizationId: string; userRole: OrgRole },
+    @Body() dto: EmbeddedSignupDto,
+  ) {
+    return this.embeddedSignup.connect({
+      code: dto.code,
+      phoneNumberId: dto.phoneNumberId,
+      wabaId: dto.wabaId,
+      organizationId: org.id,
+      creator: { userOrganizationId: org.userOrganizationId, role: org.userRole },
     });
   }
 

@@ -3,6 +3,7 @@ import { WhatsAppOfficialInboundAdapter } from './whatsapp-official.inbound-adap
 import { WhatsAppOfficialOutboundAdapter } from './whatsapp-official.outbound-adapter';
 import { WhatsAppOfficialMessageMapper } from './whatsapp-official.message-mapper';
 import { WhatsAppOfficialHttpClient } from './whatsapp-official.http-client';
+import { WhatsAppPlatformConfigService } from './whatsapp-platform-config.service';
 import { MessagingModule } from '../../../messaging/messaging.module';
 
 @Module({
@@ -12,11 +13,13 @@ import { MessagingModule } from '../../../messaging/messaging.module';
     WhatsAppOfficialOutboundAdapter,
     WhatsAppOfficialMessageMapper,
     WhatsAppOfficialHttpClient,
+    WhatsAppPlatformConfigService,
   ],
   exports: [
     WhatsAppOfficialInboundAdapter,
     WhatsAppOfficialOutboundAdapter,
     WhatsAppOfficialHttpClient,
+    WhatsAppPlatformConfigService,
   ],
 })
 export class WhatsAppOfficialModule {}
