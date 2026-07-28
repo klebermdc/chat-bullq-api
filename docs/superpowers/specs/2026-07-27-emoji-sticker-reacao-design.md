@@ -117,9 +117,17 @@ Props:
 
 ### API
 
-**DTO** — `send-message.dto.ts` ganha `STICKER` e `REACTION` no enum, nos **dois**
-lugares: o `@ApiProperty({ enum: [...] })` e o `@IsEnum([...])`. Alterar só um
-deles deixa o Swagger mentindo ou a validação frouxa.
+**DTO** — `send-message.dto.ts` ganha `STICKER` no enum, nos **dois** lugares: o
+`@ApiProperty({ enum: [...] })` e o `@IsEnum([...])`. Alterar só um deles deixa o
+Swagger mentindo ou a validação frouxa.
+
+**Reação não passa pelo `send()`** — ganha endpoint e método próprios
+(`POST /messages/:id/react` → `MessagesService.react()`). O `send()` aplica um
+pacote de efeitos de "um humano respondeu": reatribui a conversa a quem enviou,
+desliga a IA, tira de "Esperando", zera a faixa de inatividade, cancela o
+watchdog e marca como lida. Um polegar não pode causar nada disso — reagir no
+card de um colega roubaria a conversa dele e desligaria a Aline. Detalhamento e
+testes no plano da Fatia 3.
 
 **Guard defensivo** — não há mapa de capabilities exposto para a UI. O servidor
 recusa `REACTION` quando o adapter da conversa não sabe enviá-la, respondendo
@@ -138,8 +146,11 @@ guarda alguma. Passa a valer:
   `organizationId` do request, com `deletedAt: null`. Hoje uma URL arbitrária
   passaria direto para o provedor: é vazamento entre tenants e superfície de SSRF.
   Sem correspondência → `403`.
-- `REACTION` exige `replyToMessageId` (a mensagem alvo) e
-  `content.reaction.emoji` com exatamente um grafema. Faltando qualquer um → `400`.
+- `REACTION` recebe a mensagem alvo pela própria rota (`/messages/:id/react`) e
+  um emoji de exatamente um grafema no corpo. A API resolve o `externalId` da
+  mensagem alvo e grava `content.reaction.targetMessageId` — é esse campo, e não
+  `replyTo`, que o mapper da Cloud API lê (a Cloud API rejeita `context` em
+  reação). Emoji inválido → `400`; alvo sem `externalId` → `403`.
 
 **Correção do bug latente** — no `denormalize()` do `wasender.message-mapper.ts`, o
 `default` que hoje converteria `REACTION` em texto passa a lançar erro explícito
@@ -161,10 +172,10 @@ existente. A API não muda.
 **Figurinha** — clique → `POST /messages { type: 'STICKER', content: { mediaUrl } }`
 → service valida que o asset é da org → adapter monta `{ to, stickerUrl }`.
 
-**Reação** — clique no emoji → `POST /messages { type: 'REACTION', replyToMessageId,
-content: { reaction: { emoji } } }` → service resolve o `externalMessageId` da
-mensagem alvo (caminho que já existe para o "Responder") → adapter oficial monta o
-payload de reaction com o `message_id`.
+**Reação** — clique no emoji → `POST /messages/:id/react { emoji }` → `react()`
+resolve o `externalId` da mensagem alvo → grava
+`content.reaction.targetMessageId` → adapter oficial monta o payload de reaction
+com o `message_id`. Sem os efeitos colaterais do `send()`.
 
 ## Janela de 24h
 
