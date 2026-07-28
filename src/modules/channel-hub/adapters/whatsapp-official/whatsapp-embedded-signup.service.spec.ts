@@ -147,6 +147,50 @@ describe('WhatsAppEmbeddedSignupService.connect', () => {
     expect(mockedAxios.post).toHaveBeenCalledTimes(1); // so o subscribe
   });
 
+  // O /register tem cota de 10 chamadas por numero em 72h (erro 133016 trava
+  // por 72 horas). Reconectar um canal ja registrado NAO pode gastar a cota.
+  it('nao re-registra um canal que ja tem registeredAt no config', async () => {
+    process.env.WA_REG_PIN = '123456';
+    mockedAxios.get.mockResolvedValueOnce({ data: { access_token: 'TKN' } } as any);
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);        // subscribe
+    mockedAxios.get.mockResolvedValueOnce({ data: { verified_name: 'NY Fast Pass' } } as any);
+
+    const existing = [{ id: 'exist1', config: { phoneNumberId: 'PN1', registeredAt: '2026-07-01T00:00:00.000Z' } }];
+    const { svc } = makeSvc(existing);
+    await svc.connect({ code: 'c', phoneNumberId: 'PN1', wabaId: 'WABA1', organizationId: 'org1' });
+
+    expect(mockedAxios.post).toHaveBeenCalledTimes(1); // so o subscribe, sem register
+  });
+
+  it('grava registeredAt no config quando o register da certo', async () => {
+    process.env.WA_REG_PIN = '123456';
+    mockedAxios.get.mockResolvedValueOnce({ data: { access_token: 'TKN' } } as any);
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);        // subscribe
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);        // register
+    mockedAxios.get.mockResolvedValueOnce({ data: { verified_name: 'NY Fast Pass' } } as any);
+
+    const { svc, channelsService } = makeSvc([]);
+    await svc.connect({ code: 'c', phoneNumberId: 'PN1', wabaId: 'WABA1', organizationId: 'org1' });
+
+    expect(channelsService.create).toHaveBeenCalledWith('org1', expect.objectContaining({
+      config: expect.objectContaining({ registeredAt: expect.any(String) }),
+    }), undefined);
+  });
+
+  it('NAO grava registeredAt quando o register falha (permite nova tentativa)', async () => {
+    process.env.WA_REG_PIN = '123456';
+    mockedAxios.get.mockResolvedValueOnce({ data: { access_token: 'TKN' } } as any);
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);
+    mockedAxios.post.mockRejectedValueOnce(new Error('boom'));                          // register falha
+    mockedAxios.get.mockResolvedValueOnce({ data: { verified_name: 'NY Fast Pass' } } as any);
+
+    const { svc, channelsService } = makeSvc([]);
+    await svc.connect({ code: 'c', phoneNumberId: 'PN1', wabaId: 'WABA1', organizationId: 'org1' });
+
+    const cfg = channelsService.create.mock.calls[0][1].config;
+    expect(cfg.registeredAt).toBeUndefined();
+  });
+
   // O numero pode ja estar registrado (recadastro, ou coexistencia que a Meta
   // registra sozinha). Isso NAO pode abortar uma conexao boa — o canal ja recebe.
   it('nao aborta a conexao quando o register falha', async () => {

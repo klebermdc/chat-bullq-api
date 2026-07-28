@@ -86,22 +86,41 @@ export class WhatsAppEmbeddedSignupService {
       throw new BadRequestException('Falha ao inscrever a conta (WABA) — verifique a permissao whatsapp_business_management.');
     }
 
-    // Não é fatal: o número pode já estar registrado (recadastro ou coexistência,
-    // em que a Meta registra sozinha). Abortar aqui jogaria fora uma conexão boa
-    // que já recebe mensagens — melhor conectar e gritar no log.
-    if (this.platform.registrationPin) {
+    const existing = (
+      await this.channelsRepo.findActiveByTypeAndOrg(
+        ChannelType.WHATSAPP_OFFICIAL,
+        params.organizationId,
+      )
+    ).find((c) => (c.config as Record<string, any>)?.phoneNumberId === params.phoneNumberId);
+
+    // O /register tem cota de 10 chamadas por número numa janela móvel de 72h;
+    // estourar devolve o erro 133016 e TRAVA o registro por 72 horas. Por isso
+    // só registramos uma vez por número: reconectar um canal já registrado
+    // (usuário clicando de novo) não pode gastar a cota.
+    const alreadyRegistered = Boolean((existing?.config as Record<string, any>)?.registeredAt);
+    let registeredAt: string | undefined = (existing?.config as Record<string, any>)?.registeredAt;
+
+    if (alreadyRegistered) {
+      this.logger.log(
+        `Embedded Signup: numero ${params.phoneNumberId} ja registrado em ${registeredAt} — pulando o /register (cota de 72h).`,
+      );
+    } else if (!this.platform.registrationPin) {
+      this.logger.warn(
+        `Embedded Signup: WA_REG_PIN nao configurado — pulando o registro do numero ${params.phoneNumberId}. O envio pode falhar.`,
+      );
+    } else {
+      // Não é fatal: o número pode já estar registrado do lado da Meta (canal
+      // recriado, ou coexistência). Abortar jogaria fora uma conexão boa que já
+      // recebe mensagens — melhor conectar e gritar no log.
       try {
         await this.registerNumber(params.phoneNumberId, token);
+        registeredAt = new Date().toISOString();
       } catch (err: any) {
         this.logger.error(
           `Embedded Signup: falha ao registrar o numero ${params.phoneNumberId} na Cloud API: ${err?.message}. ` +
             'O canal foi conectado, mas o ENVIO pode falhar ate o registro ser refeito.',
         );
       }
-    } else {
-      this.logger.warn(
-        `Embedded Signup: WA_REG_PIN nao configurado — pulando o registro do numero ${params.phoneNumberId}. O envio pode falhar.`,
-      );
     }
 
     let meta: { display_phone_number?: string; verified_name?: string };
@@ -113,19 +132,13 @@ export class WhatsAppEmbeddedSignupService {
     }
 
     const name = meta.verified_name || meta.display_phone_number || 'WhatsApp';
-    const config = {
+    const config: Record<string, any> = {
       accessToken: token,
       phoneNumberId: params.phoneNumberId,
       businessAccountId: params.wabaId,
       apiVersion: this.platform.apiVersion,
     };
-
-    const existing = (
-      await this.channelsRepo.findActiveByTypeAndOrg(
-        ChannelType.WHATSAPP_OFFICIAL,
-        params.organizationId,
-      )
-    ).find((c) => (c.config as Record<string, any>)?.phoneNumberId === params.phoneNumberId);
+    if (registeredAt) config.registeredAt = registeredAt;
 
     if (existing) {
       this.logger.log(`Embedded Signup: atualizando canal existente ${existing.id} (${params.phoneNumberId})`);
