@@ -236,7 +236,12 @@ export class AgentRouterService {
         return { handle: false, reason: 'org.aiEnabled=false' };
       }
       if (!this.isWithinBusinessHours(org)) {
-        return { handle: false, reason: 'outside-business-hours' };
+        // ATTEND: Aline continua atendendo 24/7 e anuncia o horário no prompt.
+        // SILENT/MESSAGE: fica muda (MESSAGE manda o texto fixo via
+        // OrgOffHoursNoticeService, fora deste caminho).
+        if (org.aiOffHoursMode !== 'ATTEND') {
+          return { handle: false, reason: 'outside-business-hours' };
+        }
       }
     }
 

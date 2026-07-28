@@ -98,3 +98,27 @@ export function formatReturn(date: Date, tz: string, now: Date): string {
   else dia = new Intl.DateTimeFormat('pt-BR', { timeZone: tz, weekday: 'long' }).format(date);
   return `${dia} às ${hora}`;
 }
+
+// "seg: 09h às 18h; sáb: 09h às 13h30". null se nada habilitado.
+export function formatHoursSummary(
+  config: BusinessHoursConfig | null | undefined,
+): string | null {
+  if (!config) return null;
+  const LABELS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  const hhmm = (v: string) => {
+    const [h, m] = v.split(':');
+    return m === '00' ? `${h}h` : `${h}h${m}`;
+  };
+  const parts: string[] = [];
+  for (let d = 0; d < 7; d++) {
+    const day = config[DAY_KEYS[d]];
+    if (!day || !day.enabled) continue;
+    const windows = day.windows ?? [];
+    const w =
+      windows.length === 0
+        ? 'o dia todo'
+        : windows.map(([f, t]) => `${hhmm(f)} às ${hhmm(t)}`).join(' e ');
+    parts.push(`${LABELS[d]}: ${w}`);
+  }
+  return parts.length ? parts.join('; ') : null;
+}

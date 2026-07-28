@@ -149,6 +149,12 @@ model Organization {
   aiTimezone            String   @default("America/Sao_Paulo") @map("ai_timezone")
   aiBusinessHours       Json?    @map("ai_business_hours")
   aiOutOfHoursMessage   String?  @map("ai_out_of_hours_message")
+  /// Comportamento da IA fora do `aiBusinessHours`:
+  /// SILENT = não responde (default); MESSAGE = envia `aiOutOfHoursMessage` 1x
+  /// por período fechado; ATTEND = continua atendendo 24/7 e avisa o horário.
+  /// String (não enum Postgres) de propósito — enum + uso na mesma migração
+  /// quebra `migrate deploy`.
+  aiOffHoursMode        String   @default("SILENT") @map("ai_off_hours_mode")
   /// Template do aviso enviado quando o cliente escreve fora do horário do
   /// atendente responsável. Placeholders: {atendente} e {proximo_horario}.
   /// NULL = usa o default do código (OFF_HOURS_DEFAULT_TEMPLATE).
@@ -568,6 +574,9 @@ model Conversation {
   reengageDismissedAt DateTime?          @map("reengage_dismissed_at")
   reengagedAt         DateTime?          @map("reengaged_at")
   offHoursNoticeAt    DateTime? @map("off_hours_notice_at")
+  /// Dedup do modo MESSAGE: quando o texto fixo foi enviado nesta conversa.
+  /// Coluna própria pra não colidir com `offHoursNoticeAt` (aviso por-atendente).
+  aiOffHoursMessageAt DateTime? @map("ai_off_hours_message_at")
   firstResponseAt     DateTime?          @map("first_response_at")
   closedAt            DateTime?          @map("closed_at")
   reopenedAt          DateTime?          @map("reopened_at")

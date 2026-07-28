@@ -138,10 +138,25 @@ export class ContextLayerService {
     } catch {
       humanTime = time.nowIso;
     }
-    const hours = time.businessHours
-      ? 'dentro do horário comercial'
-      : 'fora do horário comercial';
-    return `Agora: ${humanTime} (${time.timezone}, ${hours})`;
+    if (time.businessHours) {
+      return `Agora: ${humanTime} (${time.timezone}, dentro do horário comercial)`;
+    }
+
+    const lines = [
+      `Agora: ${humanTime} (${time.timezone}, FORA do horário de atendimento humano)`,
+    ];
+    if (time.hoursSummary) {
+      lines.push(`Horário de atendimento humano: ${time.hoursSummary}.`);
+    }
+    if (time.nextOpenLabel) {
+      lines.push(`Um atendente humano volta a responder ${time.nextOpenLabel}.`);
+    }
+    lines.push(
+      'Como estamos fora do horário: continue qualificando o lead normalmente e, ' +
+        'em algum momento natural, avise o horário de atendimento e quando um humano ' +
+        'retorna. Nunca invente horários — use só os informados acima.',
+    );
+    return lines.join('\n');
   }
 }
 

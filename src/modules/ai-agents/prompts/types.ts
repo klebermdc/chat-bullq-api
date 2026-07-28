@@ -96,6 +96,10 @@ export interface EnrichedContext {
     timezone: string;
     /** Já fora/dentro do expediente comercial da org. */
     businessHours: boolean;
+    /** Resumo legível do horário de atendimento (null se 24/7 ou vazio). */
+    hoursSummary?: string | null;
+    /** Quando um humano retorna, ex "amanhã às 09h" (null se aberto/24-7). */
+    nextOpenLabel?: string | null;
   };
   /** Memória persistente do contato com o agent. */
   memory?: {

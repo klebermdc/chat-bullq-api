@@ -20,7 +20,7 @@ describe('InboundMessageProcessor — observação SHADOW independe do gate', ()
     //  12 outbox, 13 watchdog, 14 salesRecovery, 15 agentAvailability,
     //  16 scheduled, 17 cadenceInbound, 18 chatbotQueue, 19 shadowObserver,
     //  20 leadSourceTagger, 21 leadCard, 22 orderFichaQueue,
-    //  23 channelUsage, 24 inboundNotifier.
+    //  23 channelUsage, 24 inboundNotifier, 25 orgOffHours.
     return new InboundMessageProcessor(
       overrides.prisma, // 1 prisma
       {} as any, // 2 idempotency
@@ -48,6 +48,7 @@ describe('InboundMessageProcessor — observação SHADOW independe do gate', ()
       { add: jest.fn().mockResolvedValue(undefined) } as any, // 22 orderFichaQueue
       { recordWindow: jest.fn().mockResolvedValue(undefined) } as any, // 23 channelUsage
       { onInboundMessage: jest.fn().mockResolvedValue(undefined) } as any, // 24 inboundNotifier
+      { onInboundReply: jest.fn().mockResolvedValue(undefined) } as any, // 25 orgOffHours
     );
   }
 

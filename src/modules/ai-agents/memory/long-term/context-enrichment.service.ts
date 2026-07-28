@@ -3,6 +3,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../../database/prisma.service';
 import { EnrichedContext } from './long-term.types';
 import { LongTermMemoryService } from './long-term.service';
+import {
+  isWithinHours,
+  nextOpenAt,
+  formatReturn,
+  formatHoursSummary,
+  type BusinessHoursConfig,
+} from '../../../routing/availability/business-hours.util';
 
 /**
  * Builds the Layer-4 context payload that the prompt composer (Agent 3)
@@ -39,7 +46,12 @@ export class ContextEnrichmentService {
       this.prisma.contact.findUnique({ where: { id: input.contactId } }),
       this.prisma.conversation.findUnique({
         where: { id: input.conversationId },
-        include: { channel: true },
+        include: {
+          channel: true,
+          organization: {
+            select: { aiBusinessHours: true, aiTimezone: true },
+          },
+        },
       }),
       this.prisma.message.findMany({
         where: { conversationId: input.conversationId },
@@ -57,11 +69,21 @@ export class ContextEnrichmentService {
         tags: [],
       },
       channel: this.mapChannel(conversation?.channel),
-      time: {
-        nowIso: new Date().toISOString(),
-        timezone: ContextEnrichmentService.DEFAULT_TZ,
-        businessHours: this.isBusinessHours(),
-      },
+      time: (() => {
+        const org = conversation?.organization;
+        const tz = org?.aiTimezone || ContextEnrichmentService.DEFAULT_TZ;
+        const bh = (org?.aiBusinessHours ?? null) as BusinessHoursConfig | null;
+        const now = new Date();
+        const open = isWithinHours(bh, tz, now);
+        const next = open ? null : nextOpenAt(bh, tz, now);
+        return {
+          nowIso: now.toISOString(),
+          timezone: tz,
+          businessHours: open,
+          hoursSummary: formatHoursSummary(bh),
+          nextOpenLabel: next ? formatReturn(next, tz, now) : null,
+        };
+      })(),
       memory: mem
         ? {
             summary: mem.summary ?? undefined,
@@ -87,30 +109,6 @@ export class ContextEnrichmentService {
   }
 
   // ─── helpers ─────────────────────────────────────────────────────────
-
-  /**
-   * 09h–19h America/Sao_Paulo, Mon-Fri. Used by the prompt composer to add
-   * "we're outside business hours" context — not used to gate anything.
-   */
-  private isBusinessHours(): boolean {
-    const now = new Date();
-    // toLocaleString in en-US gives us a parseable "M/D/YYYY, HH:mm:ss" — we
-    // only need the hour and the weekday, both of which Date can compute
-    // correctly with the formatter applied.
-    const localHour = Number(
-      now.toLocaleString('en-US', {
-        timeZone: ContextEnrichmentService.DEFAULT_TZ,
-        hour: '2-digit',
-        hour12: false,
-      }),
-    );
-    const localWeekday = now.toLocaleString('en-US', {
-      timeZone: ContextEnrichmentService.DEFAULT_TZ,
-      weekday: 'short',
-    });
-    const isWeekday = !['Sat', 'Sun'].includes(localWeekday);
-    return isWeekday && localHour >= 9 && localHour < 19;
-  }
 
   private mapChannel(channel: {
     type: string;
