@@ -6,8 +6,10 @@ export class SendMessageDto {
   @IsString()
   conversationId: string;
 
-  @ApiProperty({ enum: ['TEXT', 'IMAGE', 'AUDIO', 'VIDEO', 'DOCUMENT', 'TEMPLATE'] })
-  @IsEnum(['TEXT', 'IMAGE', 'AUDIO', 'VIDEO', 'DOCUMENT', 'TEMPLATE'])
+  @ApiProperty({
+    enum: ['TEXT', 'IMAGE', 'AUDIO', 'VIDEO', 'DOCUMENT', 'TEMPLATE', 'STICKER'],
+  })
+  @IsEnum(['TEXT', 'IMAGE', 'AUDIO', 'VIDEO', 'DOCUMENT', 'TEMPLATE', 'STICKER'])
   type: string;
 
   @ApiProperty({ example: { text: 'Hello!' } })

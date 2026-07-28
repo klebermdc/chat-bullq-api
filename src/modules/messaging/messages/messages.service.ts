@@ -15,6 +15,7 @@ import {
 } from '@prisma/client';
 import { MessagesRepository } from './messages.repository';
 import { SendMessageDto } from './dto/send-message.dto';
+import { assertStickerAllowed } from './sticker-guard';
 import { PrismaService } from '../../../database/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import {
@@ -114,6 +115,13 @@ export class MessagesService {
     );
     if (!contactChannel) {
       throw new NotFoundException('Contact channel not found');
+    }
+
+    // Figurinha: `content.mediaUrl` é string livre e seria repassada ao
+    // provedor sem checagem alguma. Valida ANTES de persistir a Message, senão
+    // sobra uma linha OUTBOUND fantasma de um envio que nunca foi autorizado.
+    if (dto.type === 'STICKER') {
+      await assertStickerAllowed(this.prisma, organizationId, dto.content);
     }
 
     // Resolve replyTo: dois caminhos possíveis dependendo de onde a chamada

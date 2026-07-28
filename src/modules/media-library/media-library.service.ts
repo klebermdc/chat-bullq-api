@@ -57,6 +57,7 @@ export class MediaLibraryService {
   async createFolder(orgId: string, userId: string, dto: CreateFolderDto) {
     return this.repository.createFolder({
       name: dto.name.trim(),
+      isStickerFolder: dto.isStickerFolder ?? false,
       createdById: userId,
       organization: { connect: { id: orgId } },
     });
@@ -64,6 +65,28 @@ export class MediaLibraryService {
 
   async listFolders(orgId: string) {
     return this.repository.findFolders(orgId);
+  }
+
+  async updateFolder(
+    id: string,
+    orgId: string,
+    dto: { name?: string; isStickerFolder?: boolean },
+  ) {
+    const folder = await this.repository.findFolderById(id);
+    if (!folder || folder.organizationId !== orgId) {
+      throw new NotFoundException('Folder not found');
+    }
+    return this.repository.updateFolder(id, {
+      ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+      ...(dto.isStickerFolder !== undefined
+        ? { isStickerFolder: dto.isStickerFolder }
+        : {}),
+    });
+  }
+
+  /** Figurinhas disponíveis para o compositor (webp em pasta de figurinhas). */
+  async listStickers(orgId: string) {
+    return this.repository.findStickerAssets(orgId);
   }
 
   async deleteFolder(id: string, orgId: string, userId: string, role: OrgRole) {

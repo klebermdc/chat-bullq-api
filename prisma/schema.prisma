@@ -2336,6 +2336,8 @@ model MediaFolder {
   id             String    @id @default(cuid())
   organizationId String    @map("organization_id")
   name           String
+  /// Pasta de figurinhas: seus .webp aparecem na aba "Figurinhas" do compositor.
+  isStickerFolder Boolean  @default(false) @map("is_sticker_folder")
   createdById    String?   @map("created_by_id")
   createdAt      DateTime  @default(now()) @map("created_at")
   deletedAt      DateTime? @map("deleted_at")
