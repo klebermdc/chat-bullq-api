@@ -122,4 +122,25 @@ describe('WebhookGatewayController — fail loud', () => {
     expect(inboundQueue.add).toHaveBeenCalledTimes(1);
     expect(res.json).toHaveBeenCalledWith({ status: 'ok' });
   });
+
+  it('payload com vários locators: um ruim não impede o bom de ser processado', async () => {
+    const { adapter, channelsService, dropReporter, inboundQueue, controller, req, res } = build();
+    // locator ruim PRIMEIRO: assim um `break`/`return` prematuro impediria o
+    // bom de ser processado, e o teste pega.
+    adapter.extractLocators.mockReturnValue([{ sessionId: 'S9' }, { sessionId: 'S1' }]);
+    channelsService.resolveByLocator
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ channel: ativo, active: true });
+
+    await controller.handleWebhook('WHATSAPP_WASENDER' as any, req, res);
+
+    // o locator desconhecido é relatado...
+    expect(dropReporter.reportDrop).toHaveBeenCalledTimes(1);
+    expect(dropReporter.reportDrop.mock.calls[0][0]).toMatchObject({
+      reason: InboundDropReason.UNKNOWN_LOCATOR,
+    });
+    // ...e o canal válido segue sendo processado normalmente
+    expect(inboundQueue.add).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ status: 'ok' });
+  });
 });
