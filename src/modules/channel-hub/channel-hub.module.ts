@@ -12,6 +12,7 @@ import { ZappfySyncAdapter } from './adapters/zappfy/zappfy.sync-adapter';
 import { WhatsAppOfficialModule } from './adapters/whatsapp-official/whatsapp-official.module';
 import { WhatsAppOfficialInboundAdapter } from './adapters/whatsapp-official/whatsapp-official.inbound-adapter';
 import { WhatsAppOfficialOutboundAdapter } from './adapters/whatsapp-official/whatsapp-official.outbound-adapter';
+import { WhatsAppEmbeddedSignupService } from './adapters/whatsapp-official/whatsapp-embedded-signup.service';
 import { InstagramModule } from './adapters/instagram/instagram.module';
 import { InstagramInboundAdapter } from './adapters/instagram/instagram.inbound-adapter';
 import { InstagramOutboundAdapter } from './adapters/instagram/instagram.outbound-adapter';
@@ -51,6 +52,7 @@ import { MessageTemplatesModule } from './message-templates/message-templates.mo
     ChannelSyncProcessor,
     WebhookEventsService,
     WebhookThrottleGuard,
+    WhatsAppEmbeddedSignupService,
   ],
   exports: [
     ChannelAdapterRegistry,
