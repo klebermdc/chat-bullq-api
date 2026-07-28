@@ -33,6 +33,17 @@ export class ChannelsRepository {
     });
   }
 
+  /**
+   * Inclui canais desativados de propósito: o gateway precisa distinguir
+   * "canal desativado" de "canal inexistente" para poder alertar o dono.
+   * Canal deletado continua fora — esse é inexistente de fato.
+   */
+  async findByTypeIncludingInactive(type: ChannelType) {
+    return this.prisma.channel.findMany({
+      where: { type, deletedAt: null },
+    });
+  }
+
   async findActiveByTypeAndOrg(type: ChannelType, organizationId: string) {
     return this.prisma.channel.findMany({
       where: { type, organizationId, isActive: true, deletedAt: null },

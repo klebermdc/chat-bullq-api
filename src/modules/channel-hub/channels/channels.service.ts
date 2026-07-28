@@ -283,15 +283,24 @@ export class ChannelsService {
 
   /**
    * Resolve the channel that owns a given webhook payload by asking the
-   * inbound adapter to match against `config`. Returns null when no channel
-   * matches — caller MUST drop the event (and ideally log for investigation).
+   * inbound adapter to match against `config`. Returns null only when no
+   * channel matches at all (truly unknown locator) — caller MUST drop the
+   * event in that case (and ideally log for investigation).
+   *
+   * When a channel matches but is deactivated, this still returns it with
+   * `active: false` instead of null. Distinguishing "deactivated" from
+   * "doesn't exist" is what lets the caller alert the org owner instead of
+   * silently swallowing inbound messages for a channel someone just forgot
+   * to reactivate. Routing behaviour is unchanged: the caller is still
+   * responsible for NOT processing the message when `active` is false.
    */
   async resolveByLocator(
     type: ChannelType,
     matches: (channel: { config: any }) => boolean,
-  ) {
-    const candidates = await this.repository.findActiveByType(type);
-    return candidates.find((c) => matches(c)) ?? null;
+  ): Promise<{ channel: Channel; active: boolean } | null> {
+    const candidates = await this.repository.findByTypeIncludingInactive(type);
+    const found = candidates.find((c) => matches(c));
+    return found ? { channel: found, active: found.isActive } : null;
   }
 
   async syncChannel(id: string, organizationId: string) {
