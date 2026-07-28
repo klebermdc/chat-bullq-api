@@ -26,7 +26,22 @@ com contas ligadas ao próprio app. Nada de cliente real.
 No painel de **Provedor de Tecnologia**, card "Personalize um novo fluxo de
 integração" → **Começar**.
 
+Escolhas feitas (nenhuma delas dá pra mudar depois):
+
+- **Variação de login:** Cadastro incorporado do WhatsApp
+- **Products:** só `WhatsApp Cloud API` — CTWA/CTD/CTM/Conversions API ficaram de
+  fora porque puxam permissões de conta de anúncio que o App Review não cobre.
+  Isso não afeta a atribuição de CTWA: o `ctwa_clid` chega no campo `referral`
+  da mensagem de entrada, não por acesso à conta de anúncio.
+- **Permissões:** só `whatsapp_business_management` e `whatsapp_business_messaging`
+
 Ao final a Meta devolve um **ID de configuração**. É o `WA_ES_CONFIG_ID`.
+
+> Configuração criada em 28/07/2026 — nome "Orlando Fast 2",
+> **`config_id` = `1011597271701819`**.
+>
+> Configurações não são únicas: dá pra criar outras depois (cada uma com seu
+> ID) se um dia precisar de um fluxo que também onboarde conta de anúncio.
 
 > O mesmo ID vai pro backend (`WA_ES_CONFIG_ID`) e pro build do frontend
 > (`NEXT_PUBLIC_WA_ES_CONFIG_ID`). Não é segredo — ele aparece no JS do
