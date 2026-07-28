@@ -118,7 +118,7 @@ describe('InboundDropReporter', () => {
   });
 
   it('persiste os dois descartes mesmo alertando só uma vez', async () => {
-    const { redis, webhookEvents, reporter } = build();
+    const { redis, webhookEvents, notifications, reporter } = build();
     redis.set.mockResolvedValueOnce('OK').mockResolvedValueOnce(null);
 
     await reporter.reportDrop(drop(InboundDropReason.CHANNEL_INACTIVE, channel));
@@ -126,5 +126,6 @@ describe('InboundDropReporter', () => {
 
     // throttle é do alerta, não da auditoria
     expect(webhookEvents.recordDropped).toHaveBeenCalledTimes(2);
+    expect(notifications.notifyOrgAgents).toHaveBeenCalledTimes(1);
   });
 });
