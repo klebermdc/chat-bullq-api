@@ -10,6 +10,8 @@ export class WhatsAppPlatformConfigService {
   get appSecret(): string { return process.env.WA_APP_SECRET ?? ''; }
   get embeddedSignupConfigId(): string { return process.env.WA_ES_CONFIG_ID ?? ''; }
   get verifyToken(): string | undefined { return process.env.WA_VERIFY_TOKEN || undefined; }
-  get apiVersion(): string { return process.env.WA_API_VERSION || 'v21.0'; }
+  /** PIN de 6 dígitos do POST /{phone_number_id}/register da Cloud API. */
+  get registrationPin(): string | undefined { return process.env.WA_REG_PIN || undefined; }
+  get apiVersion(): string { return process.env.WA_API_VERSION || 'v24.0'; }
   get isConfigured(): boolean { return Boolean(this.appId && this.appSecret); }
 }

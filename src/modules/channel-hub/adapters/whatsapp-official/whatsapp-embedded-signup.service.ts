@@ -37,6 +37,22 @@ export class WhatsAppEmbeddedSignupService {
     );
   }
 
+  /**
+   * Registra o número na Cloud API. Sem esse passo o canal RECEBE mas não ENVIA.
+   * Ref.: app de exemplo Tech Provider da Meta (fbsamples/business-messaging-sample-tech-provider-app).
+   */
+  async registerNumber(phoneNumberId: string, token: string): Promise<void> {
+    const pin = this.platform.registrationPin;
+    if (!pin) {
+      throw new BadRequestException('WA_REG_PIN nao configurado — impossivel registrar o numero na Cloud API.');
+    }
+    await axios.post(
+      `${this.base()}/${phoneNumberId}/register`,
+      { messaging_product: 'whatsapp', pin },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }
+
   async getPhoneMetadata(
     phoneNumberId: string,
     token: string,
@@ -68,6 +84,24 @@ export class WhatsAppEmbeddedSignupService {
     } catch (err: any) {
       this.logger.error(`Embedded Signup: falha ao inscrever a WABA ${params.wabaId}: ${err?.message}`);
       throw new BadRequestException('Falha ao inscrever a conta (WABA) — verifique a permissao whatsapp_business_management.');
+    }
+
+    // Não é fatal: o número pode já estar registrado (recadastro ou coexistência,
+    // em que a Meta registra sozinha). Abortar aqui jogaria fora uma conexão boa
+    // que já recebe mensagens — melhor conectar e gritar no log.
+    if (this.platform.registrationPin) {
+      try {
+        await this.registerNumber(params.phoneNumberId, token);
+      } catch (err: any) {
+        this.logger.error(
+          `Embedded Signup: falha ao registrar o numero ${params.phoneNumberId} na Cloud API: ${err?.message}. ` +
+            'O canal foi conectado, mas o ENVIO pode falhar ate o registro ser refeito.',
+        );
+      }
+    } else {
+      this.logger.warn(
+        `Embedded Signup: WA_REG_PIN nao configurado — pulando o registro do numero ${params.phoneNumberId}. O envio pode falhar.`,
+      );
     }
 
     let meta: { display_phone_number?: string; verified_name?: string };

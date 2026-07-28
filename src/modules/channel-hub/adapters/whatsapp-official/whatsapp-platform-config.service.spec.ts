@@ -5,9 +5,16 @@ describe('WhatsAppPlatformConfigService', () => {
   const saved = { ...process.env };
   afterEach(() => { process.env = { ...saved }; });
 
-  it('defaults apiVersion to v21.0 when unset', () => {
+  it('defaults apiVersion to v24.0 when unset', () => {
     delete process.env.WA_API_VERSION;
-    expect(svc.apiVersion).toBe('v21.0');
+    expect(svc.apiVersion).toBe('v24.0');
+  });
+
+  it('registrationPin vem de WA_REG_PIN e é undefined quando ausente', () => {
+    delete process.env.WA_REG_PIN;
+    expect(svc.registrationPin).toBeUndefined();
+    process.env.WA_REG_PIN = '123456';
+    expect(svc.registrationPin).toBe('123456');
   });
 
   it('reads appId/appSecret/configId from env', () => {

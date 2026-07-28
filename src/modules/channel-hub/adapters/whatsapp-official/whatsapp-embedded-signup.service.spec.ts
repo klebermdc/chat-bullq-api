@@ -11,6 +11,7 @@ describe('WhatsAppEmbeddedSignupService (graph calls)', () => {
 
   beforeEach(() => {
     process.env.WA_APP_ID = 'app'; process.env.WA_APP_SECRET = 'sec'; process.env.WA_API_VERSION = 'v21.0';
+    delete process.env.WA_REG_PIN;
     jest.clearAllMocks();
   });
 
@@ -42,10 +43,31 @@ describe('WhatsAppEmbeddedSignupService (graph calls)', () => {
     mockedAxios.get.mockResolvedValueOnce({ data: { display_phone_number: '+55', verified_name: 'NY Fast Pass' } } as any);
     await expect(svc.getPhoneMetadata('PN1', 'TKN')).resolves.toEqual({ display_phone_number: '+55', verified_name: 'NY Fast Pass' });
   });
+
+  it('registerNumber faz POST em /{phoneId}/register com messaging_product e pin', async () => {
+    process.env.WA_REG_PIN = '123456';
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);
+    await svc.registerNumber('PN1', 'TKN');
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      'https://graph.facebook.com/v21.0/PN1/register',
+      { messaging_product: 'whatsapp', pin: '123456' },
+      { headers: { Authorization: 'Bearer TKN' } },
+    );
+  });
+
+  it('registerNumber lanca quando o PIN nao esta configurado', async () => {
+    delete process.env.WA_REG_PIN;
+    await expect(svc.registerNumber('PN1', 'TKN')).rejects.toThrow(/WA_REG_PIN/);
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
 });
 
 describe('WhatsAppEmbeddedSignupService.connect', () => {
-  beforeEach(() => { process.env.WA_APP_ID = 'app'; process.env.WA_APP_SECRET = 'sec'; process.env.WA_API_VERSION = 'v21.0'; jest.clearAllMocks(); });
+  beforeEach(() => {
+    process.env.WA_APP_ID = 'app'; process.env.WA_APP_SECRET = 'sec'; process.env.WA_API_VERSION = 'v21.0';
+    delete process.env.WA_REG_PIN;
+    jest.clearAllMocks();
+  });
 
   function makeSvc(existing: any[] = []) {
     const platform = new WhatsAppPlatformConfigService();
@@ -94,6 +116,51 @@ describe('WhatsAppEmbeddedSignupService.connect', () => {
         appSecret: 'legacy-secret',
       }),
     }));
+  });
+
+  it('registra o numero na Cloud API quando o PIN esta configurado', async () => {
+    process.env.WA_REG_PIN = '123456';
+    mockedAxios.get.mockResolvedValueOnce({ data: { access_token: 'TKN' } } as any);   // exchange
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);        // subscribe
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);        // register
+    mockedAxios.get.mockResolvedValueOnce({ data: { verified_name: 'NY Fast Pass' } } as any); // metadata
+
+    const { svc } = makeSvc([]);
+    await svc.connect({ code: 'c', phoneNumberId: 'PN1', wabaId: 'WABA1', organizationId: 'org1' });
+
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      'https://graph.facebook.com/v21.0/PN1/register',
+      { messaging_product: 'whatsapp', pin: '123456' },
+      { headers: { Authorization: 'Bearer TKN' } },
+    );
+  });
+
+  it('nao tenta registrar quando o PIN nao esta configurado', async () => {
+    delete process.env.WA_REG_PIN;
+    mockedAxios.get.mockResolvedValueOnce({ data: { access_token: 'TKN' } } as any);
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);        // subscribe
+    mockedAxios.get.mockResolvedValueOnce({ data: { verified_name: 'NY Fast Pass' } } as any);
+
+    const { svc } = makeSvc([]);
+    await svc.connect({ code: 'c', phoneNumberId: 'PN1', wabaId: 'WABA1', organizationId: 'org1' });
+
+    expect(mockedAxios.post).toHaveBeenCalledTimes(1); // so o subscribe
+  });
+
+  // O numero pode ja estar registrado (recadastro, ou coexistencia que a Meta
+  // registra sozinha). Isso NAO pode abortar uma conexao boa — o canal ja recebe.
+  it('nao aborta a conexao quando o register falha', async () => {
+    process.env.WA_REG_PIN = '123456';
+    mockedAxios.get.mockResolvedValueOnce({ data: { access_token: 'TKN' } } as any);
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);        // subscribe ok
+    mockedAxios.post.mockRejectedValueOnce(new Error('already registered'));           // register falha
+    mockedAxios.get.mockResolvedValueOnce({ data: { verified_name: 'NY Fast Pass' } } as any);
+
+    const { svc, channelsService } = makeSvc([]);
+    const res = await svc.connect({ code: 'c', phoneNumberId: 'PN1', wabaId: 'WABA1', organizationId: 'org1' });
+
+    expect(res).toEqual({ id: 'new-channel' });
+    expect(channelsService.create).toHaveBeenCalled();
   });
 
   it('lanca BadRequestException com mensagem de etapa quando a inscricao da WABA falha', async () => {
