@@ -16,6 +16,7 @@ import {
 import { MessagesRepository } from './messages.repository';
 import { SendMessageDto } from './dto/send-message.dto';
 import { assertStickerAllowed } from './sticker-guard';
+import { isSingleEmoji } from './reaction.util';
 import { PrismaService } from '../../../database/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import {
@@ -389,6 +390,111 @@ export class MessagesService {
         // 6 tentativas com backoff FIXO de 6s: acima do limite do Wasender
         // "account protection" (1 msg/5s), então cada retry cai fora da janela
         // e a mensagem acaba entregue em vez de virar FAILED no 429.
+        attempts: 6,
+        backoff: { type: 'fixed', delay: 6_000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      },
+    );
+
+    return message;
+  }
+
+  /**
+   * Reage a uma mensagem com um emoji.
+   *
+   * DE PROPÓSITO não passa pelo `send()`. Aquele método aplica o pacote de
+   * efeitos de "um humano respondeu": reatribui a conversa a quem enviou,
+   * desliga a IA, tira de "Esperando", zera a faixa de inatividade, cancela o
+   * watchdog e marca como lida. Nada disso pode acontecer porque alguém clicou
+   * num polegar — reagir no card de um colega roubaria a conversa dele e
+   * desligaria a Aline no meio do atendimento.
+   *
+   * Também não usa o flag `automated`: aquilo significa "mensagem de sistema",
+   * e reação é ação humana deliberada. Marcá-la como automática seria mentir
+   * para quem ler depois.
+   */
+  async react(
+    targetMessageId: string,
+    emoji: string,
+    senderId: string,
+    organizationId: string,
+    access: ChannelAccess = 'ALL',
+    role?: OrgRole,
+  ) {
+    if (!isSingleEmoji(emoji)) {
+      throw new BadRequestException('Reação precisa ser exatamente um emoji');
+    }
+
+    const target = await this.prisma.message.findFirst({
+      where: { id: targetMessageId },
+      select: {
+        id: true,
+        externalId: true,
+        conversation: {
+          include: { channel: true, contact: { include: { channels: true } } },
+        },
+      },
+    });
+
+    const conversation = target?.conversation;
+    if (!target || !conversation) {
+      throw new NotFoundException('Message not found');
+    }
+    if (conversation.organizationId !== organizationId) {
+      throw new ForbiddenException();
+    }
+    await this.conversationAccess.assertConversationAccess(
+      conversation.id,
+      organizationId,
+      role,
+      senderId,
+    );
+    this.channelAccess.assertChannelAccess(access, conversation.channelId);
+
+    if (!target.externalId) {
+      throw new ForbiddenException(
+        'Mensagem ainda não foi sincronizada com o provider — tente novamente em alguns segundos.',
+      );
+    }
+
+    const contactChannel = conversation.contact.channels.find(
+      (cc) => cc.channelId === conversation.channelId,
+    );
+    if (!contactChannel) {
+      throw new NotFoundException('Contact channel not found');
+    }
+
+    // `targetMessageId` aqui é o id EXTERNO — é o campo que o mapper da Cloud
+    // API lê (whatsapp-official.message-mapper.ts, case REACTION). O id interno
+    // vai só na metadata, para a UI saber a qual bolha a reação pertence.
+    const content = {
+      reaction: { emoji, targetMessageId: target.externalId },
+    };
+
+    const message = await this.repository.create({
+      conversationId: conversation.id,
+      direction: MessageDirection.OUTBOUND,
+      type: MessageContentType.REACTION,
+      content,
+      status: MessageStatus.QUEUED,
+      senderId,
+      metadata: { reactionTo: target.id },
+    });
+
+    this.realtimeGateway.emitToConversation(conversation.id, 'message:new', {
+      message,
+    });
+
+    await this.outboundQueue.add(
+      'send-outbound',
+      {
+        messageId: message.id,
+        channelId: conversation.channelId,
+        contactExternalId: contactChannel.externalId,
+        message: { type: MessageContentType.REACTION, content },
+      },
+      {
         attempts: 6,
         backoff: { type: 'fixed', delay: 6_000 },
         removeOnComplete: true,
