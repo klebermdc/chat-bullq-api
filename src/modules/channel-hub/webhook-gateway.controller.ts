@@ -27,6 +27,10 @@ import { MessageTemplatesService } from './message-templates/message-templates.s
 import { AccountUpdateService } from './account-update.service';
 import { CoexistenceHistoryService } from './coexistence-history.service';
 import { CoexistenceContactsService } from './coexistence-contacts.service';
+import {
+  InboundDropReporter,
+  InboundDropReason,
+} from './inbound-drop-reporter.service';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
@@ -44,6 +48,7 @@ export class WebhookGatewayController {
     private readonly accountUpdates: AccountUpdateService,
     private readonly coexHistory: CoexistenceHistoryService,
     private readonly coexContacts: CoexistenceContactsService,
+    private readonly dropReporter: InboundDropReporter,
   ) {}
 
   @Post(':channelType')
@@ -69,35 +74,56 @@ export class WebhookGatewayController {
     //    multiple locators — WA Official batches per businessAccountId).
     const locators = adapter.extractLocators(req.body, headers);
     if (!locators.length) {
-      this.logger.warn(`No locators extracted for ${channelType}`);
+      await this.dropReporter.reportDrop({
+        channelType,
+        reason: InboundDropReason.NO_LOCATORS,
+        payload: req.body,
+        headers,
+        channel: null,
+      });
       return res.status(200).json({ status: 'no_locators' });
     }
 
     // 2. Resolve one or more concrete Channel rows.
     const matchedChannels: Channel[] = [];
     for (const locator of locators) {
-      const channel = await this.channelsService.resolveByLocator(
+      const resolved = await this.channelsService.resolveByLocator(
         channelType,
         (c) => adapter.matchesChannel(c as Channel, locator),
       );
-      if (channel) {
-        if (!matchedChannels.some((m) => m.id === channel.id)) {
-          matchedChannels.push(channel);
-        }
-      } else {
-        this.logger.warn(
-          `Webhook arrived for unknown ${channelType} locator: ${JSON.stringify(locator)}`,
-        );
+
+      if (!resolved) {
+        await this.dropReporter.reportDrop({
+          channelType,
+          reason: InboundDropReason.UNKNOWN_LOCATOR,
+          payload: req.body,
+          headers,
+          channel: null,
+        });
+        continue;
+      }
+
+      if (!resolved.active) {
+        // Canal existe mas está desativado: continua NÃO processando — só que
+        // agora o dono fica sabendo, em vez da mensagem sumir.
+        await this.dropReporter.reportDrop({
+          channelType,
+          reason: InboundDropReason.CHANNEL_INACTIVE,
+          payload: req.body,
+          headers,
+          channel: resolved.channel,
+        });
+        continue;
+      }
+
+      if (!matchedChannels.some((m) => m.id === resolved.channel.id)) {
+        matchedChannels.push(resolved.channel);
       }
     }
 
     if (matchedChannels.length === 0) {
-      // Persist for audit even if we can't route — helps debug misconfigured channels.
-      await this.webhookEvents
-        .recordUnrouted(channelType, req.body, headers)
-        .catch((err) =>
-          this.logger.error(`webhook_events persist failed: ${err.message}`),
-        );
+      // Cada locator já foi relatado individualmente acima — relatar de novo
+      // aqui duplicaria toda linha de auditoria.
       return res.status(200).json({ status: 'no_matching_channel' });
     }
 
@@ -110,9 +136,13 @@ export class WebhookGatewayController {
         channel,
       );
       if (!isValid) {
-        this.logger.warn(
-          `Invalid webhook signature for channel ${channel.id} (${channelType})`,
-        );
+        await this.dropReporter.reportDrop({
+          channelType,
+          reason: InboundDropReason.INVALID_SIGNATURE,
+          payload: req.body,
+          headers,
+          channel,
+        });
         continue;
       }
 

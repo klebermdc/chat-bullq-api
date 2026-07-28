@@ -36,27 +36,10 @@ export class WebhookEventsService {
     return row.id;
   }
 
-  async recordUnrouted(
-    channelType: ChannelType,
-    payload: unknown,
-    headers: Record<string, string>,
-  ): Promise<string> {
-    const row = await this.prisma.webhookEvent.create({
-      data: {
-        channelType,
-        status: WebhookEventStatus.UNROUTED,
-        rawPayload: this.safeJson(payload),
-        headers: this.pickSafeHeaders(headers),
-      },
-      select: { id: true },
-    });
-    return row.id;
-  }
-
   /**
-   * Registra um inbound descartado. Diferente do recordUnrouted, guarda o
-   * motivo em errorMessage e o canal quando ele é conhecido — é o que permite
-   * distinguir "canal desativado" de "canal inexistente" no pós-mortem.
+   * Registra um inbound descartado. Guarda o motivo em errorMessage e o canal
+   * quando ele é conhecido — é o que permite distinguir "canal desativado" de
+   * "canal inexistente" no pós-mortem.
    */
   async recordDropped(params: {
     channelType: ChannelType;
