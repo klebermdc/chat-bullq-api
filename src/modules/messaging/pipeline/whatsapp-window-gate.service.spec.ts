@@ -60,7 +60,7 @@ describe('WhatsappWindowGate.blockIfClosed', () => {
     const { gate, prisma } = make({ lastInboundAt: hoursAgo(30), ctwaClidAt: null });
     const blocked = await gate.blockIfClosed({
       messageId: 'msg1',
-      channelType: 'WHATSAPP_WASENDER',
+      channelType: 'WHATSAPP_ZAPPFY',
       messageType: MessageContentType.TEXT,
       now,
     });

@@ -18,7 +18,6 @@ import { CreateChannelDto } from './dto/create-channel.dto';
 import { UpdateChannelDto } from './dto/update-channel.dto';
 import { ChannelAdapterRegistry } from '../channel-adapter.registry';
 import { ZappfyHttpClient } from '../adapters/zappfy/zappfy.http-client';
-import { WasenderHttpClient } from '../adapters/wasender/wasender.http-client';
 import { WhatsAppOfficialHttpClient } from '../adapters/whatsapp-official/whatsapp-official.http-client';
 import { InstagramHttpClient } from '../adapters/instagram/instagram.http-client';
 import { ChannelSyncOrchestrator } from '../sync/channel-sync.orchestrator';
@@ -36,7 +35,6 @@ export class ChannelsService {
     private readonly repository: ChannelsRepository,
     private readonly adapterRegistry: ChannelAdapterRegistry,
     private readonly zappfyHttpClient: ZappfyHttpClient,
-    private readonly wasenderHttpClient: WasenderHttpClient,
     private readonly waOfficialHttpClient: WhatsAppOfficialHttpClient,
     private readonly instagramHttpClient: InstagramHttpClient,
     private readonly syncOrchestrator: ChannelSyncOrchestrator,
@@ -49,11 +47,14 @@ export class ChannelsService {
     dto: CreateChannelDto,
     creator?: { userOrganizationId: string; role: OrgRole },
   ) {
-    // Wasender: provisiona a sessão ANTES de persistir o canal, pra que o
-    // config já nasça com sessionId + sessionApiKey e o webhook aponte pra nós.
-    // Se falhar, lança e o canal não é criado (evita canal quebrado).
+    // O valor WHATSAPP_WASENDER continua no enum por causa dos canais e das
+    // conversas que já existem no banco — tirá-lo quebraria a leitura desses
+    // registros. Mas o adapter não existe mais, então criar um canal desse
+    // tipo produziria um canal que não recebe nem envia. Barra na porta.
     if (dto.type === ChannelType.WHATSAPP_WASENDER) {
-      await this.provisionWasenderSession(dto);
+      throw new BadRequestException(
+        'A integração com a WasenderAPI foi removida. Use o canal oficial da Meta (WHATSAPP_OFFICIAL).',
+      );
     }
 
     let channel = await this.repository.create({
@@ -176,121 +177,6 @@ export class ChannelsService {
     this.logger.log(`Zappfy webhook configured: ${webhookUrl}`);
   }
 
-  /**
-   * Cria a sessão no Wasender usando o Personal Access Token colado pelo
-   * operador e reescreve `dto.config`/`dto.webhookSecret` com os identificadores
-   * retornados (sessionId, sessionApiKey, webhookSecret). O webhook já é
-   * apontado pra nossa API na criação da sessão (auto-subscribe).
-   */
-  private async provisionWasenderSession(dto: CreateChannelDto): Promise<void> {
-    const config = (dto.config ?? {}) as Record<string, any>;
-    // Trim defensivo: colar do painel costuma trazer espaço/quebra-de-linha.
-    const trim = (v: any) => (typeof v === 'string' ? v.trim() : v);
-    const sessionApiKey = trim(config.sessionApiKey);
-    const personalToken = trim(config.personalToken);
-
-    // Fluxo PADRÃO: a sessão já foi criada e CONECTADA no painel do Wasender.
-    // O operador cola a "API Access Token" da sessão + o "Webhook Secret" (esse
-    // vira o Channel.webhookSecret via dto). Não há nada a provisionar aqui — o
-    // webhook é apontado manualmente no painel (mostramos a URL na UI) e o
-    // roteamento inbound casa pela assinatura == webhookSecret.
-    if (sessionApiKey) {
-      dto.config = { sessionApiKey };
-      return;
-    }
-
-    // Fluxo HÍBRIDO (opcional): cria a sessão via Personal Access Token e
-    // aponta o webhook automaticamente. Usado só quando não há sessão pronta.
-    if (!personalToken) {
-      throw new BadRequestException(
-        'Informe a API Access Token da sessão Wasender (ou um Personal Access Token para criar uma nova sessão).',
-      );
-    }
-
-    const appUrl = process.env.APP_URL;
-    const webhookUrl = appUrl
-      ? `${appUrl.replace(/\/$/, '')}/api/v1/webhooks/WHATSAPP_WASENDER`
-      : undefined;
-    if (!webhookUrl) {
-      this.logger.warn(
-        'APP_URL não configurado — sessão Wasender criada sem webhook automático',
-      );
-    }
-
-    try {
-      const session = await this.wasenderHttpClient.createSession(personalToken, {
-        name: dto.name,
-        webhookUrl,
-      });
-      dto.config = {
-        personalToken,
-        sessionId: session.id,
-        ...(session.apiKey ? { sessionApiKey: session.apiKey } : {}),
-      };
-      if (session.webhookSecret) {
-        dto.webhookSecret = session.webhookSecret;
-      }
-      this.logger.log(`Wasender session provisioned: ${session.id}`);
-    } catch (err: any) {
-      const detail = err.response?.data?.message || err.message;
-      throw new BadRequestException(
-        `Falha ao criar a sessão no Wasender: ${detail}`,
-      );
-    }
-  }
-
-  /** Busca o QR Code atual da sessão Wasender do canal. */
-  async getWasenderQr(id: string, organizationId: string) {
-    const channel = await this.assertWasenderChannel(id, organizationId);
-    try {
-      const { qr, raw } = await this.wasenderHttpClient.getQrCode(channel);
-      return { success: true, qr, data: raw };
-    } catch (err: any) {
-      return {
-        success: false,
-        error: err.response?.data?.message || err.message,
-      };
-    }
-  }
-
-  /** Dispara a conexão da sessão Wasender (mostra QR quando desconectada). */
-  async connectWasender(id: string, organizationId: string) {
-    const channel = await this.assertWasenderChannel(id, organizationId);
-    try {
-      const data = await this.wasenderHttpClient.connectSession(channel);
-      return { success: true, data };
-    } catch (err: any) {
-      return {
-        success: false,
-        error: err.response?.data?.message || err.message,
-      };
-    }
-  }
-
-  /** Estado atual da sessão Wasender (connected / connecting / disconnected). */
-  async getWasenderStatus(id: string, organizationId: string) {
-    const channel = await this.assertWasenderChannel(id, organizationId);
-    try {
-      const data = await this.wasenderHttpClient.getSessionDetails(channel);
-      const status =
-        data?.status || data?.state || data?.connectionStatus || 'unknown';
-      return { success: true, status, data };
-    } catch (err: any) {
-      return {
-        success: false,
-        error: err.response?.data?.message || err.message,
-      };
-    }
-  }
-
-  private async assertWasenderChannel(id: string, organizationId: string) {
-    const channel = await this.findOne(id, organizationId);
-    if (channel.type !== ChannelType.WHATSAPP_WASENDER) {
-      throw new BadRequestException('Este canal não é do tipo WasenderAPI.');
-    }
-    return channel;
-  }
-
   private async subscribeWaOfficialApp(channelId: string): Promise<void> {
     const channel = await this.repository.findById(channelId);
     if (!channel) return;
@@ -323,7 +209,7 @@ export class ChannelsService {
    * `role` é opcional e só deve ser passado pelo controller (rota HTTP
    * `GET /channels/:id`) — presente, mascara `config`/`webhookSecret` pra quem
    * não é OWNER/ADMIN. Chamadores internos do service (sync, test connection,
-   * templates, adapters via `enrichProviderIds`/`assertWasenderChannel` etc.)
+   * templates, adapters via `enrichProviderIds` etc.)
    * NÃO passam `role` de propósito: precisam do canal cru pra falar com o
    * provedor. Só a resposta HTTP de leitura é mascarada.
    */
@@ -478,16 +364,6 @@ export class ChannelsService {
             status: statusStr,
             data: status,
           };
-        }
-
-        case ChannelType.WHATSAPP_WASENDER: {
-          // Usa a Session API Key (GET /status) — funciona no fluxo padrão,
-          // onde não há Personal Access Token nem sessionId no config.
-          const st = await this.wasenderHttpClient.getStatus(channel);
-          const data = st?.data ?? st;
-          const status =
-            data?.status || data?.state || data?.connectionStatus || 'connected';
-          return { success: true, status: String(status), data: st };
         }
 
         case ChannelType.WHATSAPP_OFFICIAL: {

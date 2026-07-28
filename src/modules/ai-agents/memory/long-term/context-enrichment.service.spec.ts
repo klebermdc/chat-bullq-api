@@ -24,7 +24,7 @@ describe('ContextEnrichmentService — horário', () => {
       conversation: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'c1',
-          channel: { type: 'WHATSAPP_WASENDER', name: 'Aline' },
+          channel: { type: 'WHATSAPP_ZAPPFY', name: 'Aline' },
           organization: buildOrg(),
         }),
       },
@@ -76,7 +76,7 @@ describe('ContextEnrichmentService — horário', () => {
   it('sem agenda (org 24/7): businessHours=true, hoursSummary e nextOpenLabel null', async () => {
     prisma.conversation.findUnique.mockResolvedValue({
       id: 'c1',
-      channel: { type: 'WHATSAPP_WASENDER', name: 'Aline' },
+      channel: { type: 'WHATSAPP_ZAPPFY', name: 'Aline' },
       organization: { aiBusinessHours: null, aiTimezone: 'America/Sao_Paulo' },
     });
     jest.useFakeTimers().setSystemTime(new Date('2026-07-26T12:00:00.000Z'));

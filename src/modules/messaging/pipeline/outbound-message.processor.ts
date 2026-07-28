@@ -203,7 +203,7 @@ export class OutboundMessageProcessor extends WorkerHost {
 
       return { success: true, externalId: result.externalId };
     } catch (error: any) {
-      // Erros TRANSITÓRIOS (rate limit do Wasender "account protection" = 429
+      // Erros TRANSITÓRIOS (rate limit do provedor = 429
       // "1 msg a cada 5s", 5xx, quedas de rede) NÃO devem marcar a mensagem
       // como FAILED enquanto ainda houver retry do BullMQ — só re-lançamos pra
       // o backoff tentar de novo. Sem isso, a mensagem piscava FAILED e a
@@ -321,7 +321,7 @@ function safeJson(value: unknown): any {
 
 /**
  * Erro de envio que vale a pena reenviar (não é falha definitiva):
- * - 429 / rate limit (Wasender "account protection": 1 msg a cada 5s);
+ * - 429 / rate limit (gateways Baileys costumam limitar a 1 msg a cada 5s);
  * - 5xx do provider;
  * - quedas de rede (timeout, socket, conexão resetada).
  * O throttle real (5s) é dado pelo backoff do job (>= 6s).

@@ -2,7 +2,7 @@ import { MediaResolverService } from './media-resolver.service';
 
 /**
  * O resolver RE-HOSPEDA mídia inbound no NOSSO domínio em vez de entregar a URL
- * do provedor ao navegador. Motivo: mídia do WhatsApp via Uazapi/Wasender é
+ * do provedor ao navegador. Motivo: mídia do WhatsApp via Uazapi/Zappfy é
  * servida em `*.uazapi.com`, e filtros de segurança de rede (ex.: CUJO/ISP)
  * bloqueiam esse domínio no cliente — a imagem não carrega, mesmo a URL sendo
  * válida. Baixando os bytes server-side (fora do filtro) e servindo do nosso

@@ -103,7 +103,7 @@ describe('ConversationsRepository.findById (janela 24h/72h no detalhe)', () => {
       organizationId: 'org-1',
       assignedToId: 'user-1',
       lastInboundAt: null,
-      channel: { id: 'ch-1', type: 'WHATSAPP_WASENDER', name: 'Zap' },
+      channel: { id: 'ch-1', type: 'WHATSAPP_ZAPPFY', name: 'Zap' },
       contact: { ctwaClidAt: null },
     });
     const repo = buildRepo(findUnique);

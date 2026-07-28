@@ -15,7 +15,7 @@ import { UploadsService } from './uploads.service';
  * Resolves a playable URL for an inbound media message and RE-HOSTS it on our
  * own domain.
  *
- * WhatsApp media arrives from the provider (Uazapi/Wasender) as an encrypted
+ * WhatsApp media arrives from the provider (Uazapi/Zappfy) as an encrypted
  * `.enc` URL or a playable URL on a provider CDN (`*.uazapi.com`). Handing that
  * provider URL straight to the browser has two problems: `.enc` can't be
  * decoded, and even the playable provider domain gets blocked by client-side

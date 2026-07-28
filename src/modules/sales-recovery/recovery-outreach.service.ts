@@ -54,9 +54,8 @@ export class RecoveryOutreachService {
    */
   private async toExternalId(channelId: string, phone: string): Promise<string> {
     const type = await this.getChannelType(channelId);
-    // Gateways baseados em Baileys (Zappfy/Uazapi e Wasender) usam o JID.
-    return type === ChannelType.WHATSAPP_ZAPPFY ||
-      type === ChannelType.WHATSAPP_WASENDER
+    // Gateway baseado em Baileys (Zappfy/Uazapi) usa o JID.
+    return type === ChannelType.WHATSAPP_ZAPPFY
       ? `${phone}@s.whatsapp.net`
       : phone;
   }

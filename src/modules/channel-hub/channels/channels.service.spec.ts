@@ -20,7 +20,6 @@ const build = () => {
     repository as any,
     {} as any, // adapterRegistry
     {} as any, // zappfyHttpClient
-    {} as any, // wasenderHttpClient
     {} as any, // waOfficialHttpClient
     {} as any, // instagramHttpClient
     {} as any, // syncOrchestrator

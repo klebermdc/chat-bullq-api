@@ -387,7 +387,7 @@ export class MessagesService {
         },
       },
       {
-        // 6 tentativas com backoff FIXO de 6s: acima do limite do Wasender
+        // 6 tentativas com backoff FIXO de 6s: acima do limite dos gateways
         // "account protection" (1 msg/5s), então cada retry cai fora da janela
         // e a mensagem acaba entregue em vez de virar FAILED no 429.
         attempts: 6,

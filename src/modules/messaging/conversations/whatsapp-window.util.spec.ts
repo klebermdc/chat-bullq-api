@@ -7,7 +7,7 @@ const at = (hoursAgo: number) => new Date(base.getTime() - hoursAgo * H);
 describe('computeWhatsappWindow', () => {
   it('canal não-oficial → não aplicável e sempre aberto', () => {
     const w = computeWhatsappWindow({
-      channelType: 'WHATSAPP_WASENDER',
+      channelType: 'WHATSAPP_ZAPPFY',
       lastInboundAt: at(100),
       ctwaClidAt: null,
       now: base,

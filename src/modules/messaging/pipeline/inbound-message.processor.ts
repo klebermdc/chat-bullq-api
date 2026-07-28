@@ -835,7 +835,7 @@ export class InboundMessageProcessor extends WorkerHost {
       return this.processInstagramReadWatermark(channelId, status, webhookEventId);
     }
 
-    // Escopo por canal: IDs de mensagem de provedores Baileys (Wasender/Zappfy)
+    // Escopo por canal: IDs de mensagem de provedores Baileys (Zappfy/Uazapi)
     // não são globalmente únicos e podem colidir entre canais/orgs. Sem o filtro
     // de canal, um recibo de status podia casar a mensagem de OUTRO tenant.
     // (Espelha o escopo `conversation: { channelId }` de processInstagramReadWatermark.)
