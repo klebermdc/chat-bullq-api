@@ -98,4 +98,33 @@ describe('InboundDropReporter', () => {
     // gate do throttle falhou → alerta é perdido, não deve ser enviado mesmo assim
     expect(notifications.notifyOrgAgents).not.toHaveBeenCalled();
   });
+
+  it('só alerta uma vez por canal+motivo dentro da janela', async () => {
+    const { redis, notifications, reporter } = build();
+    // 1ª chamada ganha o slot, 2ª encontra a chave já gravada
+    redis.set.mockResolvedValueOnce('OK').mockResolvedValueOnce(null);
+
+    await reporter.reportDrop(drop(InboundDropReason.CHANNEL_INACTIVE, channel));
+    await reporter.reportDrop(drop(InboundDropReason.CHANNEL_INACTIVE, channel));
+
+    expect(notifications.notifyOrgAgents).toHaveBeenCalledTimes(1);
+    expect(redis.set).toHaveBeenCalledWith(
+      'chdrop:WHATSAPP_OFFICIAL:CHANNEL_INACTIVE:ch1',
+      '1',
+      'EX',
+      900,
+      'NX',
+    );
+  });
+
+  it('persiste os dois descartes mesmo alertando só uma vez', async () => {
+    const { redis, webhookEvents, reporter } = build();
+    redis.set.mockResolvedValueOnce('OK').mockResolvedValueOnce(null);
+
+    await reporter.reportDrop(drop(InboundDropReason.CHANNEL_INACTIVE, channel));
+    await reporter.reportDrop(drop(InboundDropReason.CHANNEL_INACTIVE, channel));
+
+    // throttle é do alerta, não da auditoria
+    expect(webhookEvents.recordDropped).toHaveBeenCalledTimes(2);
+  });
 });
