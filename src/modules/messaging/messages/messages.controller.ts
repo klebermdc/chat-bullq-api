@@ -14,6 +14,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiConsumes } from '@nestjs/swagger';
 import { MessagesService } from './messages.service';
+import { ReactMessageDto } from './dto/react-message.dto';
 import { TranscriptionService } from './transcription.service';
 import { UploadsService } from './uploads.service';
 import { MediaResolverService } from './media-resolver.service';
@@ -52,6 +53,19 @@ export class MessagesController {
     @CurrentUserRole() role: OrgRole,
   ) {
     return this.service.send(dto, userId, orgId, access, role);
+  }
+
+  @Post(':id/react')
+  @ApiOperation({ summary: 'React to a message with an emoji' })
+  react(
+    @Param('id') id: string,
+    @Body() dto: ReactMessageDto,
+    @CurrentUser('id') userId: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
+  ) {
+    return this.service.react(id, dto.emoji, userId, orgId, access, role);
   }
 
   @Post('uploads/audio')

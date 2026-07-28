@@ -214,8 +214,15 @@ export class WasenderMessageMapper {
           },
         };
 
+      // Tipo que este canal não sabe enviar precisa FALHAR alto. O default
+      // antigo devolvia `{ text }`, então uma REACTION sairia como mensagem de
+      // texto solta — o cliente veria um "👍" numa bolha em vez de uma reação
+      // na mensagem dele. A WasenderAPI não expõe endpoint de reação; virar
+      // FAILED na UI é honesto, virar texto é mentira silenciosa.
       default:
-        return { endpoint, payload: { to, text: message.content.text ?? '' } };
+        throw new Error(
+          `Canal Wasender não suporta enviar mensagem do tipo ${message.type}`,
+        );
     }
   }
 
