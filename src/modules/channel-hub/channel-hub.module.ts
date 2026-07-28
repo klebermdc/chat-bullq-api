@@ -1,4 +1,4 @@
-import { Module, OnModuleInit, forwardRef } from '@nestjs/common';
+import { Logger, Module, OnModuleInit, forwardRef } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
@@ -75,12 +75,22 @@ import {
     {
       provide: INBOUND_DROP_REDIS,
       inject: [ConfigService],
-      useFactory: (config: ConfigService) =>
-        new Redis({
+      useFactory: (config: ConfigService) => {
+        const logger = new Logger('InboundDropRedis');
+        // Este cliente fica no caminho do webhook de entrada. Se o Redis cair,
+        // é melhor perder o throttle do alerta em ~300ms do que segurar a
+        // resposta ao provedor por ~11s com os defaults do ioredis.
+        const client = new Redis({
           host: config.get<string>('redis.host', 'localhost'),
           port: config.get<number>('redis.port', 6379),
           password: config.get<string>('redis.password') || undefined,
-        }),
+          maxRetriesPerRequest: 1,
+          enableOfflineQueue: false,
+          commandTimeout: 300,
+        });
+        client.on('error', (err) => logger.error(`Redis: ${err.message}`));
+        return client;
+      },
     },
   ],
   exports: [

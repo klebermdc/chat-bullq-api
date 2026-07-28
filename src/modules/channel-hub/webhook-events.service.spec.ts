@@ -44,4 +44,30 @@ describe('WebhookEventsService.recordDropped', () => {
 
     expect(prisma.webhookEvent.create.mock.calls[0][0].data.channelId).toBeNull();
   });
+
+  it('redige credenciais específicas de Zappfy/Wasender/Meta, não só authorization', async () => {
+    const { prisma, service } = build();
+
+    await service.record('ch1', 'WHATSAPP_WASENDER' as any, { foo: 'bar' }, {
+      authorization: 'Bearer segredo',
+      token: 'zappfy-token',
+      'x-webhook-token': 'zappfy-webhook-token',
+      'x-webhook-signature': 'wasender-sig',
+      'x-wasender-signature': 'wasender-sig-2',
+      'x-hub-signature': 'meta-sig',
+      'x-hub-signature-256': 'meta-sig-256',
+      'user-agent': 'curl/8.0',
+    });
+
+    const headers = prisma.webhookEvent.create.mock.calls[0][0].data.headers;
+    expect(headers.authorization).toBe('[redacted]');
+    expect(headers.token).toBe('[redacted]');
+    expect(headers['x-webhook-token']).toBe('[redacted]');
+    expect(headers['x-webhook-signature']).toBe('[redacted]');
+    expect(headers['x-wasender-signature']).toBe('[redacted]');
+    expect(headers['x-hub-signature']).toBe('[redacted]');
+    expect(headers['x-hub-signature-256']).toBe('[redacted]');
+    // não-sensível continua passando normalmente
+    expect(headers['user-agent']).toBe('curl/8.0');
+  });
 });

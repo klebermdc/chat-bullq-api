@@ -86,6 +86,27 @@ export class WebhookGatewayController {
 
     // 2. Resolve one or more concrete Channel rows.
     const matchedChannels: Channel[] = [];
+    // Um payload em lote (WA Official) pode trazer N locators ruins. Agrupamos
+    // por motivo+canal para não escrever N linhas de auditoria com o payload
+    // inteiro repetido — o contador preserva o diagnóstico.
+    const drops = new Map<
+      string,
+      { reason: InboundDropReason; channel: Channel | null; count: number; fields: Set<string> }
+    >();
+
+    const noteDrop = (
+      reason: InboundDropReason,
+      channel: Channel | null,
+      locator: unknown,
+    ) => {
+      const key = `${reason}:${channel?.id ?? 'none'}`;
+      const entry = drops.get(key) ?? { reason, channel, count: 0, fields: new Set<string>() };
+      entry.count += 1;
+      // só os NOMES dos campos do locator — os valores podem ser tokens
+      for (const f of Object.keys((locator ?? {}) as object)) entry.fields.add(f);
+      drops.set(key, entry);
+    };
+
     for (const locator of locators) {
       const resolved = await this.channelsService.resolveByLocator(
         channelType,
@@ -93,26 +114,14 @@ export class WebhookGatewayController {
       );
 
       if (!resolved) {
-        await this.dropReporter.reportDrop({
-          channelType,
-          reason: InboundDropReason.UNKNOWN_LOCATOR,
-          payload: req.body,
-          headers,
-          channel: null,
-        });
+        noteDrop(InboundDropReason.UNKNOWN_LOCATOR, null, locator);
         continue;
       }
 
       if (!resolved.active) {
         // Canal existe mas está desativado: continua NÃO processando — só que
         // agora o dono fica sabendo, em vez da mensagem sumir.
-        await this.dropReporter.reportDrop({
-          channelType,
-          reason: InboundDropReason.CHANNEL_INACTIVE,
-          payload: req.body,
-          headers,
-          channel: resolved.channel,
-        });
+        noteDrop(InboundDropReason.CHANNEL_INACTIVE, resolved.channel, locator);
         continue;
       }
 
@@ -121,9 +130,20 @@ export class WebhookGatewayController {
       }
     }
 
+    for (const entry of drops.values()) {
+      await this.dropReporter.reportDrop({
+        channelType,
+        reason: entry.reason,
+        payload: req.body,
+        headers,
+        channel: entry.channel,
+        detail: `${entry.count}x, campos do locator: ${[...entry.fields].sort().join('+') || 'nenhum'}`,
+      });
+    }
+
     if (matchedChannels.length === 0) {
-      // Cada locator já foi relatado individualmente acima — relatar de novo
-      // aqui duplicaria toda linha de auditoria.
+      // Cada motivo já foi relatado uma vez acima — relatar de novo aqui
+      // duplicaria toda linha de auditoria.
       return res.status(200).json({ status: 'no_matching_channel' });
     }
 

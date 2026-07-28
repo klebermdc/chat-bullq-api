@@ -9,7 +9,7 @@ const build = () => {
   const webhookEvents = { recordDropped: jest.fn().mockResolvedValue('evt1') };
   const notifications = { notifyOrgAgents: jest.fn().mockResolvedValue({}) };
   // 'OK' = ganhou o slot de alerta; null = já alertado dentro da janela.
-  const redis = { set: jest.fn().mockResolvedValue('OK') };
+  const redis = { set: jest.fn().mockResolvedValue('OK'), del: jest.fn().mockResolvedValue(1) };
   const reporter = new InboundDropReporter(
     webhookEvents as any,
     notifications as any,
@@ -114,6 +114,19 @@ describe('InboundDropReporter', () => {
       'EX',
       900,
       'NX',
+    );
+  });
+
+  it('devolve o slot do throttle quando a notificação falha, para não silenciar o alerta por 15min à toa', async () => {
+    const { redis, notifications, reporter } = build();
+    notifications.notifyOrgAgents.mockRejectedValue(new Error('provedor de notificação fora'));
+
+    await expect(
+      reporter.reportDrop(drop(InboundDropReason.CHANNEL_INACTIVE, channel)),
+    ).resolves.toBeUndefined();
+
+    expect(redis.del).toHaveBeenCalledWith(
+      'chdrop:WHATSAPP_OFFICIAL:CHANNEL_INACTIVE:ch1',
     );
   });
 

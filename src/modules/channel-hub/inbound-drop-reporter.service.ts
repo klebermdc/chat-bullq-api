@@ -45,18 +45,20 @@ export class InboundDropReporter {
     payload: unknown;
     headers: Record<string, string>;
     channel?: DropChannel | null;
+    detail?: string;
   }): Promise<void> {
-    const { channelType, reason, payload, headers, channel } = params;
+    const { channelType, reason, payload, headers, channel, detail } = params;
     const context = channel
       ? `canal ${channel.name} (${channel.id})`
       : 'canal não identificado';
+    const full = detail ? `${context} — ${detail}` : context;
 
-    this.logger.warn(`Inbound descartado [${reason}] ${channelType}: ${context}`);
+    this.logger.warn(`Inbound descartado [${reason}] ${channelType}: ${full}`);
 
     try {
       await this.webhookEvents.recordDropped({
         channelType,
-        reason: `${reason}: ${context}`,
+        reason: `${reason}: ${full}`,
         payload,
         headers,
         channelId: channel?.id ?? null,
@@ -75,24 +77,26 @@ export class InboundDropReporter {
     // Se o Redis estiver fora, o slot nunca é conquistado e o alerta é
     // silenciosamente perdido (não reenviado) — trade-off deliberado: preferimos
     // perder um alerta a transformar uma queda do Redis em tempestade de notificação.
+    const throttleKey = `chdrop:${channelType}:${reason}:${channel.id}`;
     try {
-      const slot = await this.redis.set(
-        `chdrop:${channelType}:${reason}:${channel.id}`,
-        '1',
-        'EX',
-        ALERT_TTL_SECONDS,
-        'NX',
-      );
+      const slot = await this.redis.set(throttleKey, '1', 'EX', ALERT_TTL_SECONDS, 'NX');
       if (slot !== 'OK') return; // já alertado dentro da janela
 
-      await this.notifications.notifyOrgAgents({
-        organizationId: channel.organizationId,
-        roles: [OrgRole.OWNER],
-        type: NotificationType.SYSTEM,
-        title: alert.title,
-        body: alert.body,
-        data: { channelId: channel.id, channelType, reason },
-      });
+      try {
+        await this.notifications.notifyOrgAgents({
+          organizationId: channel.organizationId,
+          roles: [OrgRole.OWNER],
+          type: NotificationType.SYSTEM,
+          title: alert.title,
+          body: alert.body,
+          data: { channelId: channel.id, channelType, reason },
+        });
+      } catch (err: unknown) {
+        // devolve o slot: sem isso, uma falha de entrega silenciaria o alerta
+        // por 15 min sem nada ter sido entregue
+        await this.redis.del(throttleKey).catch(() => undefined);
+        throw err;
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Falha ao alertar drop ${reason}: ${msg}`);
@@ -112,7 +116,7 @@ export class InboundDropReporter {
       case InboundDropReason.INVALID_SIGNATURE:
         return {
           title: 'Webhook com assinatura inválida',
-          body: `O canal "${channel.name}" recebeu um webhook com assinatura inválida e a mensagem foi descartada. Verifique se o token do provedor foi trocado.`,
+          body: `O canal "${channel.name}" recebeu um webhook com assinatura inválida e a mensagem foi descartada. Verifique se o segredo do provedor foi trocado ou se o canal está sem appSecret/webhookSecret configurado.`,
         };
       default:
         return null;

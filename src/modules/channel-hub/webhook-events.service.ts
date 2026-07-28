@@ -105,6 +105,12 @@ export class WebhookEventsService {
       'cookie',
       'set-cookie',
       'x-api-key',
+      'token',
+      'x-webhook-token',
+      'x-webhook-signature',
+      'x-wasender-signature',
+      'x-hub-signature',
+      'x-hub-signature-256',
     ]);
     const out: Record<string, string> = {};
     let count = 0;

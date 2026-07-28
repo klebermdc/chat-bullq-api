@@ -143,4 +143,23 @@ describe('WebhookGatewayController — fail loud', () => {
     expect(inboundQueue.add).toHaveBeenCalledTimes(1);
     expect(res.json).toHaveBeenCalledWith({ status: 'ok' });
   });
+
+  it('lote com N locators ruins do mesmo motivo gera 1 relato agregado, não N', async () => {
+    const { adapter, channelsService, dropReporter, controller, req, res } = build();
+    adapter.extractLocators.mockReturnValue([
+      { sessionId: 'A' },
+      { sessionId: 'B' },
+      { sessionId: 'C' },
+    ]);
+    channelsService.resolveByLocator.mockResolvedValue(null);
+
+    await controller.handleWebhook('WHATSAPP_WASENDER' as any, req, res);
+
+    // 3 locators desconhecidos, mesmo motivo+canal(null) → 1 único reportDrop
+    expect(dropReporter.reportDrop).toHaveBeenCalledTimes(1);
+    const arg = dropReporter.reportDrop.mock.calls[0][0];
+    expect(arg.reason).toBe(InboundDropReason.UNKNOWN_LOCATOR);
+    expect(arg.detail).toContain('3x');
+    expect(arg.detail).toContain('sessionId');
+  });
 });
