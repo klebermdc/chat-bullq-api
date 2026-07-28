@@ -14,6 +14,15 @@ export class EmbeddedSignupDto {
   @IsString()
   wabaId: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Portfólio empresarial (business_id) do cliente, devolvido no sessionInfo. ' +
+      'Guardado pra amarrar o canal ao portfólio dono da WABA.',
+  })
+  @IsOptional()
+  @IsString()
+  businessId?: string;
+
   @ApiPropertyOptional({ enum: ['ORG', 'PRIVATE'] })
   @IsOptional()
   @IsIn(['ORG', 'PRIVATE'])

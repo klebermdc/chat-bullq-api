@@ -162,6 +162,19 @@ describe('WhatsAppEmbeddedSignupService.connect', () => {
     expect(mockedAxios.post).toHaveBeenCalledTimes(1); // so o subscribe, sem register
   });
 
+  it('guarda o businessId (portfolio do cliente) no config quando vem no sessionInfo', async () => {
+    mockedAxios.get.mockResolvedValueOnce({ data: { access_token: 'TKN' } } as any);
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);
+    mockedAxios.get.mockResolvedValueOnce({ data: { verified_name: 'NY Fast Pass' } } as any);
+
+    const { svc, channelsService } = makeSvc([]);
+    await svc.connect({ code: 'c', phoneNumberId: 'PN1', wabaId: 'WABA1', businessId: 'BIZ9', organizationId: 'org1' });
+
+    expect(channelsService.create).toHaveBeenCalledWith('org1', expect.objectContaining({
+      config: expect.objectContaining({ businessId: 'BIZ9' }),
+    }), undefined);
+  });
+
   it('grava registeredAt no config quando o register da certo', async () => {
     process.env.WA_REG_PIN = '123456';
     mockedAxios.get.mockResolvedValueOnce({ data: { access_token: 'TKN' } } as any);

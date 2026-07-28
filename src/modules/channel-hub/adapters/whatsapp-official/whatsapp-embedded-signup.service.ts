@@ -68,6 +68,8 @@ export class WhatsAppEmbeddedSignupService {
     code: string;
     phoneNumberId: string;
     wabaId: string;
+    /** Portfólio empresarial dono da WABA — vem no sessionInfo do Embedded Signup. */
+    businessId?: string;
     organizationId: string;
     creator?: { userOrganizationId: string; role: OrgRole };
   }): Promise<Channel> {
@@ -139,6 +141,7 @@ export class WhatsAppEmbeddedSignupService {
       apiVersion: this.platform.apiVersion,
     };
     if (registeredAt) config.registeredAt = registeredAt;
+    if (params.businessId) config.businessId = params.businessId;
 
     if (existing) {
       this.logger.log(`Embedded Signup: atualizando canal existente ${existing.id} (${params.phoneNumberId})`);
