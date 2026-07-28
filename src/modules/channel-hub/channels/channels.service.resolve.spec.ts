@@ -62,4 +62,23 @@ describe('ChannelsService.resolveByLocator', () => {
 
     expect(res).toBeNull();
   });
+
+  it('canal ativo vence canal inativo que casa com o mesmo locator', async () => {
+    const inativoMesmoLocator = { ...inativo, config: { sessionId: 'S1' } };
+    const { service } = build([inativoMesmoLocator, ativo]);
+
+    const res = await service.resolveByLocator('WHATSAPP_WASENDER' as any, bySession('S1'));
+
+    // o inativo vem PRIMEIRO no array de propósito: se a seleção pegasse o
+    // primeiro que casa, o inbound do canal que funciona seria descartado
+    expect(res).toEqual({ channel: ativo, active: true });
+  });
+
+  it('cai no inativo só quando não existe ativo casando', async () => {
+    const { service } = build([inativo]);
+
+    const res = await service.resolveByLocator('WHATSAPP_WASENDER' as any, bySession('S2'));
+
+    expect(res).toEqual({ channel: inativo, active: false });
+  });
 });

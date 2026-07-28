@@ -41,6 +41,7 @@ export class ChannelsRepository {
   async findByTypeIncludingInactive(type: ChannelType) {
     return this.prisma.channel.findMany({
       where: { type, deletedAt: null },
+      orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }],
     });
   }
 

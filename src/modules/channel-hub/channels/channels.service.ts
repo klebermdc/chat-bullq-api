@@ -299,7 +299,14 @@ export class ChannelsService {
     matches: (channel: { config: any }) => boolean,
   ): Promise<{ channel: Channel; active: boolean } | null> {
     const candidates = await this.repository.findByTypeIncludingInactive(type);
-    const found = candidates.find((c) => matches(c));
+    // Um canal DESATIVADO nunca pode ofuscar um ATIVO que casa com o mesmo
+    // locator: desativar-o-antigo-e-recriar é o fluxo normal quando um token
+    // Meta expira. Sem esta preferência, o inbound do canal que funciona
+    // seria descartado como CHANNEL_INACTIVE — exatamente o apagão que esta
+    // feature existe para acabar.
+    const found =
+      candidates.find((c) => c.isActive && matches(c)) ??
+      candidates.find((c) => matches(c));
     return found ? { channel: found, active: found.isActive } : null;
   }
 
