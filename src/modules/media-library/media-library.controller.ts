@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -17,6 +18,7 @@ import { OrgRole } from '@prisma/client';
 import { MediaLibraryService } from './media-library.service';
 import { CreateFolderDto } from './dto/create-folder.dto';
 import { UploadAssetDto } from './dto/upload-asset.dto';
+import { UpdateFolderDto } from './dto/update-folder.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentOrg, CurrentUser, CurrentUserRole, Feature } from '../../common/decorators';
 
@@ -44,6 +46,16 @@ export class MediaLibraryController {
     return this.service.createFolder(orgId, userId, dto);
   }
 
+  @Patch('folders/:id')
+  @ApiOperation({ summary: 'Rename folder / toggle sticker folder' })
+  updateFolder(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @Body() dto: UpdateFolderDto,
+  ) {
+    return this.service.updateFolder(id, orgId, dto);
+  }
+
   @Delete('folders/:id')
   @Feature('media.delete')
   @ApiOperation({ summary: 'Delete folder (assets stay, unassigned)' })
@@ -54,6 +66,13 @@ export class MediaLibraryController {
     @CurrentUserRole() role: OrgRole,
   ) {
     return this.service.deleteFolder(id, orgId, userId, role);
+  }
+
+  // ----- stickers -----
+  @Get('stickers')
+  @ApiOperation({ summary: 'List sticker assets (webp in sticker folders)' })
+  listStickers(@CurrentOrg('id') orgId: string) {
+    return this.service.listStickers(orgId);
   }
 
   // ----- assets -----

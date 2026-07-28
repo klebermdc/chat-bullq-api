@@ -24,6 +24,13 @@ export class MediaLibraryRepository {
     });
   }
 
+  async updateFolder(
+    id: string,
+    data: { name?: string; isStickerFolder?: boolean },
+  ) {
+    return this.prisma.mediaFolder.update({ where: { id }, data });
+  }
+
   async softDeleteFolder(id: string) {
     // Desanexa os assets antes de remover a pasta. O FK é ON DELETE SET NULL,
     // mas isso só dispara em hard-delete — no soft-delete o detach é manual.
@@ -53,6 +60,26 @@ export class MediaLibraryRepository {
         organizationId,
         deletedAt: null,
         ...(folderId ? { folderId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Assets de todas as pastas marcadas como figurinha.
+   *
+   * O `organizationId` está no asset E a pasta é filtrada junto: a pasta é a
+   * fonte da verdade do "isto é figurinha", e o asset é o que o compositor
+   * envia. O filtro de mimeType impede que um PDF largado numa pasta de
+   * figurinhas apareça no grid.
+   */
+  async findStickerAssets(organizationId: string) {
+    return this.prisma.mediaAsset.findMany({
+      where: {
+        organizationId,
+        deletedAt: null,
+        mimeType: 'image/webp',
+        folder: { isStickerFolder: true, deletedAt: null },
       },
       orderBy: { createdAt: 'desc' },
     });
