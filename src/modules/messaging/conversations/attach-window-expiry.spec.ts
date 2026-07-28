@@ -41,7 +41,7 @@ describe('attachWindowExpiry', () => {
       {
         id: 'c1',
         lastInboundAt: hoursAgo(1),
-        channel: { type: 'WHATSAPP_WASENDER' },
+        channel: { type: 'WHATSAPP_ZAPPFY' },
         contact: { ctwaClidAt: null },
       },
       now,
@@ -54,7 +54,7 @@ describe('attachWindowExpiry', () => {
     const conv = {
       id: 'c1',
       lastInboundAt: null,
-      channel: { type: 'WHATSAPP_WASENDER' },
+      channel: { type: 'WHATSAPP_ZAPPFY' },
       contact: { ctwaClidAt: null },
       unreadCount: 3,
     };

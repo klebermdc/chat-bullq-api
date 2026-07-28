@@ -24,6 +24,9 @@ enum AgentStatus {
 enum ChannelType {
   WHATSAPP_OFFICIAL
   WHATSAPP_ZAPPFY
+  // Integração removida do código. O valor FICA: canais e conversas antigos
+  // no banco ainda apontam pra ele, e apagar o valor impediria de ler esses
+  // registros. Criar canal novo desse tipo é barrado no ChannelsService.
   WHATSAPP_WASENDER
   INSTAGRAM
 }

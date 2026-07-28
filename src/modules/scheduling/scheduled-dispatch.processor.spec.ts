@@ -366,7 +366,7 @@ describe('ScheduledDispatchProcessor', () => {
     it('mantém o texto livre em canal não-oficial (sem regra de janela)', async () => {
       const conversation = {
         ...OFICIAL,
-        channel: { type: 'WHATSAPP_WASENDER' },
+        channel: { type: 'WHATSAPP_ZAPPFY' },
         lastInboundAt: new Date(Date.now() - 30 * 3600_000),
       };
       const { processor, messages, prisma } = makeOfficialDeps(

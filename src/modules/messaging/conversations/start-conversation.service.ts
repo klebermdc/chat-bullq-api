@@ -21,11 +21,9 @@ export class StartConversationService {
   ) {}
 
   private toExternalId(channelType: ChannelType, phone: string): string {
-    // Gateways baseados em Baileys (Zappfy/Uazapi e Wasender) usam o JID
+    // Gateway baseado em Baileys (Zappfy/Uazapi) usa o JID
     // `<phone>@s.whatsapp.net`; Meta e demais usam só os dígitos.
-    const isBaileysWhatsApp =
-      channelType === ChannelType.WHATSAPP_ZAPPFY ||
-      channelType === ChannelType.WHATSAPP_WASENDER;
+    const isBaileysWhatsApp = channelType === ChannelType.WHATSAPP_ZAPPFY;
     return isBaileysWhatsApp ? `${phone}@s.whatsapp.net` : phone;
   }
 

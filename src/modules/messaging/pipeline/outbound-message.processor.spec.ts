@@ -26,7 +26,7 @@ describe('OutboundMessageProcessor — gatilho de reengajamento NO_REPLY', () =>
 
     const prisma = {
       channel: {
-        findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'ch1', type: 'WHATSAPP_WASENDER' }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'ch1', type: 'WHATSAPP_ZAPPFY' }),
       },
       message: {
         // Called twice: once by simulateTypingIfAiMessage, once by process()

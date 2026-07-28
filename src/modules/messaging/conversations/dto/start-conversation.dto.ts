@@ -31,7 +31,7 @@ export class StartConversationDto {
   @IsString()
   notes?: string;
 
-  @ApiPropertyOptional({ description: 'Mensagem de texto livre. Obrigatória em canais não-oficiais (Baileys/Wasender).' })
+  @ApiPropertyOptional({ description: 'Mensagem de texto livre. Obrigatória em canais não-oficiais (Baileys/Zappfy).' })
   @IsOptional()
   @IsString()
   message?: string;

@@ -9,9 +9,6 @@ import { ZappfyModule } from './adapters/zappfy/zappfy.module';
 import { ZappfyInboundAdapter } from './adapters/zappfy/zappfy.inbound-adapter';
 import { ZappfyOutboundAdapter } from './adapters/zappfy/zappfy.outbound-adapter';
 import { ZappfySyncAdapter } from './adapters/zappfy/zappfy.sync-adapter';
-import { WasenderModule } from './adapters/wasender/wasender.module';
-import { WasenderInboundAdapter } from './adapters/wasender/wasender.inbound-adapter';
-import { WasenderOutboundAdapter } from './adapters/wasender/wasender.outbound-adapter';
 import { WhatsAppOfficialModule } from './adapters/whatsapp-official/whatsapp-official.module';
 import { WhatsAppOfficialInboundAdapter } from './adapters/whatsapp-official/whatsapp-official.inbound-adapter';
 import { WhatsAppOfficialOutboundAdapter } from './adapters/whatsapp-official/whatsapp-official.outbound-adapter';
@@ -40,7 +37,6 @@ import { MessageTemplatesModule } from './message-templates/message-templates.mo
       { name: CHANNEL_SYNC_QUEUE },
     ),
     ZappfyModule,
-    WasenderModule,
     WhatsAppOfficialModule,
     InstagramModule,
     forwardRef(() => MessagingModule),
@@ -63,7 +59,6 @@ import { MessageTemplatesModule } from './message-templates/message-templates.mo
     WebhookEventsService,
     InstagramModule,
     ZappfyModule,
-    WasenderModule,
   ],
 })
 export class ChannelHubModule implements OnModuleInit {
@@ -72,8 +67,6 @@ export class ChannelHubModule implements OnModuleInit {
     private readonly zappfyInbound: ZappfyInboundAdapter,
     private readonly zappfyOutbound: ZappfyOutboundAdapter,
     private readonly zappfySync: ZappfySyncAdapter,
-    private readonly wasenderInbound: WasenderInboundAdapter,
-    private readonly wasenderOutbound: WasenderOutboundAdapter,
     private readonly waOfficialInbound: WhatsAppOfficialInboundAdapter,
     private readonly waOfficialOutbound: WhatsAppOfficialOutboundAdapter,
     private readonly instagramInbound: InstagramInboundAdapter,
@@ -83,7 +76,6 @@ export class ChannelHubModule implements OnModuleInit {
 
   onModuleInit() {
     this.registry.register(this.zappfyInbound, this.zappfyOutbound);
-    this.registry.register(this.wasenderInbound, this.wasenderOutbound);
     this.registry.register(this.waOfficialInbound, this.waOfficialOutbound);
     this.registry.register(this.instagramInbound, this.instagramOutbound);
     this.registry.registerHistorySync(this.zappfySync);

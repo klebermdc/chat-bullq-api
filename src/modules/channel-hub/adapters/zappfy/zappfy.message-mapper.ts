@@ -80,7 +80,6 @@ export class ZappfyMessageMapper {
     // 3=DELIVERY_ACK (entregue), 4=READ (lido), 5=PLAYED (áudio ouvido → lido).
     // O mapa antigo estava deslocado (2→delivered, 3→read) e, pior, tratava
     // 5=PLAYED como 'failed' — toda nota de voz ouvida aparecia como FALHOU.
-    // Alinhado com o adapter Wasender (mesma base Baileys).
     const numericAckMap: Record<number, StatusUpdate['status']> = {
       1: 'sent',
       2: 'sent',

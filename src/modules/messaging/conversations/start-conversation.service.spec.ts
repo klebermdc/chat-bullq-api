@@ -39,7 +39,7 @@ describe('StartConversationService.start', () => {
   });
 
   it('recusa canal nao-oficial SEM mensagem', async () => {
-    const { svc } = make({ channelType: ChannelType.WHATSAPP_WASENDER });
+    const { svc } = make({ channelType: ChannelType.WHATSAPP_ZAPPFY });
     await expect(svc.start('org1', { channelId: 'ch1', phone: '5511982015967' } as any, 'ALL', creator)).rejects.toBeInstanceOf(BadRequestException);
   });
 
