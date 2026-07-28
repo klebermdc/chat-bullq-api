@@ -68,6 +68,15 @@ describe('InboundDropReporter', () => {
     expect(notifications.notifyOrgAgents).not.toHaveBeenCalled();
   });
 
+  it('não alerta em motivos sem alerta mesmo com canal conhecido', async () => {
+    const { notifications, reporter } = build();
+
+    await reporter.reportDrop(drop(InboundDropReason.NO_LOCATORS, channel));
+    await reporter.reportDrop(drop(InboundDropReason.UNKNOWN_LOCATOR, channel));
+
+    expect(notifications.notifyOrgAgents).not.toHaveBeenCalled();
+  });
+
   it('não derruba o webhook se a persistência falhar', async () => {
     const { webhookEvents, notifications, reporter } = build();
     webhookEvents.recordDropped.mockRejectedValue(new Error('prisma fora'));
@@ -80,11 +89,13 @@ describe('InboundDropReporter', () => {
   });
 
   it('não derruba o webhook se o Redis estiver fora', async () => {
-    const { redis, reporter } = build();
+    const { redis, notifications, reporter } = build();
     redis.set.mockRejectedValue(new Error('redis fora'));
 
     await expect(
       reporter.reportDrop(drop(InboundDropReason.CHANNEL_INACTIVE, channel)),
     ).resolves.toBeUndefined();
+    // gate do throttle falhou → alerta é perdido, não deve ser enviado mesmo assim
+    expect(notifications.notifyOrgAgents).not.toHaveBeenCalled();
   });
 });

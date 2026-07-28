@@ -61,8 +61,9 @@ export class InboundDropReporter {
         headers,
         channelId: channel?.id ?? null,
       });
-    } catch (err: any) {
-      this.logger.error(`Falha ao persistir drop ${reason}: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Falha ao persistir drop ${reason}: ${msg}`);
     }
 
     // Sem canal não há organizationId — não existe a quem notificar.
@@ -71,6 +72,9 @@ export class InboundDropReporter {
     const alert = this.buildAlert(reason, channel);
     if (!alert) return;
 
+    // Se o Redis estiver fora, o slot nunca é conquistado e o alerta é
+    // silenciosamente perdido (não reenviado) — trade-off deliberado: preferimos
+    // perder um alerta a transformar uma queda do Redis em tempestade de notificação.
     try {
       const slot = await this.redis.set(
         `chdrop:${channelType}:${reason}:${channel.id}`,
@@ -89,8 +93,9 @@ export class InboundDropReporter {
         body: alert.body,
         data: { channelId: channel.id, channelType, reason },
       });
-    } catch (err: any) {
-      this.logger.error(`Falha ao alertar drop ${reason}: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Falha ao alertar drop ${reason}: ${msg}`);
     }
   }
 
