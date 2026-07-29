@@ -5,6 +5,9 @@ import { WhatsAppPlatformConfigService } from './whatsapp-platform-config.servic
 import { ChannelsService } from '../../channels/channels.service';
 import { ChannelsRepository } from '../../channels/channels.repository';
 
+/** Desfecho do Embedded Signup para número que já roda no app do WhatsApp Business. */
+export const COEXISTENCE_EVENT = 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING';
+
 @Injectable()
 export class WhatsAppEmbeddedSignupService {
   private readonly logger = new Logger(WhatsAppEmbeddedSignupService.name);
@@ -70,6 +73,13 @@ export class WhatsAppEmbeddedSignupService {
     wabaId: string;
     /** Portfólio empresarial dono da WABA — vem no sessionInfo do Embedded Signup. */
     businessId?: string;
+    /**
+     * Campo `event` do sessionInfo. Importa por causa da COEXISTÊNCIA:
+     * `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING` = número que já roda no app do
+     * WhatsApp Business. Nesse caso a doc manda PULAR o /register — o número já
+     * está registrado, e chamar assim mesmo gasta a cota de 10/72h à toa.
+     */
+    signupEvent?: string;
     organizationId: string;
     creator?: { userOrganizationId: string; role: OrgRole };
   }): Promise<Channel> {
@@ -101,8 +111,17 @@ export class WhatsAppEmbeddedSignupService {
     // (usuário clicando de novo) não pode gastar a cota.
     const alreadyRegistered = Boolean((existing?.config as Record<string, any>)?.registeredAt);
     let registeredAt: string | undefined = (existing?.config as Record<string, any>)?.registeredAt;
+    const isCoexistence = params.signupEvent === COEXISTENCE_EVENT;
 
-    if (alreadyRegistered) {
+    if (isCoexistence) {
+      // Doc da Meta (Onboarding WhatsApp Business app users): "skip the phone
+      // number registration step, as the number is already registered".
+      // O número vive no app do WhatsApp Business e já está registrado —
+      // chamar /register aqui é errado e consome a cota de 10/72h.
+      this.logger.log(
+        `Embedded Signup: numero ${params.phoneNumberId} veio por COEXISTENCIA — pulando o /register (a doc manda pular).`,
+      );
+    } else if (alreadyRegistered) {
       this.logger.log(
         `Embedded Signup: numero ${params.phoneNumberId} ja registrado em ${registeredAt} — pulando o /register (cota de 72h).`,
       );
@@ -142,6 +161,9 @@ export class WhatsAppEmbeddedSignupService {
     };
     if (registeredAt) config.registeredAt = registeredAt;
     if (params.businessId) config.businessId = params.businessId;
+    // Marca o canal: coexistência tem throughput fixo de 20 mps, não sincroniza
+    // grupo, e o /register nunca deve ser chamado nele.
+    if (isCoexistence) config.coexistence = true;
 
     if (existing) {
       this.logger.log(`Embedded Signup: atualizando canal existente ${existing.id} (${params.phoneNumberId})`);

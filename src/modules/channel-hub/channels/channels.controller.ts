@@ -62,6 +62,7 @@ export class ChannelsController {
       phoneNumberId: dto.phoneNumberId,
       wabaId: dto.wabaId,
       businessId: dto.businessId,
+      signupEvent: dto.signupEvent,
       organizationId: org.id,
       creator: { userOrganizationId: org.userOrganizationId, role: org.userRole },
     });

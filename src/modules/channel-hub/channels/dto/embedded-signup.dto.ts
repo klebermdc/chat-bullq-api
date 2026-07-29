@@ -23,6 +23,15 @@ export class EmbeddedSignupDto {
   @IsString()
   businessId?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Campo `event` do sessionInfo (FINISH, FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING, ...). ' +
+      'Na coexistência o /register é pulado.',
+  })
+  @IsOptional()
+  @IsString()
+  signupEvent?: string;
+
   @ApiPropertyOptional({ enum: ['ORG', 'PRIVATE'] })
   @IsOptional()
   @IsIn(['ORG', 'PRIVATE'])
