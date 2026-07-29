@@ -270,3 +270,27 @@ não aparece.
 | App Review pode pedir ajustes e atrasar a liberação para cliente | O E2E roda em modo dev antes do review. O review deixa de ser bloqueio inicial. |
 | `notifyOrgAgents` notifica a org toda, não só o OWNER | Aceitável nesta fatia. O fail-loud do channel-hub (API #139, ainda **aberto**) traz o filtro por papel; quando mergear, apertar aqui. |
 | Segredo do app duplicado no `config` de N canais | Mesmo trade-off que o WhatsApp oficial já faz hoje. Consistente com o existente. |
+
+## Lacunas conhecidas (achadas na implementação, decisão pendente)
+
+**1. Corrida entre dois `connect()` simultâneos para a mesma conta.**
+`connect()` lê (`findActiveByTypeAndOrg` + `find` por `igBusinessId`) e depois escreve,
+sem transação nem lock. Duas conexões concorrentes da mesma conta IG leem a lista vazia
+e ambas criam canal — resultando em **dois canais ativos com o mesmo locator**, que é a
+mesma forma de colisão que já causou apagão aqui.
+
+Atenuantes: o nonce do `state` é de uso único, então um callback repetido é rejeitado; a
+corrida exige duas autorizações completas e concorrentes, o que é estreito. Mas a
+consequência é grave o bastante para não ficar sem registro.
+
+Fechar exige uma decisão de arquitetura, por isso não entrou na Fatia 1:
+- **Índice único no banco** — `Channel.config` é `Json`, então precisa de coluna gerada
+  (`igBusinessId`) + unique index, ou seja, migration.
+- **Lock no Redis** por `igBusinessId` durante o `connect()` — sem migration, mas exige
+  injetar um cliente Redis no `InstagramConnectService`, que hoje não tem.
+
+**2. Rotação do `IG_APP_SECRET` deixa canais antigos com segredo velho.**
+O `appSecret` é carimbado no `config` no momento da conexão e nunca revisitado. Se o
+segredo do app rodar na Meta, todo canal conectado antes da rotação continua com o valor
+antigo e passa a recusar webhook por assinatura inválida. Não há mecanismo de re-carimbo.
+Procedimento operacional documentado no runbook; automatizar é trabalho futuro.
