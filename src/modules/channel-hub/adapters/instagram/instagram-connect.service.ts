@@ -6,9 +6,9 @@ import { ChannelsRepository } from '../../channels/channels.repository';
 import { InstagramConnectError } from './instagram-connect.errors';
 import { IG_SUBSCRIBED_FIELDS } from './instagram.constants';
 
-/** Nunca logamos segredo inteiro — 13 chars bastam pra distinguir os casos. */
+/** Nunca logamos segredo inteiro — 12 chars bastam pra distinguir os casos. */
 export function redact(secret: string | undefined): string {
-  return secret ? `${secret.slice(0, 13)}…` : '-';
+  return secret ? `${secret.slice(0, 12)}…` : '-';
 }
 
 function metaErrorMessage(err: any): string {
@@ -64,7 +64,14 @@ export class InstagramConnectService {
       this.logger.error(
         `troca de code falhou: ${metaErrorMessage(err)} (code=${redact(code)})`,
       );
-      throw new InstagramConnectError('code_expirado', metaErrorMessage(err));
+      // Sem `response` a Meta nem respondeu (timeout, DNS, 5xx sem corpo): o code
+      // pode estar perfeitamente válido e mandar o usuário refazer o OAuth seria
+      // conselho errado — e esconderia uma indisponibilidade da Meta atrás de um
+      // slug que parece culpa do cliente.
+      throw new InstagramConnectError(
+        err?.response ? 'code_expirado' : 'erro_interno',
+        metaErrorMessage(err),
+      );
     }
   }
 
@@ -136,12 +143,19 @@ export class InstagramConnectService {
   async refreshToken(
     token: string,
   ): Promise<{ accessToken: string; expiresIn: number }> {
-    const { data } = await axios.get('https://graph.instagram.com/refresh_access_token', {
-      params: { grant_type: 'ig_refresh_token', access_token: token },
-    });
-    if (!data?.access_token) {
-      throw new Error('refresh_access_token nao devolveu token');
+    try {
+      const { data } = await axios.get('https://graph.instagram.com/refresh_access_token', {
+        params: { grant_type: 'ig_refresh_token', access_token: token },
+      });
+      if (!data?.access_token) {
+        throw new Error('refresh_access_token nao devolveu token');
+      }
+      return { accessToken: data.access_token, expiresIn: data.expires_in ?? 5184000 };
+    } catch (err: any) {
+      // O AxiosError carrega `config.params`, e o token vai NO QUERY STRING —
+      // deixar o erro cru subir despejaria uma credencial viva de 60 dias no log.
+      // Sobe só a mensagem já extraída.
+      throw new Error(metaErrorMessage(err));
     }
-    return { accessToken: data.access_token, expiresIn: data.expires_in ?? 5184000 };
   }
 }

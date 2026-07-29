@@ -110,8 +110,15 @@ describe('InstagramConnectService (chamadas Graph)', () => {
 
     const logado = logSpy.mock.calls.flat().join(' ');
     expect(logado).not.toContain('CODE_SUPER_SECRETO_INTEIRO_1234567890');
-    expect(logado).toContain('CODE_SUPER_SE'); // prefixo de 12 chars + reticencia
+    expect(logado).toContain('CODE_SUPER_S'); // prefixo de 12 chars
     logSpy.mockRestore();
+  });
+
+  it('erro de rede vira erro_interno, nao code_expirado', async () => {
+    mockedAxios.post.mockRejectedValueOnce({ message: 'ECONNRESET' }); // sem `response`
+    await expect(svc.exchangeCodeForToken('c1')).rejects.toMatchObject({
+      slug: 'erro_interno',
+    });
   });
 
   it('refreshToken renova o token longo', async () => {
@@ -126,5 +133,26 @@ describe('InstagramConnectService (chamadas Graph)', () => {
       'https://graph.instagram.com/refresh_access_token',
       { params: { grant_type: 'ig_refresh_token', access_token: 'LONGO' } },
     );
+  });
+
+  it('refreshToken nao deixa o token vazar no erro', async () => {
+    mockedAxios.get.mockRejectedValueOnce({
+      message: 'Request failed',
+      config: { params: { access_token: 'TOKEN_VIVO_NAO_VAZAR' } },
+      response: { data: { error: { message: 'invalid token' } } },
+    });
+    await expect(svc.refreshToken('TOKEN_VIVO_NAO_VAZAR')).rejects.toThrow('invalid token');
+
+    mockedAxios.get.mockRejectedValueOnce({
+      message: 'Request failed',
+      config: { params: { access_token: 'TOKEN_VIVO_NAO_VAZAR' } },
+      response: { data: { error: { message: 'invalid token' } } },
+    });
+    try {
+      await svc.refreshToken('TOKEN_VIVO_NAO_VAZAR');
+      throw new Error('deveria ter lancado');
+    } catch (err: any) {
+      expect(err.message).not.toContain('TOKEN_VIVO_NAO_VAZAR');
+    }
   });
 });
