@@ -100,14 +100,28 @@ describe('InstagramOAuthStateService', () => {
     await expect(semSegredo.verify('a.b')).rejects.toThrow(/IG_STATE_SECRET/);
   });
 
-  it('rejeita returnTo fora da allowlist', async () => {
-    const state = svc.sign({ ...payload, returnTo: 'https://evil.example.com/x' });
-    await expect(svc.verify(state)).rejects.toThrow(/returnTo|destino/i);
+  it.each([
+    ['fora da allowlist', 'https://evil.example.com/x'],
+    ['sem https', 'http://sendtur.com.br/x'],
+  ])('sign recusa returnTo %s', (_caso, returnTo) => {
+    expect(() => svc.sign({ ...payload, returnTo })).toThrow(/returnTo|destino/i);
   });
 
-  it('rejeita returnTo sem https', async () => {
-    const state = svc.sign({ ...payload, returnTo: 'http://sendtur.com.br/x' });
-    await expect(svc.verify(state)).rejects.toThrow(/https|destino/i);
+  it('verify ainda recusa returnTo fora da allowlist num state ja assinado', async () => {
+    const crypto = require('crypto');
+    const body = Buffer.from(
+      JSON.stringify({
+        ...payload,
+        returnTo: 'https://evil.example.com/x',
+        nonce: 'n1',
+        exp: Date.now() + 60_000,
+      }),
+    ).toString('base64url');
+    const sig = crypto
+      .createHmac('sha256', process.env.IG_STATE_SECRET)
+      .update(body)
+      .digest('hex');
+    await expect(svc.verify(`${body}.${sig}`)).rejects.toThrow(/returnTo|destino/i);
   });
 
   it('queima o nonce com TTL e flag NX', async () => {

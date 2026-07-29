@@ -53,6 +53,10 @@ export class InstagramOAuthStateService {
 
   sign(input: IgOAuthStateInput): string {
     this.assertSecretConfigurado();
+    // Validar aqui também, e não só no verify: um returnTo fora da allowlist
+    // só falharia depois do usuário atravessar o OAuth inteiro, e o erro que
+    // ele veria ("state invalido") não aponta para a causa real.
+    this.assertReturnToPermitido(input.returnTo);
     const payload: IgOAuthStatePayload = {
       ...input,
       nonce: crypto.randomBytes(16).toString('hex'),
@@ -134,7 +138,9 @@ export class InstagramOAuthStateService {
       throw new BadRequestException('destino de retorno precisa ser https');
     }
     if (!this.platform.returnAllowlist.includes(url.host)) {
-      throw new BadRequestException(`returnTo nao permitido: ${url.host}`);
+      throw new BadRequestException(
+        `returnTo nao permitido: ${url.host} (verifique a env IG_RETURN_ALLOWLIST)`,
+      );
     }
   }
 }
