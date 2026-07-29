@@ -25,6 +25,8 @@ import {
   IG_OAUTH_REDIS,
 } from './adapters/instagram/instagram-oauth-state.service';
 import { InstagramConnectService } from './adapters/instagram/instagram-connect.service';
+import { InstagramTokenRefreshCron } from './adapters/instagram/instagram-token-refresh.cron';
+import { IG_TOKEN_REFRESH_QUEUE } from './adapters/instagram/instagram.constants';
 import { ChannelSyncOrchestrator } from './sync/channel-sync.orchestrator';
 import { ChannelSyncProcessor } from './sync/channel-sync.processor';
 import { CHANNEL_SYNC_QUEUE } from './sync/channel-sync.constants';
@@ -32,6 +34,7 @@ import { MessagingModule } from '../messaging/messaging.module';
 import { WebhookEventsService } from './webhook-events.service';
 import { WebhookThrottleGuard } from './webhook-throttle.guard';
 import { MessageTemplatesModule } from './message-templates/message-templates.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -44,12 +47,14 @@ import { MessageTemplatesModule } from './message-templates/message-templates.mo
       { name: 'conversation-router' },
       { name: 'sla-timers' },
       { name: CHANNEL_SYNC_QUEUE },
+      { name: IG_TOKEN_REFRESH_QUEUE },
     ),
     ZappfyModule,
     WhatsAppOfficialModule,
     InstagramModule,
     forwardRef(() => MessagingModule),
     forwardRef(() => MessageTemplatesModule),
+    NotificationsModule,
   ],
   controllers: [WebhookGatewayController, ChannelsController],
   providers: [
@@ -64,6 +69,7 @@ import { MessageTemplatesModule } from './message-templates/message-templates.mo
     InstagramPlatformConfigService,
     InstagramOAuthStateService,
     InstagramConnectService,
+    InstagramTokenRefreshCron,
     {
       // Cliente Redis local, no mesmo padrão do PresenceService e do
       // IdempotencyService. Quando houver um RedisModule global, trocar.
