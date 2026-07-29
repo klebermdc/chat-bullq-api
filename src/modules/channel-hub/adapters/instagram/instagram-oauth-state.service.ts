@@ -26,8 +26,8 @@ export interface IgOAuthStatePayload extends IgOAuthStateInput {
 /**
  * O `state` do OAuth carrega a identidade através do redirect da Meta, porque o
  * JWT não sobrevive a ele. Como o `/callback` roda SEM guard, tudo que vem aqui
- * dentro precisa ser inforjável: HMAC com segredo nosso, validade curta, e nonce
- * de uso único pra um state interceptado não servir duas vezes.
+ * dentro precisa ser infalsificável: HMAC com segredo nosso, validade curta, e
+ * nonce de uso único pra um state interceptado não servir duas vezes.
  */
 @Injectable()
 export class InstagramOAuthStateService {
@@ -43,7 +43,16 @@ export class InstagramOAuthStateService {
       .digest('hex');
   }
 
+  private assertSecretConfigurado(): void {
+    if (!this.platform.stateSecret) {
+      throw new Error(
+        'IG_STATE_SECRET nao configurado — assinar ou verificar state com chave vazia nao protege nada.',
+      );
+    }
+  }
+
   sign(input: IgOAuthStateInput): string {
+    this.assertSecretConfigurado();
     const payload: IgOAuthStatePayload = {
       ...input,
       nonce: crypto.randomBytes(16).toString('hex'),
@@ -54,16 +63,21 @@ export class InstagramOAuthStateService {
   }
 
   async verify(state: string): Promise<IgOAuthStatePayload> {
+    this.assertSecretConfigurado();
     const [body, signature] = (state ?? '').split('.');
     if (!body || !signature) {
       throw new BadRequestException('state malformado');
     }
 
+    // A assinatura é hex de 64 chars. Validar o FORMATO antes de comparar:
+    // `signature.length` conta unidades UTF-16, mas `Buffer.from` produz bytes
+    // UTF-8 — uma assinatura com caracteres multibyte passaria na checagem de
+    // comprimento e faria o timingSafeEqual estourar RangeException.
     const expected = this.hmac(body);
-    const ok =
-      signature.length === expected.length &&
-      crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
-    if (!ok) {
+    if (!/^[0-9a-f]{64}$/.test(signature)) {
+      throw new BadRequestException('state com assinatura invalida');
+    }
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
       throw new BadRequestException('state com assinatura invalida');
     }
 
@@ -103,10 +117,11 @@ export class InstagramOAuthStateService {
   }
 
   /**
-   * O `returnTo` só chega aqui dentro de um state que nós assinamos, então não é
-   * input de terceiro. A allowlist protege do nosso próprio erro: um returnTo mal
-   * preenchido no /authorize mandaria o usuário para fora do produto depois de
-   * autorizar. Host na allowlist e https obrigatório.
+   * O `returnTo` é fornecido pelo chamador no `/authorize`, ANTES de ser
+   * assinado — não é um valor nosso, é input de quem inicia o fluxo (um
+   * OWNER/ADMIN, ou uma sessão comprometida se passando por um). Sem essa
+   * checagem, o callback vira um open redirect: qualquer host cairia num
+   * `returnTo` com assinatura válida. Host na allowlist e https obrigatório.
    */
   private assertReturnToPermitido(returnTo: string): void {
     let url: URL;

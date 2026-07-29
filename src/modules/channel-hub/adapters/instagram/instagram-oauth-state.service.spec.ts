@@ -22,6 +22,10 @@ describe('InstagramOAuthStateService', () => {
     svc = new InstagramOAuthStateService(platform, redis as any);
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('assina e verifica ida e volta', async () => {
     const state = svc.sign(payload);
     await expect(svc.verify(state)).resolves.toMatchObject({
@@ -36,6 +40,12 @@ describe('InstagramOAuthStateService', () => {
     const state = svc.sign(payload);
     const [body] = state.split('.');
     await expect(svc.verify(`${body}.deadbeef`)).rejects.toThrow(/state/i);
+  });
+
+  it('rejeita assinatura multibyte sem estourar RangeError', async () => {
+    const state = svc.sign(payload);
+    const [body] = state.split('.');
+    await expect(svc.verify(`${body}.${'é'.repeat(64)}`)).rejects.toThrow(/assinatura/i);
   });
 
   it('rejeita payload adulterado', async () => {
@@ -65,13 +75,29 @@ describe('InstagramOAuthStateService', () => {
     const state = svc.sign(payload);
     jest.spyOn(Date, 'now').mockReturnValue(1_000_000 + 11 * 60 * 1000);
     await expect(svc.verify(state)).rejects.toThrow(/expirad/i);
-    jest.spyOn(Date, 'now').mockRestore();
   });
 
-  it('rejeita nonce reusado', async () => {
+  it('o mesmo state nao passa duas vezes', async () => {
+    const usados = new Set<string>();
+    redis.set.mockImplementation(async (key: string) =>
+      usados.has(key) ? null : (usados.add(key), 'OK'),
+    );
     const state = svc.sign(payload);
-    redis.set.mockResolvedValueOnce(null); // SETNX falhou = já existe
+    await expect(svc.verify(state)).resolves.toBeTruthy();
     await expect(svc.verify(state)).rejects.toThrow(/uma vez|reus/i);
+  });
+
+  it('sign() gera nonces diferentes a cada chamada', () => {
+    const state1 = svc.sign(payload);
+    const state2 = svc.sign(payload);
+    expect(state1).not.toEqual(state2);
+  });
+
+  it('recusa assinar ou verificar com IG_STATE_SECRET vazio', async () => {
+    process.env.IG_STATE_SECRET = '';
+    const semSegredo = new InstagramOAuthStateService(platform, redis as any);
+    expect(() => semSegredo.sign(payload)).toThrow(/IG_STATE_SECRET/);
+    await expect(semSegredo.verify('a.b')).rejects.toThrow(/IG_STATE_SECRET/);
   });
 
   it('rejeita returnTo fora da allowlist', async () => {
