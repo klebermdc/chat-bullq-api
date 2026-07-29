@@ -4,18 +4,8 @@ describe('InstagramPlatformConfigService', () => {
   const svc = new InstagramPlatformConfigService();
   const ENV = { ...process.env };
 
-  beforeEach(() => {
+  afterEach(() => {
     process.env = { ...ENV };
-    delete process.env.IG_APP_ID;
-    delete process.env.IG_APP_SECRET;
-    delete process.env.IG_REDIRECT_URI;
-    delete process.env.IG_STATE_SECRET;
-    delete process.env.IG_API_VERSION;
-    delete process.env.IG_RETURN_ALLOWLIST;
-  });
-
-  afterAll(() => {
-    process.env = ENV;
   });
 
   it('apiVersion cai no default v24.0', () => {
@@ -48,4 +38,21 @@ describe('InstagramPlatformConfigService', () => {
     process.env.IG_STATE_SECRET = 'st';
     expect(svc.isConfigured).toBe(true);
   });
+
+  it('refreshThresholdDays cai no default 15', () => {
+    expect(svc.refreshThresholdDays).toBe(15);
+  });
+
+  it('refreshThresholdDays respeita o env', () => {
+    process.env.IG_TOKEN_REFRESH_THRESHOLD_DAYS = '7';
+    expect(svc.refreshThresholdDays).toBe(7);
+  });
+
+  it.each(['0', '-5', 'abc', ''])(
+    'refreshThresholdDays ignora valor invalido (%s) e usa o default',
+    (valor) => {
+      process.env.IG_TOKEN_REFRESH_THRESHOLD_DAYS = valor;
+      expect(svc.refreshThresholdDays).toBe(15);
+    },
+  );
 });
