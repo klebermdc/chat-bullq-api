@@ -1,5 +1,7 @@
 import { Module, OnModuleInit, forwardRef } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
+import Redis from 'ioredis';
+import { ConfigService } from '@nestjs/config';
 import { ChannelAdapterRegistry } from './channel-adapter.registry';
 import { WebhookGatewayController } from './webhook-gateway.controller';
 import { ChannelsController } from './channels/channels.controller';
@@ -17,6 +19,12 @@ import { InstagramModule } from './adapters/instagram/instagram.module';
 import { InstagramInboundAdapter } from './adapters/instagram/instagram.inbound-adapter';
 import { InstagramOutboundAdapter } from './adapters/instagram/instagram.outbound-adapter';
 import { InstagramSyncAdapter } from './adapters/instagram/instagram.sync-adapter';
+import { InstagramPlatformConfigService } from './adapters/instagram/instagram-platform-config.service';
+import {
+  InstagramOAuthStateService,
+  IG_OAUTH_REDIS,
+} from './adapters/instagram/instagram-oauth-state.service';
+import { InstagramConnectService } from './adapters/instagram/instagram-connect.service';
 import { ChannelSyncOrchestrator } from './sync/channel-sync.orchestrator';
 import { ChannelSyncProcessor } from './sync/channel-sync.processor';
 import { CHANNEL_SYNC_QUEUE } from './sync/channel-sync.constants';
@@ -53,6 +61,23 @@ import { MessageTemplatesModule } from './message-templates/message-templates.mo
     WebhookEventsService,
     WebhookThrottleGuard,
     WhatsAppEmbeddedSignupService,
+    InstagramPlatformConfigService,
+    InstagramOAuthStateService,
+    InstagramConnectService,
+    {
+      // Cliente Redis local, no mesmo padrão do PresenceService e do
+      // IdempotencyService. Quando houver um RedisModule global, trocar.
+      provide: IG_OAUTH_REDIS,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        new Redis({
+          host: config.get<string>('REDIS_HOST', 'localhost'),
+          port: config.get<number>('REDIS_PORT', 6379),
+          password: config.get<string>('REDIS_PASSWORD') || undefined,
+          maxRetriesPerRequest: null,
+          enableReadyCheck: false,
+        }),
+    },
   ],
   exports: [
     ChannelAdapterRegistry,
