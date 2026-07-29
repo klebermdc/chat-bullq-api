@@ -162,6 +162,44 @@ describe('WhatsAppEmbeddedSignupService.connect', () => {
     expect(mockedAxios.post).toHaveBeenCalledTimes(1); // so o subscribe, sem register
   });
 
+  // A doc de coexistencia manda PULAR o /register: o numero ja roda no app do
+  // WhatsApp Business e ja esta registrado. Chamar assim mesmo gasta a cota
+  // de 10/72h e pode derrubar o registro do cliente.
+  it('NAO registra quando o desfecho e coexistencia, mesmo com PIN configurado', async () => {
+    process.env.WA_REG_PIN = '123456';
+    mockedAxios.get.mockResolvedValueOnce({ data: { access_token: 'TKN' } } as any);
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);  // subscribe
+    mockedAxios.get.mockResolvedValueOnce({ data: { verified_name: 'OFP' } } as any);
+
+    const { svc, channelsService } = makeSvc([]);
+    await svc.connect({
+      code: 'c', phoneNumberId: 'PN1', wabaId: 'WABA1', organizationId: 'org1',
+      signupEvent: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+    });
+
+    expect(mockedAxios.post).toHaveBeenCalledTimes(1); // so o subscribe
+    expect(channelsService.create).toHaveBeenCalledWith('org1', expect.objectContaining({
+      config: expect.objectContaining({ coexistence: true }),
+    }), undefined);
+  });
+
+  it('registra normalmente quando o desfecho e FINISH comum', async () => {
+    process.env.WA_REG_PIN = '123456';
+    mockedAxios.get.mockResolvedValueOnce({ data: { access_token: 'TKN' } } as any);
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);  // subscribe
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);  // register
+    mockedAxios.get.mockResolvedValueOnce({ data: { verified_name: 'OFP' } } as any);
+
+    const { svc, channelsService } = makeSvc([]);
+    await svc.connect({
+      code: 'c', phoneNumberId: 'PN1', wabaId: 'WABA1', organizationId: 'org1', signupEvent: 'FINISH',
+    });
+
+    expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+    const cfg = channelsService.create.mock.calls[0][1].config;
+    expect(cfg.coexistence).toBeUndefined();
+  });
+
   it('guarda o businessId (portfolio do cliente) no config quando vem no sessionInfo', async () => {
     mockedAxios.get.mockResolvedValueOnce({ data: { access_token: 'TKN' } } as any);
     mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);
