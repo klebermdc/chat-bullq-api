@@ -238,7 +238,16 @@ describe('InstagramConnectService.connect', () => {
 
   it('reconectar atualiza o canal existente em vez de criar outro', async () => {
     channelsRepo.findActiveByTypeAndOrg.mockResolvedValue([
-      { id: 'ch_velho', config: { igBusinessId: '17841400000000000', apelido: 'preservar' } },
+      {
+        id: 'ch_velho',
+        config: {
+          igBusinessId: '17841400000000000',
+          apelido: 'preservar',
+          lastRefreshError: 'token invalido',
+          tokenRefreshedAt: '2026-01-01T00:00:00.000Z',
+          refreshFailures: 3,
+        },
+      },
     ]);
     mockFluxoFeliz();
 
@@ -252,6 +261,9 @@ describe('InstagramConnectService.connect', () => {
           igBusinessId: '17841400000000000',
           accessToken: 'LONGO',
           apelido: 'preservar', // não joga fora o que já estava no config
+          lastRefreshError: null,
+          tokenRefreshedAt: null,
+          refreshFailures: 0,
         }),
       }),
     );

@@ -193,6 +193,11 @@ export class InstagramConnectService {
       apiVersion: this.platform.apiVersion,
       connectedAt: new Date().toISOString(),
       refreshFailures: 0,
+      // Numa reconexão o token é outro: o erro e a data da última renovação
+      // descrevem uma credencial que não existe mais. Deixá-los sobreviver ao
+      // spread faria o canal exibir um token novo ao lado do erro do antigo.
+      lastRefreshError: null,
+      tokenRefreshedAt: null,
     };
 
     const existentes = await this.channelsRepo.findActiveByTypeAndOrg(
