@@ -33,10 +33,7 @@ import { InstagramOAuthStateService } from '../adapters/instagram/instagram-oaut
 import { InstagramPlatformConfigService } from '../adapters/instagram/instagram-platform-config.service';
 import { InstagramConnectError } from '../adapters/instagram/instagram-connect.errors';
 import { IG_OAUTH_SCOPES } from '../adapters/instagram/instagram.constants';
-import {
-  InstagramAuthorizeQueryDto,
-  InstagramCallbackQueryDto,
-} from './dto/instagram-connect.dto';
+import { InstagramAuthorizeQueryDto } from './dto/instagram-connect.dto';
 
 @ApiTags('Channels')
 @ApiBearerAuth()
@@ -199,7 +196,12 @@ export class ChannelsController {
   @Public()
   @ApiOperation({ summary: 'Callback do OAuth do Instagram. Chamado pela Meta, sem JWT.' })
   async instagramCallback(
-    @Query() query: InstagramCallbackQueryDto,
+    // Query solta de proposito: a Meta manda `error_reason` e `error_description`
+    // junto do `error`, e o ValidationPipe global roda com `forbidNonWhitelisted`
+    // — um DTO estrito derrubaria o caminho mais comum (usuario cancela) com 400
+    // antes de chegar aqui, e a Meta receberia JSON em vez de um redirect.
+    // Mesmo padrao do webhook-gateway.controller.
+    @Query() query: Record<string, string>,
     @Res() res: Response,
   ): Promise<void> {
     // A Meta manda `error` quando o usuário cancela na tela dela. Sem state

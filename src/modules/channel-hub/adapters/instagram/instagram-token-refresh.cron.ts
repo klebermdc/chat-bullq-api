@@ -100,14 +100,29 @@ export class InstagramTokenRefreshCron extends WorkerHost implements OnModuleIni
         // O canal SEGUE ATIVO de proposito. Desativar faria o webhook descartar
         // inbound em silencio — trocariamos "nao consigo responder" por "nao
         // recebo nada e ninguem sabe", que foi o apagao do Comercial.
-        await this.channelsRepo.update(canal.id, {
-          config: { ...config, refreshFailures: tentativas, lastRefreshError: mensagem },
-        });
+        //
+        // Se o banco ou o Redis piscar aqui, não pode derrubar a varredura
+        // inteira: os canais seguintes ficariam sem checagem e o run pareceria
+        // bem-sucedido. Mesmo tratamento por item do InactivityWatchdogCron.
+        await this.channelsRepo
+          .update(canal.id, {
+            config: { ...config, refreshFailures: tentativas, lastRefreshError: mensagem },
+          })
+          .catch((e) =>
+            this.logger.warn(
+              `instagram_token_refresh_update_failed channel=${canal.id}: ${(e as Error).message}`,
+            ),
+          );
 
         this.logger.error(
           `instagram_token_refresh_failed channel=${canal.id} tentativa=${tentativas}: ${mensagem}`,
         );
-        await this.alertar(canal, restaMs, mensagem);
+
+        await this.alertar(canal, restaMs, mensagem).catch((e) =>
+          this.logger.warn(
+            `instagram_token_alert_failed channel=${canal.id}: ${(e as Error).message}`,
+          ),
+        );
       }
     }
 

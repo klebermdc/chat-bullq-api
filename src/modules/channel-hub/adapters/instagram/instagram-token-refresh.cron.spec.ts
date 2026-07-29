@@ -130,4 +130,20 @@ describe('InstagramTokenRefreshCron', () => {
     expect(connect.refreshToken).toHaveBeenCalledTimes(2);
     expect(r).toEqual({ verificados: 2, renovados: 1, falhas: 1 });
   });
+
+  it('falha ao gravar ou alertar nao interrompe a varredura', async () => {
+    repo.findActiveByType.mockResolvedValue([
+      { ...canal(10), id: 'ch_a' },
+      { ...canal(10), id: 'ch_b' },
+    ]);
+    connect.refreshToken
+      .mockRejectedValueOnce(new Error('token invalido'))
+      .mockResolvedValueOnce({ accessToken: 'NOVO', expiresIn: 5184000 });
+    repo.update.mockRejectedValueOnce(new Error('banco fora')); // grava do ch_a falha
+
+    const r = await cron.process({} as any);
+
+    expect(connect.refreshToken).toHaveBeenCalledTimes(2);
+    expect(r).toEqual({ verificados: 2, renovados: 1, falhas: 1 });
+  });
 });
