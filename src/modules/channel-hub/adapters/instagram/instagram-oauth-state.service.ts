@@ -74,6 +74,13 @@ export class InstagramOAuthStateService {
       throw new BadRequestException('state ilegivel');
     }
 
+    // JSON.parse aceita `null`, `[]` e escalares — todos passariam pelo catch
+    // acima e só quebrariam na primeira leitura de campo, virando 500 num
+    // endpoint que precisa devolver 400.
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+      throw new BadRequestException('state ilegivel');
+    }
+
     if (!payload.exp || payload.exp < Date.now()) {
       throw new BadRequestException('state expirado');
     }

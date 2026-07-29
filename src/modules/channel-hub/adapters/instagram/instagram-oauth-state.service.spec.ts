@@ -47,6 +47,19 @@ describe('InstagramOAuthStateService', () => {
     await expect(svc.verify(`${forged}.${sig}`)).rejects.toThrow(/state/i);
   });
 
+  it.each(['null', '[]', '"texto"'])(
+    'rejeita payload que nao e objeto (%s) sem estourar TypeError',
+    async (json) => {
+      const crypto = require('crypto');
+      const body = Buffer.from(json).toString('base64url');
+      const sig = crypto
+        .createHmac('sha256', process.env.IG_STATE_SECRET)
+        .update(body)
+        .digest('hex');
+      await expect(svc.verify(`${body}.${sig}`)).rejects.toThrow(/ilegivel/i);
+    },
+  );
+
   it('rejeita state expirado', async () => {
     jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
     const state = svc.sign(payload);
