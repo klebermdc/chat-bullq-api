@@ -1,6 +1,6 @@
 import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
 import { Inject, Logger, OnModuleInit } from '@nestjs/common';
-import { ChannelType, NotificationType } from '@prisma/client';
+import { ChannelType, NotificationType, OrgRole } from '@prisma/client';
 import { Job, Queue } from 'bullmq';
 import Redis from 'ioredis';
 import { ChannelsRepository } from '../../channels/channels.repository';
@@ -11,8 +11,13 @@ import { IG_OAUTH_REDIS } from './instagram-oauth-state.service';
 import { IG_TOKEN_REFRESH_QUEUE, IG_TOKEN_REFRESH_JOB } from './instagram.constants';
 
 const DIA_MS = 24 * 60 * 60 * 1000;
-/** Um alerta por canal por dia. Canal quebrado nao pode virar 60 notificacoes. */
-const THROTTLE_ALERTA_SEGUNDOS = 24 * 60 * 60;
+/**
+ * Um alerta por canal por dia. Deliberadamente MENOR que o período do cron
+ * (24h): se o TTL fosse igual, um canal alcançado um pouco mais tarde na
+ * varredura do dia seguinte encontraria a chave ainda viva e pularia o alerta
+ * daquele dia.
+ */
+const THROTTLE_ALERTA_SEGUNDOS = 20 * 60 * 60;
 
 /**
  * O token do Instagram vale 60 dias e, se ficar 60 dias sem uso nem renovacao,
@@ -126,6 +131,10 @@ export class InstagramTokenRefreshCron extends WorkerHost implements OnModuleIni
     const dias = Math.max(0, Math.floor(restaMs / DIA_MS));
     await this.notifications.notifyOrgAgents({
       organizationId: canal.organizationId,
+      // Alerta técnico: só quem pode reconectar o canal. Mandar pra atendente
+      // treina a equipe a ignorar o sino — e o /authorize é OWNER/ADMIN, então
+      // é exatamente esse o conjunto de quem consegue resolver.
+      roles: [OrgRole.OWNER, OrgRole.ADMIN],
       type: NotificationType.SYSTEM,
       title: `Instagram "${canal.name}": renovacao automatica falhou`,
       body:

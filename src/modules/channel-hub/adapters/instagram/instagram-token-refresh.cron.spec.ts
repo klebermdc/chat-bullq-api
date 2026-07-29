@@ -1,4 +1,4 @@
-import { NotificationType } from '@prisma/client';
+import { NotificationType, OrgRole } from '@prisma/client';
 import { InstagramTokenRefreshCron } from './instagram-token-refresh.cron';
 import { InstagramPlatformConfigService } from './instagram-platform-config.service';
 
@@ -81,7 +81,13 @@ describe('InstagramTokenRefreshCron', () => {
     const r = await cron.process({} as any);
 
     expect(notifications.notifyOrgAgents).toHaveBeenCalledWith(
-      expect.objectContaining({ organizationId: 'org_1', type: NotificationType.SYSTEM }),
+      expect.objectContaining({
+        organizationId: 'org_1',
+        type: NotificationType.SYSTEM,
+        // Alerta técnico: só quem pode reconectar (o /authorize é OWNER/ADMIN).
+        // Mandar pra atendente treina a equipe a ignorar o sino.
+        roles: [OrgRole.OWNER, OrgRole.ADMIN],
+      }),
     );
     // Desativar recriaria o apagao: canal inativo descarta inbound em silencio.
     const [, data] = repo.update.mock.calls[0];
