@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { ChannelType, OrgRole } from '@prisma/client';
 import { InstagramConnectService } from './instagram-connect.service';
 import { InstagramPlatformConfigService } from './instagram-platform-config.service';
 
@@ -79,6 +80,11 @@ describe('InstagramConnectService (chamadas Graph)', () => {
     await expect(svc.fetchMe('LONGO')).rejects.toMatchObject({ slug: 'sem_conta_business' });
   });
 
+  it('fetchMe: erro de rede vira erro_interno, nao sem_conta_business', async () => {
+    mockedAxios.get.mockRejectedValueOnce({ message: 'ETIMEDOUT' }); // sem `response`
+    await expect(svc.fetchMe('LONGO')).rejects.toMatchObject({ slug: 'erro_interno' });
+  });
+
   it('subscribeApp assina os campos de webhook com Bearer', async () => {
     mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);
     await svc.subscribeApp('17841400000000000', 'LONGO');
@@ -154,5 +160,119 @@ describe('InstagramConnectService (chamadas Graph)', () => {
     } catch (err: any) {
       expect(err.message).not.toContain('TOKEN_VIVO_NAO_VAZAR');
     }
+  });
+});
+
+describe('InstagramConnectService.connect', () => {
+  const platform = new InstagramPlatformConfigService();
+  let channelsService: { create: jest.Mock };
+  let channelsRepo: { findActiveByTypeAndOrg: jest.Mock; update: jest.Mock };
+  let svc: InstagramConnectService;
+
+  const identidade = {
+    organizationId: 'org_1',
+    userOrganizationId: 'uo_1',
+    role: OrgRole.OWNER,
+  };
+
+  function mockFluxoFeliz() {
+    // 1) code -> token curto
+    mockedAxios.post.mockResolvedValueOnce({
+      data: { access_token: 'CURTO', user_id: 256111 },
+    } as any);
+    // 2) token curto -> token longo
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { access_token: 'LONGO', expires_in: 5184000 },
+    } as any);
+    // 3) /me
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { id: '256111', user_id: '17841400000000000', username: 'lojax' },
+    } as any);
+    // 4) subscribed_apps
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);
+  }
+
+  beforeEach(() => {
+    process.env.IG_APP_ID = 'app';
+    process.env.IG_APP_SECRET = 'sec';
+    process.env.IG_REDIRECT_URI = 'https://api.exemplo.com/cb';
+    process.env.IG_API_VERSION = 'v24.0';
+    jest.clearAllMocks();
+
+    channelsService = { create: jest.fn(async (_o, dto) => ({ id: 'ch_novo', ...dto })) };
+    channelsRepo = {
+      findActiveByTypeAndOrg: jest.fn().mockResolvedValue([]),
+      update: jest.fn(async (id, data) => ({ id, ...data })),
+    };
+    svc = new InstagramConnectService(platform, channelsService as any, channelsRepo as any);
+  });
+
+  it('grava o user_id do /me como igBusinessId, nao o do token', async () => {
+    mockFluxoFeliz();
+    await svc.connect({ code: 'c1', ...identidade });
+
+    const [, dto] = channelsService.create.mock.calls[0];
+    expect(dto.config.igBusinessId).toBe('17841400000000000');
+    expect(dto.config.igUserId).toBe('256111');
+    expect(dto.type).toBe(ChannelType.INSTAGRAM);
+    expect(dto.name).toBe('lojax');
+  });
+
+  it('carimba o appSecret da plataforma para o validateWebhook nao ficar fail-open', async () => {
+    mockFluxoFeliz();
+    await svc.connect({ code: 'c1', ...identidade });
+    const [, dto] = channelsService.create.mock.calls[0];
+    expect(dto.config.appSecret).toBe('sec');
+  });
+
+  it('grava tokenExpiresAt a partir do expires_in', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1_000_000_000_000);
+    mockFluxoFeliz();
+    await svc.connect({ code: 'c1', ...identidade });
+    const [, dto] = channelsService.create.mock.calls[0];
+    expect(dto.config.tokenExpiresAt).toBe(
+      new Date(1_000_000_000_000 + 5184000 * 1000).toISOString(),
+    );
+    jest.restoreAllMocks();
+  });
+
+  it('reconectar atualiza o canal existente em vez de criar outro', async () => {
+    channelsRepo.findActiveByTypeAndOrg.mockResolvedValue([
+      { id: 'ch_velho', config: { igBusinessId: '17841400000000000', apelido: 'preservar' } },
+    ]);
+    mockFluxoFeliz();
+
+    await svc.connect({ code: 'c1', ...identidade });
+
+    expect(channelsService.create).not.toHaveBeenCalled();
+    expect(channelsRepo.update).toHaveBeenCalledWith(
+      'ch_velho',
+      expect.objectContaining({
+        config: expect.objectContaining({
+          igBusinessId: '17841400000000000',
+          accessToken: 'LONGO',
+          apelido: 'preservar', // não joga fora o que já estava no config
+        }),
+      }),
+    );
+  });
+
+  it('falha no subscribed_apps aborta e nao deixa canal orfao', async () => {
+    mockedAxios.post.mockResolvedValueOnce({
+      data: { access_token: 'CURTO', user_id: 256111 },
+    } as any);
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { access_token: 'LONGO', expires_in: 5184000 },
+    } as any);
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { id: '256111', user_id: '17841400000000000', username: 'lojax' },
+    } as any);
+    mockedAxios.post.mockRejectedValueOnce({ response: { data: { error: { message: 'nope' } } } });
+
+    await expect(svc.connect({ code: 'c1', ...identidade })).rejects.toMatchObject({
+      slug: 'falha_inscricao',
+    });
+    expect(channelsService.create).not.toHaveBeenCalled();
+    expect(channelsRepo.update).not.toHaveBeenCalled();
   });
 });

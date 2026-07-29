@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
+import { Channel, ChannelType, OrgRole } from '@prisma/client';
 import { InstagramPlatformConfigService } from './instagram-platform-config.service';
 import { ChannelsService } from '../../channels/channels.service';
 import { ChannelsRepository } from '../../channels/channels.repository';
@@ -113,7 +114,13 @@ export class InstagramConnectService {
       data = res.data;
     } catch (err: any) {
       this.logger.error(`/me falhou: ${metaErrorMessage(err)}`);
-      throw new InstagramConnectError('sem_conta_business', metaErrorMessage(err));
+      // Mesma distinção do exchangeCodeForToken: sem `response` a Meta não
+      // respondeu, e culpar o tipo da conta mandaria o usuário converter uma
+      // conta que já está certa.
+      throw new InstagramConnectError(
+        err?.response ? 'sem_conta_business' : 'erro_interno',
+        metaErrorMessage(err),
+      );
     }
 
     if (!data?.user_id) {
@@ -157,5 +164,62 @@ export class InstagramConnectService {
       // Sobe só a mensagem já extraída.
       throw new Error(metaErrorMessage(err));
     }
+  }
+
+  /**
+   * Orquestra o fluxo inteiro. A inscrição no webhook acontece ANTES de tocar no
+   * banco: se ela falhar, a gente não deixa pra trás um canal que existe na tela
+   * mas nunca recebe mensagem — que é pior que não ter canal nenhum.
+   */
+  async connect(params: {
+    code: string;
+    organizationId: string;
+    userOrganizationId: string;
+    role: OrgRole;
+  }): Promise<Channel> {
+    const short = await this.exchangeCodeForToken(params.code);
+    const long = await this.exchangeForLongLived(short.accessToken);
+    const me = await this.fetchMe(long.accessToken);
+
+    await this.subscribeApp(me.igBusinessId, long.accessToken);
+
+    const config: Record<string, any> = {
+      igBusinessId: me.igBusinessId,
+      igUserId: short.loginUserId,
+      username: me.username,
+      accessToken: long.accessToken,
+      tokenExpiresAt: new Date(Date.now() + long.expiresIn * 1000).toISOString(),
+      appSecret: this.platform.appSecret,
+      apiVersion: this.platform.apiVersion,
+      connectedAt: new Date().toISOString(),
+      refreshFailures: 0,
+    };
+
+    const existentes = await this.channelsRepo.findActiveByTypeAndOrg(
+      ChannelType.INSTAGRAM,
+      params.organizationId,
+    );
+    const existente = existentes.find(
+      (c) => (c.config as Record<string, any>)?.igBusinessId === me.igBusinessId,
+    );
+
+    if (existente) {
+      this.logger.log(
+        `Instagram: reconectando canal ${existente.id} (@${me.username} / ${me.igBusinessId})`,
+      );
+      return this.channelsRepo.update(existente.id, {
+        name: me.username,
+        config: { ...(existente.config as Record<string, any>), ...config },
+      });
+    }
+
+    this.logger.log(
+      `Instagram: criando canal para @${me.username} (${me.igBusinessId})`,
+    );
+    return this.channelsService.create(
+      params.organizationId,
+      { type: ChannelType.INSTAGRAM, name: me.username, config },
+      { userOrganizationId: params.userOrganizationId, role: params.role },
+    );
   }
 }
