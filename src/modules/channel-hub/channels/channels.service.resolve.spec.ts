@@ -19,13 +19,12 @@ const build = (canais: any[]) => {
   const repository = {
     findByTypeIncludingInactive: jest.fn().mockResolvedValue(canais),
   };
-  // ChannelsService tem 9 deps no construtor; só a 1ª (repository) é exercitada
-  // por resolveByLocator, as outras 8 nunca são tocadas neste teste.
+  // ChannelsService tem 8 deps no construtor; só a 1ª (repository) é exercitada
+  // por resolveByLocator, as outras 7 nunca são tocadas neste teste.
   const service = new ChannelsService(
     repository as any,      // ChannelsRepository
     undefined as any,       // ChannelAdapterRegistry
     undefined as any,       // ZappfyHttpClient
-    undefined as any,       // WasenderHttpClient
     undefined as any,       // WhatsAppOfficialHttpClient
     undefined as any,       // InstagramHttpClient
     undefined as any,       // ChannelSyncOrchestrator

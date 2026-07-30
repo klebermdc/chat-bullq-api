@@ -39,12 +39,17 @@ const build = () => {
   const inboundQueue = { add: jest.fn().mockResolvedValue({ id: 'j1' }) };
   const templates = { applyStatusUpdate: jest.fn() };
 
+  // As deps de coexistência/account-update não são exercitadas por estes
+  // testes — o que importa aqui são os 4 caminhos de descarte.
   const controller = new WebhookGatewayController(
     registry as any,
     channelsService as any,
     webhookEvents as any,
     inboundQueue as any,
     templates as any,
+    undefined as any,       // AccountUpdateService
+    undefined as any,       // CoexistenceHistoryService
+    undefined as any,       // CoexistenceContactsService
     dropReporter as any,
   );
 
