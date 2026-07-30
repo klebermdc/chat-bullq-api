@@ -118,6 +118,28 @@ export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
             continue;
           }
 
+          // Coexistência: mensagem que o cliente mandou PELO APP do WhatsApp
+          // Business. Aqui quem fala é o negócio — `from` é o número dele e
+          // `to` é o do cliente, invertido em relação ao inbound.
+          if (change?.field === 'smb_message_echoes') {
+            const v = change.value ?? {};
+            for (const echo of v.message_echoes ?? []) {
+              const parsed = this.mapper.normalizeInbound(echo, {});
+              if (!parsed) continue;
+              const to = echo?.to ? String(echo.to) : undefined;
+              if (!to) continue; // sem contraparte não há conversa pra casar
+              (result.messageEchoes ??= []).push({
+                externalId: String(echo.id),
+                contactPhone: to,
+                businessPhone: String(echo.from ?? v.metadata?.display_phone_number ?? ''),
+                type: parsed.type,
+                content: parsed.content,
+                timestamp: echo?.timestamp ? String(echo.timestamp) : undefined,
+              });
+            }
+            continue;
+          }
+
           const value = change?.value;
           if (!value) continue;
 

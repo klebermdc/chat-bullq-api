@@ -158,6 +158,33 @@ export interface WebhookParseResult {
     status: string;
     reason?: string;
   }>;
+  /**
+   * Mensagens enviadas pelo app do WhatsApp Business (coexistência).
+   * ⚠️ AINDA NÃO PERSISTIDAS — ver o comentário no `webhook-gateway.controller`.
+   */
+  messageEchoes?: MessageEcho[];
+}
+
+/**
+ * Mensagem que o cliente enviou PELO APP do WhatsApp Business (ou por um
+ * dispositivo vinculado), espelhada pra nós via `smb_message_echoes`. Só existe
+ * em canal de COEXISTÊNCIA.
+ *
+ * Diferença crucial em relação a uma mensagem inbound: aqui QUEM FALA é o
+ * negócio. O `from` é o número do negócio e o `to` é o número do cliente —
+ * invertido em relação ao inbound. O contato/conversa se resolve pelo `to`.
+ */
+export interface MessageEcho {
+  /** wamid — mesma chave de dedupe de qualquer mensagem (`uq_msg_conv_external`). */
+  externalId: string;
+  /** Número do CLIENTE (contraparte). É por aqui que se acha a conversa. */
+  contactPhone: string;
+  /** Número do negócio que enviou. */
+  businessPhone: string;
+  type: MessageContentType;
+  content: NormalizedMessageContent;
+  /** Timestamp real do provider (epoch em segundos, como a Meta manda). */
+  timestamp?: string;
 }
 
 export interface WebhookError {
