@@ -79,6 +79,82 @@ describe('WhatsAppOfficialInboundAdapter.parseWebhook — template status', () =
   });
 });
 
+describe('WhatsAppOfficialInboundAdapter.parseWebhook — smb_message_echoes (coexistência)', () => {
+  const adapter = new WhatsAppOfficialInboundAdapter(
+    new WhatsAppOfficialMessageMapper(),
+    new WhatsAppPlatformConfigService(),
+  );
+
+  function payload(echoes: any[]) {
+    return {
+      entry: [
+        {
+          id: 'WABA1',
+          changes: [
+            {
+              field: 'smb_message_echoes',
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: { display_phone_number: '5511519493 95', phone_number_id: 'PN1' },
+                message_echoes: echoes,
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it('extrai o echo usando o `to` como contraparte (nao o `from`)', () => {
+    const res = adapter.parseWebhook(
+      payload([
+        {
+          from: '551151949395', // numero do NEGOCIO
+          to: '5511988887777', // numero do CLIENTE
+          id: 'wamid.ECHO1',
+          timestamp: '1700000000',
+          type: 'text',
+          text: { body: 'respondi pelo celular' },
+        },
+      ]) as any,
+      { id: 'ch1', config: { phoneNumberId: 'PN1' } } as any,
+    );
+
+    expect(res.messageEchoes).toHaveLength(1);
+    const e = res.messageEchoes![0];
+    expect(e.externalId).toBe('wamid.ECHO1');
+    // O CLIENTE e o `to` — se invertermos, o echo cai na conversa errada.
+    expect(e.contactPhone).toBe('5511988887777');
+    expect(e.businessPhone).toBe('551151949395');
+    expect(e.content.text).toBe('respondi pelo celular');
+    expect(e.timestamp).toBe('1700000000');
+  });
+
+  it('nao mistura echo com mensagem inbound', () => {
+    const res = adapter.parseWebhook(
+      payload([
+        { from: '551151949395', to: '5511988887777', id: 'wamid.E', timestamp: '1', type: 'text', text: { body: 'oi' } },
+      ]) as any,
+      { id: 'ch1', config: { phoneNumberId: 'PN1' } } as any,
+    );
+    expect(res.messages).toHaveLength(0);
+    expect(res.statuses).toHaveLength(0);
+  });
+
+  it('descarta echo sem `to` (sem contraparte nao ha conversa)', () => {
+    const res = adapter.parseWebhook(
+      payload([{ from: '551151949395', id: 'wamid.X', timestamp: '1', type: 'text', text: { body: 'oi' } }]) as any,
+      { id: 'ch1', config: { phoneNumberId: 'PN1' } } as any,
+    );
+    expect(res.messageEchoes ?? []).toHaveLength(0);
+  });
+
+  it('webhook sem echoes nao cria o campo', () => {
+    const res = adapter.parseWebhook({ entry: [] } as any, { id: 'ch1', config: {} } as any);
+    expect(res.messageEchoes).toBeUndefined();
+  });
+});
+
 describe('WhatsAppOfficialInboundAdapter.validateWebhook', () => {
   const platform = new WhatsAppPlatformConfigService();
   const adapter = new WhatsAppOfficialInboundAdapter({} as any, platform);
