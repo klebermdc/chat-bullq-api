@@ -171,6 +171,27 @@ export interface WebhookParseResult {
     status: string;
     reason?: string;
   }>;
+  /** Eventos de conta (WABA): desconexão, banimento, tier, qualidade. */
+  accountUpdates?: AccountUpdate[];
+}
+
+/**
+ * Evento de nível de CONTA (WABA), não de mensagem. Chega no campo
+ * `account_update`. É como se descobre que um cliente nos desconectou, foi
+ * banido, mudou de tier ou teve a qualidade do número rebaixada.
+ *
+ * Obrigatório na coexistência, mas vale pra qualquer canal oficial: sem isso
+ * um cliente pode sumir e a gente só percebe pelo silêncio dele.
+ */
+export interface AccountUpdate {
+  /** `event` cru da Meta: PARTNER_REMOVED, ACCOUNT_VIOLATION, ... */
+  event: string;
+  /** WABA a que o evento se refere. */
+  businessAccountId?: string;
+  /** Número afetado, quando o evento é de número e não de conta. */
+  phoneNumber?: string;
+  /** Payload cru pra auditoria — a Meta muda esse contrato sem avisar. */
+  raw?: unknown;
 }
 
 export interface WebhookError {
