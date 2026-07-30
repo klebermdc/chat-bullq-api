@@ -25,6 +25,7 @@ import { WebhookEventsService } from './webhook-events.service';
 import { WebhookThrottleGuard } from './webhook-throttle.guard';
 import { MessageTemplatesService } from './message-templates/message-templates.service';
 import { AccountUpdateService } from './account-update.service';
+import { CoexistenceHistoryService } from './coexistence-history.service';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
@@ -40,6 +41,7 @@ export class WebhookGatewayController {
     @Inject(forwardRef(() => MessageTemplatesService))
     private readonly messageTemplatesService: MessageTemplatesService,
     private readonly accountUpdates: AccountUpdateService,
+    private readonly coexHistory: CoexistenceHistoryService,
   ) {}
 
   @Post(':channelType')
@@ -169,6 +171,16 @@ export class WebhookGatewayController {
           upd.reason,
         );
         this.logger.log(`Template ${upd.metaTemplateId} → ${upd.status}`);
+      }
+
+      for (const chunk of parseResult.historyChunks ?? []) {
+        await this.coexHistory
+          .handleChunk(channel, chunk)
+          .catch((err) =>
+            this.logger.error(
+              `history chunk failed for channel ${channel.id}: ${err.message}`,
+            ),
+          );
       }
 
       for (const upd of parseResult.accountUpdates ?? []) {

@@ -173,6 +173,8 @@ export interface WebhookParseResult {
   }>;
   /** Eventos de conta (WABA): desconexão, banimento, tier, qualidade. */
   accountUpdates?: AccountUpdate[];
+  /** Pedaços de histórico da coexistência (webhook `history`). */
+  historyChunks?: HistoryChunk[];
 }
 
 /**
@@ -192,6 +194,40 @@ export interface AccountUpdate {
   phoneNumber?: string;
   /** Payload cru pra auditoria — a Meta muda esse contrato sem avisar. */
   raw?: unknown;
+}
+
+/**
+ * Pedaço do histórico empurrado pela Meta após um onboarding de coexistência.
+ * É PUSH (webhook), diferente do sync do Zappfy que é PULL.
+ *
+ * ⚠️ Há prazo: 24h a partir do onboarding pra concluir a sincronização,
+ * senão o cliente precisa ser desconectado e refazer o fluxo.
+ */
+export interface HistoryChunk {
+  /** Fase da sincronização, definida pela Meta. */
+  phase?: string;
+  /** Ordem do pedaço dentro da fase — a entrega não é garantidamente ordenada. */
+  chunkOrder?: number;
+  /** Progresso reportado pela Meta (0-100). */
+  progress?: number;
+  threads: HistoryThread[];
+  /** Erro no lugar do histórico — ex.: 2593109 = cliente desligou o sync no app. */
+  error?: { code?: number; message?: string };
+}
+
+export interface HistoryThread {
+  /** Telefone do cliente — identifica a conversa e o contato. */
+  contactPhone: string;
+  messages: HistoryMessage[];
+}
+
+export interface HistoryMessage {
+  externalId: string;
+  /** true = quem enviou foi o NEGÓCIO (vira OUTBOUND). */
+  fromBusiness: boolean;
+  timestamp?: Date;
+  type: MessageContentType;
+  content: NormalizedMessageContent;
 }
 
 export interface WebhookError {

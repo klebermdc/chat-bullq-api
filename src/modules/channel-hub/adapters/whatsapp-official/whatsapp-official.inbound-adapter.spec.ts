@@ -178,6 +178,74 @@ describe('WhatsAppOfficialInboundAdapter.parseWebhook — smb_message_echoes (co
   });
 });
 
+describe('WhatsAppOfficialInboundAdapter.parseWebhook — history (coexistência)', () => {
+  const adapter = new WhatsAppOfficialInboundAdapter(
+    new WhatsAppOfficialMessageMapper(),
+    new WhatsAppPlatformConfigService(),
+  );
+  const ch = { id: 'ch1', config: { phoneNumberId: 'PN1' } } as any;
+
+  function hist(value: any) {
+    return { entry: [{ id: 'WABA1', changes: [{ field: 'history', value }] }] };
+  }
+
+  it('separa msg do NEGOCIO da msg do CLIENTE pelo display_phone_number', () => {
+    const res = adapter.parseWebhook(
+      hist({
+        metadata: { display_phone_number: '551151949395', phone_number_id: 'PN1' },
+        history: [
+          {
+            metadata: { phase: 'PHASE_1', chunk_order: 0, progress: 50 },
+            threads: [
+              {
+                id: '5511988887777',
+                messages: [
+                  { from: '5511988887777', to: '551151949395', id: 'm1', timestamp: '1700000000', type: 'text', text: { body: 'cliente' } },
+                  { from: '551151949395', to: '5511988887777', id: 'm2', timestamp: '1700000001', type: 'text', text: { body: 'negocio' } },
+                ],
+              },
+            ],
+          },
+        ],
+      }) as any,
+      ch,
+    );
+
+    expect(res.historyChunks).toHaveLength(1);
+    const c = res.historyChunks![0];
+    expect(c.phase).toBe('PHASE_1');
+    expect(c.chunkOrder).toBe(0);
+    expect(c.progress).toBe(50);
+    expect(c.threads[0].contactPhone).toBe('5511988887777');
+    expect(c.threads[0].messages[0].fromBusiness).toBe(false);
+    expect(c.threads[0].messages[1].fromBusiness).toBe(true);
+  });
+
+  it('recusa do cliente (so errors, sem history) vira chunk com erro', () => {
+    const res = adapter.parseWebhook(
+      hist({
+        metadata: { phone_number_id: 'PN1' },
+        errors: [{ code: 2593109, message: 'History sync is turned off' }],
+      }) as any,
+      ch,
+    );
+    expect(res.historyChunks).toHaveLength(1);
+    expect(res.historyChunks![0].error?.code).toBe(2593109);
+    expect(res.historyChunks![0].threads).toHaveLength(0);
+  });
+
+  it('nao contamina o fluxo de mensagem normal', () => {
+    const res = adapter.parseWebhook(
+      hist({
+        metadata: { display_phone_number: '551151949395', phone_number_id: 'PN1' },
+        history: [{ metadata: {}, threads: [{ id: '5511988887777', messages: [{ from: '5511988887777', id: 'm1', timestamp: '1', type: 'text', text: { body: 'x' } }] }] }],
+      }) as any,
+      ch,
+    );
+    expect(res.messages).toHaveLength(0);
+  });
+});
+
 describe('WhatsAppOfficialInboundAdapter.validateWebhook', () => {
   const platform = new WhatsAppPlatformConfigService();
   const adapter = new WhatsAppOfficialInboundAdapter({} as any, platform);

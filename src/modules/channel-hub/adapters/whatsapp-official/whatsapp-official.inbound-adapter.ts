@@ -121,6 +121,58 @@ export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
           // Coexistência: mensagem que o cliente mandou PELO APP do WhatsApp
           // Business. Aqui quem fala é o negócio — `from` é o número dele e
           // `to` é o do cliente, invertido em relação ao inbound.
+          // Histórico da coexistência — até 180 dias empurrados em pedaços.
+          if (change?.field === 'history') {
+            const v = change.value ?? {};
+            const businessPhone = v.metadata?.display_phone_number
+              ? String(v.metadata.display_phone_number)
+              : undefined;
+            for (const chunk of v.history ?? []) {
+              const meta = chunk?.metadata ?? {};
+              const threads = (chunk?.threads ?? []).map((th: any) => ({
+                contactPhone: String(th?.id ?? ''),
+                messages: (th?.messages ?? [])
+                  .map((m: any) => {
+                    const parsed = this.mapper.normalizeInbound(m, {});
+                    if (!parsed) return null;
+                    // `from` igual ao número do negócio = mensagem NOSSA.
+                    // Sem `display_phone_number` caímos no `to`: se a msg tem
+                    // destinatário igual ao dono da thread, quem falou fomos nós.
+                    const from = m?.from ? String(m.from) : '';
+                    const fromBusiness = businessPhone
+                      ? from === businessPhone
+                      : String(m?.to ?? '') === String(th?.id ?? '');
+                    return {
+                      externalId: String(m.id),
+                      fromBusiness,
+                      timestamp: parsed.timestamp,
+                      type: parsed.type,
+                      content: parsed.content,
+                    };
+                  })
+                  .filter(Boolean),
+              })).filter((th: any) => th.contactPhone);
+
+              (result.historyChunks ??= []).push({
+                phase: meta.phase ? String(meta.phase) : undefined,
+                chunkOrder: meta.chunk_order != null ? Number(meta.chunk_order) : undefined,
+                progress: meta.progress != null ? Number(meta.progress) : undefined,
+                threads,
+                error: (v.errors ?? [])[0]
+                  ? { code: Number(v.errors[0].code), message: v.errors[0].message }
+                  : undefined,
+              });
+            }
+            // Recusa do cliente vem sem `history`, só com `errors`.
+            if (!(v.history ?? []).length && (v.errors ?? []).length) {
+              (result.historyChunks ??= []).push({
+                threads: [],
+                error: { code: Number(v.errors[0].code), message: v.errors[0].message },
+              });
+            }
+            continue;
+          }
+
           // Evento de conta: desconexão do parceiro, banimento, mudança de
           // tier, qualidade do número. Não é mensagem — não passa pelo mapper.
           if (change?.field === 'account_update') {

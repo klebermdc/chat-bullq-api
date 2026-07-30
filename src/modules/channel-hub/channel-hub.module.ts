@@ -24,6 +24,7 @@ import { MessagingModule } from '../messaging/messaging.module';
 import { WebhookEventsService } from './webhook-events.service';
 import { WebhookThrottleGuard } from './webhook-throttle.guard';
 import { AccountUpdateService } from './account-update.service';
+import { CoexistenceHistoryService } from './coexistence-history.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { MessageTemplatesModule } from './message-templates/message-templates.module';
 
@@ -59,6 +60,7 @@ import { MessageTemplatesModule } from './message-templates/message-templates.mo
     WebhookEventsService,
     WebhookThrottleGuard,
     AccountUpdateService,
+    CoexistenceHistoryService,
     WhatsAppEmbeddedSignupService,
   ],
   exports: [
