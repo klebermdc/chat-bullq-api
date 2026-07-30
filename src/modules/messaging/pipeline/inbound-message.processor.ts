@@ -206,6 +206,9 @@ export class InboundMessageProcessor extends WorkerHost {
       );
 
       const isEcho = !!message.isEcho;
+      // Só a coexistência garante que o echo é de um humano (veio do app, não
+      // de um envio nosso). Ver `isHumanEcho` em normalized-message.types.
+      const humanEcho = !!message.isHumanEcho;
       const direction = isEcho
         ? MessageDirection.OUTBOUND
         : MessageDirection.INBOUND;
@@ -237,6 +240,11 @@ export class InboundMessageProcessor extends WorkerHost {
               ...(direction === MessageDirection.INBOUND
                 ? { awaitingHumanReply: true }
                 : {}),
+              // COEXISTÊNCIA: echo comprovadamente humano — alguém digitou no
+              // app do WhatsApp Business. Aqui SIM sai de "Esperando", porque
+              // um atendente de verdade respondeu. Não vale pro echo comum de
+              // Baileys, onde a msg pode ser nossa (o bot se auto-silenciaria).
+              ...(humanEcho ? { awaitingHumanReply: false } : {}),
             },
           });
           if (
@@ -515,6 +523,18 @@ export class InboundMessageProcessor extends WorkerHost {
         // Echo de msg nossa que finalmente voltou — cancela timer existente
         // (pode ter sido enviada por outro path que não passou pelo cancel).
         this.watchdog.cancelCheck(conversationId).catch(() => undefined);
+
+        // COEXISTÊNCIA: o vendedor respondeu pelo celular. Desarma a IA pelos
+        // mesmos critérios do caminho do atendente (messages.service):
+        // respeita o force-off/force-on da conversa e o ajuste da org.
+        // Sem isto a Aline responde POR CIMA de quem já atendeu.
+        if (humanEcho) {
+          this.disableAiAfterHumanEcho(organizationId, conversationId).catch((err) =>
+            this.logger.warn(
+              `human_echo_ai_disable_failed conv=${conversationId}: ${(err as Error).message}`,
+            ),
+          );
+        }
       }
 
       // Fire-and-forget AI dispatch. Failures here MUST NOT take down the
@@ -701,6 +721,49 @@ export class InboundMessageProcessor extends WorkerHost {
     }
 
     this.scheduleAgentRun(conversationId, triggerMessageId);
+  }
+
+  /**
+   * Desarma a IA quando um humano respondeu PELO APP do WhatsApp Business
+   * (coexistência). Espelha as regras de `messages.service.ts`:
+   *
+   *  - `aiEnabled === false` → já desligada, no-op
+   *  - `aiEnabled === true`  → force-ON explícito de um humano ("quero a IA
+   *                            aqui mesmo eu respondendo") — respeita e não mexe
+   *  - org.aiAutoDisableOnHuman === false → a org optou por não desligar
+   *
+   * NÃO mexe em `assignedToId`: a Meta não diz QUEM digitou no celular, e
+   * atribuir a conversa a alguém arbitrário seria inventar informação.
+   */
+  private async disableAiAfterHumanEcho(
+    organizationId: string,
+    conversationId: string,
+  ): Promise<void> {
+    const [conversation, org] = await Promise.all([
+      this.prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: { aiEnabled: true },
+      }),
+      this.prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { aiAutoDisableOnHuman: true },
+      }),
+    ]);
+    if (!conversation) return;
+    if (conversation.aiEnabled === false || conversation.aiEnabled === true) return;
+    if (!(org?.aiAutoDisableOnHuman ?? true)) return;
+
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        aiEnabled: false,
+        aiDisabledAt: new Date(),
+        activeAgentId: null,
+      },
+    });
+    this.logger.log(
+      `Coexistência: IA desarmada na conversa ${conversationId} — humano respondeu pelo app.`,
+    );
   }
 
   /**

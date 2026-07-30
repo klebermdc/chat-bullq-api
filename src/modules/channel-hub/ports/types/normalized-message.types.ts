@@ -81,6 +81,19 @@ export interface NormalizedInboundMessage {
   isForwarded?: boolean;
   isGroup?: boolean;
   isEcho?: boolean;
+  /**
+   * Echo COMPROVADAMENTE humano — alguém digitou no app do WhatsApp Business.
+   *
+   * Difere do `isEcho` comum: em canal Baileys, a mensagem que NÓS enviamos
+   * também volta como echo, então `isEcho` sozinho não distingue "vendedor
+   * digitou no celular" de "bot respondeu". Já o `smb_message_echoes` da
+   * coexistência traz só o que saiu do app/dispositivo vinculado — nunca os
+   * nossos envios pela Cloud API.
+   *
+   * Só com esta certeza dá pra aplicar os efeitos de "humano respondeu"
+   * (desarmar a IA, sair de "Esperando") sem risco de o bot se auto-silenciar.
+   */
+  isHumanEcho?: boolean;
   senderName?: string;
   // Atribuição Click-to-WhatsApp: presente só na 1ª mensagem após o clique no
   // anúncio (Cloud API entrega em message.referral). Persistido no Contact
@@ -158,33 +171,6 @@ export interface WebhookParseResult {
     status: string;
     reason?: string;
   }>;
-  /**
-   * Mensagens enviadas pelo app do WhatsApp Business (coexistência).
-   * ⚠️ AINDA NÃO PERSISTIDAS — ver o comentário no `webhook-gateway.controller`.
-   */
-  messageEchoes?: MessageEcho[];
-}
-
-/**
- * Mensagem que o cliente enviou PELO APP do WhatsApp Business (ou por um
- * dispositivo vinculado), espelhada pra nós via `smb_message_echoes`. Só existe
- * em canal de COEXISTÊNCIA.
- *
- * Diferença crucial em relação a uma mensagem inbound: aqui QUEM FALA é o
- * negócio. O `from` é o número do negócio e o `to` é o número do cliente —
- * invertido em relação ao inbound. O contato/conversa se resolve pelo `to`.
- */
-export interface MessageEcho {
-  /** wamid — mesma chave de dedupe de qualquer mensagem (`uq_msg_conv_external`). */
-  externalId: string;
-  /** Número do CLIENTE (contraparte). É por aqui que se acha a conversa. */
-  contactPhone: string;
-  /** Número do negócio que enviou. */
-  businessPhone: string;
-  type: MessageContentType;
-  content: NormalizedMessageContent;
-  /** Timestamp real do provider (epoch em segundos, como a Meta manda). */
-  timestamp?: string;
 }
 
 export interface WebhookError {
