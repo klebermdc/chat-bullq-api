@@ -108,6 +108,22 @@ export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
       for (const entry of entries) {
         const changes = entry?.changes || [];
         for (const change of changes) {
+          // Escopo por número ANTES de qualquer branch de campo. Uma WABA pode
+          // ter vários números; sem isto, um lote com evento do número B seria
+          // processado no canal do número A. O guard `metadataPhoneId &&`
+          // deixa passar os eventos de CONTA (account_update, template), que
+          // não carregam número.
+          const changePhoneId = change?.value?.metadata?.phone_number_id
+            ? String(change.value.metadata.phone_number_id)
+            : undefined;
+          if (
+            expectedPhoneNumberId &&
+            changePhoneId &&
+            changePhoneId !== expectedPhoneNumberId
+          ) {
+            continue;
+          }
+
           if (change?.field === 'message_template_status_update') {
             const v = change.value ?? {};
             (result.templateStatusUpdates ??= []).push({
@@ -225,18 +241,6 @@ export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
 
           const value = change?.value;
           if (!value) continue;
-
-          const metadataPhoneId = value.metadata?.phone_number_id
-            ? String(value.metadata.phone_number_id)
-            : undefined;
-          // Strict scoping: drop events for a different phone_number_id
-          if (
-            expectedPhoneNumberId &&
-            metadataPhoneId &&
-            metadataPhoneId !== expectedPhoneNumberId
-          ) {
-            continue;
-          }
 
           const contacts = value.contacts || [];
           const messages = value.messages || [];
