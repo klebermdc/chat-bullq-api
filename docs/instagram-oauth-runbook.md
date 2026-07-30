@@ -16,6 +16,37 @@ Instagram Basic Display.
    Caractere por caractere: https, sem barra no fim. Uma URI só serve todos os
    domínios white-label — o `returnTo` assinado no state é que decide o retorno.
 5. Em Webhooks, assinar os campos `messages`, `messaging_postbacks`, `messaging_seen`.
+
+### ⚠️ Ovo e galinha: o canal tem que existir ANTES de validar o webhook
+
+O "Verificar e salvar" da Meta falha com *"Não foi possível validar a URL de callback
+ou o token de verificação"* se ainda não houver **nenhum canal INSTAGRAM criado** no
+OFP Chat.
+
+Não é erro de URL nem de token. O `handleVerification` do
+`webhook-gateway.controller` varre os canais ativos daquele tipo e testa o
+`webhookSecret` de cada um — com a lista vazia, o laço não roda e ele devolve
+`403 {"error":"Verification failed"}`. A GET de verificação não tem payload para
+rotear, então não há como o gateway adivinhar o token de um canal que não existe.
+
+Ordem correta:
+
+1. Gerar o Access Token na Meta (passo "Adicionar conta").
+2. **Criar o canal no OFP Chat**, preenchendo o *Webhook Verify Token* com a mesma
+   string que você vai pôr na Meta.
+3. **Só então** clicar em "Verificar e salvar" na Meta.
+4. Assinar os campos de webhook.
+
+Para distinguir esse caso de uma API fora do ar, chame a verificação na mão:
+
+```bash
+curl -i "https://api-ofpchat.explotek.pro/api/v1/webhooks/INSTAGRAM?hub.mode=subscribe&hub.verify_token=<SEU_TOKEN>&hub.challenge=teste"
+```
+
+- `403 {"error":"Verification failed"}` → é a nossa resposta: a rota está viva e o
+  problema é canal inexistente ou token divergente.
+- 502 / timeout / HTML → é infraestrutura (Caddy, API fora), não é isto.
+- Devolveu `teste` cru → está tudo certo.
 6. Preencher as `IG_*` no `docker-compose.yml` do VPS (que **não é versionado**) e
    subir com `docker compose up -d`. `restart` **não** relê o ambiente.
 
