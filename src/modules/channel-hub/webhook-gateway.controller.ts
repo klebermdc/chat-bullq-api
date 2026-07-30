@@ -24,6 +24,7 @@ import { ChannelsService } from './channels/channels.service';
 import { WebhookEventsService } from './webhook-events.service';
 import { WebhookThrottleGuard } from './webhook-throttle.guard';
 import { MessageTemplatesService } from './message-templates/message-templates.service';
+import { AccountUpdateService } from './account-update.service';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
@@ -38,6 +39,7 @@ export class WebhookGatewayController {
     @InjectQueue('inbound-messages') private readonly inboundQueue: Queue,
     @Inject(forwardRef(() => MessageTemplatesService))
     private readonly messageTemplatesService: MessageTemplatesService,
+    private readonly accountUpdates: AccountUpdateService,
   ) {}
 
   @Post(':channelType')
@@ -167,6 +169,16 @@ export class WebhookGatewayController {
           upd.reason,
         );
         this.logger.log(`Template ${upd.metaTemplateId} → ${upd.status}`);
+      }
+
+      for (const upd of parseResult.accountUpdates ?? []) {
+        await this.accountUpdates
+          .handle(channel, upd)
+          .catch((err) =>
+            this.logger.error(
+              `account_update handling failed for channel ${channel.id}: ${err.message}`,
+            ),
+          );
       }
     }
 

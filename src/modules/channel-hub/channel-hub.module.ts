@@ -23,6 +23,8 @@ import { CHANNEL_SYNC_QUEUE } from './sync/channel-sync.constants';
 import { MessagingModule } from '../messaging/messaging.module';
 import { WebhookEventsService } from './webhook-events.service';
 import { WebhookThrottleGuard } from './webhook-throttle.guard';
+import { AccountUpdateService } from './account-update.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { MessageTemplatesModule } from './message-templates/message-templates.module';
 
 @Module({
@@ -42,6 +44,10 @@ import { MessageTemplatesModule } from './message-templates/message-templates.mo
     InstagramModule,
     forwardRef(() => MessagingModule),
     forwardRef(() => MessageTemplatesModule),
+    // AccountUpdateService avisa OWNER/ADMIN quando a Meta desconecta ou
+    // restringe a conta. forwardRef por segurança: notifications puxa
+    // messaging, que puxa channel-hub.
+    forwardRef(() => NotificationsModule),
   ],
   controllers: [WebhookGatewayController, ChannelsController],
   providers: [
@@ -52,6 +58,7 @@ import { MessageTemplatesModule } from './message-templates/message-templates.mo
     ChannelSyncProcessor,
     WebhookEventsService,
     WebhookThrottleGuard,
+    AccountUpdateService,
     WhatsAppEmbeddedSignupService,
   ],
   exports: [
