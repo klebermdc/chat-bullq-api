@@ -56,6 +56,23 @@ export class WhatsAppEmbeddedSignupService {
     );
   }
 
+  /**
+   * Desfaz o registro do número na Cloud API. É a saída limpa:
+   *
+   *  - churn no Sendtur: cliente cancela e o número volta a ser dele
+   *  - coexistência: se o prazo de 24h do histórico estourar, a doc manda
+   *    desconectar o cliente pra que ele refaça o fluxo
+   *
+   * Ao contrário do `/register`, não tem PIN nem cota conhecida.
+   */
+  async deregisterNumber(phoneNumberId: string, token: string): Promise<void> {
+    await axios.post(
+      `${this.base()}/${phoneNumberId}/deregister`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }
+
   async getPhoneMetadata(
     phoneNumberId: string,
     token: string,
@@ -65,6 +82,46 @@ export class WhatsAppEmbeddedSignupService {
       headers: { Authorization: `Bearer ${token}` },
     });
     return data;
+  }
+
+  /**
+   * Desconecta um canal: tira o número da Cloud API e desativa o canal aqui.
+   *
+   * O canal é desativado MESMO SE a chamada à Meta falhar. O motivo é que
+   * quase sempre ela falha porque o cliente já revogou o acesso do lado dele —
+   * e nesse caso deixar o canal "Ativo" na interface é pior que a falha: o
+   * operador fica procurando um problema que não existe mais.
+   */
+  async disconnect(channelId: string): Promise<{ deregistered: boolean }> {
+    const channel = await this.channelsRepo.findById(channelId);
+    if (!channel) throw new BadRequestException('Canal nao encontrado.');
+
+    const config = (channel.config ?? {}) as Record<string, any>;
+    let deregistered = false;
+
+    if (config.phoneNumberId && config.accessToken) {
+      try {
+        await this.deregisterNumber(config.phoneNumberId, config.accessToken);
+        deregistered = true;
+      } catch (err: any) {
+        this.logger.warn(
+          `Deregister do numero ${config.phoneNumberId} falhou: ${err?.message}. ` +
+            'Desativando o canal mesmo assim — o acesso provavelmente ja foi revogado do lado do cliente.',
+        );
+      }
+    }
+
+    await this.channelsRepo.update(channelId, {
+      isActive: false,
+      // `registeredAt` sai junto: se o número for reconectado, o /register
+      // precisa rodar de novo (senão o canal volta sem poder enviar).
+      config: { ...config, registeredAt: undefined, deregisteredAt: new Date().toISOString() },
+    });
+
+    this.logger.log(
+      `Canal ${channelId} desconectado (deregister na Meta: ${deregistered ? 'ok' : 'falhou/pulado'}).`,
+    );
+    return { deregistered };
   }
 
   async connect(params: {

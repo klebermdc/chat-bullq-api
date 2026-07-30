@@ -62,6 +62,69 @@ describe('WhatsAppEmbeddedSignupService (graph calls)', () => {
   });
 });
 
+describe('WhatsAppEmbeddedSignupService.disconnect', () => {
+  beforeEach(() => {
+    process.env.WA_APP_ID = 'app'; process.env.WA_APP_SECRET = 'sec'; process.env.WA_API_VERSION = 'v21.0';
+    jest.clearAllMocks();
+  });
+
+  function makeSvc(channel: any) {
+    const platform = new WhatsAppPlatformConfigService();
+    const channelsRepo = {
+      findById: jest.fn().mockResolvedValue(channel),
+      update: jest.fn().mockResolvedValue({}),
+    } as any;
+    return { svc: new WhatsAppEmbeddedSignupService(platform, {} as any, channelsRepo), channelsRepo };
+  }
+
+  it('chama o /deregister e desativa o canal', async () => {
+    mockedAxios.post.mockResolvedValueOnce({ data: { success: true } } as any);
+    const { svc, channelsRepo } = makeSvc({
+      id: 'ch1', config: { phoneNumberId: 'PN1', accessToken: 'TKN', registeredAt: '2026-01-01' },
+    });
+
+    await expect(svc.disconnect('ch1')).resolves.toEqual({ deregistered: true });
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      'https://graph.facebook.com/v21.0/PN1/deregister',
+      {},
+      { headers: { Authorization: 'Bearer TKN' } },
+    );
+    expect(channelsRepo.update.mock.calls[0][1].isActive).toBe(false);
+  });
+
+  // Quase sempre a chamada falha porque o cliente JA revogou o acesso. Deixar
+  // o canal "Ativo" nesse caso e pior que a falha: manda o operador procurar
+  // um problema que nao existe mais.
+  it('desativa o canal MESMO se o deregister falhar', async () => {
+    mockedAxios.post.mockRejectedValueOnce(new Error('token revogado'));
+    const { svc, channelsRepo } = makeSvc({
+      id: 'ch1', config: { phoneNumberId: 'PN1', accessToken: 'TKN' },
+    });
+
+    await expect(svc.disconnect('ch1')).resolves.toEqual({ deregistered: false });
+    expect(channelsRepo.update.mock.calls[0][1].isActive).toBe(false);
+  });
+
+  it('limpa o registeredAt — reconectar precisa registrar de novo', async () => {
+    mockedAxios.post.mockResolvedValueOnce({ data: {} } as any);
+    const { svc, channelsRepo } = makeSvc({
+      id: 'ch1', config: { phoneNumberId: 'PN1', accessToken: 'TKN', registeredAt: '2026-01-01' },
+    });
+
+    await svc.disconnect('ch1');
+    const cfg = channelsRepo.update.mock.calls[0][1].config;
+    expect(cfg.registeredAt).toBeUndefined();
+    expect(cfg.deregisteredAt).toBeDefined();
+  });
+
+  it('canal sem credencial nao chama a Meta, mas ainda desativa', async () => {
+    const { svc, channelsRepo } = makeSvc({ id: 'ch1', config: {} });
+    await expect(svc.disconnect('ch1')).resolves.toEqual({ deregistered: false });
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+    expect(channelsRepo.update).toHaveBeenCalled();
+  });
+});
+
 describe('WhatsAppEmbeddedSignupService.connect', () => {
   beforeEach(() => {
     process.env.WA_APP_ID = 'app'; process.env.WA_APP_SECRET = 'sec'; process.env.WA_API_VERSION = 'v21.0';
