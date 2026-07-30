@@ -246,6 +246,61 @@ describe('WhatsAppOfficialInboundAdapter.parseWebhook — history (coexistência
   });
 });
 
+describe('WhatsAppOfficialInboundAdapter — escopo por phone_number_id', () => {
+  const adapter = new WhatsAppOfficialInboundAdapter(
+    new WhatsAppOfficialMessageMapper(),
+    new WhatsAppPlatformConfigService(),
+  );
+  // Canal do numero A; o lote traz evento do numero B da MESMA WABA.
+  const chA = { id: 'chA', config: { phoneNumberId: 'PN_A' } } as any;
+
+  function change(field: string, extra: any) {
+    return {
+      entry: [{ id: 'WABA1', changes: [{ field, value: { metadata: { phone_number_id: 'PN_B' }, ...extra } }] }],
+    };
+  }
+
+  it('descarta echo de OUTRO numero da mesma WABA', () => {
+    const res = adapter.parseWebhook(
+      change('smb_message_echoes', {
+        message_echoes: [{ from: 'X', to: '5511999', id: 'm1', timestamp: '1', type: 'text', text: { body: 'oi' } }],
+      }) as any,
+      chA,
+    );
+    expect(res.messages).toHaveLength(0);
+  });
+
+  it('descarta historico de OUTRO numero da mesma WABA', () => {
+    const res = adapter.parseWebhook(
+      change('history', {
+        history: [{ metadata: {}, threads: [{ id: '5511999', messages: [{ from: '5511999', id: 'm1', timestamp: '1', type: 'text', text: { body: 'x' } }] }] }],
+      }) as any,
+      chA,
+    );
+    expect(res.historyChunks).toBeUndefined();
+  });
+
+  it('descarta contato de OUTRO numero da mesma WABA', () => {
+    const res = adapter.parseWebhook(
+      change('smb_app_state_sync', {
+        state_sync: [{ type: 'contact', contact: { phone_number: '5511999', full_name: 'X' }, action: 'add' }],
+      }) as any,
+      chA,
+    );
+    expect(res.contactSyncs).toBeUndefined();
+  });
+
+  // account_update e evento de CONTA: nao carrega phone_number_id e NAO pode
+  // ser descartado pelo escopo, senao o aviso de banimento nunca chega.
+  it('NAO descarta account_update, que e evento de conta sem numero', () => {
+    const res = adapter.parseWebhook(
+      { entry: [{ id: 'WABA1', changes: [{ field: 'account_update', value: { event: 'PARTNER_REMOVED' } }] }] } as any,
+      chA,
+    );
+    expect(res.accountUpdates).toHaveLength(1);
+  });
+});
+
 describe('WhatsAppOfficialInboundAdapter.validateWebhook', () => {
   const platform = new WhatsAppPlatformConfigService();
   const adapter = new WhatsAppOfficialInboundAdapter({} as any, platform);

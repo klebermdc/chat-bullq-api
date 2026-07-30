@@ -36,10 +36,17 @@ export class CoexistenceContactsService {
       // remover da agenda do celular não significa que a relação comercial
       // deixou de existir. Só registra a origem da remoção.
       if (!link) return;
+      // MERGE, nunca substituir: o `metadata` guarda outras coisas (origem do
+      // lead, ctwa, marcações). Trocar o objeto inteiro apagaria tudo.
+      const current = await this.prisma.contact.findUnique({
+        where: { id: link.contactId },
+        select: { metadata: true },
+      });
       await this.prisma.contact.update({
         where: { id: link.contactId },
         data: {
           metadata: {
+            ...((current?.metadata as Record<string, any>) ?? {}),
             smbRemovedAt: new Date().toISOString(),
             smbRemovedFromChannelId: channel.id,
           },

@@ -9,6 +9,7 @@ describe('CoexistenceContactsService', () => {
         update: jest.fn().mockResolvedValue({}),
       },
       contact: {
+        findUnique: jest.fn().mockResolvedValue({ metadata: { origem: 'anuncio', ctwa: 'X1' } }),
         create: jest.fn().mockResolvedValue({ id: 'new-contact' }),
         update: jest.fn().mockResolvedValue({}),
         delete: jest.fn(),
@@ -52,6 +53,9 @@ describe('CoexistenceContactsService', () => {
     expect(prisma.contact.delete).not.toHaveBeenCalled();
     const data = prisma.contact.update.mock.calls[0][0].data;
     expect(data.metadata.smbRemovedAt).toBeDefined();
+    // MERGE, nao substituicao: o que ja estava no metadata TEM que sobreviver.
+    expect(data.metadata.origem).toBe('anuncio');
+    expect(data.metadata.ctwa).toBe('X1');
   });
 
   it('remocao de contato que nunca existiu aqui e no-op', async () => {
