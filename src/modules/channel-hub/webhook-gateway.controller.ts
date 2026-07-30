@@ -26,6 +26,7 @@ import { WebhookThrottleGuard } from './webhook-throttle.guard';
 import { MessageTemplatesService } from './message-templates/message-templates.service';
 import { AccountUpdateService } from './account-update.service';
 import { CoexistenceHistoryService } from './coexistence-history.service';
+import { CoexistenceContactsService } from './coexistence-contacts.service';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
@@ -42,6 +43,7 @@ export class WebhookGatewayController {
     private readonly messageTemplatesService: MessageTemplatesService,
     private readonly accountUpdates: AccountUpdateService,
     private readonly coexHistory: CoexistenceHistoryService,
+    private readonly coexContacts: CoexistenceContactsService,
   ) {}
 
   @Post(':channelType')
@@ -171,6 +173,16 @@ export class WebhookGatewayController {
           upd.reason,
         );
         this.logger.log(`Template ${upd.metaTemplateId} → ${upd.status}`);
+      }
+
+      for (const sync of parseResult.contactSyncs ?? []) {
+        await this.coexContacts
+          .handle(channel, sync)
+          .catch((err) =>
+            this.logger.error(
+              `contact sync failed for channel ${channel.id}: ${err.message}`,
+            ),
+          );
       }
 
       for (const chunk of parseResult.historyChunks ?? []) {

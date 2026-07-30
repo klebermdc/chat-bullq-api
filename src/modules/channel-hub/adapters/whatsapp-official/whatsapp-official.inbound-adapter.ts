@@ -118,9 +118,25 @@ export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
             continue;
           }
 
-          // Coexistência: mensagem que o cliente mandou PELO APP do WhatsApp
-          // Business. Aqui quem fala é o negócio — `from` é o número dele e
-          // `to` é o do cliente, invertido em relação ao inbound.
+          // Agenda do cliente espelhada do app (coexistência).
+          if (change?.field === 'smb_app_state_sync') {
+            const v = change.value ?? {};
+            for (const item of v.state_sync ?? []) {
+              if (item?.type !== 'contact') continue; // só contato por ora
+              const phone = item?.contact?.phone_number;
+              if (!phone) continue;
+              const ts = item?.metadata?.timestamp;
+              (result.contactSyncs ??= []).push({
+                phone: String(phone),
+                fullName: item.contact.full_name ? String(item.contact.full_name) : undefined,
+                firstName: item.contact.first_name ? String(item.contact.first_name) : undefined,
+                action: String(item.action ?? 'update').toLowerCase(),
+                timestamp: ts ? new Date(Number(ts) * 1000) : undefined,
+              });
+            }
+            continue;
+          }
+
           // Histórico da coexistência — até 180 dias empurrados em pedaços.
           if (change?.field === 'history') {
             const v = change.value ?? {};
