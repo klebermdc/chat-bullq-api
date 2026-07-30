@@ -124,18 +124,20 @@ export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
           if (change?.field === 'smb_message_echoes') {
             const v = change.value ?? {};
             for (const echo of v.message_echoes ?? []) {
-              const parsed = this.mapper.normalizeInbound(echo, {});
-              if (!parsed) continue;
               const to = echo?.to ? String(echo.to) : undefined;
-              if (!to) continue; // sem contraparte não há conversa pra casar
-              (result.messageEchoes ??= []).push({
-                externalId: String(echo.id),
-                contactPhone: to,
-                businessPhone: String(echo.from ?? v.metadata?.display_phone_number ?? ''),
-                type: parsed.type,
-                content: parsed.content,
-                timestamp: echo?.timestamp ? String(echo.timestamp) : undefined,
-              });
+              if (!to) continue; // sem contraparte nao ha conversa pra casar
+              // O mapper espera `from` como contraparte. Aqui quem fala e o
+              // NEGOCIO, entao o contato e o `to` — trocamos antes de mapear.
+              const normalized = this.mapper.normalizeInbound(
+                { ...echo, from: to },
+                { wa_id: to },
+              );
+              if (!normalized) continue;
+              normalized.isEcho = true;
+              // Coexistencia: este echo veio do app/dispositivo vinculado,
+              // nunca de um envio nosso pela Cloud API. Logo, humano.
+              normalized.isHumanEcho = true;
+              result.messages.push(normalized);
             }
             continue;
           }

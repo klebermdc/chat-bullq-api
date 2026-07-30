@@ -168,25 +168,6 @@ export class WebhookGatewayController {
         );
         this.logger.log(`Template ${upd.metaTemplateId} → ${upd.status}`);
       }
-
-      // Coexistência — mensagens enviadas pelo app do WhatsApp Business.
-      //
-      // AINDA NÃO PERSISTIMOS DE PROPÓSITO. Um echo é uma resposta HUMANA e
-      // precisa produzir os mesmos efeitos de um atendente respondendo pelo
-      // inbox: desarmar a IA, zerar `awaitingHumanReply`, limpar a banda de
-      // inatividade, cancelar o watchdog. Gravar a mensagem sem isso faria o
-      // sintoma visível desaparecer e deixaria o comportamento errado invisível
-      // — a Aline responderia por cima do vendedor sem ninguém notar.
-      //
-      // Por ora só registramos que chegou, pra dar visibilidade enquanto os
-      // ganchos não existem. Ver docs/superpowers/specs/2026-07-28-whatsapp-coexistence-design.md
-      if (parseResult.messageEchoes?.length) {
-        this.logger.warn(
-          `Coexistência: ${parseResult.messageEchoes.length} echo(s) do app recebidos no canal ${channel.id} e DESCARTADOS ` +
-            `(handler ainda não implementado — Fatia 1). Contrapartes: ` +
-            parseResult.messageEchoes.map((e) => e.contactPhone).join(', '),
-        );
-      }
     }
 
     return res.status(200).json({ status: 'ok' });
