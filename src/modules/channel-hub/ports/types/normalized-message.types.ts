@@ -175,6 +175,8 @@ export interface WebhookParseResult {
   accountUpdates?: AccountUpdate[];
   /** Pedaços de histórico da coexistência (webhook `history`). */
   historyChunks?: HistoryChunk[];
+  /** Mudanças de agenda vindas do app (webhook `smb_app_state_sync`). */
+  contactSyncs?: ContactSync[];
 }
 
 /**
@@ -228,6 +230,19 @@ export interface HistoryMessage {
   timestamp?: Date;
   type: MessageContentType;
   content: NormalizedMessageContent;
+}
+
+/**
+ * Mudança na agenda do cliente, espelhada do app do WhatsApp Business
+ * (webhook `smb_app_state_sync`). Só existe em canal de coexistência.
+ */
+export interface ContactSync {
+  phone: string;
+  fullName?: string;
+  firstName?: string;
+  /** `add` | `update` | `remove` (a Meta varia o rótulo). */
+  action: string;
+  timestamp?: Date;
 }
 
 export interface WebhookError {
