@@ -68,6 +68,17 @@ export class ChannelsController {
     });
   }
 
+  @Post(':id/whatsapp/disconnect')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({
+    summary:
+      'Desconecta o número da Cloud API (deregister) e desativa o canal. ' +
+      'Usado no churn do Sendtur e para reonboardar coexistência que estourou o prazo de 24h.',
+  })
+  disconnectWhatsApp(@Param('id') id: string) {
+    return this.embeddedSignup.disconnect(id);
+  }
+
   @Get()
   @ApiOperation({ summary: 'List all channels for the organization' })
   findAll(
