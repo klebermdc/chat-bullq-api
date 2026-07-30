@@ -181,7 +181,13 @@ export class ChannelsController {
 
     const params = new URLSearchParams({
       enable_fb_login: '0',
-      force_authentication: '1',
+      // `force_reauth`, não `force_authentication`: é o nome que o próprio
+      // painel da Meta gera na "URL incorporada" do passo 4 do login empresarial.
+      // Serve pra forçar a tela de login em vez de reaproveitar a sessão em
+      // cache do navegador — sem isso o usuário conecta sem querer a conta do
+      // Instagram que estava logada. Com o nome errado a Meta ignora o
+      // parâmetro em silêncio e a proteção some sem aviso.
+      force_reauth: 'true',
       client_id: this.igPlatform.appId,
       redirect_uri: this.igPlatform.redirectUri,
       response_type: 'code',

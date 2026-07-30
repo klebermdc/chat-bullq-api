@@ -289,7 +289,15 @@ Fechar exige uma decisão de arquitetura, por isso não entrou na Fatia 1:
 - **Lock no Redis** por `igBusinessId` durante o `connect()` — sem migration, mas exige
   injetar um cliente Redis no `InstagramConnectService`, que hoje não tem.
 
-**2. Rotação do `IG_APP_SECRET` deixa canais antigos com segredo velho.**
+**2. Faltam os endpoints exigidos pela Meta para submeter o App Review.**
+A tela de login empresarial avisa: é preciso fornecer os URLs de **solicitação de
+desautorização** (chamado quando o usuário remove o app da conta dele) e de
+**exclusão de dados** antes de enviar para análise. Nenhum dos dois existe no OFP
+Chat. Não bloqueia o uso interno nem o E2E — **bloqueia a submissão do App Review**,
+ou seja, bloqueia abrir para cliente. É uma fatia pequena que não estava prevista no
+plano original e precisa entrar antes do passo de review.
+
+**3. Rotação do `IG_APP_SECRET` deixa canais antigos com segredo velho.**
 O `appSecret` é carimbado no `config` no momento da conexão e nunca revisitado. Se o
 segredo do app rodar na Meta, todo canal conectado antes da rotação continua com o valor
 antigo e passa a recusar webhook por assinatura inválida. Não há mecanismo de re-carimbo.
