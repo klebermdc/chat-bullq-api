@@ -14,7 +14,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
-import { Channel, ChannelType } from '@prisma/client';
+import { Channel, ChannelType, ErrorSeverity, ErrorSource } from '@prisma/client';
 import { Request, Response } from 'express';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -27,6 +27,8 @@ import { MessageTemplatesService } from './message-templates/message-templates.s
 import { AccountUpdateService } from './account-update.service';
 import { CoexistenceHistoryService } from './coexistence-history.service';
 import { CoexistenceContactsService } from './coexistence-contacts.service';
+import { ERROR_CODES } from '../error-reporter/error-codes';
+import { ErrorReporterService } from '../error-reporter/error-reporter.service';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
@@ -44,6 +46,7 @@ export class WebhookGatewayController {
     private readonly accountUpdates: AccountUpdateService,
     private readonly coexHistory: CoexistenceHistoryService,
     private readonly coexContacts: CoexistenceContactsService,
+    private readonly errors: ErrorReporterService,
   ) {}
 
   @Post(':channelType')
@@ -58,6 +61,13 @@ export class WebhookGatewayController {
   ) {
     if (!this.registry.hasAdapter(channelType)) {
       this.logger.warn(`No adapter for channel type: ${channelType}`);
+      this.errors.report({
+        source: ErrorSource.CHANNEL,
+        code: ERROR_CODES.WEBHOOK_UNSUPPORTED_TYPE,
+        severity: ErrorSeverity.WARNING,
+        message: `Webhook chegou para tipo de canal sem adapter: ${channelType}`,
+        context: { channelType },
+      });
       return res.status(404).json({ error: 'Unsupported channel type' });
     }
 
@@ -70,6 +80,13 @@ export class WebhookGatewayController {
     const locators = adapter.extractLocators(req.body, headers);
     if (!locators.length) {
       this.logger.warn(`No locators extracted for ${channelType}`);
+      this.errors.report({
+        source: ErrorSource.CHANNEL,
+        code: ERROR_CODES.WEBHOOK_NO_LOCATORS,
+        severity: ErrorSeverity.WARNING,
+        message: `Nenhum locator extraido do payload de ${channelType}`,
+        context: { channelType, payloadKeys: Object.keys(req.body ?? {}) },
+      });
       return res.status(200).json({ status: 'no_locators' });
     }
 
@@ -98,6 +115,16 @@ export class WebhookGatewayController {
         .catch((err) =>
           this.logger.error(`webhook_events persist failed: ${err.message}`),
         );
+      // CRITICAL: a mensagem do cliente foi DESCARTADA. Foi assim que o
+      // apagão do Comercial passou despercebido — canal desativado engolindo
+      // inbound em silêncio.
+      this.errors.report({
+        source: ErrorSource.CHANNEL,
+        code: ERROR_CODES.WEBHOOK_UNROUTED,
+        severity: ErrorSeverity.CRITICAL,
+        message: `Webhook de ${channelType} sem canal correspondente — mensagem descartada`,
+        context: { channelType, locators },
+      });
       return res.status(200).json({ status: 'no_matching_channel' });
     }
 
@@ -113,6 +140,17 @@ export class WebhookGatewayController {
         this.logger.warn(
           `Invalid webhook signature for channel ${channel.id} (${channelType})`,
         );
+        // CRITICAL: foi exatamente isto que o App Secret errado provocou —
+        // TODO webhook recusado, inbound zerado, e nenhum aviso.
+        this.errors.report({
+          source: ErrorSource.CHANNEL,
+          code: ERROR_CODES.WEBHOOK_INVALID_SIGNATURE,
+          severity: ErrorSeverity.CRITICAL,
+          message: `Assinatura de webhook invalida no canal "${channel.name}" (${channelType})`,
+          context: { channelType, channelName: channel.name },
+          organizationId: channel.organizationId,
+          channelId: channel.id,
+        });
         continue;
       }
 
