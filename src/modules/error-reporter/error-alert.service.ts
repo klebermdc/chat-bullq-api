@@ -62,36 +62,60 @@ export class ErrorAlertService {
     return Boolean(this.botToken && this.chatId);
   }
 
+  /**
+   * Decide se envia um alerta de incidente para o Telegram e envia se for o caso.
+   *
+   * Nunca lança: qualquer falha (banco, Telegram, o que for) é logada e
+   * engolida — este é o último degrau antes do log ficar mudo.
+   *
+   * Pode levar até 5s (timeout do axios). Chame sem `await` em caminho
+   * quente — hoje só o `ErrorReporterService` chama, e ele já é
+   * fire-and-forget.
+   */
   async maybeAlert(issue: ErrorIssue, kind: AlertKind): Promise<void> {
-    if (!this.enabled) return;
+    try {
+      if (!this.enabled) return;
 
-    const now = new Date();
+      const now = new Date();
 
-    if (
-      issue.status === ErrorIssueStatus.MUTED &&
-      issue.mutedUntil &&
-      issue.mutedUntil > now
-    ) {
-      return;
+      // mutedUntil nulo = silenciado por tempo indeterminado.
+      if (
+        issue.status === ErrorIssueStatus.MUTED &&
+        (!issue.mutedUntil || issue.mutedUntil > now)
+      ) {
+        return;
+      }
+
+      // Risco aceito: dois reports simultâneos do mesmo fingerprint leem o
+      // mesmo `lastAlertedAt` e podem alertar duas vezes. O estrago é uma
+      // mensagem repetida no Telegram, e a agregação de tempestade cobre o
+      // caso em massa. Não vale um CAS aqui.
+      if (kind === 'recurring' && issue.lastAlertedAt) {
+        const elapsed = now.getTime() - issue.lastAlertedAt.getTime();
+        if (elapsed < COOLDOWN_MS[issue.severity]) return;
+      }
+
+      const emTempestade = await this.avisaTempestade(now);
+      // CRITICAL nunca é engolido pela tempestade: é justamente o alerta que
+      // não pode virar uma linha anônima no meio de um monte de ruído.
+      if (emTempestade && issue.severity !== ErrorSeverity.CRITICAL) return;
+
+      await this.send(this.format(issue, kind));
+      await this.prisma.errorIssue
+        .update({ where: { id: issue.id }, data: { lastAlertedAt: now } })
+        .catch((err: Error) =>
+          this.logger.error(`falha ao gravar lastAlertedAt: ${err.message}`),
+        );
+    } catch (err) {
+      // Este serviço roda quando algo já quebrou. Ele não pode ser o
+      // segundo problema — engole tudo e registra no log.
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`falha ao avaliar alerta: ${msg}`);
     }
-
-    if (kind === 'recurring' && issue.lastAlertedAt) {
-      const elapsed = now.getTime() - issue.lastAlertedAt.getTime();
-      if (elapsed < COOLDOWN_MS[issue.severity]) return;
-    }
-
-    if (await this.handledAsStorm(now)) return;
-
-    await this.send(this.format(issue, kind));
-    await this.prisma.errorIssue
-      .update({ where: { id: issue.id }, data: { lastAlertedAt: now } })
-      .catch((err: Error) =>
-        this.logger.error(`falha ao gravar lastAlertedAt: ${err.message}`),
-      );
   }
 
-  /** true = estamos em tempestade e o alerta individual foi suprimido. */
-  private async handledAsStorm(now: Date): Promise<boolean> {
+  /** true = estamos em tempestade (o resumo pode já ter sido mandado antes). */
+  private async avisaTempestade(now: Date): Promise<boolean> {
     const since = new Date(now.getTime() - STORM_WINDOW_MS);
     const novos = await this.prisma.errorIssue.count({
       where: { firstSeenAt: { gte: since } },
@@ -117,10 +141,13 @@ export class ErrorAlertService {
     const org = issue.organizationId ? `\nOrg: ${issue.organizationId}` : '';
     const vezes =
       issue.count > 1 ? `\n${issue.count} ocorrências desde a primeira vez` : '';
+    // Trunca ANTES de escapar: cortar uma entidade HTML já escapada pela
+    // metade produziria markup quebrado (e o Telegram rejeitaria a mensagem
+    // do mesmo jeito que rejeita texto acima de 4096 caracteres).
     return [
       cabecalho,
-      escapeHtml(issue.title),
-      `<code>${escapeHtml(issue.code)}</code>${org}${vezes}`,
+      escapeHtml(issue.title.slice(0, 500)),
+      `<code>${escapeHtml(issue.code.slice(0, 100))}</code>${org}${vezes}`,
       `→ ${this.panelBaseUrl}/bugs/${issue.id}`,
     ].join('\n');
   }

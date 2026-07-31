@@ -133,9 +133,10 @@ describe('ErrorAlertService', () => {
     const { service, prisma } = makeService({
       errorIssue: { count: jest.fn().mockResolvedValue(7), update: jest.fn() },
     });
-    await service.maybeAlert(makeIssue({ id: 'a' }), 'new');
-    await service.maybeAlert(makeIssue({ id: 'b' }), 'new');
-    await service.maybeAlert(makeIssue({ id: 'c' }), 'new');
+    const naoCritico = { severity: ErrorSeverity.ERROR };
+    await service.maybeAlert(makeIssue({ id: 'a', ...naoCritico }), 'new');
+    await service.maybeAlert(makeIssue({ id: 'b', ...naoCritico }), 'new');
+    await service.maybeAlert(makeIssue({ id: 'c', ...naoCritico }), 'new');
     expect(mockedAxios.post).toHaveBeenCalledTimes(1);
     const body = mockedAxios.post.mock.calls[0][1] as { text: string };
     expect(body.text).toContain('7');
@@ -156,5 +157,70 @@ describe('ErrorAlertService', () => {
     const service = new ErrorAlertService(prisma as never, config);
     await service.maybeAlert(makeIssue(), 'new');
     expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('tempestade NAO engole alerta critico', async () => {
+    const { service } = makeService({
+      errorIssue: { count: jest.fn().mockResolvedValue(7), update: jest.fn() },
+    });
+    await service.maybeAlert(makeIssue({ id: 'a' }), 'new');
+    await service.maybeAlert(makeIssue({ id: 'b' }), 'new');
+    // 1 resumo de tempestade + 2 alertas criticos individuais
+    expect(mockedAxios.post).toHaveBeenCalledTimes(3);
+    const primeiro = mockedAxios.post.mock.calls[0][1] as { text: string };
+    expect(primeiro.text).toContain('Tempestade');
+  });
+
+  it('nao alerta issue silenciado por tempo indeterminado', async () => {
+    const { service } = makeService();
+    const issue = makeIssue({
+      status: ErrorIssueStatus.MUTED,
+      mutedUntil: null,
+    });
+    await service.maybeAlert(issue, 'new');
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('escapa HTML no titulo e no codigo', async () => {
+    const { service } = makeService();
+    await service.maybeAlert(
+      makeIssue({ title: 'quebrou <script> & cia', code: 'A<B' }),
+      'new',
+    );
+    const body = mockedAxios.post.mock.calls[0][1] as { text: string };
+    expect(body.text).toContain('quebrou &lt;script&gt; &amp; cia');
+    expect(body.text).toContain('A&lt;B');
+    expect(body.text).not.toContain('<script>');
+  });
+
+  it('trunca titulo gigante antes de escapar', async () => {
+    const { service } = makeService();
+    await service.maybeAlert(makeIssue({ title: 'x'.repeat(5000) }), 'new');
+    const body = mockedAxios.post.mock.calls[0][1] as { text: string };
+    expect(body.text.length).toBeLessThan(4096);
+  });
+
+  it('no limite da tempestade ainda alerta individualmente', async () => {
+    const { service } = makeService({
+      errorIssue: { count: jest.fn().mockResolvedValue(5), update: jest.fn() },
+    });
+    await service.maybeAlert(
+      makeIssue({ severity: ErrorSeverity.ERROR }),
+      'new',
+    );
+    const body = mockedAxios.post.mock.calls[0][1] as { text: string };
+    expect(body.text).not.toContain('Tempestade');
+  });
+
+  it('falha do banco na checagem de tempestade nao propaga', async () => {
+    const { service } = makeService({
+      errorIssue: {
+        count: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
+        update: jest.fn(),
+      },
+    });
+    await expect(
+      service.maybeAlert(makeIssue(), 'new'),
+    ).resolves.toBeUndefined();
   });
 });
