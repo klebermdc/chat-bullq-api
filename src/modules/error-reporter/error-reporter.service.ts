@@ -9,6 +9,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { ErrorAlertService } from './error-alert.service';
 import { buildFingerprint } from './error-fingerprint.util';
 import { AlertKind, ErrorReportInput } from './error-reporter.types';
+import { redactSecrets } from './redact.util';
 
 const TITLE_MAX = 200;
 
@@ -130,7 +131,11 @@ export class ErrorReporterService {
         data: {
           issueId: issue.id,
           occurredAt: now,
-          context: (input.context ?? {}) as Prisma.InputJsonValue,
+          // Redação central: nenhum ponto de coleta precisa lembrar de não
+          // vazar segredo, porque tudo passa por aqui.
+          context: redactSecrets(
+            input.context ?? {},
+          ) as Prisma.InputJsonValue,
           stack: input.stack ?? null,
           organizationId: input.organizationId ?? null,
           channelId: input.channelId ?? null,

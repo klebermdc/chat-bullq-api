@@ -235,4 +235,15 @@ describe('ErrorReporterService', () => {
     service.report(INPUT);
     expect(prisma.errorIssue.findUnique).toHaveBeenCalledTimes(21);
   });
+
+  it('oculta segredo do contexto antes de gravar a ocorrencia', async () => {
+    const { service, prisma } = makeService();
+    await service.ingest({
+      ...INPUT,
+      context: { channelType: 'X', locators: [{ token: 'segredo-vivo' }] },
+    });
+    const data = prisma.errorOccurrence.create.mock.calls[0][0].data;
+    expect(JSON.stringify(data.context)).not.toContain('segredo-vivo');
+    expect(JSON.stringify(data.context)).toContain('X');
+  });
 });
