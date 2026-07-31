@@ -101,6 +101,35 @@ enum NotificationType {
   AI_TOOL_FAILURE
 }
 
+// ─── Error Reporter ──────────────────────────────
+// Enums NOVOS. Nenhum ALTER TYPE ADD VALUE em enum existente — esse padrão
+// já quebrou `migrate deploy` neste projeto (ver cadence_revive).
+
+enum ErrorSource {
+  API
+  CHANNEL
+  AI
+  JOB
+}
+
+enum ErrorSeverity {
+  CRITICAL
+  ERROR
+  WARNING
+}
+
+enum ErrorIssueStatus {
+  OPEN
+  RESOLVED
+  MUTED
+}
+
+enum ErrorInvestigationStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
 // ─── Core: Auth + Multi-tenancy ──────────────────
 
 model User {
@@ -2482,4 +2511,59 @@ model WhatsappWindowPricing {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("whatsapp_window_pricing")
+}
+
+/// Um problema agrupado. A chave de agrupamento é o `fingerprint`.
+model ErrorIssue {
+  id          String           @id @default(cuid())
+  fingerprint String           @unique
+  source      ErrorSource
+  code        String
+  severity    ErrorSeverity
+  status      ErrorIssueStatus @default(OPEN)
+  title       String
+  lastStack   String?          @map("last_stack")
+  count       Int              @default(1)
+
+  firstSeenAt   DateTime  @default(now()) @map("first_seen_at")
+  lastSeenAt    DateTime  @default(now()) @map("last_seen_at")
+  lastAlertedAt DateTime? @map("last_alerted_at")
+  resolvedAt    DateTime? @map("resolved_at")
+  mutedUntil    DateTime? @map("muted_until")
+
+  /// Nulo de propósito: erro de boot, migração ou conexão não pertence a org.
+  organizationId String? @map("organization_id")
+
+  // Preenchidos pela Fatia 3 (investigação por IA). Sem uso na Fatia 1.
+  investigationPrUrl  String?                   @map("investigation_pr_url")
+  investigationStatus ErrorInvestigationStatus? @map("investigation_status")
+
+  occurrences ErrorOccurrence[]
+
+  @@index([status, lastSeenAt(sort: Desc)], name: "idx_error_issue_status_time")
+  @@index([organizationId, lastSeenAt(sort: Desc)], name: "idx_error_issue_org_time")
+  @@index([source, severity, lastSeenAt(sort: Desc)], name: "idx_error_issue_source_sev")
+  @@index([firstSeenAt], name: "idx_error_issue_first_seen")
+  @@map("error_issues")
+}
+
+/// Cada acontecimento individual de um issue. Retenção curta (ver poda).
+model ErrorOccurrence {
+  id      String     @id @default(cuid())
+  issueId String     @map("issue_id")
+  issue   ErrorIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  occurredAt DateTime @default(now()) @map("occurred_at")
+  context    Json     @default("{}")
+  stack      String?
+
+  organizationId String? @map("organization_id")
+  channelId      String? @map("channel_id")
+  conversationId String? @map("conversation_id")
+  contactId      String? @map("contact_id")
+  userId         String? @map("user_id")
+
+  @@index([issueId, occurredAt(sort: Desc)], name: "idx_error_occ_issue_time")
+  @@index([occurredAt], name: "idx_error_occ_time")
+  @@map("error_occurrences")
 }
