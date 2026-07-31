@@ -1,7 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { Channel, ChannelSyncStatus } from '@prisma/client';
+import { Channel, ChannelSyncStatus, ErrorSeverity, ErrorSource } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { ChannelAdapterRegistry } from '../channel-adapter.registry';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
@@ -12,6 +12,8 @@ import {
   NormalizedHistoricalConversation,
 } from '../ports/types';
 import { CHANNEL_SYNC_QUEUE } from './channel-sync.constants';
+import { ERROR_CODES } from '../../error-reporter/error-codes';
+import { ErrorReporterService } from '../../error-reporter/error-reporter.service';
 
 interface SyncJobData {
   syncJobId: string;
@@ -35,6 +37,7 @@ export class ChannelSyncProcessor extends WorkerHost {
     private readonly registry: ChannelAdapterRegistry,
     private readonly realtimeGateway: RealtimeGateway,
     private readonly importer: HistoryImportService,
+    private readonly errors: ErrorReporterService,
   ) {
     super();
   }
@@ -147,6 +150,20 @@ export class ChannelSyncProcessor extends WorkerHost {
           this.logger.warn(
             `Failed to import conversation ${conv.externalConversationId}: ${err.message}`,
           );
+          this.errors.report({
+            source: ErrorSource.JOB,
+            code: ERROR_CODES.JOB_FAILED,
+            severity: ErrorSeverity.ERROR,
+            message: `Channel sync: falha ao importar conversa: ${err?.message ?? String(err)}`,
+            stack: err?.stack,
+            context: {
+              job: 'channel-sync-conversation',
+              syncJobId,
+              externalConversationId: conv.externalConversationId,
+            },
+            organizationId: channel.organizationId,
+            channelId,
+          });
         }
       }
 
