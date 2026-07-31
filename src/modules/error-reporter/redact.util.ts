@@ -13,6 +13,14 @@
 const CHAVE_SENSIVEL =
   /(token|secret|senha|password|authorization|api[-_]?key|apikey|credential|cookie|bearer|assinatura|signature)/i;
 
+/**
+ * JID do WhatsApp (`5511999998888@s.whatsapp.net`) carrega o telefone do
+ * cliente. Ocultar por NOME de chave não pega este caso — o campo se chama
+ * `externalConversationId`, que não parece segredo nenhum. Então este é o
+ * único valor que também é filtrado pelo formato.
+ */
+const JID_WHATSAPP = /\b\d{6,}(?=@)/g;
+
 const VALOR_OCULTO = '<oculto>';
 /** Contexto de erro é raso por natureza; abaixo disso não há diagnóstico. */
 const PROFUNDIDADE_MAX = 5;
@@ -26,6 +34,7 @@ function percorre(
   profundidade: number,
   vistos: WeakSet<object>,
 ): unknown {
+  if (typeof valor === 'string') return valor.replace(JID_WHATSAPP, '<telefone>');
   if (valor === null || typeof valor !== 'object') return valor;
   if (profundidade >= PROFUNDIDADE_MAX) return '<profundo demais>';
   // Referência circular: sem isto, um objeto que aponta pra si mesmo

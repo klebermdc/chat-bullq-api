@@ -53,4 +53,23 @@ describe('redactSecrets', () => {
     expect(redactSecrets(null)).toBeNull();
     expect(redactSecrets(undefined)).toBeUndefined();
   });
+
+  it('oculta o telefone dentro de um JID do WhatsApp', () => {
+    expect(
+      redactSecrets({ externalConversationId: '5511999998888@s.whatsapp.net' }),
+    ).toEqual({ externalConversationId: '<telefone>@s.whatsapp.net' });
+  });
+
+  it('oculta JID dentro de array', () => {
+    expect(redactSecrets(['5511999998888@c.us', 'texto normal'])).toEqual([
+      '<telefone>@c.us',
+      'texto normal',
+    ]);
+  });
+
+  it('nao mexe em email comum', () => {
+    expect(redactSecrets({ de: 'contato@empresa.com.br' })).toEqual({
+      de: 'contato@empresa.com.br',
+    });
+  });
 });

@@ -159,7 +159,9 @@ export class ChannelSyncProcessor extends WorkerHost {
             context: {
               job: 'channel-sync-conversation',
               syncJobId,
-              externalConversationId: conv.externalConversationId,
+              // Sem o id externo: no WhatsApp ele é o JID, que carrega o
+              // telefone do cliente. O vínculo com a conversa vem pelos ids
+              // internos.
             },
             organizationId: channel.organizationId,
             channelId,

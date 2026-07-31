@@ -233,7 +233,10 @@ export class WatchdogTimerProcessor extends WorkerHost {
       this.errors.report({
         source: ErrorSource.JOB,
         code: ERROR_CODES.JOB_FAILED,
-        severity: ErrorSeverity.ERROR,
+        // CRITICAL como o AI_RUN_FAILED: aqui a rede de segurança do
+        // "cliente sem resposta" é que falhou, depois de o cliente já ter
+        // ficado esperando uma vez.
+        severity: ErrorSeverity.CRITICAL,
         message: `Watchdog: reativacao da IA falhou: ${msg}`,
         stack: err instanceof Error ? err.stack : undefined,
         context: { job: 'watchdog-reactivate', attempts: nextAttempts },
