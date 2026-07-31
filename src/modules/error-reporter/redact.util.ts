@@ -54,3 +54,36 @@ function percorre(
   }
   return saida;
 }
+
+/**
+ * Redação de TEXTO LIVRE — mensagem de erro e stack.
+ *
+ * `redactSecrets` oculta pelo NOME da chave, o que não serve aqui: o
+ * `err.message` que vem do Prisma, do axios ou do cliente de LLM é texto
+ * corrido, sem chave nenhuma. Então este redator trabalha por FORMATO, e só
+ * com formatos distintivos o bastante para não estragar o diagnóstico.
+ *
+ * A ordem importa: a regra de `Bearer` vem antes da regra de chave=valor,
+ * senão a segunda comeria a palavra "Bearer" e deixaria o token exposto.
+ */
+const TEXTO_SENSIVEL: Array<[RegExp, string]> = [
+  // Credencial embutida em URL: postgresql://usuario:senha@host
+  [/(\/\/)[^\s:@/]+:[^\s@/]+@/g, '$1<oculto>@'],
+  // Authorization: Bearer <token> / Basic <credencial>
+  [/((?:bearer|basic)\s+)[\w.\-+/=]+/gi, '$1<oculto>'],
+  // token=abc, "apiKey": "xyz", secret: 123
+  [
+    /((?:token|secret|senha|password|api[-_]?key|apikey|credential)["']?\s*[:=]\s*["']?)([^\s"',;&)]+)/gi,
+    '$1<oculto>',
+  ],
+  // JID do WhatsApp carrega o telefone do cliente
+  [/\b\d{6,}(?=@)/g, '<telefone>'],
+];
+
+/** Aplica as regras de formato a um texto livre. Nunca lança. */
+export function redactText(texto: string): string {
+  return TEXTO_SENSIVEL.reduce(
+    (acc, [padrao, substituto]) => acc.replace(padrao, substituto),
+    texto,
+  );
+}

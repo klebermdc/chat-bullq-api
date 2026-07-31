@@ -1,8 +1,10 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ErrorIssueStatus } from '@prisma/client';
+import { ErrorIssueStatus, ErrorSeverity, ErrorSource } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { ERROR_CODES } from './error-codes';
+import { ErrorReporterService } from './error-reporter.service';
 
 export const ERROR_RETENTION_QUEUE = 'error-retention';
 export const ERROR_RETENTION_JOB = 'prune';
@@ -41,6 +43,10 @@ export class ErrorRetentionProcessor extends WorkerHost {
   constructor(
     private readonly prisma: PrismaService,
     config: ConfigService,
+    // Mesmo módulo que ErrorReporterService (ver ErrorReporterModule) — não
+    // fecha ciclo de DI. O `di-cycle-guard.spec.ts` continua sendo o portão
+    // que pegaria isso se algum dia deixasse de ser verdade.
+    private readonly errors: ErrorReporterService,
   ) {
     super();
     this.diasOcorrencia = resolveDiasOcorrencia(
@@ -49,23 +55,44 @@ export class ErrorRetentionProcessor extends WorkerHost {
   }
 
   async process(): Promise<{ occurrences: number; issues: number }> {
-    const agora = Date.now();
-    const corteOcorrencia = new Date(agora - this.diasOcorrencia * DIA_MS);
-    const corteIssue = new Date(agora - ISSUE_RESOLVIDO_DIAS * DIA_MS);
+    try {
+      const agora = Date.now();
+      const corteOcorrencia = new Date(agora - this.diasOcorrencia * DIA_MS);
+      const corteIssue = new Date(agora - ISSUE_RESOLVIDO_DIAS * DIA_MS);
 
-    const occurrences = await this.prisma.errorOccurrence.deleteMany({
-      where: { occurredAt: { lt: corteOcorrencia } },
-    });
-    const issues = await this.prisma.errorIssue.deleteMany({
-      where: {
-        status: ErrorIssueStatus.RESOLVED,
-        lastSeenAt: { lt: corteIssue },
-      },
-    });
+      const occurrences = await this.prisma.errorOccurrence.deleteMany({
+        where: { occurredAt: { lt: corteOcorrencia } },
+      });
+      const issues = await this.prisma.errorIssue.deleteMany({
+        where: {
+          status: ErrorIssueStatus.RESOLVED,
+          lastSeenAt: { lt: corteIssue },
+        },
+      });
 
-    this.logger.log(
-      `poda: ${occurrences.count} ocorrencias e ${issues.count} issues resolvidos`,
-    );
-    return { occurrences: occurrences.count, issues: issues.count };
+      this.logger.log(
+        `poda: ${occurrences.count} ocorrencias e ${issues.count} issues resolvidos`,
+      );
+      return { occurrences: occurrences.count, issues: issues.count };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`poda de erros falhou: ${msg}`);
+      this.errors.report({
+        source: ErrorSource.JOB,
+        code: ERROR_CODES.JOB_FAILED,
+        severity: ErrorSeverity.ERROR,
+        message: `Poda de erros falhou: ${msg}`,
+        stack: err instanceof Error ? err.stack : undefined,
+        context: { job: 'error-retention' },
+      });
+      // Assimetria deliberada: este é o ÚNICO job do módulo que relança.
+      // Em todo outro lugar `report()` basta e a execução segue (a UI não
+      // pode travar por causa do coletor de bug). Aqui não há UI esperando
+      // — é um cron isolado — e sem retry a poda simplesmente não acontece
+      // naquele dia. Relançar deixa o BullMQ reagendar via `attempts` em
+      // `error-retention.cron.ts`, e o relatório acima já capturou o
+      // incidente, então não há perda de visibilidade em relançar.
+      throw err;
+    }
   }
 }

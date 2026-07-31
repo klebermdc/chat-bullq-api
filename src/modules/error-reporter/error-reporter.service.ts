@@ -9,7 +9,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { ErrorAlertService } from './error-alert.service';
 import { buildFingerprint } from './error-fingerprint.util';
 import { AlertKind, ErrorReportInput } from './error-reporter.types';
-import { redactSecrets } from './redact.util';
+import { redactSecrets, redactText } from './redact.util';
 
 const TITLE_MAX = 200;
 
@@ -74,8 +74,14 @@ export class ErrorReporterService {
 
   async ingest(input: ErrorReportInput): Promise<void> {
     try {
+      // Fingerprint recebe o `input` CRU, sem redação. Ele agrupa erros
+      // iguais entre si — se redigisse antes, dois erros com segredos
+      // diferentes (ex.: dois tokens distintos expirando) colapsariam no
+      // mesmo grupo, ou o inverso. Redação é para o que é GRAVADO e
+      // ENVIADO, não para o que é hasheado.
       const fingerprint = buildFingerprint(input);
-      const title = input.message.slice(0, TITLE_MAX);
+      const title = redactText(input.message).slice(0, TITLE_MAX);
+      const stack = input.stack ? redactText(input.stack) : undefined;
       const now = new Date();
 
       const existente = await this.prisma.errorIssue.findUnique({
@@ -94,7 +100,7 @@ export class ErrorReporterService {
               code: input.code,
               severity: input.severity,
               title,
-              lastStack: input.stack ?? null,
+              lastStack: stack ?? null,
               firstSeenAt: now,
               lastSeenAt: now,
               organizationId: input.organizationId ?? null,
@@ -136,7 +142,7 @@ export class ErrorReporterService {
           context: redactSecrets(
             input.context ?? {},
           ) as Prisma.InputJsonValue,
-          stack: input.stack ?? null,
+          stack: stack ?? null,
           organizationId: input.organizationId ?? null,
           channelId: input.channelId ?? null,
           conversationId: input.conversationId ?? null,
@@ -171,12 +177,13 @@ export class ErrorReporterService {
     const regressao = atual.status === ErrorIssueStatus.RESOLVED;
     const escalou =
       SEVERITY_RANK[input.severity] > SEVERITY_RANK[atual.severity];
+    const stack = input.stack ? redactText(input.stack) : undefined;
     const issue = await this.prisma.errorIssue.update({
       where: { id: atual.id },
       data: {
         count: { increment: 1 },
         lastSeenAt: now,
-        ...(input.stack ? { lastStack: input.stack } : {}),
+        ...(stack ? { lastStack: stack } : {}),
         ...(regressao
           ? { status: ErrorIssueStatus.OPEN, resolvedAt: null }
           : {}),

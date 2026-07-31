@@ -26,6 +26,11 @@ export class ErrorRetentionCron implements OnModuleInit {
           jobId: 'error-retention-cron',
           removeOnComplete: 10,
           removeOnFail: 10,
+          // O processor agora relança em falha (ver error-retention.processor.ts)
+          // justamente para habilitar este retry: um blip transitório do
+          // Postgres às 04:10 não pode custar o dia inteiro sem poda.
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 60_000 },
         },
       );
       this.logger.log(`poda agendada: ${ERROR_RETENTION_PATTERN}`);

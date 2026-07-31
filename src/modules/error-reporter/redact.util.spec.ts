@@ -1,4 +1,4 @@
-import { redactSecrets } from './redact.util';
+import { redactSecrets, redactText } from './redact.util';
 
 describe('redactSecrets', () => {
   it('oculta valor de chave sensivel no topo', () => {
@@ -71,5 +71,36 @@ describe('redactSecrets', () => {
     expect(redactSecrets({ de: 'contato@empresa.com.br' })).toEqual({
       de: 'contato@empresa.com.br',
     });
+  });
+});
+
+describe('redactText', () => {
+  it('oculta senha embutida em URL de conexao', () => {
+    expect(
+      redactText('connect ECONNREFUSED postgresql://admin:s3nh4@db:5432/x'),
+    ).toBe('connect ECONNREFUSED postgresql://<oculto>@db:5432/x');
+  });
+
+  it('oculta token em par chave=valor', () => {
+    expect(redactText('falhou com access_token=abc123def&retry=1')).toBe(
+      'falhou com access_token=<oculto>&retry=1',
+    );
+  });
+
+  it('oculta credencial de Authorization', () => {
+    expect(redactText('Authorization: Bearer eyJhbGciOi.abc')).toBe(
+      'Authorization: Bearer <oculto>',
+    );
+  });
+
+  it('oculta telefone em JID', () => {
+    expect(redactText('sem resposta de 5511999998888@s.whatsapp.net')).toBe(
+      'sem resposta de <telefone>@s.whatsapp.net',
+    );
+  });
+
+  it('preserva mensagem de erro comum', () => {
+    const texto = 'Cannot read properties of undefined (reading conversationId)';
+    expect(redactText(texto)).toBe(texto);
   });
 });

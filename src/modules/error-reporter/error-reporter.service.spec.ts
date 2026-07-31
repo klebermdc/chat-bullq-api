@@ -246,4 +246,26 @@ describe('ErrorReporterService', () => {
     expect(JSON.stringify(data.context)).not.toContain('segredo-vivo');
     expect(JSON.stringify(data.context)).toContain('X');
   });
+
+  it('oculta segredo na mensagem antes de gravar o titulo', async () => {
+    const { service, prisma } = makeService();
+    await service.ingest({
+      ...INPUT,
+      message: 'falhou em postgresql://admin:s3nh4@db:5432/app',
+    });
+    const data = prisma.errorIssue.create.mock.calls[0][0].data;
+    expect(data.title).not.toContain('s3nh4');
+  });
+
+  it('oculta segredo no stack antes de gravar', async () => {
+    const { service, prisma } = makeService();
+    await service.ingest({
+      ...INPUT,
+      stack: 'Error: token=segredo-vivo\n    at f (/app/src/a.ts:1:1)',
+    });
+    const issue = prisma.errorIssue.create.mock.calls[0][0].data;
+    const occ = prisma.errorOccurrence.create.mock.calls[0][0].data;
+    expect(issue.lastStack).not.toContain('segredo-vivo');
+    expect(occ.stack).not.toContain('segredo-vivo');
+  });
 });
