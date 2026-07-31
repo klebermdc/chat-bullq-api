@@ -1,11 +1,32 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ErrorIssue, ErrorIssueStatus, Prisma } from '@prisma/client';
+import {
+  ErrorIssue,
+  ErrorIssueStatus,
+  ErrorSeverity,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { ErrorAlertService } from './error-alert.service';
 import { buildFingerprint } from './error-fingerprint.util';
 import { AlertKind, ErrorReportInput } from './error-reporter.types';
 
 const TITLE_MAX = 200;
+
+/**
+ * Teto de ingestões simultâneas. Cada `ingest()` custa de 2 a 4 idas ao
+ * banco, e num crashloop `report()` é chamado milhares de vezes por segundo.
+ * Sem teto, o coletor de bug esgota o pool do Prisma e vira ele mesmo o
+ * incidente — já aconteceu neste projeto com outro job. Perder relatório
+ * repetido é barato; derrubar o banco não é.
+ */
+const MAX_INFLIGHT = 20;
+
+/** CRITICAL > ERROR > WARNING. Só sobe: um erro que já foi grave continua grave. */
+const SEVERITY_RANK: Record<ErrorSeverity, number> = {
+  CRITICAL: 3,
+  ERROR: 2,
+  WARNING: 1,
+};
 
 /**
  * Ponto único de entrada para registrar falha de produção.
@@ -22,6 +43,9 @@ const TITLE_MAX = 200;
 export class ErrorReporterService {
   private readonly logger = new Logger(ErrorReporterService.name);
 
+  private emVoo = 0;
+  private descartados = 0;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly alert: ErrorAlertService,
@@ -29,7 +53,22 @@ export class ErrorReporterService {
 
   /** Dispara e esquece. Seguro em qualquer contexto, inclusive num catch. */
   report(input: ErrorReportInput): void {
-    void this.ingest(input).catch(() => undefined);
+    if (this.emVoo >= MAX_INFLIGHT) {
+      this.descartados += 1;
+      // Log esparso: se está saturado, logar cada descarte só piora.
+      if (this.descartados % 100 === 1) {
+        this.logger.warn(
+          `error-reporter saturado: ${this.descartados} relatorios descartados`,
+        );
+      }
+      return;
+    }
+    this.emVoo += 1;
+    void this.ingest(input)
+      .catch(() => undefined)
+      .finally(() => {
+        this.emVoo -= 1;
+      });
   }
 
   async ingest(input: ErrorReportInput): Promise<void> {
@@ -65,16 +104,28 @@ export class ErrorReporterService {
           // Corrida: dois webhooks idênticos chegaram ao mesmo tempo e o
           // outro criou o issue primeiro. Cai no caminho de incremento.
           if (!isUniqueViolation(err)) throw err;
-          const resultado = await this.bump(fingerprint, input, now);
+          const resultado = await this.incrementOrReopen(
+            fingerprint,
+            input,
+            now,
+          );
           issue = resultado.issue;
           kind = resultado.kind;
         }
       } else {
-        const resultado = await this.bump(fingerprint, input, now, existente);
+        const resultado = await this.incrementOrReopen(
+          fingerprint,
+          input,
+          now,
+          existente,
+        );
         issue = resultado.issue;
         kind = resultado.kind;
       }
 
+      // Sem transação de propósito: `count` é histórico e as ocorrências são
+      // podadas em 14 dias, então os dois números nunca batem mesmo. Uma
+      // transação por erro só somaria pressão no pool que MAX_INFLIGHT protege.
       await this.prisma.errorOccurrence.create({
         data: {
           issueId: issue.id,
@@ -97,11 +148,15 @@ export class ErrorReporterService {
   }
 
   /** Incrementa o issue existente. Reabre se estava resolvido (regressão). */
-  private async bump(
+  private async incrementOrReopen(
     fingerprint: string,
     input: ErrorReportInput,
     now: Date,
-    conhecido?: { id: string; status: ErrorIssueStatus },
+    conhecido?: {
+      id: string;
+      status: ErrorIssueStatus;
+      severity: ErrorSeverity;
+    },
   ): Promise<{ issue: ErrorIssue; kind: AlertKind }> {
     const atual =
       conhecido ??
@@ -109,6 +164,8 @@ export class ErrorReporterService {
     if (!atual) throw new Error(`issue sumiu apos conflito: ${fingerprint}`);
 
     const regressao = atual.status === ErrorIssueStatus.RESOLVED;
+    const escalou =
+      SEVERITY_RANK[input.severity] > SEVERITY_RANK[atual.severity];
     const issue = await this.prisma.errorIssue.update({
       where: { id: atual.id },
       data: {
@@ -118,6 +175,7 @@ export class ErrorReporterService {
         ...(regressao
           ? { status: ErrorIssueStatus.OPEN, resolvedAt: null }
           : {}),
+        ...(escalou ? { severity: input.severity } : {}),
       },
     });
     return { issue, kind: regressao ? 'regression' : 'recurring' };

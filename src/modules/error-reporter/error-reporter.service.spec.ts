@@ -168,4 +168,71 @@ describe('ErrorReporterService', () => {
     expect(prisma.errorIssue.update).toHaveBeenCalledTimes(1);
     expect(prisma.errorOccurrence.create).toHaveBeenCalledTimes(1);
   });
+
+  it('escala a severidade quando o mesmo erro volta pior', async () => {
+    const { service, prisma } = makeService({
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'iss_1',
+        status: ErrorIssueStatus.OPEN,
+        severity: ErrorSeverity.WARNING,
+        count: 2,
+      }),
+    });
+    await service.ingest({ ...INPUT, severity: ErrorSeverity.CRITICAL });
+    expect(prisma.errorIssue.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ severity: ErrorSeverity.CRITICAL }),
+      }),
+    );
+  });
+
+  it('NAO rebaixa a severidade quando o erro volta mais leve', async () => {
+    const { service, prisma } = makeService({
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'iss_1',
+        status: ErrorIssueStatus.OPEN,
+        severity: ErrorSeverity.CRITICAL,
+        count: 2,
+      }),
+    });
+    await service.ingest({ ...INPUT, severity: ErrorSeverity.WARNING });
+    const data = prisma.errorIssue.update.mock.calls[0][0].data;
+    expect(data.severity).toBeUndefined();
+  });
+
+  it('descarta o report quando o issue some depois do conflito', async () => {
+    const conflito = Object.assign(new Error('unique'), { code: 'P2002' });
+    const { service, prisma } = makeService({
+      findUnique: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockRejectedValue(conflito),
+    });
+    await expect(service.ingest(INPUT)).resolves.toBeUndefined();
+    expect(prisma.errorOccurrence.create).not.toHaveBeenCalled();
+  });
+
+  it('descarta report acima do teto de ingestoes em voo', () => {
+    const { service, prisma } = makeService({
+      findUnique: jest.fn().mockImplementation(
+        () => new Promise(() => undefined),
+      ),
+    });
+    for (let i = 0; i < 25; i += 1) service.report(INPUT);
+    expect(prisma.errorIssue.findUnique).toHaveBeenCalledTimes(20);
+  });
+
+  it('libera a vaga quando a ingestao termina', async () => {
+    let liberar: () => void = () => undefined;
+    const travado = new Promise((res) => {
+      liberar = () => res(null);
+    });
+    const { service, prisma } = makeService({
+      findUnique: jest.fn().mockReturnValue(travado),
+    });
+    for (let i = 0; i < 21; i += 1) service.report(INPUT);
+    expect(prisma.errorIssue.findUnique).toHaveBeenCalledTimes(20);
+    liberar();
+    await new Promise((r) => setTimeout(r, 20));
+    service.report(INPUT);
+    expect(prisma.errorIssue.findUnique).toHaveBeenCalledTimes(21);
+  });
 });
