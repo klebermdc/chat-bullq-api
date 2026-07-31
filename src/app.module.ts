@@ -46,6 +46,7 @@ import { MetaCapiModule } from './modules/meta-capi/meta-capi.module';
 // via skill HTTP getProductPitch + CatalogSyncService. Tabela `products`
 // fica órfã no DB (cleanup futuro). Não importar aqui.
 import { StorageModule } from './modules/storage/storage.module';
+import { HealthModule } from './modules/health/health.module';
 import redisConfig from './config/redis.config';
 
 @Module({
@@ -109,6 +110,7 @@ import redisConfig from './config/redis.config';
     OrderFichaModule,
     AcceptancesModule,
     MetaCapiModule,
+    HealthModule,
   ],
 })
 export class AppModule {}
