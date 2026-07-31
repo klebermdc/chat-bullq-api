@@ -20,8 +20,8 @@ export class HealthService {
 
   async check(): Promise<HealthResult> {
     const [db, redis] = await Promise.all([
-      ok(withTimeout(this.prisma.$queryRaw`SELECT 1`)),
-      ok(withTimeout(this.redis.ping())),
+      ok(() => withTimeout(this.prisma.$queryRaw`SELECT 1`)),
+      ok(() => withTimeout(this.redis.ping())),
     ]);
     return {
       status: db === 'ok' && redis === 'ok' ? 'ok' : 'degraded',
@@ -45,9 +45,16 @@ function withTimeout<T>(promise: PromiseLike<T>): Promise<T> {
   );
 }
 
-async function ok(promise: Promise<unknown>): Promise<'ok' | 'fail'> {
+/**
+ * Recebe uma FUNÇÃO, não uma Promise, de propósito: assim um throw síncrono
+ * do cliente (Prisma ou ioredis) também cai aqui dentro. Se escapasse, o
+ * controller lançaria, o GlobalExceptionFilter reportaria um 5xx, e o painel
+ * ganharia um issue novo a cada batida do monitor — justamente durante o
+ * incidente que este endpoint existe para detectar.
+ */
+async function ok(executa: () => PromiseLike<unknown>): Promise<'ok' | 'fail'> {
   try {
-    await promise;
+    await executa();
     return 'ok';
   } catch {
     return 'fail';

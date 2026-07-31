@@ -49,4 +49,16 @@ describe('HealthService', () => {
     });
     jest.useRealTimers();
   });
+
+  it('nao lanca quando o cliente estoura de forma sincrona', async () => {
+    const service = makeService({
+      sql: jest.fn().mockImplementation(() => {
+        throw new Error('cliente nao inicializado');
+      }),
+    });
+    await expect(service.check()).resolves.toEqual({
+      status: 'degraded',
+      checks: { db: 'fail', redis: 'ok' },
+    });
+  });
 });
