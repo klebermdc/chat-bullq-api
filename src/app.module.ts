@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from './database/prisma.module';
 import { CryptoModule } from './common/crypto/crypto.module';
+import { ErrorReporterModule } from './modules/error-reporter/error-reporter.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
@@ -62,6 +63,9 @@ import redisConfig from './config/redis.config';
     }),
     PrismaModule,
     CryptoModule,
+    // @Global — coleta de erro de produção. Registrado cedo porque todo
+    // módulo de domínio injeta ErrorReporterService sem importar nada.
+    ErrorReporterModule,
     // @Global — object storage (MinIO) for uploads/audio; register early so
     // MessagingModule/ChannelHubModule (and main.ts) can inject StorageService.
     StorageModule,
