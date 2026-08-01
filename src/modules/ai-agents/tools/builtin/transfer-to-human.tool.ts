@@ -5,6 +5,12 @@ import { PendingActionService } from '../../confirmations/pending-action.service
 import { AiTool, ToolContext, ToolResult } from '../tool.types';
 import { ReplyToConversationTool } from './reply-to-conversation.tool';
 import { enterLeadStage } from '../../lead-stage.util';
+import {
+  isWithinHours,
+  nextOpenAt,
+  formatReturn,
+  type BusinessHoursConfig,
+} from '../../../routing/availability/business-hours.util';
 
 /** Mensagem que a IA manda pro cliente ao transferir — garantida por código. */
 const TRANSITION_MESSAGE =
@@ -99,9 +105,14 @@ export class TransferToHumanTool implements AiTool {
     // ── Efeitos determinísticos do handoff (best-effort — nunca quebram a
     //    pendência, que é o essencial). Feitos POR CÓDIGO pra não depender do
     //    modelo lembrar de avisar/taguear/criar card. ──────────────────────
-    // 1) Avisa o cliente (mensagem de transição garantida).
+    // 1) Avisa o cliente (mensagem de transição garantida). Fora do horário,
+    //    troca o "em instantes alguém continua" por um aviso de retorno — senão
+    //    a Aline promete atendimento imediato com a agência fechada.
     try {
-      await this.replyTool.execute({ text: TRANSITION_MESSAGE }, ctx);
+      await this.replyTool.execute(
+        { text: await this.buildTransitionMessage(ctx) },
+        ctx,
+      );
     } catch (e) {
       this.logger.warn(`transfer: falha ao avisar cliente (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
     }
@@ -191,6 +202,40 @@ export class TransferToHumanTool implements AiTool {
       // se tivesse transferido de fato.
       finalAction: 'TRANSFERRED_TO_HUMAN',
     };
+  }
+
+  /**
+   * Mensagem de transição pro cliente. Dentro do horário (ou 24/7), usa a
+   * padrão ("em instantes alguém continua"). FORA do horário da agência, avisa
+   * quando o time humano retorna — pra não prometer atendimento imediato com a
+   * agência fechada. Best-effort: qualquer falha cai na mensagem padrão.
+   */
+  private async buildTransitionMessage(ctx: ToolContext): Promise<string> {
+    try {
+      const org = await this.prisma.organization.findUnique({
+        where: { id: ctx.organizationId },
+        select: { aiBusinessHours: true, aiTimezone: true },
+      });
+      const bh = (org?.aiBusinessHours ?? null) as BusinessHoursConfig | null;
+      const tz = org?.aiTimezone || 'America/Sao_Paulo';
+      const now = new Date();
+      if (bh && !isWithinHours(bh, tz, now)) {
+        const nextOpen = nextOpenAt(bh, tz, now);
+        if (nextOpen) {
+          const proximo = formatReturn(nextOpen, tz, now);
+          return (
+            'Perfeito, já tenho tudo que preciso 😊 Como no momento estamos fora ' +
+            `do horário de atendimento, nosso time humano retorna ${proximo} e dá ` +
+            'sequência com você por aqui. Já deixei sua solicitação encaminhada! 💙'
+          );
+        }
+      }
+    } catch (e) {
+      this.logger.warn(
+        `transfer: falha ao calcular horário p/ msg de transição (conv=${ctx.conversationId}): ${(e as Error)?.message}`,
+      );
+    }
+    return TRANSITION_MESSAGE;
   }
 
   /**

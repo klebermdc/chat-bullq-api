@@ -72,6 +72,47 @@ describe('TransferToHumanTool — resumo do SDR vira observação do lead', () =
   });
 });
 
+describe('TransferToHumanTool — msg de transição olha o horário da agência', () => {
+  afterEach(() => jest.useRealTimers());
+
+  const withHours = (t: ReturnType<typeof make>) => {
+    t.prisma.organization = {
+      findUnique: jest.fn().mockResolvedValue({
+        aiBusinessHours: { monday: { enabled: true, windows: [['09:00', '18:00']] } },
+        aiTimezone: 'America/Sao_Paulo',
+      }),
+    };
+    return t;
+  };
+
+  it('FORA do horário: avisa o retorno e NÃO promete atendimento imediato', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-07-26T12:00:00.000Z')); // domingo 09h BRT → fechado
+    const t = withHours(make());
+    await t.tool.execute({ reason: 'lead qualificado' }, t.ctx);
+
+    const text = t.replyTool.execute.mock.calls[0][0].text as string;
+    expect(text.toLowerCase()).toContain('fora do horário');
+    expect(text).not.toContain('Em instantes alguém continua');
+  });
+
+  it('DENTRO do horário: mantém a mensagem padrão', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-07-27T13:00:00.000Z')); // segunda 10h BRT → aberto
+    const t = withHours(make());
+    await t.tool.execute({ reason: 'lead qualificado' }, t.ctx);
+
+    const text = t.replyTool.execute.mock.calls[0][0].text as string;
+    expect(text).toContain('Em instantes alguém continua');
+  });
+
+  it('sem org/horário no mock (lookup falha): cai na mensagem padrão', async () => {
+    const { tool, replyTool, ctx } = make(); // prisma sem organization
+    await tool.execute({ reason: 'lead qualificado' }, ctx);
+
+    const text = replyTool.execute.mock.calls[0][0].text as string;
+    expect(text).toContain('Em instantes alguém continua');
+  });
+});
+
 describe('TransferToHumanTool — card de distribuição (não expira / Esperando / dedupe)', () => {
   it('cria a pendência com TTL longo (não expira em 30min)', async () => {
     const { tool, pendingActions, ctx } = make();
