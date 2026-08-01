@@ -8,6 +8,8 @@ import {
   AiTool,
   NotificationType,
   OrgRole,
+  ErrorSeverity,
+  ErrorSource,
 } from '@prisma/client';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
@@ -37,6 +39,8 @@ import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { sanitizeAssistantText } from './text-guards';
 import { MediaUrlResolverService } from './media-url-resolver.service';
 import { isShadowMode } from '../shadow-learning/shadow-mode.util';
+import { ERROR_CODES } from '../../error-reporter/error-codes';
+import { ErrorReporterService } from '../../error-reporter/error-reporter.service';
 
 const MAX_TOOL_ITERATIONS = 8;
 const MAX_RECENT_MESSAGES = 30;
@@ -91,6 +95,7 @@ export class AiAgentRunnerService {
     private readonly memoryExtractorQueue: Queue,
     @InjectQueue('rag-indexer')
     private readonly ragIndexerQueue: Queue,
+    private readonly errors: ErrorReporterService,
   ) {}
 
   async run({
@@ -553,6 +558,18 @@ export class AiAgentRunnerService {
         `Agent run ${run.id} failed: ${err?.message ?? err}`,
         err?.stack,
       );
+      // O cliente ficou no vácuo: a Aline não respondeu e ninguém foi avisado.
+      this.errors.report({
+        source: ErrorSource.AI,
+        code: ERROR_CODES.AI_RUN_FAILED,
+        severity: ErrorSeverity.CRITICAL,
+        message: `Execucao da IA falhou: ${err?.message ?? String(err)}`,
+        stack: err?.stack,
+        context: { runId: run.id, agentId: run.agentId },
+        organizationId: conversation.organizationId,
+        conversationId: conversation.id,
+        contactId: conversation.contactId ?? undefined,
+      });
       const finishedAt = new Date();
       const durationMs = Date.now() - startedAt;
       const errorMessage = err?.message ?? String(err);

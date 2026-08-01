@@ -36,13 +36,15 @@ function makeDeps(conversation?: any) {
     notifyOrgAgents: jest.fn(async () => ({})),
   };
   const messages = { send: jest.fn(async (..._args: any[]) => ({})) };
+  const errors = { report: jest.fn() };
   const service = new CadenceTransitionService(
     runner as any,
     prisma,
     notifications as any,
     messages as any,
+    errors as any,
   );
-  return { runner, prisma, notifications, messages, service };
+  return { runner, prisma, notifications, messages, errors, service };
 }
 
 const enrollment = (overrides: any = {}) => ({
@@ -331,8 +333,9 @@ describe('CadenceTransitionService — revive no caminho fraco', () => {
     };
     const notifications = { notify: jest.fn(), notifyOrgAgents: jest.fn() };
     const messages = { send: jest.fn() };
-    const service = new CadenceTransitionService(runner as any, prisma as any, notifications as any, messages as any);
-    return { service, runner, prisma, notifications };
+    const errors = { report: jest.fn() };
+    const service = new CadenceTransitionService(runner as any, prisma as any, notifications as any, messages as any, errors as any);
+    return { service, runner, prisma, notifications, errors };
   }
 
   const enrollment = { id: 'e1', status: 'ACTIVE', conversationId: 'c1', organizationId: 'o1' } as any;

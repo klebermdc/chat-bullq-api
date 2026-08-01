@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { CadenceStepOption } from '@prisma/client';
+import { CadenceStepOption, ErrorSeverity, ErrorSource } from '@prisma/client';
 import { LlmService } from '../ai-agents/llm/llm.service';
 import { LlmContent } from '../ai-agents/llm/llm.types';
 import { SAKANA_SIMPLE_MODEL } from '../ai-agents/llm/llm.constants';
+import { ERROR_CODES } from '../error-reporter/error-codes';
+import { ErrorReporterService } from '../error-reporter/error-reporter.service';
 
 export type ClassifyOutcome = 'SIM' | 'NAO' | 'DESCADASTRAR' | 'AMBIGUO';
 
@@ -37,7 +39,10 @@ const KW_DESCADASTRAR = new Set(['sair', 'parar', 'descadastrar', 'cancelar']);
 export class ResponseClassifierService {
   private readonly logger = new Logger(ResponseClassifierService.name);
 
-  constructor(private readonly llm: LlmService) {}
+  constructor(
+    private readonly llm: LlmService,
+    private readonly errors: ErrorReporterService,
+  ) {}
 
   async classify(
     message: ClassifierMessage,
@@ -149,6 +154,17 @@ export class ResponseClassifierService {
       return 'AMBIGUO';
     } catch (err) {
       this.logger.warn(`classify_llm_failed: ${(err as Error).message}`);
+      this.errors.report({
+        source: ErrorSource.JOB,
+        code: ERROR_CODES.JOB_FAILED,
+        severity: ErrorSeverity.ERROR,
+        message: `Cadencia: classificacao da resposta via LLM falhou: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        stack: err instanceof Error ? err.stack : undefined,
+        context: { job: 'cadence-classify-response' },
+        organizationId,
+      });
       return 'AMBIGUO';
     }
   }

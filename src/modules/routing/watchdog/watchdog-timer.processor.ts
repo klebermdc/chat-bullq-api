@@ -5,6 +5,8 @@ import {
   ConversationStatus,
   MessageDirection,
   NotificationType,
+  ErrorSeverity,
+  ErrorSource,
 } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { NotificationsService } from '../../notifications/notifications.service';
@@ -13,6 +15,8 @@ import { AgentRouterService } from '../../ai-agents/router/agent-router.service'
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { WatchdogConfigService } from './watchdog-config.service';
 import { WatchdogCronService } from './watchdog-cron.service';
+import { ERROR_CODES } from '../../error-reporter/error-codes';
+import { ErrorReporterService } from '../../error-reporter/error-reporter.service';
 import {
   WATCHDOG_QUEUE,
   WATCHDOG_CHECK_JOB,
@@ -48,6 +52,7 @@ export class WatchdogTimerProcessor extends WorkerHost {
     private readonly realtime: RealtimeGateway,
     @Inject(forwardRef(() => WatchdogCronService))
     private readonly cron: WatchdogCronService,
+    private readonly errors: ErrorReporterService,
   ) {
     super();
   }
@@ -225,6 +230,20 @@ export class WatchdogTimerProcessor extends WorkerHost {
       this.logger.error(
         `Watchdog AI reactivation failed: conv=${conversationId} attempts=${nextAttempts}: ${msg}`,
       );
+      this.errors.report({
+        source: ErrorSource.JOB,
+        code: ERROR_CODES.JOB_FAILED,
+        // CRITICAL como o AI_RUN_FAILED: aqui a rede de segurança do
+        // "cliente sem resposta" é que falhou, depois de o cliente já ter
+        // ficado esperando uma vez.
+        severity: ErrorSeverity.CRITICAL,
+        message: `Watchdog: reativacao da IA falhou: ${msg}`,
+        stack: err instanceof Error ? err.stack : undefined,
+        context: { job: 'watchdog-reactivate', attempts: nextAttempts },
+        organizationId: conversation.organizationId,
+        conversationId,
+        contactId: conversation.contactId,
+      });
       // Não relança — o BullMQ não deve retentar esse job. A próxima
       // mensagem do cliente OU o cron de fallback vão tentar de novo.
       return { reactivated: false, error: msg, attempts: nextAttempts };
@@ -277,11 +296,24 @@ export class WatchdogTimerProcessor extends WorkerHost {
         body: `${contactName} está esperando resposta. Cuide ou deixe a IA assumir.`,
         data: { conversationId, watchdog: true, reason },
       })
-      .catch((err) =>
+      .catch((err) => {
         this.logger.warn(
           `Failed to notify assignee ${assigneeId}: ${err.message ?? err}`,
-        ),
-      );
+        );
+        this.errors.report({
+          source: ErrorSource.JOB,
+          code: ERROR_CODES.JOB_FAILED,
+          severity: ErrorSeverity.ERROR,
+          message: `Watchdog: falha ao notificar responsavel: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          stack: err instanceof Error ? err.stack : undefined,
+          context: { job: 'watchdog-notify-assignee' },
+          organizationId,
+          conversationId,
+          userId: assigneeId,
+        });
+      });
   }
 
   private async clearJobId(conversationId: string): Promise<void> {

@@ -3,10 +3,14 @@ import {
   CadenceEnrollment,
   NotificationType,
   Prisma,
+  ErrorSeverity,
+  ErrorSource,
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { MessagesService } from '../messaging/messages/messages.service';
+import { ERROR_CODES } from '../error-reporter/error-codes';
+import { ErrorReporterService } from '../error-reporter/error-reporter.service';
 
 /**
  * Token de injeção do runner. Evita import direto de `CadenceRunner` (Task 7),
@@ -72,6 +76,7 @@ export class CadenceTransitionService {
     // de resolução ao injetar o MessagesService neste provider.
     @Inject(forwardRef(() => MessagesService))
     private readonly messages: MessagesService,
+    private readonly errors: ErrorReporterService,
   ) {}
 
   async apply(
@@ -219,6 +224,19 @@ export class CadenceTransitionService {
           err instanceof Error ? err.message : String(err)
         }`,
       );
+      this.errors.report({
+        source: ErrorSource.JOB,
+        code: ERROR_CODES.JOB_FAILED,
+        severity: ErrorSeverity.ERROR,
+        message: `Cadencia: envio da mensagem de transicao falhou: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        stack: err instanceof Error ? err.stack : undefined,
+        context: { job: 'cadence-transition-message', enrollmentId: enrollment.id },
+        organizationId: enrollment.organizationId,
+        conversationId: enrollment.conversationId,
+        contactId: enrollment.contactId,
+      });
     }
   }
 

@@ -55,7 +55,9 @@ export class SlaService {
       const resJob = await this.slaQueue.getJob(`sla-res-${conversationId}`);
       if (resJob) await resJob.remove();
     } catch {
-      // Job may not exist
+      // Job já não existe — caso esperado, não é incidente. Deliberadamente
+      // NÃO reportado ao painel de bugs: seria ruído. Uma queda de Redis de
+      // verdade aparece no /health e no monitor externo.
     }
   }
 }

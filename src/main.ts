@@ -10,6 +10,7 @@ import { StorageService } from './modules/storage/storage.service';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { ErrorReporterService } from './modules/error-reporter/error-reporter.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
@@ -118,7 +119,10 @@ async function bootstrap() {
       transformOptions: { enableImplicitConversion: true },
     }),
   );
-  app.useGlobalFilters(new GlobalExceptionFilter());
+  // O reporter vem do container (ErrorReporterModule é @Global), mas o filtro
+  // continua instanciado à mão — é assim que o Nest aplica filtro global sem
+  // depender de APP_FILTER, e evita registro duplicado.
+  app.useGlobalFilters(new GlobalExceptionFilter(app.get(ErrorReporterService)));
   app.useGlobalInterceptors(new LoggingInterceptor(), new ResponseInterceptor());
 
   const swagger = new DocumentBuilder()
