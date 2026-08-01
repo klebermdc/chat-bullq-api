@@ -110,7 +110,7 @@ jobs:
       - name: Avisa que voltou
         # Só quando a execução anterior tinha falhado — senão mandaria "voltou"
         # a cada 5 minutos com tudo funcionando normalmente.
-        if: success() && steps.prev.outputs.conclusion == 'failure'
+        if: success() && steps.prev.outputs.conclusion == 'failure' && inputs.sem_alerta != true
         env:
           TOKEN: ${{ secrets.TELEGRAM_ALERT_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
