@@ -1,0 +1,116 @@
+# Vigia externo do Painel de Bugs.
+#
+# Existe por um motivo só: API morta não consegue avisar que morreu. Todos os
+# coletores de erro vivem DENTRO da API — num crashloop eles morrem junto, e o
+# alerta do Telegram nunca sai. Este workflow roda na infraestrutura do GitHub,
+# fora do VPS, então sobrevive à queda da VPS inteira.
+#
+# ATENÇÃO: workflow agendado só dispara a partir da BRANCH PADRÃO do repositório
+# (`main`). Se este arquivo for movido para a branch de deploy, o cron para de
+# rodar em silêncio — que é justamente o tipo de falha muda que este vigia
+# deveria pegar.
+#
+# O cron do GitHub tem granularidade mínima de 5 minutos e atrasa quando a fila
+# está cheia — na prática a detecção fica entre 5 e 15 minutos. Um monitor
+# dedicado (UptimeRobot, BetterStack) detecta em 1 minuto. Este é o suficiente
+# barato, não o ideal.
+
+name: health-watchdog
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # permite disparar à mão para testar
+
+permissions:
+  actions: read # necessário para ler a conclusão da execução anterior
+
+concurrency:
+  group: health-watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conclusão da execução anterior
+        id: prev
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Usado só para saber se devemos anunciar a RECUPERAÇÃO.
+          prev=$(gh run list \
+            --workflow health-watchdog.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --status completed --limit 1 \
+            --json conclusion -q '.[0].conclusion // "none"' 2>/dev/null || echo none)
+          echo "conclusion=$prev" >> "$GITHUB_OUTPUT"
+          echo "execução anterior: $prev"
+
+      - name: Bate no /health
+        id: check
+        env:
+          HEALTH_URL: ${{ vars.HEALTH_URL }}
+        run: |
+          url="${HEALTH_URL:-https://api-ofpchat.explotek.pro/api/v1/health}"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+          # Três tentativas espaçadas antes de declarar queda. Uma falha isolada
+          # costuma ser rede do runner, não a API — e alerta falso treina você a
+          # ignorar o alerta verdadeiro.
+          for i in 1 2 3; do
+            code=$(curl -s -o /tmp/body -w '%{http_code}' --max-time 15 "$url" || echo 000)
+            if [ "$code" = "200" ] && grep -q '"status":"ok"' /tmp/body; then
+              echo "tentativa $i: OK"
+              echo "detalhe=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "tentativa $i: HTTP $code — $(head -c 200 /tmp/body)"
+            [ "$i" != "3" ] && sleep 20
+          done
+
+          {
+            echo "detalhe<<EOF"
+            echo "HTTP $code"
+            head -c 300 /tmp/body
+            echo
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          exit 1
+
+      - name: Avisa que caiu
+        if: failure() && steps.check.outcome == 'failure'
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_ALERT_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          URL: ${{ steps.check.outputs.url }}
+          DETALHE: ${{ steps.check.outputs.detalhe }}
+        run: |
+          if [ -z "$TOKEN" ] || [ -z "$CHAT_ID" ]; then
+            echo "::error::faltam os secrets TELEGRAM_ALERT_BOT_TOKEN / TELEGRAM_ALERT_CHAT_ID"
+            exit 1
+          fi
+          texto="🚨 API FORA DO AR
+          $URL não respondeu em 3 tentativas.
+
+          $DETALHE
+          Os alertas de erro do sistema também estão mudos enquanto isso — eles rodam dentro da API."
+          curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+            -d chat_id="$CHAT_ID" \
+            --data-urlencode "text=$texto" \
+            -d disable_web_page_preview=true
+
+      - name: Avisa que voltou
+        # Só quando a execução anterior tinha falhado — senão mandaria "voltou"
+        # a cada 5 minutos com tudo funcionando normalmente.
+        if: success() && steps.prev.outputs.conclusion == 'failure'
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_ALERT_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          URL: ${{ steps.check.outputs.url }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+            -d chat_id="$CHAT_ID" \
+            --data-urlencode "text=✅ API DE VOLTA
+          $URL respondendo normalmente." \
+            -d disable_web_page_preview=true
