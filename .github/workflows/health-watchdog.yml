@@ -20,7 +20,12 @@ name: health-watchdog
 on:
   schedule:
     - cron: '*/5 * * * *'
-  workflow_dispatch: # permite disparar à mão para testar
+  workflow_dispatch:
+    inputs:
+      sem_alerta:
+        description: 'Só diagnosticar, sem mandar Telegram'
+        type: boolean
+        default: false
 
 permissions:
   actions: read # necessário para ler a conclusão da execução anterior
@@ -58,28 +63,30 @@ jobs:
           # Três tentativas espaçadas antes de declarar queda. Uma falha isolada
           # costuma ser rede do runner, não a API — e alerta falso treina você a
           # ignorar o alerta verdadeiro.
+          code=000
           for i in 1 2 3; do
-            code=$(curl -s -o /tmp/body -w '%{http_code}' --max-time 15 "$url" || echo 000)
+            code=$(curl -sS -o /tmp/body -w '%{http_code}' \
+                     --connect-timeout 10 --max-time 20 "$url" 2>/tmp/err) || code="${code:-000}"
             if [ "$code" = "200" ] && grep -q '"status":"ok"' /tmp/body; then
               echo "tentativa $i: OK"
-              echo "detalhe=" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "tentativa $i: HTTP $code — $(head -c 200 /tmp/body)"
+            echo "tentativa $i: HTTP ${code:-000} — $(tr -d '\n\r' </tmp/err | head -c 200)"
             [ "$i" != "3" ] && sleep 20
           done
 
-          {
-            echo "detalhe<<EOF"
-            echo "HTTP $code"
-            head -c 300 /tmp/body
-            echo
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+          # Diagnóstico: distingue DNS, TCP, TLS e erro de aplicação. Sem isto,
+          # "HTTP 000" não diz se a API caiu ou se o runner é que não alcança.
+          echo "--- diagnóstico ---"
+          curl -v --connect-timeout 10 --max-time 20 "$url" 2>&1 | head -25 || true
+
+          # Uma linha só: saída multilinha em GITHUB_OUTPUT exige delimitador e
+          # quebra silenciosamente quando o corpo do erro tem formato inesperado.
+          echo "detalhe=HTTP ${code:-000} $(tr -d '\n\r' </tmp/err | head -c 150)" >> "$GITHUB_OUTPUT"
           exit 1
 
       - name: Avisa que caiu
-        if: failure() && steps.check.outcome == 'failure'
+        if: failure() && steps.check.outcome == 'failure' && inputs.sem_alerta != true
         env:
           TOKEN: ${{ secrets.TELEGRAM_ALERT_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
