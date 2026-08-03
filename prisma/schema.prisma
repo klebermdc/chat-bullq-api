@@ -133,16 +133,16 @@ enum ErrorInvestigationStatus {
 // ─── Core: Auth + Multi-tenancy ──────────────────
 
 model User {
-  id        String    @id @default(cuid())
-  name      String
-  email     String    @unique
-  password  String
-  avatarUrl String?   @map("avatar_url")
-  isActive  Boolean   @default(true) @map("is_active")
-  isSuperAdmin Boolean @default(false) @map("is_super_admin")
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  password     String
+  avatarUrl    String?   @map("avatar_url")
+  isActive     Boolean   @default(true) @map("is_active")
+  isSuperAdmin Boolean   @default(false) @map("is_super_admin")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
 
   organizations         UserOrganization[]
   assignedConversations Conversation[]     @relation("AssignedAgent")
@@ -163,49 +163,49 @@ model User {
 }
 
 model Organization {
-  id        String    @id @default(cuid())
-  name      String
-  slug      String    @unique
-  logoUrl   String?   @map("logo_url")
-  plan      String    @default("free")
-  settings  Json      @default("{}")
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  logoUrl     String?   @map("logo_url")
+  plan        String    @default("free")
+  settings    Json      @default("{}")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
   /// Suspensão reversível pela plataforma (super-admin). null = ativa.
   /// Quando preenchida, o OrgGuard bloqueia todo uso da org (403).
   suspendedAt DateTime? @map("suspended_at")
 
   // ─── AI settings ────────────────────────────────
-  aiEnabled             Boolean  @default(true) @map("ai_enabled")
-  aiTimezone            String   @default("America/Sao_Paulo") @map("ai_timezone")
-  aiBusinessHours       Json?    @map("ai_business_hours")
-  aiOutOfHoursMessage   String?  @map("ai_out_of_hours_message")
+  aiEnabled               Boolean  @default(true) @map("ai_enabled")
+  aiTimezone              String   @default("America/Sao_Paulo") @map("ai_timezone")
+  aiBusinessHours         Json?    @map("ai_business_hours")
+  aiOutOfHoursMessage     String?  @map("ai_out_of_hours_message")
   /// Comportamento da IA fora do `aiBusinessHours`:
   /// SILENT = não responde (default); MESSAGE = envia `aiOutOfHoursMessage` 1x
   /// por período fechado; ATTEND = continua atendendo 24/7 e avisa o horário.
   /// String (não enum Postgres) de propósito — enum + uso na mesma migração
   /// quebra `migrate deploy`.
-  aiOffHoursMode        String   @default("SILENT") @map("ai_off_hours_mode")
+  aiOffHoursMode          String   @default("SILENT") @map("ai_off_hours_mode")
   /// Template do aviso enviado quando o cliente escreve fora do horário do
   /// atendente responsável. Placeholders: {atendente} e {proximo_horario}.
   /// NULL = usa o default do código (OFF_HOURS_DEFAULT_TEMPLATE).
-  offHoursMessageTemplate String? @map("off_hours_message_template")
-  aiAutoDisableOnHuman  Boolean  @default(true) @map("ai_auto_disable_on_human")
-  aiMonthlyTokenCap     Int?     @map("ai_monthly_token_cap")
+  offHoursMessageTemplate String?  @map("off_hours_message_template")
+  aiAutoDisableOnHuman    Boolean  @default(true) @map("ai_auto_disable_on_human")
+  aiMonthlyTokenCap       Int?     @map("ai_monthly_token_cap")
   /// Notas livres do negócio injetadas no system prompt de TODOS os
   /// agentes da org. Use pra info que muda com frequência e que vale
   /// pra qualquer fluxo (vendas/suporte/CS): regras de entrega, horários
   /// de live, política de reembolso, talking points atuais, etc.
-  aiBusinessNotes       String?  @map("ai_business_notes") @db.Text
+  aiBusinessNotes         String?  @map("ai_business_notes") @db.Text
   /// Regras de segurança (imutáveis) injetadas na Layer 1 do prompt composer.
   /// Shape: { noPriceCommitment, noDeadlineCommitment, noResultPromise,
   /// noCrossClientDataLeak, forbiddenEmojis: string[], language: 'pt-BR'|'en-US',
   /// customRules: string[] }. NULL = usa defaults do código.
-  aiSecurityRules       Json?    @map("ai_security_rules")
+  aiSecurityRules         Json?    @map("ai_security_rules")
   /// Threshold de confiança do IntentClassifier pra pular o orchestrator.
   /// Default 0.85. Abaixo disso cai no Augusto.
-  aiClassifierThreshold Decimal? @default(0.85) @map("ai_classifier_threshold") @db.Decimal(3, 2)
+  aiClassifierThreshold   Decimal? @default(0.85) @map("ai_classifier_threshold") @db.Decimal(3, 2)
 
   /// Lista de domínios permitidos em links que a IA pode mandar pro
   /// cliente. Quando preenchido (array com strings tipo "bravy.co",
@@ -227,67 +227,69 @@ model Organization {
   /// null = usa defaults do código (15, 15, 60, 3).
   watchdogConfig        Json?   @map("watchdog_config")
 
-  members              UserOrganization[]
-  channels             Channel[]
-  contacts             Contact[]
-  conversations        Conversation[]
-  departments          Department[]
-  chatbotFlows         ChatbotFlow[]
-  quickReplies         QuickReply[]
-  mediaFolders         MediaFolder[]
-  mediaAssets          MediaAsset[]
-  tags                 Tag[]
-  notifications        Notification[]
-  invitations          Invitation[]
-  apiKeys              ApiKey[]
-  aiAgents             AiAgent[]
-  aiTools              AiTool[]
-  aiSkills             AiSkill[]
-  aiKnowledge          AiAgentKnowledge[]
-  inboxViews           InboxView[]
-  pipelines            Pipeline[]
-  cards                Card[]
-  products             Product[]
-  segments             Segment[]
-  projects             Project[]
-  webhookSubscriptions WebhookSubscription[]
-  aiProviderKeys       AiProviderKey[]
-  scheduledMessages    ScheduledMessage[]
-  inactivitySettings   InactivitySettings?
+  members                   UserOrganization[]
+  channels                  Channel[]
+  contacts                  Contact[]
+  conversations             Conversation[]
+  departments               Department[]
+  chatbotFlows              ChatbotFlow[]
+  quickReplies              QuickReply[]
+  mediaFolders              MediaFolder[]
+  mediaAssets               MediaAsset[]
+  tags                      Tag[]
+  notifications             Notification[]
+  invitations               Invitation[]
+  apiKeys                   ApiKey[]
+  aiAgents                  AiAgent[]
+  aiTools                   AiTool[]
+  aiSkills                  AiSkill[]
+  aiKnowledge               AiAgentKnowledge[]
+  inboxViews                InboxView[]
+  pipelines                 Pipeline[]
+  cards                     Card[]
+  products                  Product[]
+  segments                  Segment[]
+  projects                  Project[]
+  webhookSubscriptions      WebhookSubscription[]
+  aiProviderKeys            AiProviderKey[]
+  scheduledMessages         ScheduledMessage[]
+  inactivitySettings        InactivitySettings?
   attendantGreetingSettings AttendantGreetingSettings?
-  messageTemplates     MessageTemplate[]
-  recoverySettings     RecoverySettings?
-  cadences             Cadence[]
-  cadenceEnrollments   CadenceEnrollment[]
-  proposals            Proposal[]
-  sonaxSettings        SonaxSettings?
-  calls                Call[]
-  orderFichas          OrderFicha[]
-  orderAcceptances     OrderAcceptance[]
-  whatsappWindows       WhatsappWindow[]
-  whatsappWindowPricing WhatsappWindowPricing?
-  metaCapiConfig        MetaCapiConfig?
-  metaCapiEvents        MetaCapiEvent[]
+  messageTemplates          MessageTemplate[]
+  recoverySettings          RecoverySettings?
+  cadences                  Cadence[]
+  cadenceEnrollments        CadenceEnrollment[]
+  proposals                 Proposal[]
+  sonaxSettings             SonaxSettings?
+  calls                     Call[]
+  orderFichas               OrderFicha[]
+  orderAcceptances          OrderAcceptance[]
+  whatsappWindows           WhatsappWindow[]
+  whatsappWindowPricing     WhatsappWindowPricing?
+  metaCapiConfig            MetaCapiConfig?
+  metaCapiEvents            MetaCapiEvent[]
+  emailSubscribers          EmailSubscriber[]
+  emailCampaigns            EmailCampaign[]
 
   @@map("organizations")
 }
 
 model UserOrganization {
-  id               String      @id @default(cuid())
-  userId           String      @map("user_id")
-  organizationId   String      @map("organization_id")
-  role             OrgRole     @default(AGENT)
-  agentStatus      AgentStatus @default(OFFLINE) @map("agent_status")
-  maxConcurrent    Int         @default(5) @map("max_concurrent")
-  preferences      Json        @default("{}")
-  workingHours          Json?   @map("working_hours")
-  offHoursNoticeEnabled Boolean @default(false) @map("off_hours_notice_enabled")
-  sonaxRamal       String?     @map("sonax_ramal") // ramal Sonax do atendente; null = não pode ligar
+  id                    String      @id @default(cuid())
+  userId                String      @map("user_id")
+  organizationId        String      @map("organization_id")
+  role                  OrgRole     @default(AGENT)
+  agentStatus           AgentStatus @default(OFFLINE) @map("agent_status")
+  maxConcurrent         Int         @default(5) @map("max_concurrent")
+  preferences           Json        @default("{}")
+  workingHours          Json?       @map("working_hours")
+  offHoursNoticeEnabled Boolean     @default(false) @map("off_hours_notice_enabled")
+  sonaxRamal            String?     @map("sonax_ramal") // ramal Sonax do atendente; null = não pode ligar
   /// URL completa do Widget de Webphone da Sonax deste atendente
   /// (https://webphone2.sonax.cloud/widget?data=...&dataClient=...). Injetada no
   /// chat pra ele atender/desligar sem softphone externo. null = usa softphone.
-  sonaxWebphoneUrl String?     @map("sonax_webphone_url") @db.Text
-  joinedAt         DateTime    @default(now()) @map("joined_at")
+  sonaxWebphoneUrl      String?     @map("sonax_webphone_url") @db.Text
+  joinedAt              DateTime    @default(now()) @map("joined_at")
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -605,10 +607,10 @@ model Conversation {
   inactivityBand      Int?               @map("inactivity_band")
   reengageDismissedAt DateTime?          @map("reengage_dismissed_at")
   reengagedAt         DateTime?          @map("reengaged_at")
-  offHoursNoticeAt    DateTime? @map("off_hours_notice_at")
+  offHoursNoticeAt    DateTime?          @map("off_hours_notice_at")
   /// Dedup do modo MESSAGE: quando o texto fixo foi enviado nesta conversa.
   /// Coluna própria pra não colidir com `offHoursNoticeAt` (aviso por-atendente).
-  aiOffHoursMessageAt DateTime? @map("ai_off_hours_message_at")
+  aiOffHoursMessageAt DateTime?          @map("ai_off_hours_message_at")
   firstResponseAt     DateTime?          @map("first_response_at")
   closedAt            DateTime?          @map("closed_at")
   reopenedAt          DateTime?          @map("reopened_at")
@@ -619,17 +621,17 @@ model Conversation {
   // Orthogonal to `status` — archived conversations are hidden from the
   // main inbox but their status (OPEN/PENDING/etc.) is preserved so they
   // re-appear in the right place when unarchived.
-  isArchived   Boolean   @default(false) @map("is_archived")
-  archivedAt   DateTime? @map("archived_at")
-  archivedById String?   @map("archived_by_id")
-  metadata     Json      @default("{}")
+  isArchived         Boolean   @default(false) @map("is_archived")
+  archivedAt         DateTime? @map("archived_at")
+  archivedById       String?   @map("archived_by_id")
+  metadata           Json      @default("{}")
   // Ficha do Pedido + Alerta de Divergência: true quando a OrderFicha desta
   // conversa detectou diferença entre o que o cliente pediu e o carrinho
   // (Proposal) enviado. Espelha OrderFicha.status para leitura rápida na
   // inbox sem precisar de join.
-  hasOrderDivergence Boolean @default(false) @map("has_order_divergence")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  hasOrderDivergence Boolean   @default(false) @map("has_order_divergence")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   // ─── AI state (tri-state override) ──────────────
   // null  = segue regras globais (org.aiEnabled, business hours, agent)
@@ -906,10 +908,10 @@ model QuickReply {
 // ─── Tags ────────────────────────────────────────
 
 model Tag {
-  id             String @id @default(cuid())
-  organizationId String @map("organization_id")
-  name           String
-  color          String @default("#6B7280")
+  id                 String  @id @default(cuid())
+  organizationId     String  @map("organization_id")
+  name               String
+  color              String  @default("#6B7280")
   /// Marca esta tag como "lead qualificado": aplicá-la dispara, além do
   /// TAG_ADDED, um evento LEAD_QUALIFIED com os dados de atribuição.
   marksQualifiedLead Boolean @default(false) @map("marks_qualified_lead")
@@ -2040,11 +2042,11 @@ model ScheduledMessage {
   status      ScheduledMessageStatus @default(PENDING)
   jobId       String?                @map("job_id")
 
-  attempt         Int     @default(1)
-  maxAttempts     Int     @default(1)
-  retryEveryHours Int?    @map("retry_every_hours")
-  cancelOnReply   Boolean @default(false) @map("cancel_on_reply")
-  requireAiParked Boolean @default(false) @map("require_ai_parked")
+  attempt          Int     @default(1)
+  maxAttempts      Int     @default(1)
+  retryEveryHours  Int?    @map("retry_every_hours")
+  cancelOnReply    Boolean @default(false) @map("cancel_on_reply")
+  requireAiParked  Boolean @default(false) @map("require_ai_parked")
   // Snapshot: etapa p/ mover o card quando o burst AUTO_REENGAGE esgota.
   exhaustedStageId String? @map("exhausted_stage_id")
 
@@ -2069,22 +2071,22 @@ model ScheduledMessage {
 }
 
 model InactivitySettings {
-  organizationId   String   @id @map("organization_id")
-  enabled          Boolean  @default(true)
-  bandsDays        Json     @default("[3, 7, 15, 30]")
-  bandsUnit        String   @default("DAYS") @map("bands_unit")
-  bandsUnits       String[] @default([]) @map("bands_units")
-  autoReengage     Boolean  @default(false) @map("auto_reengage")
-  reengageFromBand Int      @default(1) @map("reengage_from_band")
-  maxAttempts      Int      @default(2) @map("max_attempts")
-  retryEveryHours  Int      @default(48) @map("retry_every_hours")
-  quietHoursStart  Int?     @map("quiet_hours_start")
-  quietHoursEnd    Int?     @map("quiet_hours_end")
-  reengageOnlyAiParked Boolean @default(false) @map("reengage_only_ai_parked")
+  organizationId       String   @id @map("organization_id")
+  enabled              Boolean  @default(true)
+  bandsDays            Json     @default("[3, 7, 15, 30]")
+  bandsUnit            String   @default("DAYS") @map("bands_unit")
+  bandsUnits           String[] @default([]) @map("bands_units")
+  autoReengage         Boolean  @default(false) @map("auto_reengage")
+  reengageFromBand     Int      @default(1) @map("reengage_from_band")
+  maxAttempts          Int      @default(2) @map("max_attempts")
+  retryEveryHours      Int      @default(48) @map("retry_every_hours")
+  quietHoursStart      Int?     @map("quiet_hours_start")
+  quietHoursEnd        Int?     @map("quiet_hours_end")
+  reengageOnlyAiParked Boolean  @default(false) @map("reengage_only_ai_parked")
   // Etapa do pipeline p/ mover o card quando o reengajamento esgota sem
   // resposta. null = não mexe no pipeline.
-  exhaustedStageId String? @map("exhausted_stage_id")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  exhaustedStageId     String?  @map("exhausted_stage_id")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -2199,24 +2201,24 @@ enum CadenceEnrollmentStatus {
 }
 
 model Cadence {
-  id              String         @id @default(cuid())
-  organizationId  String         @map("organization_id")
-  name            String
-  pipelineId      String?        @map("pipeline_id")
-  stageId         String?        @map("stage_id")
-  watchedStageIds String[]       @map("watched_stage_ids")
-  lostStageId     String?        @map("lost_stage_id")
-  hotTagId        String?        @map("hot_tag_id")
-  optOutTagId     String?        @map("opt_out_tag_id")
-  trigger         CadenceTrigger @default(BOTH)
-  enabled         Boolean        @default(false)
-  allowManual     Boolean        @default(true) @map("allow_manual")
-  onYesMessage    String?        @map("on_yes_message")
-  onNoMessage     String?        @map("on_no_message")
-  reviveEnabled        Boolean @default(true)  @map("revive_enabled")
-  silenceWindowMinutes Int     @default(1440)  @map("silence_window_minutes")
-  createdAt       DateTime       @default(now()) @map("created_at")
-  updatedAt       DateTime       @updatedAt @map("updated_at")
+  id                   String         @id @default(cuid())
+  organizationId       String         @map("organization_id")
+  name                 String
+  pipelineId           String?        @map("pipeline_id")
+  stageId              String?        @map("stage_id")
+  watchedStageIds      String[]       @map("watched_stage_ids")
+  lostStageId          String?        @map("lost_stage_id")
+  hotTagId             String?        @map("hot_tag_id")
+  optOutTagId          String?        @map("opt_out_tag_id")
+  trigger              CadenceTrigger @default(BOTH)
+  enabled              Boolean        @default(false)
+  allowManual          Boolean        @default(true) @map("allow_manual")
+  onYesMessage         String?        @map("on_yes_message")
+  onNoMessage          String?        @map("on_no_message")
+  reviveEnabled        Boolean        @default(true) @map("revive_enabled")
+  silenceWindowMinutes Int            @default(1440) @map("silence_window_minutes")
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
 
   organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   steps        CadenceStep[]
@@ -2253,7 +2255,7 @@ model CadenceEnrollment {
   status         CadenceEnrollmentStatus @default(ACTIVE)
   startedAt      DateTime                @default(now()) @map("started_at")
   lastStepAt     DateTime?               @map("last_step_at")
-  pausedAt       DateTime? @map("paused_at")
+  pausedAt       DateTime?               @map("paused_at")
   endedAt        DateTime?               @map("ended_at")
   endReason      String?                 @map("end_reason")
 
@@ -2299,27 +2301,27 @@ enum OrderFichaStatus {
 }
 
 model OrderFicha {
-  id              String           @id @default(cuid())
-  organizationId  String           @map("organization_id")
-  contactId       String           @map("contact_id")
-  conversationId  String           @unique @map("conversation_id")
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  contactId      String @map("contact_id")
+  conversationId String @unique @map("conversation_id")
 
-  items           Json             @default("[]")
-  travelDatesText String?          @map("travel_dates_text")
-  travelStart     DateTime?        @map("travel_start")
-  travelEnd       DateTime?        @map("travel_end")
-  requestedAt     DateTime?        @map("requested_at")
-  sourceMessageId String?          @map("source_message_id")
+  items           Json      @default("[]")
+  travelDatesText String?   @map("travel_dates_text")
+  travelStart     DateTime? @map("travel_start")
+  travelEnd       DateTime? @map("travel_end")
+  requestedAt     DateTime? @map("requested_at")
+  sourceMessageId String?   @map("source_message_id")
 
-  lastProposalId  String?          @map("last_proposal_id")
-  divergences     Json             @default("[]")
-  status          OrderFichaStatus @default(NO_ORDER)
+  lastProposalId String?          @map("last_proposal_id")
+  divergences    Json             @default("[]")
+  status         OrderFichaStatus @default(NO_ORDER)
 
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  contact         Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, contactId])
   @@index([organizationId, status])
@@ -2334,30 +2336,30 @@ enum AcceptanceStatus {
 }
 
 model OrderAcceptance {
-  id              String           @id @default(cuid())
-  organizationId  String           @map("organization_id")
-  conversationId  String           @map("conversation_id")
-  contactId       String           @map("contact_id")
-  cardId          String?          @map("card_id")
+  id             String  @id @default(cuid())
+  organizationId String  @map("organization_id")
+  conversationId String  @map("conversation_id")
+  contactId      String  @map("contact_id")
+  cardId         String? @map("card_id")
 
-  token           String           @unique
-  items           Json             @default("[]")
-  termText        String           @map("term_text")
-  status          AcceptanceStatus @default(PENDING)
+  token    String           @unique
+  items    Json             @default("[]")
+  termText String           @map("term_text")
+  status   AcceptanceStatus @default(PENDING)
 
-  createdById     String           @map("created_by_id")
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
-  expiresAt       DateTime?        @map("expires_at")
+  createdById String    @map("created_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  expiresAt   DateTime? @map("expires_at")
 
-  signedAt        DateTime?        @map("signed_at")
-  signerName      String?          @map("signer_name")
-  signerIp        String?          @map("signer_ip")
-  signerUserAgent String?          @map("signer_user_agent")
-  pdfKey          String?          @map("pdf_key")
+  signedAt        DateTime? @map("signed_at")
+  signerName      String?   @map("signer_name")
+  signerIp        String?   @map("signer_ip")
+  signerUserAgent String?   @map("signer_user_agent")
+  pdfKey          String?   @map("pdf_key")
 
-  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  contact         Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, conversationId])
   @@index([organizationId, status])
@@ -2365,14 +2367,14 @@ model OrderAcceptance {
 }
 
 model MediaFolder {
-  id             String    @id @default(cuid())
-  organizationId String    @map("organization_id")
-  name           String
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  name            String
   /// Pasta de figurinhas: seus .webp aparecem na aba "Figurinhas" do compositor.
-  isStickerFolder Boolean  @default(false) @map("is_sticker_folder")
-  createdById    String?   @map("created_by_id")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  deletedAt      DateTime? @map("deleted_at")
+  isStickerFolder Boolean   @default(false) @map("is_sticker_folder")
+  createdById     String?   @map("created_by_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  deletedAt       DateTime? @map("deleted_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assets       MediaAsset[]
@@ -2566,4 +2568,129 @@ model ErrorOccurrence {
   @@index([issueId, occurredAt(sort: Desc)], name: "idx_error_occ_issue_time")
   @@index([occurredAt], name: "idx_error_occ_time")
   @@map("error_occurrences")
+}
+
+// ─── Email Marketing ─────────────────────────────
+
+enum EmailSubscriberStatus {
+  SUBSCRIBED
+  UNSUBSCRIBED
+  BOUNCED
+  COMPLAINED
+}
+
+enum EmailSubscriberSource {
+  CRM_CONTACT
+  OFP_ORDER
+  CSV_IMPORT
+  OPT_IN_FORM
+  MANUAL
+}
+
+enum EmailCampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  PAUSED
+  SENT
+  FAILED
+  CANCELED
+}
+
+enum EmailMessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  BOUNCED
+  COMPLAINED
+  FAILED
+}
+
+model EmailSubscriber {
+  id               String                @id @default(cuid())
+  organizationId   String                @map("organization_id")
+  email            String
+  name             String?
+  status           EmailSubscriberStatus @default(SUBSCRIBED)
+  source           EmailSubscriberSource
+  contactId        String?               @map("contact_id")
+  consentAt        DateTime?             @map("consent_at")
+  consentSource    String?               @map("consent_source")
+  unsubscribedAt   DateTime?             @map("unsubscribed_at")
+  suppressedReason String?               @map("suppressed_reason")
+  metadata         Json                  @default("{}")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, email], name: "uq_email_subscriber_org_email")
+  @@index([organizationId, status])
+  @@map("email_subscribers")
+}
+
+model EmailCampaign {
+  id              String              @id @default(cuid())
+  organizationId  String              @map("organization_id")
+  name            String
+  subject         String
+  preheader       String?
+  fromName        String?             @map("from_name")
+  content         Json
+  audienceFilter  Json                @map("audience_filter")
+  status          EmailCampaignStatus @default(DRAFT)
+  scheduledAt     DateTime?           @map("scheduled_at")
+  startedAt       DateTime?           @map("started_at")
+  finishedAt      DateTime?           @map("finished_at")
+  totalRecipients Int                 @default(0) @map("total_recipients")
+  createdById     String?             @map("created_by_id")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  messages     EmailMessage[]
+
+  @@index([organizationId, status])
+  @@map("email_campaigns")
+}
+
+model EmailMessage {
+  id             String             @id @default(cuid())
+  organizationId String             @map("organization_id")
+  campaignId     String?            @map("campaign_id")
+  subscriberId   String?            @map("subscriber_id")
+  to             String
+  subject        String
+  providerId     String?            @unique @map("provider_id")
+  dedupKey       String?            @unique @map("dedup_key")
+  status         EmailMessageStatus @default(PENDING)
+  failedReason   String?            @map("failed_reason") @db.Text
+  sentAt         DateTime?          @map("sent_at")
+  deliveredAt    DateTime?          @map("delivered_at")
+  openedAt       DateTime?          @map("opened_at")
+  firstClickedAt DateTime?          @map("first_clicked_at")
+  openCount      Int                @default(0) @map("open_count")
+  clickCount     Int                @default(0) @map("click_count")
+  createdAt      DateTime           @default(now()) @map("created_at")
+
+  campaign EmailCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, campaignId, status])
+  @@map("email_messages")
+}
+
+model EmailEvent {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  messageId      String?  @map("message_id")
+  providerId     String   @map("provider_id")
+  type           String
+  url            String?
+  payload        Json
+  occurredAt     DateTime @map("occurred_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([providerId])
+  @@index([organizationId, type, occurredAt])
+  @@map("email_events")
 }
