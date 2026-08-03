@@ -6,10 +6,11 @@ import { ResendClient } from './resend.client';
 import { EmailSenderService } from './email-sender.service';
 import { EmailEventsService } from './email-events.service';
 import { ResendWebhookController } from './resend-webhook.controller';
+import { UnsubscribeController } from './unsubscribe.controller';
 
 @Module({
   imports: [NotificationsModule, forwardRef(() => EmailAudienceModule)],
-  controllers: [ResendWebhookController],
+  controllers: [ResendWebhookController, UnsubscribeController],
   providers: [EmailRenderService, ResendClient, EmailSenderService, EmailEventsService],
   exports: [EmailSenderService, EmailRenderService, EmailEventsService],
 })
