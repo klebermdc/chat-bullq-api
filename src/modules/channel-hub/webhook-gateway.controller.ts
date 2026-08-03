@@ -92,20 +92,44 @@ export class WebhookGatewayController {
 
     // 2. Resolve one or more concrete Channel rows.
     const matchedChannels: Channel[] = [];
+    // Canais desativados que casaram: reportados uma vez cada, DEPOIS do laço,
+    // para um lote com N locators não virar N alertas do mesmo canal.
+    const inactiveMatches = new Map<string, Channel>();
     for (const locator of locators) {
-      const channel = await this.channelsService.resolveByLocator(
+      const resolved = await this.channelsService.resolveByLocator(
         channelType,
         (c) => adapter.matchesChannel(c as Channel, locator),
       );
-      if (channel) {
-        if (!matchedChannels.some((m) => m.id === channel.id)) {
-          matchedChannels.push(channel);
-        }
-      } else {
+      if (!resolved) {
         this.logger.warn(
           `Webhook arrived for unknown ${channelType} locator: ${JSON.stringify(locator)}`,
         );
+        continue;
       }
+      if (!resolved.active) {
+        // Continua NÃO processando — o que muda é que agora dá para dizer ao
+        // dono que o canal existe e só precisa ser reativado.
+        inactiveMatches.set(resolved.channel.id, resolved.channel);
+        continue;
+      }
+      if (!matchedChannels.some((m) => m.id === resolved.channel.id)) {
+        matchedChannels.push(resolved.channel);
+      }
+    }
+
+    for (const channel of inactiveMatches.values()) {
+      this.logger.warn(
+        `Webhook para canal DESATIVADO ${channel.id} (${channelType}) — descartado`,
+      );
+      this.errors.report({
+        source: ErrorSource.CHANNEL,
+        code: ERROR_CODES.WEBHOOK_CHANNEL_INACTIVE,
+        severity: ErrorSeverity.CRITICAL,
+        message: `Canal "${channel.name}" está DESATIVADO e descartou mensagem de cliente — reative o canal`,
+        context: { channelType, channelName: channel.name },
+        organizationId: channel.organizationId,
+        channelId: channel.id,
+      });
     }
 
     if (matchedChannels.length === 0) {
@@ -118,13 +142,19 @@ export class WebhookGatewayController {
       // CRITICAL: a mensagem do cliente foi DESCARTADA. Foi assim que o
       // apagão do Comercial passou despercebido — canal desativado engolindo
       // inbound em silêncio.
-      this.errors.report({
-        source: ErrorSource.CHANNEL,
-        code: ERROR_CODES.WEBHOOK_UNROUTED,
-        severity: ErrorSeverity.CRITICAL,
-        message: `Webhook de ${channelType} sem canal correspondente — mensagem descartada`,
-        context: { channelType, locators },
-      });
+      //
+      // Se o motivo do descarte foi canal DESATIVADO, o alerta específico já
+      // saiu acima dizendo qual canal reativar. Reportar UNROUTED também
+      // mandaria o plantão investigar configuração de um canal que está certo.
+      if (inactiveMatches.size === 0) {
+        this.errors.report({
+          source: ErrorSource.CHANNEL,
+          code: ERROR_CODES.WEBHOOK_UNROUTED,
+          severity: ErrorSeverity.CRITICAL,
+          message: `Webhook de ${channelType} sem canal correspondente — mensagem descartada`,
+          context: { channelType, locators },
+        });
+      }
       return res.status(200).json({ status: 'no_matching_channel' });
     }
 

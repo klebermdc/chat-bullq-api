@@ -33,6 +33,21 @@ export class ChannelsRepository {
     });
   }
 
+  /**
+   * Inclui canais desativados de propósito: o gateway precisa distinguir
+   * "canal desativado" de "canal inexistente" para dizer ao dono qual é o
+   * conserto. Canal deletado continua fora — esse é inexistente de fato.
+   *
+   * A ordenação garante que um canal ativo venha antes de um desativado que
+   * case com o mesmo locator (acontece no fluxo desativar-o-antigo-e-recriar).
+   */
+  async findByTypeIncludingInactive(type: ChannelType) {
+    return this.prisma.channel.findMany({
+      where: { type, deletedAt: null },
+      orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }],
+    });
+  }
+
   async findActiveByTypeAndOrg(type: ChannelType, organizationId: string) {
     return this.prisma.channel.findMany({
       where: { type, organizationId, isActive: true, deletedAt: null },

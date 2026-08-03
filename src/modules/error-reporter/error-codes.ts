@@ -11,6 +11,9 @@ export const ERROR_CODES = {
   WEBHOOK_UNSUPPORTED_TYPE: 'WEBHOOK_UNSUPPORTED_TYPE',
   WEBHOOK_NO_LOCATORS: 'WEBHOOK_NO_LOCATORS',
   WEBHOOK_UNROUTED: 'WEBHOOK_UNROUTED',
+  // Distinto do UNROUTED de propósito: aqui o canal EXISTE e só está
+  // desativado, então o conserto é reativá-lo — não investigar configuração.
+  WEBHOOK_CHANNEL_INACTIVE: 'WEBHOOK_CHANNEL_INACTIVE',
   WEBHOOK_INVALID_SIGNATURE: 'WEBHOOK_INVALID_SIGNATURE',
 
   // source: AI

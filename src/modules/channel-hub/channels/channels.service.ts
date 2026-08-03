@@ -283,15 +283,30 @@ export class ChannelsService {
 
   /**
    * Resolve the channel that owns a given webhook payload by asking the
-   * inbound adapter to match against `config`. Returns null when no channel
-   * matches — caller MUST drop the event (and ideally log for investigation).
+   * inbound adapter to match against `config`.
+   *
+   * `null` significa "nenhum canal casa com este locator". Um canal
+   * DESATIVADO volta com `active: false` em vez de virar `null` — antes os
+   * dois casos eram indistinguíveis, e foi por isso que o apagão do Comercial
+   * levou horas para ser diagnosticado: o alerta não sabia dizer se era um
+   * canal desligado (1 clique) ou configuração errada (1 hora).
+   *
+   * O roteamento NÃO muda: o chamador continua obrigado a não processar a
+   * mensagem quando `active` é false.
    */
   async resolveByLocator(
     type: ChannelType,
     matches: (channel: { config: any }) => boolean,
-  ) {
-    const candidates = await this.repository.findActiveByType(type);
-    return candidates.find((c) => matches(c)) ?? null;
+  ): Promise<{ channel: Channel; active: boolean } | null> {
+    const candidates = await this.repository.findByTypeIncludingInactive(type);
+    // Um canal desativado nunca pode ofuscar um ativo que case com o mesmo
+    // locator — desativar-o-antigo-e-recriar é o fluxo normal quando um token
+    // Meta expira, e sem esta preferência o inbound do canal que FUNCIONA
+    // seria descartado.
+    const found =
+      candidates.find((c) => c.isActive && matches(c)) ??
+      candidates.find((c) => matches(c));
+    return found ? { channel: found, active: found.isActive } : null;
   }
 
   async syncChannel(id: string, organizationId: string) {
