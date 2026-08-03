@@ -75,11 +75,57 @@ export class WhatsAppOfficialHttpClient {
       );
       return data;
     } catch (error: any) {
-      this.logger.error(
-        `WA Official API error: ${error.response?.data?.error?.message || error.message}`,
-      );
-      throw error;
+      throw this.metaSendError(error);
     }
+  }
+
+  /**
+   * Enriquece um erro de ENVIO com o motivo real da Meta, preservando o
+   * shape do axios.
+   *
+   * Diferente dos outros métodos daqui, envio NÃO pode virar
+   * `BadRequestException`: o `isRetryableSendError` do
+   * OutboundMessageProcessor decide retry lendo `error.response.status`, e
+   * achatar tudo em 400 mataria o backoff do BullMQ em 429/5xx — a mensagem
+   * morreria FAILED no primeiro rate-limit. Então mantemos `response`,
+   * `status` e `code` e só reescrevemos a `.message`.
+   *
+   * Isso importa porque o envio é assíncrono (fila): o front já respondeu
+   * "Template enviado" antes da Meta recusar. O ÚNICO lugar onde o
+   * atendente vê o motivo é o `failedReason`, que o processor grava a
+   * partir justamente desta `.message`. Antes daqui ela era o texto do
+   * axios ("Request failed with status code 400") e o motivo real só
+   * existia no log do container.
+   */
+  private metaSendError(error: any): any {
+    const meta = error?.response?.data?.error;
+    if (!meta) {
+      this.logger.error(`WA Official API error: ${error?.message}`);
+      return error;
+    }
+
+    this.logger.error(
+      `WA Official API error — resposta da Meta: ${JSON.stringify(meta)}`,
+    );
+
+    // `error_data.details` é o campo mais preciso em falha de template — é
+    // ele que diz QUAL template/idioma não existe. Depois vêm os campos
+    // amigáveis, e por último a `message` genérica ("Invalid parameter").
+    const detail =
+      meta.error_data?.details ||
+      [meta.error_user_title, meta.error_user_msg].filter(Boolean).join(' — ') ||
+      meta.message ||
+      'erro desconhecido';
+    const code = meta.code ? ` (${meta.code})` : '';
+
+    const enriched: any = new Error(`Meta recusou o envio${code}: ${detail}`);
+    // Preserva o que o retry e o diagnóstico downstream leem.
+    enriched.response = error.response;
+    enriched.status = error.status ?? error.response?.status;
+    enriched.code = error.code;
+    enriched.isAxiosError = error.isAxiosError;
+    enriched.cause = error;
+    return enriched;
   }
 
   async getMediaUrl(channel: Channel, mediaId: string): Promise<string> {
