@@ -35,9 +35,27 @@ export class EmailSenderService {
     this.config = config ?? loadEmailConfig(process.env);
   }
 
-  unsubscribeUrl(subscriberId: string): string {
-    const token = signUnsubscribeToken(subscriberId, this.config.unsubscribeSecret);
-    return `${this.config.publicUrl}/descadastro/${token}`;
+  private unsubscribeToken(subscriberId: string): string {
+    return signUnsubscribeToken(subscriberId, this.config.unsubscribeSecret);
+  }
+
+  /**
+   * Link da PÁGINA web (Next `page.tsx`, só responde GET) — vai no rodapé
+   * visível do email, para a pessoa clicar e ver a tela de confirmação.
+   */
+  unsubscribePageUrl(subscriberId: string): string {
+    return `${this.config.publicUrl}/descadastro/${this.unsubscribeToken(subscriberId)}`;
+  }
+
+  /**
+   * Link da API (aceita POST) — vai no header `List-Unsubscribe` /
+   * `List-Unsubscribe-Post`, que Gmail/Outlook chamam automaticamente sem
+   * abrir navegador. Apontar esse header para a página web devolve 405 (ela
+   * só responde GET) e o provedor passa a tratar o descadastro do domínio
+   * como quebrado — o oposto do que a feature tenta evitar.
+   */
+  unsubscribePostUrl(subscriberId: string): string {
+    return `${this.config.publicUrl}/api/v1/public/unsubscribe/${this.unsubscribeToken(subscriberId)}`;
   }
 
   /**
@@ -83,13 +101,18 @@ export class EmailSenderService {
       }
     }
 
-    const unsubscribeUrl = this.unsubscribeUrl(req.subscriberId ?? message!.id);
+    // Mesmo subscriberId (mesmo token) alimenta os dois destinos — o rodapé
+    // visível (página web) e o header automático (API) precisam concordar
+    // sobre quem está se descadastrando.
+    const subscriberId = req.subscriberId ?? message!.id;
+    const unsubscribePageUrl = this.unsubscribePageUrl(subscriberId);
+    const unsubscribePostUrl = this.unsubscribePostUrl(subscriberId);
 
     try {
       const { html, text } = await this.renderer.render(
         req.content,
         { nome: req.name, email: req.to },
-        unsubscribeUrl,
+        unsubscribePageUrl,
         req.preheader,
       );
       const { providerId } = await this.resend.send({
@@ -97,7 +120,7 @@ export class EmailSenderService {
         subject: req.subject,
         html,
         text,
-        unsubscribeUrl,
+        unsubscribePostUrl,
         fromName: req.fromName,
       });
       return await this.prisma.emailMessage.update({

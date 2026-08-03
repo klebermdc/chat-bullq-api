@@ -17,7 +17,7 @@ const payload = {
   subject: 'Oi',
   html: '<p>oi</p>',
   text: 'oi',
-  unsubscribeUrl: 'https://app.exemplo.com.br/descadastro/tok',
+  unsubscribePostUrl: 'https://app.exemplo.com.br/api/v1/public/unsubscribe/tok',
 };
 
 describe('ResendClient', () => {
@@ -32,9 +32,17 @@ describe('ResendClient', () => {
     const sdk = makeFakeSdk(async () => ({ data: { id: 'r1' }, error: null }));
     await new ResendClient(cfg, sdk as any).send(payload);
     const arg = sdk.emails.send.mock.calls[0][0];
-    expect(arg.headers['List-Unsubscribe']).toContain(payload.unsubscribeUrl);
+    expect(arg.headers['List-Unsubscribe']).toContain(payload.unsubscribePostUrl);
     expect(arg.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
     expect(arg.from).toBe(cfg.from);
+  });
+
+  it('o header List-Unsubscribe aponta para a API (aceita POST), não para a página web', async () => {
+    const sdk = makeFakeSdk(async () => ({ data: { id: 'r1' }, error: null }));
+    await new ResendClient(cfg, sdk as any).send(payload);
+    const arg = sdk.emails.send.mock.calls[0][0];
+    expect(arg.headers['List-Unsubscribe']).toContain('/api/v1/public/unsubscribe/');
+    expect(arg.headers['List-Unsubscribe']).not.toContain('/descadastro/');
   });
 
   it('usa fromName quando informado, mantendo o endereço da env', async () => {

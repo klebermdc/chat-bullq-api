@@ -73,11 +73,32 @@ describe('EmailSenderService', () => {
     expect(msg!.sentAt).toBeInstanceOf(Date);
   });
 
-  it('monta o link de descadastro a partir da URL pública', async () => {
+  it('monta o link de descadastro do rodapé (página web) a partir da URL pública', async () => {
     const { service } = makeService(makeFakePrisma());
     await service.send(req);
     const url = render.render.mock.calls.at(-1)![2];
     expect(url).toMatch(/^https:\/\/app\.exemplo\.com\.br\/descadastro\/.+/);
+  });
+
+  it('manda pro Resend o link de descadastro da API (POST), não o da página', async () => {
+    const { service, resend } = makeService(makeFakePrisma());
+    await service.send(req);
+    const sentPayload = resend.send.mock.calls.at(-1)![0];
+    expect(sentPayload.unsubscribePostUrl).toMatch(
+      /^https:\/\/app\.exemplo\.com\.br\/api\/v1\/public\/unsubscribe\/.+/,
+    );
+    expect(sentPayload.unsubscribePostUrl).not.toContain('/descadastro/');
+  });
+
+  it('rodapé (página) e header (API) carregam o MESMO token de descadastro', async () => {
+    const { service, resend } = makeService(makeFakePrisma());
+    await service.send(req);
+    const pageUrl = render.render.mock.calls.at(-1)![2] as string;
+    const postUrl = resend.send.mock.calls.at(-1)![0].unsubscribePostUrl as string;
+    const pageToken = pageUrl.split('/descadastro/')[1];
+    const postToken = postUrl.split('/public/unsubscribe/')[1];
+    expect(pageToken).toBeTruthy();
+    expect(pageToken).toBe(postToken);
   });
 
   it('é idempotente: reenviar o mesmo dedupKey não chama o Resend de novo', async () => {

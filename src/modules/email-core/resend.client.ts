@@ -7,7 +7,13 @@ export interface SendEmailPayload {
   subject: string;
   html: string;
   text: string;
-  unsubscribeUrl: string;
+  /**
+   * URL da API (aceita POST), NÃO a página web — vai no header
+   * `List-Unsubscribe`/`List-Unsubscribe-Post`, que Gmail/Outlook chamam
+   * automaticamente sem abrir navegador. O link clicável do rodapé (página
+   * web) já vem embutido em `html`/`text` pelo EmailRenderService.
+   */
+  unsubscribePostUrl: string;
   fromName?: string;
 }
 
@@ -41,7 +47,9 @@ export class ResendClient {
         headers: {
           // Habilita o botão nativo de descadastro do Gmail/Outlook. Sem ele o
           // usuário marca spam em vez de descadastrar, e a reputação despenca.
-          'List-Unsubscribe': `<${payload.unsubscribeUrl}>`,
+          // Tem que ser a URL da API (aceita POST) — a página web só responde
+          // GET e devolveria 405 pro POST automático do provedor.
+          'List-Unsubscribe': `<${payload.unsubscribePostUrl}>`,
           'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
         },
       });
