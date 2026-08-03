@@ -1,10 +1,16 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { EmailAudienceModule } from '../email-audience/email-audience.module';
 import { EmailRenderService } from './email-render.service';
 import { ResendClient } from './resend.client';
 import { EmailSenderService } from './email-sender.service';
+import { EmailEventsService } from './email-events.service';
+import { ResendWebhookController } from './resend-webhook.controller';
 
 @Module({
-  providers: [EmailRenderService, ResendClient, EmailSenderService],
-  exports: [EmailSenderService, EmailRenderService],
+  imports: [NotificationsModule, forwardRef(() => EmailAudienceModule)],
+  controllers: [ResendWebhookController],
+  providers: [EmailRenderService, ResendClient, EmailSenderService, EmailEventsService],
+  exports: [EmailSenderService, EmailRenderService, EmailEventsService],
 })
 export class EmailCoreModule {}
