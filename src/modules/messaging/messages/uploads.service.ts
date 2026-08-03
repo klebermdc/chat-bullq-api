@@ -43,14 +43,30 @@ export class UploadsService {
   // files we'd want to stream rather than buffer in memory anyway.
   static readonly MAX_INBOUND_BYTES = 64 * 1024 * 1024;
 
+  // Cobre tanto o que o MediaRecorder do navegador grava (webm/mp4) quanto o
+  // que o SISTEMA OPERACIONAL rotula num arquivo anexado do dispositivo: o
+  // iPhone manda `audio/x-m4a`, o Android manda `audio/3gpp`/`audio/amr`, e o
+  // Windows manda `audio/x-wav`/`audio/wave`. Tudo aqui vira MP3 no ffmpeg
+  // logo abaixo, então aceitar é seguro — o que sai é sempre audio/mpeg.
   private static readonly ALLOWED_AUDIO_MIME = new Set([
     'audio/mpeg',
+    'audio/mp3',
     'audio/mp4',
     'audio/m4a',
+    'audio/x-m4a',
+    'audio/aac',
     'audio/ogg',
+    'audio/opus',
     'audio/wav',
+    'audio/wave',
+    'audio/x-wav',
+    'audio/vnd.wave',
     'audio/webm',
     'audio/webm;codecs=opus',
+    'audio/3gpp',
+    'audio/amr',
+    'audio/flac',
+    'audio/x-flac',
   ]);
 
   // 64MB: acima do cap de vídeo do WhatsApp (16MB) e de imagem (5MB) — o
@@ -222,7 +238,11 @@ export class UploadsService {
     // `type: audio`. Browsers record WebM/MP4 via MediaRecorder; we always
     // re-encode (also fixes the missing-duration header that showed 0:00).
     const tmpBase = path.join(os.tmpdir(), `aud-${id}`);
-    const srcTmp = `${tmpBase}${this.extFor(mime)}`;
+    // A extensão do nome original manda: num arquivo anexado do dispositivo o
+    // mime do SO às vezes é vago (`audio/3gpp` para um .amr), e o ffmpeg usa a
+    // extensão do arquivo de entrada pra escolher o demuxer. Com `.bin` ele
+    // chuta pelo conteúdo e falha em containers sem magic bytes claros.
+    const srcTmp = `${tmpBase}${this.extFor(mime, file.originalname)}`;
     const mp3Tmp = `${tmpBase}.mp3`;
     await fs.promises.writeFile(srcTmp, file.buffer);
     let mp3Buffer: Buffer;
@@ -349,6 +369,12 @@ export class UploadsService {
     if (m.includes('ogg')) return '.ogg';
     if (m.includes('mpeg') && m.startsWith('audio/')) return '.mp3';
     if (m.includes('m4a') || (m.includes('mp4') && m.startsWith('audio/'))) return '.m4a';
+    if (m === 'audio/mp3') return '.mp3';
+    if (m === 'audio/aac') return '.aac';
+    if (m === 'audio/opus') return '.opus';
+    if (m === 'audio/3gpp') return '.3gp';
+    if (m === 'audio/amr') return '.amr';
+    if (m === 'audio/flac' || m === 'audio/x-flac') return '.flac';
     if (m.includes('wav')) return '.wav';
     if (m.includes('webm') && m.startsWith('audio/')) return '.webm';
     // image
