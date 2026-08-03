@@ -50,6 +50,7 @@ export const FEATURE_MAP = {
 
   // --- Só gestão ---------------------------------------------------------
   'automations.view': STAFF,
+  'email.view': STAFF, // campanhas de email marketing — tela administrativa, não de atendimento
   'projects.view': STAFF,
   'inactivity.view': STAFF,
   'ai-agents.view': STAFF,
