@@ -1,0 +1,57 @@
+import { Controller, Get, Post, Body, Query, Param, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { EmailSubscriberStatus } from '@prisma/client';
+import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
+import { CurrentOrg } from '../../common/decorators';
+import { SubscribersService } from './subscribers.service';
+import { SubscriberImportService } from './subscriber-import.service';
+import { ImportCsvDto } from './dto/import-csv.dto';
+
+@ApiTags('Email · Destinatários')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
+@Controller('email/subscribers')
+export class SubscribersController {
+  constructor(
+    private readonly subscribers: SubscribersService,
+    private readonly importer: SubscriberImportService,
+  ) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Lista destinatários (paginado)' })
+  async list(
+    @CurrentOrg('id') orgId: string,
+    @Query('status') status?: EmailSubscriberStatus,
+    @Query('page') page = 1,
+    @Query('limit') limit = 50,
+  ) {
+    const p = Number(page) || 1;
+    const l = Math.min(Number(limit) || 50, 200);
+    const [items, total] = await this.subscribers.list(orgId, status, p, l);
+    return { items, total, page: p, limit: l };
+  }
+
+  @Post('import/contacts')
+  @ApiOperation({ summary: 'Importa os contatos do CRM que têm email' })
+  importContacts(@CurrentOrg('id') orgId: string) {
+    return this.importer.fromContacts(orgId);
+  }
+
+  @Post('import/sales-orders')
+  @ApiOperation({ summary: 'Importa os emails dos pedidos do HUB' })
+  importOrders(@CurrentOrg('id') orgId: string) {
+    return this.importer.fromSalesOrders(orgId);
+  }
+
+  @Post('import/csv')
+  @ApiOperation({ summary: 'Importa um CSV (email[,;]nome por linha)' })
+  importCsv(@CurrentOrg('id') orgId: string, @Body() dto: ImportCsvDto) {
+    return this.importer.fromCsv(orgId, dto.csv);
+  }
+
+  @Post(':id/unsubscribe')
+  @ApiOperation({ summary: 'Descadastra manualmente' })
+  unsubscribe(@Param('id') id: string) {
+    return this.subscribers.unsubscribe(id, 'descadastro manual pelo operador');
+  }
+}

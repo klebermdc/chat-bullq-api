@@ -43,6 +43,7 @@ import { OrderFichaModule } from './modules/order-ficha/order-ficha.module';
 import { AcceptancesModule } from './modules/acceptances/acceptances.module';
 import { MetaCapiModule } from './modules/meta-capi/meta-capi.module';
 import { EmailCoreModule } from './modules/email-core/email-core.module';
+import { EmailAudienceModule } from './modules/email-audience/email-audience.module';
 // ProductsModule removido — catálogo agora vive no Trivapp e é consumido
 // via skill HTTP getProductPitch + CatalogSyncService. Tabela `products`
 // fica órfã no DB (cleanup futuro). Não importar aqui.
@@ -113,6 +114,7 @@ import redisConfig from './config/redis.config';
     AcceptancesModule,
     MetaCapiModule,
     EmailCoreModule,
+    EmailAudienceModule,
     HealthModule,
     ErrorPanelModule,
   ],
