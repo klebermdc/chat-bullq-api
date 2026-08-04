@@ -24,12 +24,28 @@ export class SubscribersRepository {
     return this.prisma.emailSubscriber.update({ where: { id }, data });
   }
 
-  /** Quem pode receber. Usado pela expansão de público da campanha (Task 15). */
+  /** Base inscrita inteira, sem filtro de público — usado quando a campanha não segmenta. */
   findSendable(organizationId: string) {
     return this.prisma.emailSubscriber.findMany({
       where: { organizationId, status: EmailSubscriberStatus.SUBSCRIBED },
       select: { id: true, email: true, name: true },
     });
+  }
+
+  /**
+   * Expansão do público filtrado. `where` vem SEMPRE de `buildAudienceWhere`
+   * — nunca montado à mão aqui, para não divergir de `countByWhere`.
+   */
+  findByWhere(where: Prisma.EmailSubscriberWhereInput) {
+    return this.prisma.emailSubscriber.findMany({
+      where,
+      select: { id: true, email: true, name: true },
+    });
+  }
+
+  /** Contagem do público filtrado. Mesma `where` do disparo — ver `findByWhere`. */
+  countByWhere(where: Prisma.EmailSubscriberWhereInput) {
+    return this.prisma.emailSubscriber.count({ where });
   }
 
   list(organizationId: string, status?: EmailSubscriberStatus, skip = 0, take = 50) {
