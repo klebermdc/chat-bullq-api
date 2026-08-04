@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Optional, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { Feature } from '../../common/decorators';
@@ -20,7 +20,10 @@ export class PreviewController {
 
   constructor(
     private readonly renderer: EmailRenderService,
-    config?: EmailConfig,
+    // `@Optional()` é obrigatório: `EmailConfig` é interface e some em runtime.
+    // Sem ele o Nest tenta resolver o token `Object` e o boot morre — foi assim
+    // que a API entrou em crashloop em 2026-08-04.
+    @Optional() config?: EmailConfig,
   ) {
     this.config = config ?? loadEmailConfig(process.env);
   }
