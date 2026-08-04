@@ -80,6 +80,7 @@ describe('EmailEventsService.apply', () => {
     expect(message.status).toBe(EmailMessageStatus.BOUNCED);
     expect(subscribers.suppress).toHaveBeenCalledWith(
       'sub_1',
+      'org_1',
       EmailSubscriberStatus.BOUNCED,
       expect.any(String),
     );
@@ -97,6 +98,7 @@ describe('EmailEventsService.apply', () => {
     expect(message.status).toBe(EmailMessageStatus.COMPLAINED);
     expect(subscribers.suppress).toHaveBeenCalledWith(
       'sub_1',
+      'org_1',
       EmailSubscriberStatus.COMPLAINED,
       expect.any(String),
     );

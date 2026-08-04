@@ -51,7 +51,7 @@ export class SubscribersController {
 
   @Post(':id/unsubscribe')
   @ApiOperation({ summary: 'Descadastra manualmente' })
-  unsubscribe(@Param('id') id: string) {
-    return this.subscribers.unsubscribe(id, 'descadastro manual pelo operador');
+  unsubscribe(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
+    return this.subscribers.unsubscribe(id, orgId, 'descadastro manual pelo operador');
   }
 }
