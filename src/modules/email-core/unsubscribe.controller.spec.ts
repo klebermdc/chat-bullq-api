@@ -27,6 +27,7 @@ function makeDeps() {
     from: 'a@b.com',
     unsubscribeSecret: SECRET,
     publicUrl: 'https://example.com',
+    apiUrl: 'https://api.example.com',
   };
   const controller = new UnsubscribeController(subscribers as any, cfgFake);
   return { controller, subscribers, sub };

@@ -6,7 +6,12 @@ const cfg = {
   webhookSecret: 'whsec_x',
   from: 'marketing@exemplo.com.br',
   unsubscribeSecret: 'segredo',
+  // Domínios DISTINTOS de propósito: publicUrl é a página web
+  // (ofpchat.explotek.pro em produção), apiUrl é a API
+  // (api-ofpchat.explotek.pro). Usar valores diferentes aqui é o que
+  // permite os testes abaixo travarem que cada link vai pro domínio certo.
   publicUrl: 'https://app.exemplo.com.br',
+  apiUrl: 'https://api.exemplo.com.br',
 };
 
 function makeFakePrisma() {
@@ -85,7 +90,7 @@ describe('EmailSenderService', () => {
     await service.send(req);
     const sentPayload = resend.send.mock.calls.at(-1)![0];
     expect(sentPayload.unsubscribePostUrl).toMatch(
-      /^https:\/\/app\.exemplo\.com\.br\/api\/v1\/public\/unsubscribe\/.+/,
+      /^https:\/\/api\.exemplo\.com\.br\/api\/v1\/public\/unsubscribe\/.+/,
     );
     expect(sentPayload.unsubscribePostUrl).not.toContain('/descadastro/');
   });
@@ -99,6 +104,22 @@ describe('EmailSenderService', () => {
     const postToken = postUrl.split('/public/unsubscribe/')[1];
     expect(pageToken).toBeTruthy();
     expect(pageToken).toBe(postToken);
+  });
+
+  it('rodapé (página) e header (API) usam domínios DIFERENTES — nunca o do outro', async () => {
+    const { service, resend } = makeService(makeFakePrisma());
+    await service.send(req);
+    const pageUrl = render.render.mock.calls.at(-1)![2] as string;
+    const postUrl = resend.send.mock.calls.at(-1)![0].unsubscribePostUrl as string;
+
+    // Rodapé vai para a página Next (domínio web) — visitado por uma pessoa.
+    expect(pageUrl).toMatch(/^https:\/\/app\.exemplo\.com\.br\//);
+    expect(pageUrl).not.toContain('api.exemplo.com.br');
+
+    // List-Unsubscribe-Post vai direto para a rota da API — chamado por
+    // robô do provedor de email, sem navegador.
+    expect(postUrl).toMatch(/^https:\/\/api\.exemplo\.com\.br\//);
+    expect(postUrl).not.toContain('app.exemplo.com.br');
   });
 
   it('é idempotente: reenviar o mesmo dedupKey não chama o Resend de novo', async () => {

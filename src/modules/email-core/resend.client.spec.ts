@@ -10,6 +10,7 @@ const cfg = {
   from: 'marketing@exemplo.com.br',
   unsubscribeSecret: 's',
   publicUrl: 'https://app.exemplo.com.br',
+  apiUrl: 'https://api.exemplo.com.br',
 };
 
 const payload = {

@@ -39,6 +39,7 @@ function makeDeps() {
     from: 'a@b.com',
     unsubscribeSecret: 'u',
     publicUrl: 'https://example.com',
+    apiUrl: 'https://api.example.com',
   };
   const controller = new ResendWebhookController(
     eventsFake as any,

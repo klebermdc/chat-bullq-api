@@ -55,7 +55,7 @@ export class EmailSenderService {
    * como quebrado — o oposto do que a feature tenta evitar.
    */
   unsubscribePostUrl(subscriberId: string): string {
-    return `${this.config.publicUrl}/api/v1/public/unsubscribe/${this.unsubscribeToken(subscriberId)}`;
+    return `${this.config.apiUrl}/api/v1/public/unsubscribe/${this.unsubscribeToken(subscriberId)}`;
   }
 
   /**
@@ -103,7 +103,14 @@ export class EmailSenderService {
 
     // Mesmo subscriberId (mesmo token) alimenta os dois destinos — o rodapé
     // visível (página web) e o header automático (API) precisam concordar
-    // sobre quem está se descadastrando.
+    // sobre quem está se descadastrando. Os DOMÍNIOS, porém, são
+    // propositalmente diferentes: `unsubscribePageUrl` usa `publicUrl` (web,
+    // ex. ofpchat.explotek.pro) porque é a pessoa quem clica e espera ver uma
+    // tela; `unsubscribePostUrl` usa `apiUrl` (API, ex.
+    // api-ofpchat.explotek.pro) porque é o robô do Gmail/Outlook chamando o
+    // header `List-Unsubscribe-Post` direto contra a rota da API, sem
+    // navegador. Misturar os dois faz um deles bater num domínio que não
+    // serve aquela rota e devolver 404.
     const subscriberId = req.subscriberId ?? message!.id;
     const unsubscribePageUrl = this.unsubscribePageUrl(subscriberId);
     const unsubscribePostUrl = this.unsubscribePostUrl(subscriberId);
