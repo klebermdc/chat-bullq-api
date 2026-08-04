@@ -3,7 +3,7 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   rootDir: 'src',
-  testRegex: '.*\\.spec\\.ts$',
+  testRegex: '.*\\.spec\\.tsx?$',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
     '^@prisma/client$': '<rootDir>/../node_modules/@prisma/client',

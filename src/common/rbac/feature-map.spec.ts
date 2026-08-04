@@ -45,6 +45,12 @@ describe('feature-map', () => {
     expect(perms).not.toContain('automations.view');
   });
 
+  it('email.view é STAFF: ADMIN/OWNER veem a seção de Email, AGENT não', () => {
+    expect(can(OrgRole.OWNER, 'email.view')).toBe(true);
+    expect(can(OrgRole.ADMIN, 'email.view')).toBe(true);
+    expect(can(OrgRole.AGENT, 'email.view')).toBe(false);
+  });
+
   it('permissionsFor(role ausente) é lista vazia', () => {
     expect(permissionsFor(undefined)).toEqual([]);
   });
