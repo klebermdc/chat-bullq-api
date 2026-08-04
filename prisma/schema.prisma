@@ -916,10 +916,11 @@ model Tag {
   /// TAG_ADDED, um evento LEAD_QUALIFIED com os dados de atribuição.
   marksQualifiedLead Boolean @default(false) @map("marks_qualified_lead")
 
-  organization  Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  conversations ConversationTag[]
-  contacts      ContactTag[]
-  agentChannels AiAgentChannel[]  @relation("AgentChannelTagFilter")
+  organization     Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversations    ConversationTag[]
+  contacts         ContactTag[]
+  agentChannels    AiAgentChannel[]     @relation("AgentChannelTagFilter")
+  emailSubscribers EmailSubscriberTag[]
 
   @@unique([organizationId, name])
   @@map("tags")
@@ -2619,14 +2620,36 @@ model EmailSubscriber {
   unsubscribedAt   DateTime?             @map("unsubscribed_at")
   suppressedReason String?               @map("suppressed_reason")
   metadata         Json                  @default("{}")
+  firstPurchaseAt  DateTime?             @map("first_purchase_at")
+  lastPurchaseAt   DateTime?             @map("last_purchase_at")
+  totalSpent       Decimal               @default(0) @map("total_spent") @db.Decimal(14, 2)
+  orderCount       Int                   @default(0) @map("order_count")
+  categories       String[]              @default([])
+  suppliers        String[]              @default([])
+  enrichedAt       DateTime?             @map("enriched_at")
   createdAt        DateTime              @default(now()) @map("created_at")
   updatedAt        DateTime              @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tags         EmailSubscriberTag[]
 
   @@unique([organizationId, email], name: "uq_email_subscriber_org_email")
   @@index([organizationId, status])
+  @@index([organizationId, status, lastPurchaseAt])
   @@map("email_subscribers")
+}
+
+model EmailSubscriberTag {
+  subscriberId String   @map("subscriber_id")
+  tagId        String   @map("tag_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  subscriber EmailSubscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  tag        Tag             @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([subscriberId, tagId])
+  @@index([tagId])
+  @@map("email_subscriber_tags")
 }
 
 model EmailCampaign {
