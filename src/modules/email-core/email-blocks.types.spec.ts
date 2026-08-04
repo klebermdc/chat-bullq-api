@@ -45,6 +45,55 @@ describe('parseEmailContent — tipos novos', () => {
   });
 });
 
+describe('parseEmailContent — esquema de href', () => {
+  it('aceita https: em button', () => {
+    const c = bloco({ type: 'button', label: 'Quero', href: 'https://exemplo.com/oferta' });
+    expect(parseEmailContent(c).blocks).toHaveLength(1);
+  });
+
+  it('recusa javascript: em button', () => {
+    expect(() =>
+      parseEmailContent(bloco({ type: 'button', label: 'Quero', href: 'javascript:alert(1)' })),
+    ).toThrow(/esquema/);
+  });
+
+  it('recusa data: em button', () => {
+    expect(() =>
+      parseEmailContent(
+        bloco({ type: 'button', label: 'Quero', href: 'data:text/html,<script>alert(1)</script>' }),
+      ),
+    ).toThrow(/esquema/);
+  });
+
+  it('recusa javascript: em offer', () => {
+    expect(() =>
+      parseEmailContent(
+        bloco({ type: 'offer', title: 'Disney', label: 'Quero', href: 'javascript:alert(1)' }),
+      ),
+    ).toThrow(/esquema/);
+  });
+
+  it('recusa data: em social', () => {
+    const c = bloco({ type: 'social', links: [{ network: 'instagram', href: 'data:text/html,x' }] });
+    expect(() => parseEmailContent(c)).toThrow(/esquema/);
+  });
+
+  it('aceita mailto: em social', () => {
+    const c = bloco({ type: 'social', links: [{ network: 'site', href: 'mailto:contato@exemplo.com' }] });
+    expect(parseEmailContent(c).blocks).toHaveLength(1);
+  });
+
+  it('recusa javascript: em logo, quando href informado', () => {
+    expect(() =>
+      parseEmailContent(bloco({ type: 'logo', src: 'https://x/y.png', href: 'javascript:alert(1)' })),
+    ).toThrow(/esquema/);
+  });
+
+  it('logo sem href não é afetado pela checagem de esquema', () => {
+    expect(parseEmailContent(bloco({ type: 'logo', src: 'https://x/y.png' })).blocks).toHaveLength(1);
+  });
+});
+
 describe('parseEmailContent — tema', () => {
   it('conteúdo da Fatia 1, sem tema, continua válido', () => {
     const c = parseEmailContent({ blocks: [{ type: 'text', text: 'oi' }] });

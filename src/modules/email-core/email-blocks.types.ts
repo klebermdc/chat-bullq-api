@@ -84,8 +84,32 @@ const MAX_FONT_SIZE = 64;
 const MAX_PADDING = 96;
 const MAX_RADIUS = 32;
 
+/**
+ * Esquemas aceitos em `href`. Hoje isso já é neutralizado por duas camadas
+ * (clientes de email sanitizam o HTML recebido, e a prévia renderiza dentro
+ * de `iframe sandbox=""`), mas validar aqui é defesa em profundidade: sem
+ * isso, nada impede um `href: "javascript:..."` de entrar no conteúdo salvo.
+ */
+const ALLOWED_HREF_SCHEMES = ['http:', 'https:', 'mailto:'];
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+/** `blockLabel` identifica o bloco na mensagem de erro (ex.: `bloco 2 ("button")`). */
+function assertSafeHref(href: string, blockLabel: string): void {
+  let scheme: string;
+  try {
+    scheme = new URL(href).protocol;
+  } catch {
+    throw new Error(
+      `${blockLabel}: href inválido — use um endereço com esquema ${ALLOWED_HREF_SCHEMES.join(', ')}`,
+    );
+  }
+  assert(
+    ALLOWED_HREF_SCHEMES.includes(scheme),
+    `${blockLabel}: href com esquema "${scheme}" não é permitido — use ${ALLOWED_HREF_SCHEMES.join(', ')}`,
+  );
 }
 
 function parseTheme(raw: unknown): EmailTheme {
@@ -163,9 +187,11 @@ export function parseEmailContent(raw: unknown): EmailContent {
         break;
       case 'button':
         assert(block.label?.trim() && block.href?.trim(), `bloco ${i}: "button" exige label e href`);
+        assertSafeHref(block.href, `bloco ${i} ("button")`);
         break;
       case 'logo':
         assert(block.src?.trim(), `bloco ${i}: "logo" exige src`);
+        if (block.href?.trim()) assertSafeHref(block.href, `bloco ${i} ("logo")`);
         break;
       case 'spacer':
         assert(SPACER_SIZES.includes(block.size), `bloco ${i}: "spacer" exige size entre ${SPACER_SIZES.join(', ')}`);
@@ -175,12 +201,14 @@ export function parseEmailContent(raw: unknown): EmailContent {
         assert(block.label?.trim(), `bloco ${i}: "offer" exige label do botão`);
         // Sem link o card não leva a lugar nenhum — é o ponto inteiro dele.
         assert(block.href?.trim(), `bloco ${i}: "offer" exige href`);
+        assertSafeHref(block.href, `bloco ${i} ("offer")`);
         break;
       case 'social':
         assert(Array.isArray(block.links) && block.links.length, `bloco ${i}: "social" exige pelo menos um link`);
         block.links.forEach((l: any, j: number) => {
           assert(NETWORKS.includes(l?.network), `bloco ${i}, link ${j}: rede desconhecida "${l?.network}"`);
           assert(l.href?.trim(), `bloco ${i}, link ${j}: exige href`);
+          assertSafeHref(l.href, `bloco ${i}, link ${j} ("social")`);
         });
         break;
     }
