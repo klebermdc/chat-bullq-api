@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
+import { Feature } from '../../common/decorators';
 import { EmailRenderService } from './email-render.service';
 import { parseEmailContent } from './email-blocks.types';
 import { EmailConfig, loadEmailConfig } from './email.config';
@@ -12,6 +13,7 @@ const NOME_EXEMPLO = 'João';
 @ApiTags('Email · Prévia')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
+@Feature('email.view')
 @Controller('email/preview')
 export class PreviewController {
   private readonly config: EmailConfig;
