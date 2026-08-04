@@ -21,6 +21,7 @@ export class EmailRenderService {
     variables: EmailVariables,
     unsubscribeUrl: string,
     preheader?: string,
+    assetsBaseUrl?: string,
   ): Promise<RenderedEmail> {
     // Constrói blocos NOVOS em vez de mutar: o mesmo `content` é reusado para
     // cada destinatário da campanha, e mutar aqui contaminaria o próximo envio
@@ -37,7 +38,7 @@ export class EmailRenderService {
       }
     });
 
-    const element = BasicEmail({ blocks, preheader, unsubscribeUrl });
+    const element = BasicEmail({ blocks, theme: content.theme, preheader, unsubscribeUrl, assetsBaseUrl });
     const [html, text] = await Promise.all([render(element), render(element, { plainText: true })]);
     return { html, text };
   }
