@@ -3,7 +3,8 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
-import type { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { PublicApiModule } from './modules/public-api/public-api.module';
 import { StorageService } from './modules/storage/storage.service';
@@ -98,6 +99,12 @@ async function bootstrap() {
       else res.destroy();
     }
   });
+  // Ícones de redes sociais dos emails. Precisam de URL pública e estável:
+  // já estão dentro de emails enviados, que não podem ser corrigidos depois.
+  app.use('/api/v1/email-assets', express.static(join(__dirname, 'assets/email'), {
+    maxAge: '365d',
+    immutable: true,
+  }));
   // CORS aceita uma LISTA de origens separada por vírgula em CORS_ORIGIN
   // (ex.: "https://ofpchat.explotek.pro,https://sendtur.com.br"). Passar a
   // string crua com vírgula quebra o header Access-Control-Allow-Origin e

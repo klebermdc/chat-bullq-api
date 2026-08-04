@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EmailSubscriberSource, EmailSubscriberStatus } from '@prisma/client';
 import { normalizeEmail, isValidEmail } from '../email-core/email-address.util';
 import { SubscribersRepository } from './subscribers.repository';
@@ -13,6 +13,8 @@ export interface UpsertSubscriberInput {
 
 @Injectable()
 export class SubscribersService {
+  private readonly logger = new Logger(SubscribersService.name);
+
   constructor(private readonly repo: SubscribersRepository) {}
 
   /**
@@ -50,8 +52,15 @@ export class SubscribersService {
     return this.repo.update(existing.id, patch);
   }
 
-  async unsubscribe(id: string, reason: string) {
-    const sub = await this.repo.findById(id);
+  /**
+   * `organizationId` é checagem de AUTORIZAÇÃO aqui: quem chama vem de uma
+   * rota autenticada por sessão (descadastro manual) ou já resolveu a
+   * organização pela própria mensagem (webhook). Sem esse filtro, qualquer
+   * usuário autenticado de qualquer organização descadastraria destinatário
+   * alheio só sabendo o id.
+   */
+  async unsubscribe(id: string, organizationId: string, reason: string) {
+    const sub = await this.repo.findById(id, organizationId);
     if (!sub) throw new NotFoundException('destinatário não encontrado');
     // Idempotente: repetir o clique não reescreve a data original.
     if (sub.status === EmailSubscriberStatus.UNSUBSCRIBED) return sub;
@@ -62,13 +71,32 @@ export class SubscribersService {
     });
   }
 
-  /** Usado pelo webhook: bounce permanente e marcação de spam. */
-  suppress(id: string, status: EmailSubscriberStatus, reason: string) {
+  /**
+   * Usado pelo webhook: bounce permanente e marcação de spam.
+   * `organizationId` vem da `EmailMessage` que originou o evento — aqui a
+   * checagem não impede um ataque (o webhook não é iniciado pelo usuário),
+   * é uma trava de coerência: nunca suprimir um assinante fora da
+   * organização da mensagem que gerou o evento.
+   */
+  async suppress(id: string, organizationId: string, status: EmailSubscriberStatus, reason: string) {
+    const sub = await this.repo.findById(id, organizationId);
+    if (!sub) {
+      this.logger.warn(
+        `suppress: assinante ${id} não encontrado na organização ${organizationId} — ignorado`,
+      );
+      return undefined;
+    }
     return this.repo.update(id, { status, suppressedReason: reason });
   }
 
+  /**
+   * SEM organização — só para os dois fluxos onde o id já foi validado por
+   * outro mecanismo (token de descadastro público; `subscriberId` de uma
+   * `EmailMessage` já resolvida por organização no envio de campanha). Ver
+   * `SubscribersRepository.findByIdUnscoped`.
+   */
   findById(id: string) {
-    return this.repo.findById(id);
+    return this.repo.findByIdUnscoped(id);
   }
 
   findSendable(organizationId: string) {

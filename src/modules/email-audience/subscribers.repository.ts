@@ -6,7 +6,21 @@ import { PrismaService } from '../../database/prisma.service';
 export class SubscribersRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findById(id: string) {
+  /** Escopado por organização — usar sempre que a origem do `id` for uma requisição autenticada. */
+  findById(id: string, organizationId: string) {
+    return this.prisma.emailSubscriber.findFirst({ where: { id, organizationId } });
+  }
+
+  /**
+   * SEM filtro de organização. Só para os dois fluxos onde a identidade já
+   * foi verificada por outro mecanismo:
+   *  - descadastro público por token (o HMAC do token já amarra o id — a
+   *    checagem de organização que vem depois é coerência, não autorização);
+   *  - envio de campanha, onde o `subscriberId` já veio de uma `EmailMessage`
+   *    da própria organização que está processando o job.
+   * Nunca chamar a partir de uma rota autenticada por sessão.
+   */
+  findByIdUnscoped(id: string) {
     return this.prisma.emailSubscriber.findUnique({ where: { id } });
   }
 
