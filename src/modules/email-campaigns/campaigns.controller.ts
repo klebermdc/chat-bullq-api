@@ -6,6 +6,7 @@ import { CampaignsService } from './campaigns.service';
 import { CampaignDispatchService } from './campaign-dispatch.service';
 import { CampaignStatsService } from './campaign-stats.service';
 import { UpsertCampaignDto } from './dto/upsert-campaign.dto';
+import { AudienceCountDto } from './dto/audience-count.dto';
 
 @ApiTags('Email · Campanhas')
 @ApiBearerAuth()
@@ -72,5 +73,17 @@ export class CampaignsController {
   @ApiOperation({ summary: 'Falhas com o motivo real do provedor' })
   failures(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
     return this.stats.failures(id, orgId);
+  }
+
+  @Post(':id/audience-count')
+  @ApiOperation({
+    summary: 'Conta quantos destinatários o filtro atinge, antes do disparo',
+  })
+  audienceCount(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @Body() dto: AudienceCountDto,
+  ) {
+    return this.stats.audienceCount(id, orgId, dto.filter);
   }
 }
