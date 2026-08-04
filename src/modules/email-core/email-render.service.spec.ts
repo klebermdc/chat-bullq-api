@@ -1,5 +1,5 @@
 import { EmailRenderService } from './email-render.service';
-import { parseEmailContent, applyVariables } from './email-blocks.types';
+import { parseEmailContent, applyVariables, DEFAULT_THEME } from './email-blocks.types';
 
 describe('parseEmailContent', () => {
   it('aceita conteúdo válido', () => {
@@ -30,6 +30,7 @@ describe('applyVariables', () => {
 describe('EmailRenderService', () => {
   const service = new EmailRenderService();
   const content = {
+    theme: DEFAULT_THEME,
     blocks: [
       { type: 'heading' as const, text: 'Sua viagem começa' },
       { type: 'text' as const, text: 'Olá {{nome}}, temos novidade.' },
