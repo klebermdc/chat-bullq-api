@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentOrg, CurrentUser } from '../../common/decorators';
+import { CurrentOrg, CurrentUser, Feature } from '../../common/decorators';
 import { CampaignsService } from './campaigns.service';
 import { CampaignDispatchService } from './campaign-dispatch.service';
 import { CampaignStatsService } from './campaign-stats.service';
@@ -10,6 +10,7 @@ import { UpsertCampaignDto } from './dto/upsert-campaign.dto';
 @ApiTags('Email · Campanhas')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
+@Feature('email.view')
 @Controller('email/campaigns')
 export class CampaignsController {
   constructor(

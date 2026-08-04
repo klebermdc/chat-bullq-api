@@ -192,6 +192,16 @@ export class SubscriberImportService {
     );
   }
 
+  /**
+   * `OfpSalesOrder` é espelho GLOBAL do HUB — a tabela não tem
+   * `organizationId`, então esta consulta não tem por onde filtrar por
+   * organização. Isso é por desenho, não um bug: hoje só existe uma
+   * operação usando este banco. A mitigação cabível é restringir quem pode
+   * chamar esta rota (`email.view`, OWNER/ADMIN — ver `@Feature` no
+   * controller); não há como "consertar" o filtro em si. Se um dia duas
+   * operações passarem a dividir o mesmo banco, esta importação passaria a
+   * trazer clientes de uma operação para a lista de email da outra.
+   */
   async fromSalesOrders(organizationId: string): Promise<ImportResult> {
     const orders = await this.prisma.ofpSalesOrder.findMany({
       select: { emailCliente: true, cliente: true, venda: true, produto: true, fornecedor: true, data: true },
