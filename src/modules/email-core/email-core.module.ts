@@ -6,13 +6,20 @@ import { ResendClient } from './resend.client';
 import { EmailSenderService } from './email-sender.service';
 import { EmailEventsService } from './email-events.service';
 import { ResendWebhookController } from './resend-webhook.controller';
+import { ResendWebhookThrottleGuard } from './resend-webhook-throttle.guard';
 import { UnsubscribeController } from './unsubscribe.controller';
 import { PreviewController } from './preview.controller';
 
 @Module({
   imports: [NotificationsModule, forwardRef(() => EmailAudienceModule)],
   controllers: [ResendWebhookController, UnsubscribeController, PreviewController],
-  providers: [EmailRenderService, ResendClient, EmailSenderService, EmailEventsService],
+  providers: [
+    EmailRenderService,
+    ResendClient,
+    EmailSenderService,
+    EmailEventsService,
+    ResendWebhookThrottleGuard,
+  ],
   exports: [EmailSenderService, EmailRenderService, EmailEventsService],
 })
 export class EmailCoreModule {}
