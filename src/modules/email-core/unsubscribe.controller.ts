@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Param, HttpCode, NotFoundException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  HttpCode,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators';
 import { SubscribersService } from '../email-audience/subscribers.service';
@@ -12,7 +20,8 @@ export class UnsubscribeController {
 
   constructor(
     private readonly subscribers: SubscribersService,
-    config?: EmailConfig,
+    // `@Optional()` é obrigatório: `EmailConfig` é interface e some em runtime.
+    @Optional() config?: EmailConfig,
   ) {
     this.config = config ?? loadEmailConfig(process.env);
   }

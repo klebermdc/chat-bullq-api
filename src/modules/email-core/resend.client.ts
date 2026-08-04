@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Resend } from 'resend';
 import { EmailConfig, loadEmailConfig } from './email.config';
 
@@ -26,9 +26,14 @@ export class ResendClient {
   private readonly config: EmailConfig;
   private readonly sdk: { emails: { send: (opts: any) => Promise<any> } };
 
-  // O segundo parâmetro existe para o teste injetar um fake. Em produção o Nest
-  // chama sem ele e a SDK real é construída aqui.
-  constructor(config?: EmailConfig, sdk?: any) {
+  // Os dois parâmetros existem para o teste injetar fakes. Em produção o Nest
+  // chama sem eles e a SDK real é construída aqui.
+  //
+  // `@Optional()` NÃO é decoração supérflua: sem ele o Nest tenta resolver
+  // `EmailConfig`, que é uma interface e não existe em runtime, e o boot morre
+  // com "Nest can't resolve dependencies of ResendClient (index 0)". Foi assim
+  // que a API entrou em crashloop no primeiro deploy do email.
+  constructor(@Optional() config?: EmailConfig, @Optional() sdk?: any) {
     this.config = config ?? loadEmailConfig(process.env);
     this.sdk = sdk ?? new Resend(this.config.apiKey);
   }
