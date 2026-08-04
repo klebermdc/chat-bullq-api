@@ -46,7 +46,18 @@ export class UnsubscribeController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Efetiva o descadastro (um clique, sem login)' })
   async confirm(@Param('token') token: string) {
-    const sub = await this.subscribers.unsubscribe(this.resolve(token), 'clicou no link do email');
+    const id = this.resolve(token);
+    // Sem sessão aqui — o token já identifica o destinatário. Buscamos o
+    // registro (sem filtro de organização, o token É a autorização) só para
+    // aprender a organização dele e repassar como checagem de coerência,
+    // não de acesso.
+    const existing = await this.subscribers.findById(id);
+    if (!existing) throw new NotFoundException('link de descadastro inválido');
+    const sub = await this.subscribers.unsubscribe(
+      id,
+      existing.organizationId,
+      'clicou no link do email',
+    );
     return { email: sub.email, status: sub.status };
   }
 }

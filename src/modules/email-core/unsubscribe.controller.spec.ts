@@ -9,13 +9,14 @@ const SECRET = 'segredo-de-descadastro';
 function makeDeps() {
   const sub = {
     id: 'sub_1',
+    organizationId: 'org_1',
     email: 'destinatario@exemplo.com',
     status: EmailSubscriberStatus.SUBSCRIBED,
   };
   const subscribers = {
     findById: jest.fn(async (id: string) => (id === sub.id ? sub : null)),
-    unsubscribe: jest.fn(async (id: string) => {
-      if (id !== sub.id) {
+    unsubscribe: jest.fn(async (id: string, organizationId: string) => {
+      if (id !== sub.id || organizationId !== sub.organizationId) {
         throw new NotFoundException('destinatário não encontrado');
       }
       return { ...sub, status: EmailSubscriberStatus.UNSUBSCRIBED };
@@ -67,7 +68,11 @@ describe('UnsubscribeController', () => {
 
       const result = await controller.confirm(token);
 
-      expect(subscribers.unsubscribe).toHaveBeenCalledWith(sub.id, expect.any(String));
+      expect(subscribers.unsubscribe).toHaveBeenCalledWith(
+        sub.id,
+        sub.organizationId,
+        expect.any(String),
+      );
       expect(result).toEqual({ email: sub.email, status: EmailSubscriberStatus.UNSUBSCRIBED });
     });
 
