@@ -88,4 +88,63 @@ describe('SubscribersService', () => {
     expect(second.unsubscribedAt).toEqual(first.unsubscribedAt);
     expect(second.suppressedReason).toBe('clicou');
   });
+
+  it('enriquecimento SEMPRE sobrescreve os campos derivados, mesmo já preenchidos', async () => {
+    const repo = makeFakeRepo();
+    const s = new SubscribersService(repo as any);
+    const sub = await s.upsert('org_1', {
+      email: 'j@e.com',
+      source: EmailSubscriberSource.OFP_ORDER,
+      enrichment: {
+        firstPurchaseAt: new Date('2026-01-01'),
+        lastPurchaseAt: new Date('2026-01-01'),
+        totalSpent: 100,
+        orderCount: 1,
+        categories: ['ingresso'],
+        suppliers: ['just travel'],
+      },
+    });
+    expect(sub.orderCount).toBe(1);
+    expect(sub.enrichedAt).toBeInstanceOf(Date);
+
+    const updated = await s.upsert('org_1', {
+      email: 'j@e.com',
+      source: EmailSubscriberSource.OFP_ORDER,
+      enrichment: {
+        firstPurchaseAt: new Date('2025-01-01'),
+        lastPurchaseAt: new Date('2026-06-01'),
+        totalSpent: 900,
+        orderCount: 9,
+        categories: ['ingresso', 'hotel'],
+        suppliers: ['just travel', 'ofp'],
+      },
+    });
+    expect(updated.orderCount).toBe(9);
+    expect(updated.totalSpent).toBe(900);
+    expect(updated.categories).toEqual(['ingresso', 'hotel']);
+    expect(updated.lastPurchaseAt).toEqual(new Date('2026-06-01'));
+  });
+
+  it('enriquecer NUNCA toca em status — quem descadastrou continua fora', async () => {
+    const repo = makeFakeRepo();
+    const s = new SubscribersService(repo as any);
+    const sub = await s.upsert('org_1', { email: 'j@e.com', source: EmailSubscriberSource.MANUAL });
+    await s.unsubscribe(sub.id, 'clicou');
+
+    const reenriched = await s.upsert('org_1', {
+      email: 'j@e.com',
+      source: EmailSubscriberSource.OFP_ORDER,
+      enrichment: {
+        firstPurchaseAt: new Date('2026-01-01'),
+        lastPurchaseAt: new Date('2026-01-01'),
+        totalSpent: 500,
+        orderCount: 3,
+        categories: ['hotel'],
+        suppliers: [],
+      },
+    });
+    expect(reenriched.status).toBe(EmailSubscriberStatus.UNSUBSCRIBED);
+    expect(reenriched.orderCount).toBe(3);
+    expect(reenriched.totalSpent).toBe(500);
+  });
 });
