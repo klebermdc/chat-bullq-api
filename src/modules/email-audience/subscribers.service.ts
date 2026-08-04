@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EmailSubscriberSource, EmailSubscriberStatus } from '@prisma/client';
 import { normalizeEmail, isValidEmail } from '../email-core/email-address.util';
-import { SubscribersRepository } from './subscribers.repository';
+import { TagsService } from '../tags/tags.service';
+import { SubscribersRepository, SubscriberWithTagJoins } from './subscribers.repository';
 
 /**
  * Campos derivados de pedidos do HUB. Ao contrário de `name`/`contactId`,
@@ -26,11 +27,19 @@ export interface UpsertSubscriberInput {
   enrichment?: PurchaseEnrichment;
 }
 
+/** `EmailSubscriberTag[]` (junção) → `Tag[]`: o consumidor da API não precisa da linha de junção. */
+function flattenTags(item: SubscriberWithTagJoins) {
+  return { ...item, tags: item.tags.map((t) => t.tag) };
+}
+
 @Injectable()
 export class SubscribersService {
   private readonly logger = new Logger(SubscribersService.name);
 
-  constructor(private readonly repo: SubscribersRepository) {}
+  constructor(
+    private readonly repo: SubscribersRepository,
+    private readonly tags: TagsService,
+  ) {}
 
   /**
    * Entrada única da base: as quatro fontes desaguam aqui e o dedupe é pelo
@@ -133,7 +142,29 @@ export class SubscribersService {
     return this.repo.findSendable(organizationId);
   }
 
-  list(organizationId: string, status?: EmailSubscriberStatus, page = 1, limit = 50) {
-    return this.repo.list(organizationId, status, (page - 1) * limit, limit);
+  /** Achata a junção `EmailSubscriberTag[]` em `Tag[]` — o consumidor da API não precisa da linha de junção. */
+  async list(organizationId: string, status?: EmailSubscriberStatus, page = 1, limit = 50) {
+    const [items, total] = await this.repo.list(organizationId, status, (page - 1) * limit, limit);
+    return [items.map(flattenTags), total] as const;
+  }
+
+  /**
+   * `organizationId` escopa TANTO o destinatário quanto a etiqueta: sem a
+   * segunda checagem, um operador poderia aplicar a um destinatário seu uma
+   * etiqueta que pertence a outra organização (vazamento de nome/cor entre
+   * tenants, mesma classe do IDOR do descadastro).
+   */
+  async addTag(id: string, organizationId: string, tagId: string) {
+    const subscriber = await this.repo.findById(id, organizationId);
+    if (!subscriber) throw new NotFoundException('destinatário não encontrado');
+    await this.tags.findOne(tagId, organizationId); // lança NotFoundException se a tag não for da organização
+    return this.repo.addTag(id, tagId);
+  }
+
+  async removeTag(id: string, organizationId: string, tagId: string) {
+    const subscriber = await this.repo.findById(id, organizationId);
+    if (!subscriber) throw new NotFoundException('destinatário não encontrado');
+    await this.tags.findOne(tagId, organizationId);
+    return this.repo.removeTag(id, tagId);
   }
 }

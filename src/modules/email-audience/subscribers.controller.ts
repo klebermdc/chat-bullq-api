@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Query, Param, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { EmailSubscriberStatus } from '@prisma/client';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
@@ -6,6 +6,7 @@ import { CurrentOrg, Feature } from '../../common/decorators';
 import { SubscribersService } from './subscribers.service';
 import { SubscriberImportService } from './subscriber-import.service';
 import { ImportCsvDto } from './dto/import-csv.dto';
+import { TagSubscriberDto } from './dto/tag-subscriber.dto';
 
 @ApiTags('Email · Destinatários')
 @ApiBearerAuth()
@@ -54,5 +55,21 @@ export class SubscribersController {
   @ApiOperation({ summary: 'Descadastra manualmente' })
   unsubscribe(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
     return this.subscribers.unsubscribe(id, orgId, 'descadastro manual pelo operador');
+  }
+
+  @Post(':id/tags')
+  @ApiOperation({ summary: 'Aplica uma etiqueta ao destinatário' })
+  addTag(@Param('id') id: string, @CurrentOrg('id') orgId: string, @Body() dto: TagSubscriberDto) {
+    return this.subscribers.addTag(id, orgId, dto.tagId);
+  }
+
+  @Delete(':id/tags/:tagId')
+  @ApiOperation({ summary: 'Remove uma etiqueta do destinatário' })
+  removeTag(
+    @Param('id') id: string,
+    @Param('tagId') tagId: string,
+    @CurrentOrg('id') orgId: string,
+  ) {
+    return this.subscribers.removeTag(id, orgId, tagId);
   }
 }
