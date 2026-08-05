@@ -5,6 +5,7 @@ import {
   Headers,
   HttpCode,
   Logger,
+  Optional,
   RawBodyRequest,
   UnauthorizedException,
   UseGuards,
@@ -42,7 +43,8 @@ export class ResendWebhookController {
     private readonly events: EmailEventsService,
     private readonly notifications: NotificationsService,
     private readonly prisma: PrismaService,
-    config?: EmailConfig,
+    // `@Optional()` é obrigatório: `EmailConfig` é interface e some em runtime.
+    @Optional() config?: EmailConfig,
   ) {
     this.config = config ?? loadEmailConfig(process.env);
   }

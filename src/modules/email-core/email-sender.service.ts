@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { EmailMessageStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { EmailContent } from './email-blocks.types';
@@ -30,7 +30,8 @@ export class EmailSenderService {
     private readonly prisma: PrismaService,
     private readonly renderer: EmailRenderService,
     private readonly resend: ResendClient,
-    config?: EmailConfig,
+    // `@Optional()` é obrigatório: `EmailConfig` é interface e some em runtime.
+    @Optional() config?: EmailConfig,
   ) {
     this.config = config ?? loadEmailConfig(process.env);
   }
