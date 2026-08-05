@@ -93,7 +93,12 @@ export class EmailEventsService {
         });
         const status = this.suppression.statusForBounce(event.data?.bounce?.type);
         if (status && message.subscriberId) {
-          await this.subscribers.suppress(message.subscriberId, status, 'bounce permanente');
+          await this.subscribers.suppress(
+            message.subscriberId,
+            message.organizationId,
+            status,
+            'bounce permanente',
+          );
         }
         return;
       }
@@ -106,6 +111,7 @@ export class EmailEventsService {
         if (message.subscriberId) {
           await this.subscribers.suppress(
             message.subscriberId,
+            message.organizationId,
             EmailSubscriberStatus.COMPLAINED,
             'marcou como spam',
           );

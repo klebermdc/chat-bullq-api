@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Query, Param, UseGuards } from '@nestjs/co
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { EmailSubscriberStatus } from '@prisma/client';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentOrg } from '../../common/decorators';
+import { CurrentOrg, Feature } from '../../common/decorators';
 import { SubscribersService } from './subscribers.service';
 import { SubscriberImportService } from './subscriber-import.service';
 import { ImportCsvDto } from './dto/import-csv.dto';
@@ -10,6 +10,7 @@ import { ImportCsvDto } from './dto/import-csv.dto';
 @ApiTags('Email · Destinatários')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
+@Feature('email.view')
 @Controller('email/subscribers')
 export class SubscribersController {
   constructor(
@@ -51,7 +52,7 @@ export class SubscribersController {
 
   @Post(':id/unsubscribe')
   @ApiOperation({ summary: 'Descadastra manualmente' })
-  unsubscribe(@Param('id') id: string) {
-    return this.subscribers.unsubscribe(id, 'descadastro manual pelo operador');
+  unsubscribe(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
+    return this.subscribers.unsubscribe(id, orgId, 'descadastro manual pelo operador');
   }
 }

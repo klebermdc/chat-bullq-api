@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { EmailSubscriberSource, EmailSubscriberStatus } from '@prisma/client';
 import { SubscribersService } from './subscribers.service';
 
@@ -6,7 +7,11 @@ function makeFakeRepo() {
   let seq = 0;
   return {
     rows,
-    findById: jest.fn(async (id: string) => rows.find((r) => r.id === id) ?? null),
+    findById: jest.fn(
+      async (id: string, organizationId: string) =>
+        rows.find((r) => r.id === id && r.organizationId === organizationId) ?? null,
+    ),
+    findByIdUnscoped: jest.fn(async (id: string) => rows.find((r) => r.id === id) ?? null),
     findByEmail: jest.fn(
       async (orgId: string, email: string) =>
         rows.find((r) => r.organizationId === orgId && r.email === email) ?? null,
@@ -65,9 +70,34 @@ describe('SubscribersService', () => {
     const repo = makeFakeRepo();
     const s = new SubscribersService(repo as any);
     const sub = await s.upsert('org_1', { email: 'j@e.com', source: EmailSubscriberSource.CRM_CONTACT });
-    await s.unsubscribe(sub.id, 'clicou no link');
+    await s.unsubscribe(sub.id, 'org_1', 'clicou no link');
     const again = await s.upsert('org_1', { email: 'j@e.com', source: EmailSubscriberSource.CSV_IMPORT });
     expect(again.status).toBe(EmailSubscriberStatus.UNSUBSCRIBED);
+  });
+
+  it('não descadastra destinatário de outra organização (IDOR)', async () => {
+    const repo = makeFakeRepo();
+    const s = new SubscribersService(repo as any);
+    const sub = await s.upsert('org_A', { email: 'a@e.com', source: EmailSubscriberSource.MANUAL });
+
+    await expect(
+      s.unsubscribe(sub.id, 'org_B', 'descadastro manual pelo operador'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    const stillThere = await repo.findById(sub.id, 'org_A');
+    expect(stillThere.status).toBe(EmailSubscriberStatus.SUBSCRIBED);
+  });
+
+  it('não suprime (bounce/spam) assinante de outra organização', async () => {
+    const repo = makeFakeRepo();
+    const s = new SubscribersService(repo as any);
+    const sub = await s.upsert('org_A', { email: 'a@e.com', source: EmailSubscriberSource.MANUAL });
+
+    const result = await s.suppress(sub.id, 'org_B', EmailSubscriberStatus.BOUNCED, 'bounce permanente');
+
+    expect(result).toBeUndefined();
+    const stillThere = await repo.findById(sub.id, 'org_A');
+    expect(stillThere.status).toBe(EmailSubscriberStatus.SUBSCRIBED);
   });
 
   it('rejeita endereço inválido', async () => {
@@ -81,10 +111,10 @@ describe('SubscribersService', () => {
     const repo = makeFakeRepo();
     const s = new SubscribersService(repo as any);
     const sub = await s.upsert('org_1', { email: 'j@e.com', source: EmailSubscriberSource.MANUAL });
-    const first = await s.unsubscribe(sub.id, 'clicou');
+    const first = await s.unsubscribe(sub.id, 'org_1', 'clicou');
     expect(first.status).toBe(EmailSubscriberStatus.UNSUBSCRIBED);
     expect(first.unsubscribedAt).toBeInstanceOf(Date);
-    const second = await s.unsubscribe(sub.id, 'clicou de novo');
+    const second = await s.unsubscribe(sub.id, 'org_1', 'clicou de novo');
     expect(second.unsubscribedAt).toEqual(first.unsubscribedAt);
     expect(second.suppressedReason).toBe('clicou');
   });

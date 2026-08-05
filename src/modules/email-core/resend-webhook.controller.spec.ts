@@ -105,6 +105,24 @@ describe('ResendWebhookController.handle', () => {
     expect(eventsFake.applyByProviderId).not.toHaveBeenCalled();
   });
 
+  it('dez requisições com assinatura inválida em sequência geram UM alerta, não dez', async () => {
+    const { controller, eventsFake, notificationsFake } = makeDeps();
+    const body = JSON.stringify({ type: 'email.delivered', data: { email_id: 'resend_1' } });
+    const outro = 'whsec_' + Buffer.from('segredo-errado').toString('base64');
+
+    for (let i = 0; i < 10; i++) {
+      const id = `msg_${i}`;
+      const ts = agora();
+      await expect(
+        controller.handle(makeReq(body), headersFor(id, ts, body, outro)),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    }
+
+    expect(eventsFake.applyByProviderId).not.toHaveBeenCalled();
+    // 2 orgs × 1 alerta cada = 2 chamadas — não 2 × 10.
+    expect(notificationsFake.notifyOrgAgents).toHaveBeenCalledTimes(2);
+  });
+
   it('falha ao notificar não impede a rejeição', async () => {
     const { controller, notificationsFake } = makeDeps();
     notificationsFake.notifyOrgAgents.mockRejectedValue(new Error('fila fora do ar'));
