@@ -29,6 +29,7 @@ import { ChannelAdapterRegistry } from '../../channel-hub/channel-adapter.regist
 import { resolveAssignmentScope } from '../conversations/conversation-scope';
 import { ConversationAccessService } from '../conversations/conversation-access.service';
 import { shouldAutoAssignOnReply } from './auto-assign.util';
+import { buildSnippet, messageText } from './message-search';
 
 @Injectable()
 export class MessagesService {
@@ -645,15 +646,19 @@ export class MessagesService {
     };
   }
 
-  async findByConversation(
+  /**
+   * Guarda de acesso e escopo de toda leitura de histórico: mesma checagem de
+   * organização, canal e atribuição, e o mesmo conjunto de conversas — a
+   * conversa sozinha, ou o grupo de segmento inteiro (as irmãs nos outros
+   * números, deduplicadas por messageid).
+   */
+  private async resolveHistoryScope(
     conversationId: string,
     organizationId: string,
-    page: number,
-    limit: number,
-    access: ChannelAccess = 'ALL',
+    access: ChannelAccess,
     currentUserId?: string,
     role?: OrgRole,
-  ) {
+  ): Promise<{ conversationIds: string[]; unioned: boolean }> {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
     });
@@ -670,13 +675,37 @@ export class MessagesService {
       throw new ForbiddenException();
     }
 
-    const skip = (page - 1) * limit;
-    // Grupo de segmento: une as mensagens das conversas-irmãs (mesmo grupo nos
-    // outros números), deduplicando por messageid. Conversa normal segue o
-    // caminho de conversa única.
     const siblingIds = await this.segmentRead.groupSiblingIds(conversationId);
-    const { messages, total } = siblingIds
-      ? await this.repository.findByConversationsUnioned(siblingIds, skip, limit)
+    return {
+      conversationIds: siblingIds ?? [conversationId],
+      unioned: !!siblingIds,
+    };
+  }
+
+  async findByConversation(
+    conversationId: string,
+    organizationId: string,
+    page: number,
+    limit: number,
+    access: ChannelAccess = 'ALL',
+    currentUserId?: string,
+    role?: OrgRole,
+  ) {
+    const { conversationIds, unioned } = await this.resolveHistoryScope(
+      conversationId,
+      organizationId,
+      access,
+      currentUserId,
+      role,
+    );
+
+    const skip = (page - 1) * limit;
+    const { messages, total } = unioned
+      ? await this.repository.findByConversationsUnioned(
+          conversationIds,
+          skip,
+          limit,
+        )
       : await this.repository.findByConversation(conversationId, skip, limit);
 
     return {
@@ -687,6 +716,98 @@ export class MessagesService {
         total,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  /** Página anterior à âncora — o "rolar pra cima" do chat. */
+  async findOlderThan(
+    conversationId: string,
+    organizationId: string,
+    beforeMessageId: string,
+    limit: number,
+    access: ChannelAccess = 'ALL',
+    currentUserId?: string,
+    role?: OrgRole,
+  ) {
+    const { conversationIds, unioned } = await this.resolveHistoryScope(
+      conversationId,
+      organizationId,
+      access,
+      currentUserId,
+      role,
+    );
+
+    return this.repository.findOlderThan(
+      conversationIds,
+      unioned,
+      beforeMessageId,
+      limit,
+    );
+  }
+
+  /** Janela em volta de uma mensagem — destino do "pular até" da busca. */
+  async findWindowAround(
+    conversationId: string,
+    organizationId: string,
+    anchorMessageId: string,
+    radius: number,
+    access: ChannelAccess = 'ALL',
+    currentUserId?: string,
+    role?: OrgRole,
+  ) {
+    const { conversationIds, unioned } = await this.resolveHistoryScope(
+      conversationId,
+      organizationId,
+      access,
+      currentUserId,
+      role,
+    );
+
+    return this.repository.findWindowAround(
+      conversationIds,
+      unioned,
+      anchorMessageId,
+      radius,
+    );
+  }
+
+  /** Busca por conteúdo dentro da conversa (e das irmãs de segmento). */
+  async searchInConversation(
+    conversationId: string,
+    organizationId: string,
+    term: string,
+    limit: number,
+    access: ChannelAccess = 'ALL',
+    currentUserId?: string,
+    role?: OrgRole,
+  ) {
+    const trimmed = (term || '').trim();
+    if (!trimmed) return { messages: [] };
+
+    const { conversationIds } = await this.resolveHistoryScope(
+      conversationId,
+      organizationId,
+      access,
+      currentUserId,
+      role,
+    );
+
+    const messages = await this.repository.searchInConversations(
+      conversationIds,
+      trimmed,
+      limit,
+    );
+
+    return {
+      messages: messages.map((m) => ({
+        id: m.id,
+        conversationId: m.conversationId,
+        direction: m.direction,
+        createdAt: m.createdAt,
+        providerTimestamp: m.providerTimestamp,
+        senderName: m.senderName,
+        snippet: buildSnippet(messageText(m.content), trimmed),
+      })),
     };
   }
 }
