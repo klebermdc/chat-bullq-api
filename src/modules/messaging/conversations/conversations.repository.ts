@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConversationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { attachWindowExpiry } from './attach-window-expiry';
+import { buildSearchOr } from './inbox-search';
 
 export interface InboxFilters {
   organizationId: string;
@@ -155,15 +156,21 @@ export class ConversationsRepository {
     }
     if (filters.kind === 'INDIVIDUAL') where.isGroup = false;
     else if (filters.kind === 'GROUP') where.isGroup = true;
+    // Restrições que são OR por dentro mas AND entre si. Cada uma entra como um
+    // bloco próprio: antes elas dividiam o mesmo `where.OR` e a última a ser
+    // montada apagava a anterior (etiqueta + busca perdia a etiqueta).
+    const andBlocks: Prisma.ConversationWhereInput[] = [];
+
     if (filters.tagIds && filters.tagIds.length > 0) {
       // Match conversations that carry ANY of the requested tags. Includes
       // tags applied directly on the conversation OR on its contact —
       // operators tag both ways and expect the inbox to surface either.
-      where.OR = [
-        ...(where.OR ?? []) as any[],
-        { tags: { some: { tagId: { in: filters.tagIds } } } },
-        { contact: { tags: { some: { tagId: { in: filters.tagIds } } } } },
-      ];
+      andBlocks.push({
+        OR: [
+          { tags: { some: { tagId: { in: filters.tagIds } } } },
+          { contact: { tags: { some: { tagId: { in: filters.tagIds } } } } },
+        ],
+      });
     }
     if (filters.assignedToNone) where.assignedToId = null;
     else if (filters.assignedToId) where.assignedToId = filters.assignedToId;
@@ -179,12 +186,11 @@ export class ConversationsRepository {
       };
     }
     if (filters.search) {
-      where.OR = [
-        { contact: { name: { contains: filters.search, mode: 'insensitive' } } },
-        { contact: { phone: { contains: filters.search } } },
-        { protocol: { contains: filters.search } },
-      ];
+      const searchOr = buildSearchOr(filters.search);
+      if (searchOr.length > 0) andBlocks.push({ OR: searchOr });
     }
+
+    if (andBlocks.length > 0) where.AND = andBlocks;
 
     // "Unread only" filter — materialize the exact set of conversation ids
     // that have at least one INBOUND message newer than this user's
