@@ -3,7 +3,15 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
-import express, { type Request, type Response } from 'express';
+// Namespace import, NÃO default. O tsconfig tem `allowSyntheticDefaultImports`
+// (só relaxa a checagem de tipo) mas não tem `esModuleInterop` (que gera o
+// helper de runtime). Com `import express from 'express'` o código compila
+// limpo e emite `express_1.default`, que é `undefined` em runtime porque o
+// express é CommonJS puro (`module.exports = express`, sem `.default`) — a API
+// morria no boot com "Cannot read properties of undefined (reading 'static')".
+// O `helmet` logo acima sobrevive como default porque publica `__esModule`.
+import * as express from 'express';
+import type { Request, Response } from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { PublicApiModule } from './modules/public-api/public-api.module';
