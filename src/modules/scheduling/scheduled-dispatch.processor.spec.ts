@@ -432,6 +432,37 @@ describe('ScheduledDispatchProcessor', () => {
       );
     });
 
+    // Regressão 2026-08-06: lead de anúncio cuja inbound não trouxe `referral`
+    // (comum sob pricing PMP) tinha ctwaClidAt null, então o toque de +24h caía
+    // como "janela fechada" e a cadência morria sem enviar nada — mesmo com a
+    // Meta tendo concedido 72h de free entry point no webhook de status.
+    it('texto livre PASSA quando a Meta concedeu 72h, mesmo sem ctwaClidAt', async () => {
+      const conversation = {
+        ...OFICIAL,
+        lastInboundAt: new Date(Date.now() - 30 * 3600_000), // CSW de 24h fechada
+        metaWindowExpiresAt: new Date(Date.now() + 42 * 3600_000), // 72h da Meta
+      };
+      const { processor, repo, messages } = makeOfficialDeps(
+        { ...cadenceRow, templateId: null }, // passo sem HSM — antes morria aqui
+        conversation,
+      );
+
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+
+      expect(messages.send).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'TEXT', content: cadenceRow.content }),
+        'user1',
+        'org1',
+        'ALL',
+        undefined,
+        { system: true },
+      );
+      expect(repo.update).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ status: 'SENT' }),
+      );
+    });
+
     it('toque bloqueado ainda avança a cadência (matrícula não fica ACTIVE para sempre)', async () => {
       const conversation = {
         ...OFICIAL,

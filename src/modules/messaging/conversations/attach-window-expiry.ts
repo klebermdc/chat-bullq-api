@@ -3,6 +3,7 @@ import { computeWhatsappWindow } from './whatsapp-window.util';
 /** Forma mínima que o helper lê da conversa carregada. */
 export interface WindowSource {
   lastInboundAt: Date | null;
+  metaWindowExpiresAt?: Date | null;
   channel?: { type: string } | null;
   contact?: { ctwaClidAt: Date | null } | null;
 }
@@ -19,6 +20,7 @@ export function attachWindowExpiry<T extends WindowSource>(
     channelType: conversation.channel?.type ?? '',
     lastInboundAt: conversation.lastInboundAt ?? null,
     ctwaClidAt: conversation.contact?.ctwaClidAt ?? null,
+    metaWindowExpiresAt: conversation.metaWindowExpiresAt ?? null,
     now,
   });
   return {

@@ -603,6 +603,12 @@ model Conversation {
   awaitingHumanReply  Boolean            @default(false) @map("awaiting_human_reply")
   lastMessageAt       DateTime?          @map("last_message_at")
   lastInboundAt       DateTime?          @map("last_inbound_at")
+  // Expiração da janela informada pela PRÓPRIA Meta em
+  // `statuses[].conversation.expiration_timestamp`. Fonte autoritativa do free
+  // entry point de 72h: sob pricing PMP a Meta deixou de anexar `referral` na
+  // inbound, então `Contact.ctwaClidAt` fica null em parte dos leads de anúncio
+  // e a janela caía para 24h. Só cresce (nunca encurta).
+  metaWindowExpiresAt DateTime?          @map("meta_window_expires_at")
   lastOutboundAt      DateTime?          @map("last_outbound_at")
   inactivityBand      Int?               @map("inactivity_band")
   reengageDismissedAt DateTime?          @map("reengage_dismissed_at")

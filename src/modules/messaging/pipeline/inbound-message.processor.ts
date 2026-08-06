@@ -880,6 +880,38 @@ export class InboundMessageProcessor extends WorkerHost {
     }
   }
 
+  /**
+   * Guarda na conversa o `conversation.expiration_timestamp` que a Meta manda
+   * no webhook de status. MONOTÔNICO: só avança, nunca encurta — o mesmo
+   * status pode ser reprocessado, e um recibo posterior sem o campo não pode
+   * apagar as 72h de um free entry point já concedido. Best-effort: falha aqui
+   * jamais derruba o processamento do status.
+   */
+  private async persistMetaWindowExpiry(
+    conversationId: string,
+    expirationTimestamp?: number,
+  ): Promise<void> {
+    if (!expirationTimestamp) return;
+    const expiresAt = new Date(expirationTimestamp * 1000);
+    if (Number.isNaN(expiresAt.getTime())) return;
+    try {
+      await this.prisma.conversation.updateMany({
+        where: {
+          id: conversationId,
+          OR: [
+            { metaWindowExpiresAt: null },
+            { metaWindowExpiresAt: { lt: expiresAt } },
+          ],
+        },
+        data: { metaWindowExpiresAt: expiresAt },
+      });
+    } catch (err: any) {
+      this.logger.warn(
+        `meta_window_expiry falhou (conv ${conversationId}): ${err?.message ?? err}`,
+      );
+    }
+  }
+
   private async processStatus(data: StatusJobData): Promise<any> {
     const { status, channelId, webhookEventId } = data;
     if (!status?.externalMessageId) return;
@@ -921,6 +953,15 @@ export class InboundMessageProcessor extends WorkerHost {
           ),
         );
     }
+
+    // Janela autoritativa da Meta. Só vem no status `sent` de conversa free
+    // entry point (o `delivered` traz `conversation` SEM o expiration), e é a
+    // única fonte que enxerga as 72h do lead de anúncio quando a mensagem de
+    // entrada não trouxe `referral` — o que passou a ser comum sob PMP.
+    await this.persistMetaWindowExpiry(
+      message.conversationId,
+      status.conversation?.expirationTimestamp,
+    );
 
     const updateData: Record<string, any> = {
       status: this.maxStatus(message.status, dbStatus),

@@ -6,6 +6,14 @@ export interface WhatsappWindowInput {
   channelType: string;
   lastInboundAt: Date | null;
   ctwaClidAt: Date | null;
+  /**
+   * `conversation.expiration_timestamp` que a PRÓPRIA Meta manda no webhook de
+   * status. É a fonte autoritativa: sob pricing PMP ela parou de anexar
+   * `referral` na mensagem de entrada e só informa o free entry point aqui, de
+   * modo que `ctwaClidAt` fica null em parte dos leads de anúncio. Opcional
+   * porque só existe depois do 1º envio nosso na conversa.
+   */
+  metaWindowExpiresAt?: Date | null;
   now: Date;
 }
 
@@ -21,9 +29,9 @@ export interface WhatsappWindowState {
 }
 
 /**
- * Janela efetiva de texto livre = max(lastInboundAt+24h, ctwaClidAt+72h).
- * Só vale para o canal oficial (Meta). Sem timestamps ⇒ fechada (a 1ª msg
- * de uma conversa oficial exige template).
+ * Janela efetiva de texto livre = max(lastInboundAt+24h, ctwaClidAt+72h,
+ * metaWindowExpiresAt). Só vale para o canal oficial (Meta). Sem timestamps
+ * ⇒ fechada (a 1ª msg de uma conversa oficial exige template).
  */
 export function computeWhatsappWindow(
   input: WhatsappWindowInput,
@@ -46,6 +54,17 @@ export function computeWhatsappWindow(
   }
   if (ctwa !== null && (expMs === null || ctwa > expMs)) {
     expMs = ctwa;
+    kind = 'ctwa72';
+  }
+  // A Meta só emite `conversation.expiration_timestamp` para free entry point
+  // (conversa de anúncio, `billable:false`), então quando ele estende a janela
+  // é sempre a regra de 72h que está valendo. Só ESTENDE — um valor menor não
+  // pode encurtar a CSW de 24h, que a Meta honra de qualquer forma.
+  const meta = input.metaWindowExpiresAt
+    ? input.metaWindowExpiresAt.getTime()
+    : null;
+  if (meta !== null && (expMs === null || meta > expMs)) {
+    expMs = meta;
     kind = 'ctwa72';
   }
   if (expMs === null) {

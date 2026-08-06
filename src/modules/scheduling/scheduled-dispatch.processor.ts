@@ -14,6 +14,7 @@ import { buildHsmTemplateContent } from './hsm-template-payload';
 /** Conversa (parcial) que o dispatch carrega para decidir texto vs template. */
 interface DispatchConversation {
   lastInboundAt: Date | null;
+  metaWindowExpiresAt?: Date | null;
   channel?: { type: string } | null;
   contact?: { name: string | null; ctwaClidAt: Date | null } | null;
 }
@@ -45,6 +46,7 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       where: { id: row.conversationId },
       select: {
         id: true, status: true, isArchived: true, lastInboundAt: true,
+        metaWindowExpiresAt: true,
         assignedToId: true, awaitingHumanReply: true, aiEnabled: true,
         channel: { select: { type: true } },
         contact: { select: { name: true, ctwaClidAt: true } },
@@ -243,6 +245,7 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       channelType: conversation.channel?.type ?? '',
       lastInboundAt: conversation.lastInboundAt ?? null,
       ctwaClidAt: conversation.contact?.ctwaClidAt ?? null,
+      metaWindowExpiresAt: conversation.metaWindowExpiresAt ?? null,
       now: new Date(),
     });
     if (window.open) return { ok: true, type: row.contentType, content };

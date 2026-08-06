@@ -81,4 +81,62 @@ describe('computeWhatsappWindow', () => {
     });
     expect(w.open).toBe(false);
   });
+
+  // ─── Expiração autoritativa da Meta (status webhook) ───────────────────
+  // Caso real de 2026-08-06: sob pricing PMP a Meta parou de mandar
+  // `referral` na inbound e só informa o free entry point no status de saída
+  // (`pricing.category=referral_conversion` + `conversation.expiration_
+  // timestamp`). Sem isso o lead de anúncio caía em 24h — selo errado, gate
+  // recusando texto livre e cadência morrendo com "janela fechada".
+
+  it('Meta 72h manda mesmo sem ctwaClidAt (referral não veio na inbound)', () => {
+    const metaExpiry = new Date(at(25).getTime() + 72 * H); // inbound+72h
+    const w = computeWhatsappWindow({
+      channelType: 'WHATSAPP_OFFICIAL',
+      lastInboundAt: at(25), // CSW de 24h já fechou
+      ctwaClidAt: null, // referral ausente — é o bug
+      metaWindowExpiresAt: metaExpiry,
+      now: base,
+    });
+    expect(w.open).toBe(true);
+    expect(w.kind).toBe('ctwa72');
+    expect(w.expiresAt!.getTime()).toBe(metaExpiry.getTime());
+  });
+
+  it('expiração da Meta NUNCA encurta a CSW de 24h', () => {
+    const metaExpiry = new Date(base.getTime() + 1 * H); // bem antes da CSW
+    const w = computeWhatsappWindow({
+      channelType: 'WHATSAPP_OFFICIAL',
+      lastInboundAt: at(1), // CSW até base+23h
+      ctwaClidAt: null,
+      metaWindowExpiresAt: metaExpiry,
+      now: base,
+    });
+    expect(w.kind).toBe('csw24');
+    expect(w.expiresAt!.getTime()).toBe(at(1).getTime() + 24 * H);
+  });
+
+  it('Meta já expirada e CSW fechada → fechado', () => {
+    const w = computeWhatsappWindow({
+      channelType: 'WHATSAPP_OFFICIAL',
+      lastInboundAt: at(80),
+      ctwaClidAt: null,
+      metaWindowExpiresAt: at(5), // venceu há 5h
+      now: base,
+    });
+    expect(w.open).toBe(false);
+    // Continua sendo a MAIOR das expirações — só que todas no passado.
+    expect(w.expiresAt!.getTime()).toBe(at(5).getTime());
+  });
+
+  it('canal não-oficial ignora a expiração da Meta', () => {
+    const w = computeWhatsappWindow({
+      channelType: 'WHATSAPP_ZAPPFY',
+      lastInboundAt: at(100),
+      ctwaClidAt: null,
+      metaWindowExpiresAt: new Date(base.getTime() + 10 * H),
+      now: base,
+    });
+    expect(w).toEqual({ applicable: false, open: true, expiresAt: null, kind: null });
+  });
 });
