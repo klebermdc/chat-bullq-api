@@ -1,5 +1,72 @@
 import { ConversationsRepository } from './conversations.repository';
 
+describe('ConversationsRepository.findInbox (busca + etiqueta)', () => {
+  const buildRepo = () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const count = jest.fn().mockResolvedValue(0);
+    const prisma = {
+      conversation: { findMany, count },
+      $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
+    };
+    return {
+      repo: new ConversationsRepository(prisma as any),
+      whereOf: () => findMany.mock.calls[0][0].where,
+    };
+  };
+
+  const andBlocks = (where: any) => (where.AND ?? []) as any[];
+  const hasClause = (where: any, pick: (c: any) => unknown) =>
+    andBlocks(where).some((block) => (block.OR ?? []).some(pick));
+
+  it('busca por telefone com máscara casa o telefone gravado em dígitos', async () => {
+    const { repo, whereOf } = buildRepo();
+
+    await repo.findInbox(
+      { organizationId: 'org-1', search: '(11) 98201-5967' },
+      0,
+      30,
+    );
+
+    expect(
+      hasClause(
+        whereOf(),
+        (c) => c.contact?.phone?.contains === '11982015967',
+      ),
+    ).toBe(true);
+  });
+
+  // Regressão: o bloco do `search` fazia `where.OR = [...]`, apagando o OR que
+  // o filtro de etiquetas tinha montado. Etiqueta + busca juntas descartavam a
+  // etiqueta em silêncio.
+  it('preserva o filtro de etiqueta quando há busca ao mesmo tempo', async () => {
+    const { repo, whereOf } = buildRepo();
+
+    await repo.findInbox(
+      { organizationId: 'org-1', search: 'Maria', tagIds: ['tag-1'] },
+      0,
+      30,
+    );
+
+    const where = whereOf();
+    expect(hasClause(where, (c) => c.tags?.some?.tagId?.in?.includes('tag-1'))).toBe(
+      true,
+    );
+    expect(hasClause(where, (c) => c.contact?.name?.contains === 'Maria')).toBe(
+      true,
+    );
+    // Duas restrições independentes: etiqueta E busca, não uma OU a outra.
+    expect(andBlocks(where)).toHaveLength(2);
+  });
+
+  it('não monta AND quando não há busca nem etiqueta', async () => {
+    const { repo, whereOf } = buildRepo();
+
+    await repo.findInbox({ organizationId: 'org-1' }, 0, 30);
+
+    expect(whereOf().AND).toBeUndefined();
+  });
+});
+
 describe('ConversationsRepository.countByStatus (RN-05 assignment scope)', () => {
   const buildRepo = (groupBy: jest.Mock) => {
     const prisma = { conversation: { groupBy } };
