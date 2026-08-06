@@ -1,4 +1,5 @@
 import { BadRequestException, GoneException, Logger, NotFoundException } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { AcceptancesService } from './acceptances.service';
 
 function makePrisma(over: any = {}) {
@@ -56,6 +57,130 @@ describe('AcceptancesService.createForConversation', () => {
     await expect(svc.createForConversation('org-1', 'conv-x', {
       items: [], createdById: 'u',
     })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  describe('createForConversation com vouchers', () => {
+    // O spy de `Logger.prototype.warn` é global e acumula chamadas entre
+    // testes. Restaurar no fim de cada um (e não no fim do teste, que não roda
+    // quando a asserção estoura) impede que o nome forjado daqui vaze para a
+    // asserção de log de outro teste.
+    afterEach(() => jest.restoreAllMocks());
+
+    it('calcula o SHA-256 do arquivo no backend e persiste', async () => {
+      process.env.APP_PUBLIC_URL = 'https://sendtur.com.br';
+      const created: any[] = [];
+      const prisma = {
+        conversation: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'c1',
+            contactId: 'ct1',
+            organization: { name: 'OFP' },
+          }),
+        },
+        card: { findFirst: jest.fn().mockResolvedValue({ id: 'card1' }) },
+        orderAcceptance: {
+          create: jest.fn().mockImplementation((args: any) => {
+            created.push(args.data);
+            return { ...args.data, id: 'acc1' };
+          }),
+        },
+      } as any;
+      const storage = {
+        getBuffer: jest.fn().mockResolvedValue(Buffer.from('conteudo-do-pdf')),
+      } as any;
+      const svc = new AcceptancesService(prisma, {} as any, {} as any, storage, {} as any);
+
+      await svc.createForConversation('org-1', 'c1', {
+        items: [{ description: 'Magic Kingdom' }],
+        createdById: 'u1',
+        orderRef: '61293',
+        vouchers: [
+          {
+            url: 'https://api.x/api/v1/uploads/media/2026-08-06/a.pdf',
+            filename: 'voucher.pdf',
+            size: 15,
+          },
+        ],
+      });
+
+      const sha = createHash('sha256').update(Buffer.from('conteudo-do-pdf')).digest('hex');
+      expect(storage.getBuffer).toHaveBeenCalledWith('media/2026-08-06/a.pdf');
+      expect(created[0].orderRef).toBe('61293');
+      expect(created[0].vouchers).toEqual([
+        {
+          url: 'https://api.x/api/v1/uploads/media/2026-08-06/a.pdf',
+          filename: 'voucher.pdf',
+          size: 15,
+          sha256: sha,
+        },
+      ]);
+    });
+
+    it('persiste o voucher sem hash quando o arquivo some do storage', async () => {
+      process.env.APP_PUBLIC_URL = 'https://sendtur.com.br';
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const created: any[] = [];
+      const prisma = {
+        conversation: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'c1',
+            contactId: 'ct1',
+            organization: { name: 'OFP' },
+          }),
+        },
+        card: { findFirst: jest.fn().mockResolvedValue(null) },
+        orderAcceptance: {
+          create: jest.fn().mockImplementation((args: any) => {
+            created.push(args.data);
+            return { ...args.data, id: 'acc1' };
+          }),
+        },
+      } as any;
+      const storage = {
+        getBuffer: jest.fn().mockRejectedValue(new Error('NoSuchKey')),
+      } as any;
+      const svc = new AcceptancesService(prisma, {} as any, {} as any, storage, {} as any);
+
+      await svc.createForConversation('org-1', 'c1', {
+        items: [{ description: 'X' }],
+        createdById: 'u1',
+        vouchers: [
+          { url: 'https://api.x/api/v1/uploads/media/2026-08-06/a.pdf', filename: 'v.pdf', size: 9 },
+        ],
+      });
+
+      expect(created[0].vouchers[0].sha256).toBe('');
+    });
+
+    it('não deixa o nome do arquivo forjar linha de log', async () => {
+      process.env.APP_PUBLIC_URL = 'https://sendtur.com.br';
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const prisma = makePrisma();
+      const storage = { getBuffer: jest.fn().mockRejectedValue(new Error('NoSuchKey')) } as any;
+      const svc = new AcceptancesService(prisma, {} as any, {} as any, storage, {} as any);
+
+      await svc.createForConversation('org-1', 'conv-1', {
+        items: [], createdById: 'u',
+        vouchers: [{
+          url: 'https://api.x/api/v1/uploads/media/2026-08-06/a.pdf',
+          filename: 'v.pdf\n[Nest] LOG forjado',
+          size: 9,
+        }],
+      });
+
+      const logged = warn.mock.calls.map((c) => String(c[0])).join('');
+      expect(logged).not.toMatch(/[\n\r]/);
+    });
+
+    it('sem vouchers grava lista vazia e orderRef nulo', async () => {
+      const prisma = makePrisma();
+      const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+      const { acceptance } = await svc.createForConversation('org-1', 'conv-1', {
+        items: [{ description: 'x' }], createdById: 'u',
+      });
+      expect(acceptance.vouchers).toEqual([]);
+      expect(acceptance.orderRef).toBeNull();
+    });
   });
 });
 

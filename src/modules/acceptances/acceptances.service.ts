@@ -1,4 +1,5 @@
 import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { AcceptancePdfService } from './acceptance-pdf.service';
 import { AcceptanceEffectsService } from './acceptance-effects.service';
@@ -7,7 +8,7 @@ import { VoucherExtractorService } from './voucher-extractor.service';
 import { generateAcceptanceToken } from './acceptance-token.util';
 import { extractPdfText } from './pdf-text.util';
 import { storageKeyFromUploadUrl } from './storage-key.util';
-import { AcceptanceItem, PublicAcceptanceView } from './acceptances.types';
+import { AcceptanceItem, PublicAcceptanceView, VoucherInput, VoucherRef } from './acceptances.types';
 
 const DEFAULT_TERM = (org: string) =>
   `Confirmo que recebi de ${org} os produtos/serviços listados abaixo e que conferi cada item — datas, quantidades e informações — estando tudo correto e de acordo com o combinado.`;
@@ -31,10 +32,43 @@ export class AcceptancesService {
     return url.replace(/\/+$/, '');
   }
 
+  /**
+   * Calcula o SHA-256 de cada voucher lendo o arquivo do storage. O hash é
+   * calculado AQUI, não no navegador: hash mandado pelo client não prova nada.
+   * Arquivo ilegível vira hash vazio — o aceite não pode ser bloqueado por
+   * isso, mas o comprovante deixa claro quando não há hash.
+   */
+  private async withHashes(vouchers: VoucherInput[]): Promise<VoucherRef[]> {
+    return Promise.all(
+      vouchers.map(async (v) => {
+        const key = storageKeyFromUploadUrl(v.url);
+        if (!key) return { ...v, sha256: '' };
+        try {
+          const buf = await this.storage.getBuffer(key);
+          return { ...v, sha256: crypto.createHash('sha256').update(buf).digest('hex') };
+        } catch (err) {
+          // `JSON.stringify` no nome: ele vem do cliente e uma quebra de linha
+          // no nome do arquivo deixaria forjar linha de log (mesmo motivo do
+          // `extractVoucher`).
+          this.logger.warn(
+            `sem hash para ${JSON.stringify(v.filename)}: ${(err as Error)?.message ?? err}`,
+          );
+          return { ...v, sha256: '' };
+        }
+      }),
+    );
+  }
+
   async createForConversation(
     organizationId: string,
     conversationId: string,
-    input: { items: AcceptanceItem[]; termText?: string; createdById: string },
+    input: {
+      items: AcceptanceItem[];
+      termText?: string;
+      createdById: string;
+      vouchers?: VoucherInput[];
+      orderRef?: string;
+    },
   ): Promise<{ acceptance: any; link: string }> {
     const base = this.baseUrl();
     const conv = await this.prisma.conversation.findFirst({
@@ -49,6 +83,8 @@ export class AcceptancesService {
       select: { id: true },
     });
 
+    const vouchers = input.vouchers?.length ? await this.withHashes(input.vouchers) : [];
+
     const token = generateAcceptanceToken();
     const expiresAt = new Date(Date.now() + ACCEPTANCE_TTL_DAYS * 24 * 60 * 60 * 1000);
     const acceptance = await this.prisma.orderAcceptance.create({
@@ -59,6 +95,8 @@ export class AcceptancesService {
         cardId: card?.id ?? null,
         token,
         items: (input.items ?? []) as any,
+        vouchers: vouchers as any,
+        orderRef: input.orderRef?.trim() || null,
         termText: input.termText?.trim() || DEFAULT_TERM(conv.organization.name),
         status: 'PENDING',
         createdById: input.createdById,

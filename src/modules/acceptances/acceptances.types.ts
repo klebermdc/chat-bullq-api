@@ -16,6 +16,13 @@ export interface VoucherRef {
   sha256: string;
 }
 
+/**
+ * O que o cliente manda ao criar o aceite: o arquivo, sem o hash. O `sha256`
+ * é de propósito o único campo que o cliente não fornece — hash vindo do
+ * navegador não prova nada, quem calcula é o servidor lendo o objeto.
+ */
+export type VoucherInput = Omit<VoucherRef, 'sha256'>;
+
 /** O que o extrator devolve a partir do texto de UM voucher. */
 export interface ExtractedVoucher {
   items: AcceptanceItem[];
