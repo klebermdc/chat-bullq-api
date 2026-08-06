@@ -1,5 +1,6 @@
 import { EmailMessageStatus } from '@prisma/client';
 import { EmailSenderService } from './email-sender.service';
+import { DEFAULT_THEME } from './email-blocks.types';
 
 const cfg = {
   apiKey: 're_x',
@@ -49,7 +50,7 @@ const render = {
     }),
   ),
 };
-const content = { blocks: [{ type: 'text' as const, text: 'oi {{nome}}' }] };
+const content = { theme: DEFAULT_THEME, blocks: [{ type: 'text' as const, text: 'oi {{nome}}' }] };
 
 function makeService(prisma: any, resendImpl?: any) {
   const resend = { send: jest.fn(resendImpl ?? (async () => ({ providerId: 'resend_1' }))) };

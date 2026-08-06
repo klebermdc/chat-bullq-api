@@ -122,6 +122,7 @@ export class EmailSenderService {
         { nome: req.name, email: req.to },
         unsubscribePageUrl,
         req.preheader,
+        `${this.config.apiUrl}/api/v1/email-assets`,
       );
       const { providerId } = await this.resend.send({
         to: req.to,
