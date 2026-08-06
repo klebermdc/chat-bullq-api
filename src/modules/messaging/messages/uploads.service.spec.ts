@@ -83,6 +83,31 @@ describe('UploadsService.saveAudio — áudio anexado do dispositivo', () => {
     );
   });
 
+  /**
+   * O ffmpeg recusa transcodar quando entrada e saída são o mesmo arquivo
+   * ("Output ... same as Input #0 - exiting"). Como a saída é sempre `.mp3`,
+   * anexar um MP3 fazia os dois caminhos coincidirem e todo envio de áudio do
+   * dispositivo morria em "Failed to process audio". Gravar pelo microfone
+   * escapava só porque o navegador grava WebM/MP4.
+   */
+  it('nunca usa o mesmo caminho para a entrada e a saída do ffmpeg', async () => {
+    const { execFile } = require('child_process') as { execFile: jest.Mock };
+    execFile.mockClear();
+    const { svc } = makeService();
+
+    await svc.saveAudio({
+      buffer: Buffer.from('RAWAUDIO'),
+      mimetype: 'audio/mpeg',
+      originalname: 'musica.mp3',
+    });
+
+    const args: string[] = execFile.mock.calls[0][1];
+    const input = args[args.indexOf('-i') + 1];
+    const output = args[args.length - 1];
+    expect(output).toMatch(/\.mp3$/);
+    expect(input).not.toBe(output);
+  });
+
   it('continua recusando o que não é áudio', async () => {
     const { svc } = makeService();
 

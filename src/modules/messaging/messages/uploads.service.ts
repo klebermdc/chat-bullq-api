@@ -238,11 +238,16 @@ export class UploadsService {
     // `type: audio`. Browsers record WebM/MP4 via MediaRecorder; we always
     // re-encode (also fixes the missing-duration header that showed 0:00).
     const tmpBase = path.join(os.tmpdir(), `aud-${id}`);
-    // A extensão do nome original manda: num arquivo anexado do dispositivo o
-    // mime do SO às vezes é vago (`audio/3gpp` para um .amr), e o ffmpeg usa a
-    // extensão do arquivo de entrada pra escolher o demuxer. Com `.bin` ele
-    // chuta pelo conteúdo e falha em containers sem magic bytes claros.
-    const srcTmp = `${tmpBase}${this.extFor(mime, file.originalname)}`;
+    // O `.src` na ENTRADA não é cosmético: a saída é sempre `.mp3`, então sem
+    // ele um anexo `.mp3` faz entrada e saída apontarem para o MESMO arquivo e
+    // o ffmpeg aborta com "Output ... same as Input #0 - exiting". Gravação
+    // pelo microfone nunca caía nisso porque o navegador grava WebM/MP4.
+    // (`transcodeToPlayback` já tomava esse cuidado.)
+    //
+    // A extensão vem do nome original quando existe: para formatos crus sem
+    // magic bytes claros (.amr, .3gp) ela ajuda o ffmpeg a identificar o
+    // container — com `.bin` ele depende só do probe do conteúdo.
+    const srcTmp = `${tmpBase}.src${this.extFor(mime, file.originalname)}`;
     const mp3Tmp = `${tmpBase}.mp3`;
     await fs.promises.writeFile(srcTmp, file.buffer);
     let mp3Buffer: Buffer;
@@ -261,11 +266,21 @@ export class UploadsService {
           '-ar', '48000',
           mp3Tmp,
         ],
-        { timeout: 30_000 },
+        // 30s bastava quando só passava voice note de segundos por aqui. Áudio
+        // anexado do dispositivo pode ter uma hora — re-encodar isso numa VPS
+        // modesta passa fácil de 30s, e o timeout viraria "Failed to process
+        // audio" sem motivo aparente.
+        { timeout: 120_000 },
       );
       mp3Buffer = await fs.promises.readFile(mp3Tmp);
     } catch (err: any) {
-      this.logger.error(`ffmpeg transcode failed: ${err.message}`);
+      // O stderr é o único lugar onde o ffmpeg diz o motivo REAL ("same as
+      // Input", codec ausente, arquivo corrompido). Sem ele o log repete a
+      // mensagem genérica e o diagnóstico vira adivinhação.
+      const detail = [err.message, err.stderr].filter(Boolean).join(' | ');
+      this.logger.error(
+        `ffmpeg transcode failed (mime=${mime}, file=${file.originalname ?? '-'}): ${detail}`,
+      );
       throw new BadRequestException('Failed to process audio');
     } finally {
       await fs.promises.unlink(srcTmp).catch(() => undefined);
