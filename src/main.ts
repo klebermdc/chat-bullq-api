@@ -3,7 +3,13 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
-import express, { type Request, type Response } from 'express';
+// Namespace import, não default: o tsconfig tem `allowSyntheticDefaultImports`
+// mas NÃO `esModuleInterop`. O primeiro é só permissão de tipagem — o TypeScript
+// aceita `import express from 'express'` e compila para `express_1.default`,
+// que em CommonJS é `undefined`. Compila, passa no typecheck, quebra no boot.
+// Derrubou a produção em 2026-08-06.
+import * as express from 'express';
+import { type Request, type Response } from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { PublicApiModule } from './modules/public-api/public-api.module';
