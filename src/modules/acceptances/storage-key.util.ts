@@ -43,6 +43,14 @@ export function storageKeyFromUploadUrl(url: string): string | null {
     return null;
   }
 
+  // Decodificamos UMA vez de propósito: a chave devolvida tem que ser byte a
+  // byte a chave do objeto, e decodificar em loop corromperia uma chave que
+  // legitimamente contivesse `%`. Em troca, qualquer `%` que sobre é recusado —
+  // uma chave nossa é `media/<data>/<32 hex><.ext>` e nunca tem `%`. É isso que
+  // pega o double-encoding (`%252e%252e` → `%2e%2e`, que passaria batido pelo
+  // teste literal de `..`).
+  if (key.includes('%')) return null;
+
   if (!key || key.startsWith('/') || key.includes('..')) return null;
   if (!key.startsWith(ALLOWED_PREFIX)) return null;
   return key;

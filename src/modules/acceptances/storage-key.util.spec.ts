@@ -38,6 +38,18 @@ describe('storageKeyFromUploadUrl', () => {
     expect(storageKeyFromUploadUrl('media/%2e%2e/acceptances/x.pdf')).toBeNull();
   });
 
+  // `%252e` decodifica UMA vez para `%2e`, então o teste literal de `..` não o
+  // vê. Uma chave real nunca tem `%` (é `media/<data>/<32 hex><.ext>`), então
+  // qualquer `%` sobrando depois do decode é sinal de contrabando.
+  it('devolve null para travessia com double-encoding', () => {
+    expect(storageKeyFromUploadUrl('media/%252e%252e/acceptances/x.pdf')).toBeNull();
+    expect(
+      storageKeyFromUploadUrl(
+        'https://api.exemplo.com/api/v1/uploads/media/%252e%252e%252fsecret',
+      ),
+    ).toBeNull();
+  });
+
   it('devolve null quando o percent-encoding é malformado', () => {
     expect(storageKeyFromUploadUrl('media/2026-08-06/%E0%A4%A.pdf')).toBeNull();
   });

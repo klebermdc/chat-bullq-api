@@ -94,7 +94,11 @@ export class AcceptancesService {
     try {
       buffer = await this.storage.getBuffer(key);
     } catch (err) {
-      this.logger.warn(`voucher não encontrado no storage (${key}): ${(err as Error)?.message}`);
+      // `JSON.stringify` na chave: ela vem do cliente e um `%0A` decodificado
+      // vira quebra de linha de verdade, deixando forjar linha de log.
+      this.logger.warn(
+        `voucher não encontrado no storage (${JSON.stringify(key)}): ${(err as Error)?.message}`,
+      );
       throw new NotFoundException('Arquivo não encontrado.');
     }
 

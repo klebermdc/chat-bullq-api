@@ -258,6 +258,25 @@ describe('AcceptancesService.extractVoucher', () => {
     expect(storage.getBuffer).not.toHaveBeenCalled();
   });
 
+  it('não deixa a chave forjar linha de log (injeção via %0A)', async () => {
+    const { svc } = build({});
+    (svc as any).storage.getBuffer = jest
+      .fn()
+      .mockRejectedValue(new Error('NoSuchKey'));
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+
+    await expect(
+      svc.extractVoucher('org-1', {
+        mediaUrl: 'media/2026-08-06/a%0A%5BNest%5D+LOG+forjado.pdf',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    const logged = warn.mock.calls.map((c) => String(c[0])).join('');
+    expect(logged).not.toMatch(/[\n\r]/);
+  });
+
   it('arquivo ausente no storage → NotFound', async () => {
     const { svc } = build({});
     (svc as any).storage.getBuffer = jest
