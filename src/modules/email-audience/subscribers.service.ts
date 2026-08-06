@@ -1,7 +1,22 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EmailSubscriberSource, EmailSubscriberStatus } from '@prisma/client';
 import { normalizeEmail, isValidEmail } from '../email-core/email-address.util';
-import { SubscribersRepository } from './subscribers.repository';
+import { TagsService } from '../tags/tags.service';
+import { SubscribersRepository, SubscriberWithTagJoins } from './subscribers.repository';
+
+/**
+ * Campos derivados de pedidos do HUB. Ao contrário de `name`/`contactId`,
+ * que só preenchem quando vazios, estes SEMPRE sobrescrevem: manter o valor
+ * antigo (uma contagem ou um total desatualizado) é pior que não ter.
+ */
+export interface PurchaseEnrichment {
+  firstPurchaseAt: Date | null;
+  lastPurchaseAt: Date | null;
+  totalSpent: number;
+  orderCount: number;
+  categories: string[];
+  suppliers: string[];
+}
 
 export interface UpsertSubscriberInput {
   email: string;
@@ -9,13 +24,22 @@ export interface UpsertSubscriberInput {
   source: EmailSubscriberSource;
   contactId?: string;
   consentSource?: string;
+  enrichment?: PurchaseEnrichment;
+}
+
+/** `EmailSubscriberTag[]` (junção) → `Tag[]`: o consumidor da API não precisa da linha de junção. */
+function flattenTags(item: SubscriberWithTagJoins) {
+  return { ...item, tags: item.tags.map((t) => t.tag) };
 }
 
 @Injectable()
 export class SubscribersService {
   private readonly logger = new Logger(SubscribersService.name);
 
-  constructor(private readonly repo: SubscribersRepository) {}
+  constructor(
+    private readonly repo: SubscribersRepository,
+    private readonly tags: TagsService,
+  ) {}
 
   /**
    * Entrada única da base: as quatro fontes desaguam aqui e o dedupe é pelo
@@ -31,6 +55,20 @@ export class SubscribersService {
     const email = normalizeEmail(input.email)!;
     const existing = await this.repo.findByEmail(organizationId, email);
 
+    // Sempre recalculado quando presente — nunca "só se vazio". `status`
+    // jamais entra aqui: enriquecer não pode ressuscitar quem descadastrou.
+    const enrichmentPatch = input.enrichment
+      ? {
+          firstPurchaseAt: input.enrichment.firstPurchaseAt,
+          lastPurchaseAt: input.enrichment.lastPurchaseAt,
+          totalSpent: input.enrichment.totalSpent,
+          orderCount: input.enrichment.orderCount,
+          categories: input.enrichment.categories,
+          suppliers: input.enrichment.suppliers,
+          enrichedAt: new Date(),
+        }
+      : {};
+
     if (!existing) {
       return this.repo.create({
         organizationId,
@@ -40,11 +78,12 @@ export class SubscribersService {
         contactId: input.contactId ?? null,
         consentAt: new Date(),
         consentSource: input.consentSource ?? null,
+        ...enrichmentPatch,
       });
     }
 
     // Só enriquece o que está vazio: import novo não sobrescreve dado melhor.
-    const patch: Record<string, unknown> = {};
+    const patch: Record<string, unknown> = { ...enrichmentPatch };
     if (!existing.name && input.name?.trim()) patch.name = input.name.trim();
     if (!existing.contactId && input.contactId) patch.contactId = input.contactId;
     if (!existing.consentSource && input.consentSource) patch.consentSource = input.consentSource;
@@ -103,7 +142,29 @@ export class SubscribersService {
     return this.repo.findSendable(organizationId);
   }
 
-  list(organizationId: string, status?: EmailSubscriberStatus, page = 1, limit = 50) {
-    return this.repo.list(organizationId, status, (page - 1) * limit, limit);
+  /** Achata a junção `EmailSubscriberTag[]` em `Tag[]` — o consumidor da API não precisa da linha de junção. */
+  async list(organizationId: string, status?: EmailSubscriberStatus, page = 1, limit = 50) {
+    const [items, total] = await this.repo.list(organizationId, status, (page - 1) * limit, limit);
+    return [items.map(flattenTags), total] as const;
+  }
+
+  /**
+   * `organizationId` escopa TANTO o destinatário quanto a etiqueta: sem a
+   * segunda checagem, um operador poderia aplicar a um destinatário seu uma
+   * etiqueta que pertence a outra organização (vazamento de nome/cor entre
+   * tenants, mesma classe do IDOR do descadastro).
+   */
+  async addTag(id: string, organizationId: string, tagId: string) {
+    const subscriber = await this.repo.findById(id, organizationId);
+    if (!subscriber) throw new NotFoundException('destinatário não encontrado');
+    await this.tags.findOne(tagId, organizationId); // lança NotFoundException se a tag não for da organização
+    return this.repo.addTag(id, tagId);
+  }
+
+  async removeTag(id: string, organizationId: string, tagId: string) {
+    const subscriber = await this.repo.findById(id, organizationId);
+    if (!subscriber) throw new NotFoundException('destinatário não encontrado');
+    await this.tags.findOne(tagId, organizationId);
+    return this.repo.removeTag(id, tagId);
   }
 }

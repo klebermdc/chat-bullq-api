@@ -3,7 +3,8 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { EmailCampaignStatus, EmailMessageStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { SubscribersService } from '../email-audience/subscribers.service';
+import { SubscribersRepository } from '../email-audience/subscribers.repository';
+import { buildAudienceWhere, parseAudienceFilter } from '../email-audience/audience-filter';
 import { CampaignsService } from './campaigns.service';
 import { CampaignsRepository } from './campaigns.repository';
 import { CAMPAIGN_SEND_QUEUE, SEND_ATTEMPTS } from './email-campaigns.constants';
@@ -20,18 +21,25 @@ export class CampaignDispatchService {
     private readonly prisma: PrismaService,
     private readonly campaigns: CampaignsService,
     private readonly campaignsRepo: CampaignsRepository,
-    private readonly subscribers: SubscribersService,
+    private readonly subscribersRepo: SubscribersRepository,
     @InjectQueue(CAMPAIGN_SEND_QUEUE) private readonly queue: Queue,
   ) {}
 
-  /** Primeiro disparo. Expande o público e enfileira. */
+  /**
+   * Primeiro disparo. Expande o público filtrado e enfileira.
+   *
+   * `buildAudienceWhere` precisa ser a MESMA função usada por qualquer
+   * contagem de público mostrada ao operador antes do envio — nunca duas
+   * implementações, senão a contagem prometida diverge do que de fato sai.
+   */
   async dispatch(campaignId: string, organizationId: string) {
     const campaign = await this.campaigns.findOne(campaignId, organizationId);
     if (campaign.status !== EmailCampaignStatus.DRAFT) {
       throw new BadRequestException('só é possível disparar campanha em rascunho');
     }
 
-    const recipients = await this.subscribers.findSendable(organizationId);
+    const where = buildAudienceWhere(organizationId, parseAudienceFilter(campaign.audienceFilter));
+    const recipients = await this.subscribersRepo.findByWhere(where);
     if (!recipients.length) {
       // Falha alto: marcar SENT com zero envio esconderia base vazia ou filtro errado.
       throw new BadRequestException('nenhum destinatário elegível para esta campanha');
