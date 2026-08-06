@@ -729,13 +729,36 @@ export function storageKeyFromUploadUrl(url: string): string | null {
 }
 ```
 
+> ⚠️ **O código acima tem uma falha de segurança e foi substituído na implementação
+> (commit `45b9b55`). Não o use como referência.** Encontrado na revisão da Task 4:
+>
+> 1. **Leitura cross-tenant.** O util aceita chave crua e nada a escopa por
+>    organização. O bucket é compartilhado, e os PDFs de aceite assinados ficam em
+>    `acceptances/<data>/<id>.pdf` — então qualquer usuário autenticado de qualquer
+>    org que descubra um id de aceite lia o aceite de outro cliente por este endpoint.
+> 2. **O marcador casava em qualquer posição da string**, inclusive em query e
+>    fragmento: `https://evil.com/redir?next=/api/v1/uploads/media/y.pdf` passava.
+> 3. O teste "devolve null para URL de outro domínio" passava por acidente — a URL
+>    de exemplo simplesmente não continha o marcador.
+>
+> **Correção aplicada:** a chave sai só do `pathname` (nunca de query/fragmento),
+> é decodificada uma vez antes das checagens de travessia, e é **restrita ao prefixo
+> `media/`** — o único que `POST messages/uploads/media` produz. Essas chaves são 16
+> bytes aleatórios e já são servidas sem autenticação por desenho, então o endpoint
+> não concede nada além do que o bucket já expõe a quem tem a URL.
+>
+> **Validação de host foi deliberadamente NÃO adicionada:** quem consegue enviar
+> `evil.com/...` consegue enviar o nosso host também — é uma string sob controle do
+> cliente nos dois casos. A chave é a fronteira. Acoplaria um util puro a env sem
+> ganho de segurança.
+
 - [ ] **Step 4: Rodar e ver passar**
 
 ```bash
 npm test -- storage-key.util.spec.ts
 ```
 
-Esperado: PASS, 4 testes.
+Esperado: PASS (12 testes na versão corrigida, não 4).
 
 - [ ] **Step 5: Teste do método de serviço**
 
