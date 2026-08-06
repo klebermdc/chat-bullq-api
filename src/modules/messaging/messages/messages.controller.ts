@@ -20,6 +20,12 @@ import { UploadsService } from './uploads.service';
 import { MediaResolverService } from './media-resolver.service';
 import { PlaybackService } from './playback.service';
 import { SendMessageDto } from './dto/send-message.dto';
+import {
+  clampPageSize,
+  DEFAULT_PAGE_SIZE,
+  SEARCH_RESULT_LIMIT,
+  WINDOW_RADIUS,
+} from './message-paging';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../../common/guards';
 import {
   CurrentUser,
@@ -179,11 +185,73 @@ export class MessagesController {
     return this.service.revokeForEveryone(id, orgId, userId, access, role);
   }
 
+  @Get('search')
+  @ApiOperation({
+    summary:
+      'Busca por conteúdo dentro da conversa (texto e legenda de mídia). Escopo inclui as conversas-irmãs de segmento.',
+  })
+  @ApiQuery({ name: 'conversationId', required: true })
+  @ApiQuery({ name: 'q', required: true })
+  @ApiQuery({ name: 'limit', required: false })
+  searchInConversation(
+    @Query('conversationId') conversationId: string,
+    @Query('q') q: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentChannelAccess() access: ChannelAccess,
+    @Query('limit') limit?: string,
+  ) {
+    return this.service.searchInConversation(
+      conversationId,
+      orgId,
+      q,
+      clampPageSize(limit, SEARCH_RESULT_LIMIT),
+      access,
+      userId,
+      role,
+    );
+  }
+
+  @Get('window')
+  @ApiOperation({
+    summary:
+      'Janela de mensagens em volta de uma âncora — destino do "pular até" da busca.',
+  })
+  @ApiQuery({ name: 'conversationId', required: true })
+  @ApiQuery({ name: 'anchorId', required: true })
+  @ApiQuery({ name: 'radius', required: false })
+  findWindowAround(
+    @Query('conversationId') conversationId: string,
+    @Query('anchorId') anchorId: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentChannelAccess() access: ChannelAccess,
+    @Query('radius') radius?: string,
+  ) {
+    return this.service.findWindowAround(
+      conversationId,
+      orgId,
+      anchorId,
+      clampPageSize(radius, WINDOW_RADIUS),
+      access,
+      userId,
+      role,
+    );
+  }
+
   @Get()
   @ApiOperation({ summary: 'List messages of a conversation (paginated)' })
   @ApiQuery({ name: 'conversationId', required: true })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({
+    name: 'before',
+    required: false,
+    description:
+      'Id da mensagem âncora: devolve as ANTERIORES a ela (rolar pra cima). Ignora `page`.',
+  })
   findByConversation(
     @Query('conversationId') conversationId: string,
     @CurrentOrg('id') orgId: string,
@@ -192,12 +260,28 @@ export class MessagesController {
     @CurrentChannelAccess() access: ChannelAccess,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('before') before?: string,
   ) {
+    // O cursor `before` e a paginação por `page` são caminhos distintos: o
+    // chat usa o cursor, a public-api continua na página. Cursor manda quando
+    // vem, pra não existir estado ambíguo.
+    if (before) {
+      return this.service.findOlderThan(
+        conversationId,
+        orgId,
+        before,
+        clampPageSize(limit, DEFAULT_PAGE_SIZE),
+        access,
+        userId,
+        role,
+      );
+    }
+
     return this.service.findByConversation(
       conversationId,
       orgId,
       parseInt(page || '1', 10),
-      parseInt(limit || '50', 10),
+      clampPageSize(limit, DEFAULT_PAGE_SIZE),
       access,
       userId,
       role,
