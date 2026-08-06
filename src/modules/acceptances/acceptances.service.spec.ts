@@ -20,7 +20,7 @@ describe('AcceptancesService.createForConversation', () => {
 
   it('cria aceite PENDING com token, snapshot e expiresAt, e devolve o link', async () => {
     const prisma = makePrisma();
-    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
     const { acceptance, link } = await svc.createForConversation('org-1', 'conv-1', {
       items: [{ description: 'Ingresso Disney' }],
       termText: undefined,
@@ -35,7 +35,7 @@ describe('AcceptancesService.createForConversation', () => {
 
   it('usa termo default com o nome da org quando termText vazio', async () => {
     const prisma = makePrisma();
-    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
     const { acceptance } = await svc.createForConversation('org-1', 'conv-1', {
       items: [], createdById: 'u',
     });
@@ -44,7 +44,7 @@ describe('AcceptancesService.createForConversation', () => {
 
   it('lança se APP_PUBLIC_URL não estiver setado', async () => {
     delete process.env.APP_PUBLIC_URL;
-    const svc = new AcceptancesService(makePrisma(), {} as any, {} as any, {} as any);
+    const svc = new AcceptancesService(makePrisma(), {} as any, {} as any, {} as any, {} as any);
     await expect(svc.createForConversation('org-1', 'conv-1', {
       items: [{ description: 'x' }], createdById: 'u',
     })).rejects.toBeInstanceOf(BadRequestException);
@@ -52,7 +52,7 @@ describe('AcceptancesService.createForConversation', () => {
 
   it('rejeita conversa de outra org', async () => {
     const prisma = makePrisma({ conversation: { findFirst: jest.fn().mockResolvedValue(null) } });
-    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
     await expect(svc.createForConversation('org-1', 'conv-x', {
       items: [], createdById: 'u',
     })).rejects.toBeInstanceOf(BadRequestException);
@@ -81,7 +81,7 @@ describe('AcceptancesService.sign', () => {
     const pdf = { render: jest.fn().mockResolvedValue(Buffer.from('pdf')) } as any;
     const storage = { put: jest.fn().mockResolvedValue(undefined) } as any;
     const effects = { onSigned: jest.fn().mockResolvedValue(undefined) } as any;
-    const svc = new AcceptancesService(prisma, pdf, effects, storage);
+    const svc = new AcceptancesService(prisma, pdf, effects, storage, {} as any);
 
     const res = await svc.sign('tok', { name: 'João', ip: '1.2.3.4', userAgent: 'UA' });
     expect(res.status).toBe('SIGNED');
@@ -99,13 +99,13 @@ describe('AcceptancesService.sign', () => {
 
   it('token inexistente → NotFound', async () => {
     const prisma = { orderAcceptance: { findUnique: jest.fn().mockResolvedValue(null) } } as any;
-    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
     await expect(svc.sign('nope', { name: 'x', ip: '', userAgent: '' })).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('já assinado → Gone (one-shot)', async () => {
     const prisma = { orderAcceptance: { findUnique: jest.fn().mockResolvedValue(baseAcc({ status: 'SIGNED' })) } } as any;
-    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
     await expect(svc.sign('tok', { name: 'x', ip: '', userAgent: '' })).rejects.toBeInstanceOf(GoneException);
   });
 
@@ -120,7 +120,7 @@ describe('AcceptancesService.sign', () => {
     const pdf = { render: jest.fn().mockResolvedValue(Buffer.from('pdf')) } as any;
     const storage = { put: jest.fn().mockResolvedValue(undefined) } as any;
     const effects = { onSigned: jest.fn().mockRejectedValue(new Error('boom')) } as any;
-    const svc = new AcceptancesService(prisma, pdf, effects, storage);
+    const svc = new AcceptancesService(prisma, pdf, effects, storage, {} as any);
     const res = await svc.sign('tok', { name: 'João', ip: '', userAgent: '' });
     expect(res.status).toBe('SIGNED');
   });
@@ -132,7 +132,7 @@ describe('AcceptancesService.sign', () => {
         update: jest.fn().mockResolvedValue({}),
       },
     } as any;
-    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
     await expect(svc.sign('tok', { name: 'x', ip: '', userAgent: '' })).rejects.toBeInstanceOf(GoneException);
     expect(prisma.orderAcceptance.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: 'EXPIRED' }),
@@ -143,7 +143,7 @@ describe('AcceptancesService.sign', () => {
 describe('AcceptancesService.getByToken', () => {
   it('404 quando token não existe', async () => {
     const prisma = { orderAcceptance: { findUnique: jest.fn().mockResolvedValue(null) } } as any;
-    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
     await expect(svc.getByToken('nope')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -154,7 +154,7 @@ describe('AcceptancesService.getByToken', () => {
     const prisma = { orderAcceptance: {
       findUnique: jest.fn().mockResolvedValue(acc), update: jest.fn().mockResolvedValue({}),
     } } as any;
-    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
     const view = await svc.getByToken('tok');
     expect(view.status).toBe('EXPIRED');
     expect(view.organizationName).toBe('OFP');
@@ -173,7 +173,7 @@ describe('AcceptancesService.resend / status', () => {
         update: jest.fn().mockResolvedValue({ id: 'acc-1', token: 'tok', status: 'PENDING' }),
       },
     } as any;
-    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
     const { link } = await svc.resend('org-1', 'acc-1');
     expect(link).toBe('https://x.test/aceite/tok');
     expect(prisma.orderAcceptance.update).toHaveBeenCalled();
@@ -184,13 +184,91 @@ describe('AcceptancesService.resend / status', () => {
       findFirst: jest.fn().mockResolvedValue({ id: 'acc-1', token: 'tok', status: 'SIGNED', organizationId: 'org-1' }),
       update: jest.fn(),
     } } as any;
-    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
     await expect(svc.resend('org-1', 'acc-1')).rejects.toBeInstanceOf(GoneException);
   });
 
   it('status devolve o aceite mais recente da conversa (ou null)', async () => {
     const prisma = { orderAcceptance: { findFirst: jest.fn().mockResolvedValue(null) } } as any;
-    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
     expect(await svc.getStatusForConversation('org-1', 'conv-1')).toBeNull();
+  });
+});
+
+describe('AcceptancesService.extractVoucher', () => {
+  function build(overrides: {
+    buffer?: Buffer;
+    text?: string;
+    extracted?: { items: any[]; orderRef: string | null };
+  }) {
+    const storage = {
+      getBuffer: jest.fn().mockResolvedValue(overrides.buffer ?? Buffer.from('x')),
+    } as any;
+    const extractor = {
+      extract: jest
+        .fn()
+        .mockResolvedValue(overrides.extracted ?? { items: [], orderRef: null }),
+    } as any;
+    const svc = new AcceptancesService(
+      {} as any,
+      {} as any,
+      {} as any,
+      storage,
+      extractor,
+    );
+    // A leitura do PDF é trocada por um stub: o teste é do fluxo do serviço,
+    // não do pdfjs (esse já tem teste próprio em pdf-text.util.spec.ts).
+    (svc as any).readPdfText = jest.fn().mockResolvedValue(overrides.text ?? '');
+    return { svc, storage, extractor };
+  }
+
+  it('devolve aviso e não chama o LLM quando o PDF não tem texto', async () => {
+    const { svc, extractor } = build({ text: '' });
+
+    const out = await svc.extractVoucher('org-1', {
+      mediaUrl: 'https://api.x/api/v1/uploads/media/2026-08-06/a.pdf',
+    });
+
+    expect(extractor.extract).not.toHaveBeenCalled();
+    expect(out.items).toEqual([]);
+    expect(out.warning).toMatch(/não consegui ler/i);
+  });
+
+  it('devolve os itens extraídos quando o PDF tem texto', async () => {
+    const { svc } = build({
+      text: 'texto do voucher',
+      extracted: { items: [{ description: 'Magic Kingdom' }], orderRef: '61293' },
+    });
+
+    const out = await svc.extractVoucher('org-1', {
+      mediaUrl: 'https://api.x/api/v1/uploads/media/2026-08-06/a.pdf',
+    });
+
+    expect(out.items).toEqual([{ description: 'Magic Kingdom' }]);
+    expect(out.orderRef).toBe('61293');
+    expect(out.warning).toBeUndefined();
+  });
+
+  it('recusa URL que não é upload nosso', async () => {
+    const { svc, storage } = build({});
+
+    await expect(
+      svc.extractVoucher('org-1', { mediaUrl: 'https://evil.com/etc/passwd' }),
+    ).rejects.toThrow(BadRequestException);
+    expect(storage.getBuffer).not.toHaveBeenCalled();
+  });
+
+  it('arquivo ausente no storage → NotFound', async () => {
+    const { svc } = build({});
+    (svc as any).storage.getBuffer = jest
+      .fn()
+      .mockRejectedValue(new Error('NoSuchKey'));
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      svc.extractVoucher('org-1', {
+        mediaUrl: 'https://api.x/api/v1/uploads/media/2026-08-06/a.pdf',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

@@ -3,7 +3,10 @@ import { PrismaService } from '../../database/prisma.service';
 import { AcceptancePdfService } from './acceptance-pdf.service';
 import { AcceptanceEffectsService } from './acceptance-effects.service';
 import { StorageService } from '../storage/storage.service';
+import { VoucherExtractorService } from './voucher-extractor.service';
 import { generateAcceptanceToken } from './acceptance-token.util';
+import { extractPdfText } from './pdf-text.util';
+import { storageKeyFromUploadUrl } from './storage-key.util';
 import { AcceptanceItem, PublicAcceptanceView } from './acceptances.types';
 
 const DEFAULT_TERM = (org: string) =>
@@ -19,6 +22,7 @@ export class AcceptancesService {
     private readonly pdf: AcceptancePdfService,
     private readonly effects: AcceptanceEffectsService,
     private readonly storage: StorageService,
+    private readonly voucherExtractor: VoucherExtractorService,
   ) {}
 
   private baseUrl(): string {
@@ -62,6 +66,53 @@ export class AcceptancesService {
       },
     });
     return { acceptance, link: `${base}/aceite/${token}` };
+  }
+
+  /**
+   * Indireção fina para o `extractPdfText`, só para o teste do fluxo poder
+   * substituir a leitura sem carregar o pdfjs.
+   */
+  protected readPdfText(buffer: Buffer): Promise<string> {
+    return extractPdfText(buffer);
+  }
+
+  /**
+   * Lê um voucher já subido via `messages/uploads/media` e devolve os itens
+   * para o modal preencher. Falha suave: PDF ilegível devolve lista vazia com
+   * aviso, nunca erro — o atendente segue digitando à mão e o envio continua.
+   */
+  async extractVoucher(
+    organizationId: string,
+    input: { mediaUrl: string },
+  ): Promise<{ items: AcceptanceItem[]; orderRef: string | null; warning?: string }> {
+    const key = storageKeyFromUploadUrl(input.mediaUrl);
+    if (!key) {
+      throw new BadRequestException('Arquivo inválido para leitura.');
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = await this.storage.getBuffer(key);
+    } catch (err) {
+      this.logger.warn(`voucher não encontrado no storage (${key}): ${(err as Error)?.message}`);
+      throw new NotFoundException('Arquivo não encontrado.');
+    }
+
+    const text = await this.readPdfText(buffer);
+    if (!text) {
+      return {
+        items: [],
+        orderRef: null,
+        warning:
+          'Não consegui ler este PDF (provavelmente é uma imagem escaneada). Confira os itens à mão — o voucher será enviado normalmente.',
+      };
+    }
+
+    const { items, orderRef } = await this.voucherExtractor.extract(
+      text,
+      organizationId,
+    );
+    return { items, orderRef };
   }
 
   private isExpired(acc: { expiresAt: Date | null }): boolean {
