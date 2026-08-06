@@ -33,6 +33,10 @@ export async function extractPdfText(
     const pdfjs = await esmImport('pdfjs-dist/legacy/build/pdf.mjs');
     const doc = await pdfjs.getDocument({
       data: new Uint8Array(buffer),
+      // Cala o `console.log` interno do pdfjs (ex.: "Indexing all PDF
+      // objects"), que sujaria o stdout a cada voucher lido com linha solta,
+      // fora do nosso Logger. 0 === VerbosityLevel.ERRORS.
+      verbosity: 0,
       // Sem worker: rodamos no processo do Node, não no browser.
       useWorkerFetch: false,
       isEvalSupported: false,
