@@ -128,6 +128,24 @@ describe('AcceptancePdfService', () => {
       expect(html({ policyText: '   ' })).not.toContain('Política de cancelamento');
     });
 
+    // O comprovante só vale em disputa se provar o ACEITE. "O texto estava na
+    // página" é atacável; "declarou ter lido e aceito" não é.
+    it('declara o aceite da política dentro do bloco da assinatura', () => {
+      const out = html({ policyText: 'Cancelamento em até 7 dias.', signerIp: '1.2.3.4' });
+
+      expect(out).toContain('Declarou ter lido e aceito a política de cancelamento acima.');
+      // Amarrada ao ato de assinar: tem que estar DEPOIS do início do bloco
+      // .meta e antes do fim dele, não flutuando no corpo do documento.
+      expect(out.indexOf('Declarou ter lido e aceito')).toBeGreaterThan(out.indexOf('class="meta"'));
+      expect(out.indexOf('Declarou ter lido e aceito')).toBeLessThan(out.indexOf('MP 2.200-2/2001'));
+    });
+
+    it('sem política não existe declaração de aceite', () => {
+      expect(html()).not.toContain('Declarou ter lido e aceito');
+      expect(html({ policyText: null })).not.toContain('Declarou ter lido e aceito');
+      expect(html({ policyText: '   ' })).not.toContain('Declarou ter lido e aceito');
+    });
+
     it('escapa HTML da política (o texto vem do dono da org e o PDF é um documento legal)', () => {
       const out = html({ policyText: '<script>alert(1)</script> cancelamento <b>grátis</b>' });
 
