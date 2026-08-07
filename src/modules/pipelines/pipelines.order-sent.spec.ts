@@ -122,4 +122,127 @@ describe('PipelinesService.markOrderSentForConversation (E6)', () => {
     expect(acceptances.createForConversation).not.toHaveBeenCalled();
     expect(res.acceptanceLink).toBeUndefined();
   });
+
+  it('envia cada voucher como DOCUMENT antes da mensagem do link', async () => {
+    const { service, acceptances, messages } = make();
+    acceptances.createForConversation.mockResolvedValue({
+      acceptance: { id: 'acc1' },
+      link: 'https://sendtur.com.br/aceite/tok',
+    });
+
+    await service.markOrderSentForConversation('org-1', 'conv-1', undefined, {
+      withAcceptance: true,
+      items: [{ description: 'Magic Kingdom' }],
+      createdById: 'u1',
+      vouchers: [
+        { url: 'https://api.x/api/v1/uploads/media/2026-08-06/a.pdf', filename: 'v1.pdf', size: 10 },
+      ],
+    });
+
+    const types = messages.send.mock.calls.map((c: any[]) => c[0].type);
+    expect(types).toEqual(['DOCUMENT', 'TEXT']);
+    // `fileName` (camelCase) é a chave que os adapters leem pra montar o
+    // `document.filename` do provedor — com `filename` o PDF chegaria sem nome.
+    expect(messages.send.mock.calls[0][0].content).toMatchObject({
+      mediaUrl: 'https://api.x/api/v1/uploads/media/2026-08-06/a.pdf',
+      mimeType: 'application/pdf',
+      fileSize: 10,
+      fileName: 'v1.pdf',
+    });
+  });
+
+  it('repassa vouchers e orderRef pro aceite', async () => {
+    const { service, acceptances } = make();
+    acceptances.createForConversation.mockResolvedValue({
+      acceptance: { id: 'acc1' },
+      link: 'https://sendtur.com.br/aceite/tok',
+    });
+    const vouchers = [
+      { url: 'https://api.x/api/v1/uploads/media/2026-08-06/a.pdf', filename: 'v1.pdf', size: 10 },
+    ];
+
+    await service.markOrderSentForConversation('org-1', 'conv-1', undefined, {
+      withAcceptance: true,
+      items: [{ description: 'Magic Kingdom' }],
+      createdById: 'u1',
+      vouchers,
+      orderRef: 'OFP-123',
+    });
+
+    expect(acceptances.createForConversation).toHaveBeenCalledWith(
+      'org-1',
+      'conv-1',
+      expect.objectContaining({ vouchers, orderRef: 'OFP-123' }),
+    );
+  });
+
+  it('cria o aceite e reporta a falha quando o envio de um voucher falha', async () => {
+    const { service, acceptances, messages } = make();
+    acceptances.createForConversation.mockResolvedValue({
+      acceptance: { id: 'acc1' },
+      link: 'https://sendtur.com.br/aceite/tok',
+    });
+    messages.send.mockImplementation((dto: any) => {
+      if (dto.type === 'DOCUMENT') throw new Error('janela de 24h fechada');
+      return { id: 'm1' };
+    });
+
+    const out = await service.markOrderSentForConversation('org-1', 'conv-1', undefined, {
+      withAcceptance: true,
+      items: [{ description: 'X' }],
+      createdById: 'u1',
+      vouchers: [
+        { url: 'https://api.x/api/v1/uploads/media/2026-08-06/a.pdf', filename: 'v1.pdf', size: 10 },
+      ],
+    });
+
+    expect(acceptances.createForConversation).toHaveBeenCalled();
+    expect(out.acceptanceLink).toBe('https://sendtur.com.br/aceite/tok');
+    expect(out.voucherResults).toEqual([
+      { filename: 'v1.pdf', sent: false, error: 'janela de 24h fechada' },
+    ]);
+    // O link ainda foi enviado: um PDF que não passou não cancela a conferência.
+    expect(messages.send.mock.calls.map((c: any[]) => c[0].type)).toEqual([
+      'DOCUMENT',
+      'TEXT',
+    ]);
+  });
+
+  it('um voucher que falha não impede os seguintes', async () => {
+    const { service, acceptances, messages } = make();
+    acceptances.createForConversation.mockResolvedValue({
+      acceptance: { id: 'acc1' },
+      link: 'https://sendtur.com.br/aceite/tok',
+    });
+    messages.send.mockImplementation((dto: any) => {
+      if (dto.content?.fileName === 'v1.pdf') throw new Error('arquivo sumiu');
+      return { id: 'm1' };
+    });
+
+    const out = await service.markOrderSentForConversation('org-1', 'conv-1', undefined, {
+      withAcceptance: true,
+      items: [{ description: 'X' }],
+      createdById: 'u1',
+      vouchers: [
+        { url: 'https://api.x/a.pdf', filename: 'v1.pdf', size: 10 },
+        { url: 'https://api.x/b.pdf', filename: 'v2.pdf', size: 20 },
+      ],
+    });
+
+    expect(out.voucherResults).toEqual([
+      { filename: 'v1.pdf', sent: false, error: 'arquivo sumiu' },
+      { filename: 'v2.pdf', sent: true },
+    ]);
+  });
+
+  it('continua movendo o card quando withAcceptance é false', async () => {
+    const { service, acceptances, messages } = make();
+
+    await service.markOrderSentForConversation('org-1', 'conv-1', undefined, {
+      withAcceptance: false,
+    });
+
+    expect(acceptances.createForConversation).not.toHaveBeenCalled();
+    expect(messages.send).not.toHaveBeenCalled();
+  });
 });

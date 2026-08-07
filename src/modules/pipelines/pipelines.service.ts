@@ -13,7 +13,7 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { CadenceRunner } from '../cadences/cadence-runner.service';
 import { MetaCapiQueue } from '../meta-capi/meta-capi.queue';
 import { AcceptancesService } from '../acceptances/acceptances.service';
-import { AcceptanceItem } from '../acceptances/acceptances.types';
+import { AcceptanceItem, VoucherInput } from '../acceptances/acceptances.types';
 import { MessagesService } from '../messaging/messages/messages.service';
 import { pipelineCardScopeWhere } from './pipeline-scope';
 import { resolveAssignmentScope } from '../messaging/conversations/conversation-scope';
@@ -28,6 +28,9 @@ import {
 
 /** E6 — nome (contains) da etapa final de entrega. Não colide com "Proposta enviada". */
 const ORDER_SENT_STAGE_NAME = 'Pedido enviado';
+
+/** Voucher de viagem é sempre PDF — o upload já recusa qualquer outra coisa. */
+const VOUCHER_MIME_TYPE = 'application/pdf';
 
 /**
  * Dada a lista de propostas de um board, devolve um mapa
@@ -516,6 +519,8 @@ export class PipelinesService {
       items?: AcceptanceItem[];
       termText?: string;
       createdById?: string;
+      vouchers?: VoucherInput[];
+      orderRef?: string;
     },
     role?: OrgRole,
     currentUserId?: string,
@@ -550,10 +555,53 @@ export class PipelinesService {
     } as MoveCardDto);
 
     // E-aceite (opcional): se o atendente pediu o aceite (withAcceptance !==
-    // false) e mandou os itens + quem cria, gera o aceite e envia o link no
-    // WhatsApp. Sem isso, é só o legado (acceptanceLink undefined).
+    // false) e mandou os itens + quem cria, envia os vouchers, gera o aceite e
+    // envia o link no WhatsApp. Sem isso, é só o legado (acceptanceLink
+    // undefined).
     let acceptanceLink: string | undefined;
+    let voucherResults:
+      | Array<{ filename: string; sent: boolean; error?: string }>
+      | undefined;
+
     if (opts?.withAcceptance !== false && opts?.items && opts.createdById) {
+      // Os PDFs vão ANTES do link: o cliente recebe o voucher e só então o
+      // pedido de conferência. Falha de um voucher não derruba os outros nem
+      // impede a criação do aceite — o atendente vê o que faltou e reenvia.
+      voucherResults = [];
+      for (const voucher of opts.vouchers ?? []) {
+        try {
+          await this.messages.send(
+            {
+              conversationId,
+              type: 'DOCUMENT',
+              content: {
+                mediaUrl: voucher.url,
+                mimeType: VOUCHER_MIME_TYPE,
+                fileSize: voucher.size,
+                // camelCase de propósito: é a chave que os adapters leem pra
+                // montar o `document.filename` do provedor.
+                fileName: voucher.filename,
+              },
+            } as any,
+            opts.createdById,
+            organizationId,
+            'ALL',
+            role,
+            // Mesmas flags da mensagem do link logo abaixo, por consistência.
+            { system: true, automated: true },
+          );
+          voucherResults.push({ filename: voucher.filename, sent: true });
+        } catch (err) {
+          const message = (err as Error)?.message ?? 'falha no envio';
+          this.logger.warn(`voucher ${voucher.filename} não enviado: ${message}`);
+          voucherResults.push({
+            filename: voucher.filename,
+            sent: false,
+            error: message,
+          });
+        }
+      }
+
       const { link } = await this.acceptances.createForConversation(
         organizationId,
         conversationId,
@@ -561,6 +609,8 @@ export class PipelinesService {
           items: opts.items,
           termText: opts.termText,
           createdById: opts.createdById,
+          vouchers: opts.vouchers,
+          orderRef: opts.orderRef,
         },
       );
       acceptanceLink = link;
@@ -575,7 +625,7 @@ export class PipelinesService {
       );
     }
 
-    return { ...(moved as any), acceptanceLink };
+    return { ...(moved as any), acceptanceLink, voucherResults };
   }
 
   /**
