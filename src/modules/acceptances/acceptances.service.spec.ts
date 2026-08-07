@@ -152,6 +152,42 @@ describe('AcceptancesService.createForConversation', () => {
       expect(created[0].vouchers[0].sha256).toBe('');
     });
 
+    it('URL fora de media/ persiste sem hash e não toca no storage', async () => {
+      process.env.APP_PUBLIC_URL = 'https://sendtur.com.br';
+      const created: any[] = [];
+      const prisma = makePrisma({
+        orderAcceptance: {
+          create: jest.fn().mockImplementation((args: any) => {
+            created.push(args.data);
+            return { ...args.data, id: 'acc1' };
+          }),
+        },
+      });
+      const storage = { getBuffer: jest.fn() } as any;
+      const svc = new AcceptancesService(prisma, {} as any, {} as any, storage, {} as any);
+
+      await svc.createForConversation('org-1', 'conv-1', {
+        items: [], createdById: 'u',
+        vouchers: [{
+          // O PDF assinado de OUTRO tenant: é exatamente o que o guard de
+          // prefixo recusa. Nem lido, nem hasheado — mas o aceite acontece.
+          url: 'https://api.x/api/v1/uploads/acceptances/2026-08-06/acc-de-outra-org.pdf',
+          filename: 'alheio.pdf',
+          size: 9,
+        }],
+      });
+
+      expect(storage.getBuffer).not.toHaveBeenCalled();
+      expect(created[0].vouchers).toEqual([
+        {
+          url: 'https://api.x/api/v1/uploads/acceptances/2026-08-06/acc-de-outra-org.pdf',
+          filename: 'alheio.pdf',
+          size: 9,
+          sha256: '',
+        },
+      ]);
+    });
+
     it('não deixa o nome do arquivo forjar linha de log', async () => {
       process.env.APP_PUBLIC_URL = 'https://sendtur.com.br';
       const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);

@@ -1,5 +1,15 @@
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsNumber, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
+
+/**
+ * Uma entrega são alguns PDFs, não um lote. O teto existe porque cada voucher
+ * vira uma leitura no storage dentro do mesmo request (`withHashes`): sem ele,
+ * um body com centenas de URLs vira centenas de leituras simultâneas.
+ */
+const MAX_VOUCHERS = 20;
+
+/** Nº do pedido do operador: um punhado de caracteres, não texto livre. */
+const MAX_ORDER_REF_LENGTH = 64;
 
 export class AcceptanceItemDto {
   @IsString()
@@ -55,11 +65,13 @@ export class OrderSentDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(MAX_VOUCHERS)
   @ValidateNested({ each: true })
   @Type(() => VoucherRefDto)
   vouchers?: VoucherRefDto[];
 
   @IsOptional()
   @IsString()
+  @MaxLength(MAX_ORDER_REF_LENGTH)
   orderRef?: string;
 }
