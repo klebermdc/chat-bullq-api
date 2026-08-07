@@ -5,6 +5,8 @@ import { AcceptanceItem, VoucherRef } from './acceptances.types';
 export interface AcceptancePdfInput {
   organizationName: string;
   termText: string;
+  /** Snapshot da política de cancelamento. Ausente/vazia = bloco não sai. */
+  policyText?: string | null;
   items: AcceptanceItem[];
   signerName: string;
   signedAt: Date;
@@ -44,15 +46,24 @@ export class AcceptancePdfService {
     const orderBlock = i.orderRef
       ? `<p><strong>Pedido:</strong> ${esc(i.orderRef)}</p>`
       : '';
+    // O texto é livre e escrito pelo dono da org: passa pelo `esc()` como todo
+    // o resto (o PDF é gerado por Chromium de verdade — HTML não escapado aqui
+    // é injeção num documento legal) e mantém as quebras de linha via
+    // `pre-wrap`, senão a política vira um parágrafo único ilegível.
+    const policyBlock = i.policyText?.trim()
+      ? `<h3>Política de cancelamento</h3><p class="policy">${esc(i.policyText.trim())}</p>`
+      : '';
     return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/>
       <style>body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:40px;line-height:1.5}
-      h1{font-size:20px}ul{padding-left:20px}.meta{margin-top:32px;font-size:12px;color:#444;border-top:1px solid #ddd;padding-top:16px}</style>
+      h1{font-size:20px}ul{padding-left:20px}.meta{margin-top:32px;font-size:12px;color:#444;border-top:1px solid #ddd;padding-top:16px}
+      .policy{white-space:pre-wrap}</style>
       </head><body>
       <h1>Comprovante de Aceite — ${esc(i.organizationName)}</h1>
       ${orderBlock}
       <p>${esc(i.termText)}</p>
       <h3>Itens conferidos</h3><ul>${rows}</ul>
       ${voucherBlock}
+      ${policyBlock}
       <div class="meta">
         <div><strong>Assinado por:</strong> ${esc(i.signerName)}</div>
         <div><strong>Data/hora:</strong> ${esc(when)} (Brasília)</div>
