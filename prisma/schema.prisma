@@ -227,6 +227,13 @@ model Organization {
   /// null = usa defaults do código (15, 15, 60, 3).
   watchdogConfig        Json?   @map("watchdog_config")
 
+  // ─── Aceite de Entrega ──────────────────────────
+  /// Política de cancelamento que o cliente aceita junto com o termo de
+  /// conferência. Cada aceite copia este texto para `OrderAcceptance
+  /// .policyText` no momento da criação — editar aqui NÃO reescreve o que
+  /// já foi assinado. NULL/vazio = o bloco não aparece no aceite.
+  cancellationPolicy String? @map("cancellation_policy") @db.Text
+
   members                   UserOrganization[]
   channels                  Channel[]
   contacts                  Contact[]
@@ -2352,6 +2359,12 @@ model OrderAcceptance {
   token    String           @unique
   items    Json             @default("[]")
   termText String           @map("term_text")
+  /// Snapshot da `Organization.cancellationPolicy` no momento da criação.
+  /// É cópia, e não leitura por relação, pelo mesmo motivo de `termText` e
+  /// `items`: um aceite assinado tem que continuar mostrando o que aquela
+  /// pessoa aceitou, mesmo depois de o dono editar a política. NULL nos
+  /// aceites anteriores a esta coluna — ninguém assinou política nenhuma.
+  policyText String?         @map("policy_text") @db.Text
   status   AcceptanceStatus @default(PENDING)
   /// Vouchers entregues: [{ url, filename, size, sha256 }].
   vouchers Json?            @default("[]")
