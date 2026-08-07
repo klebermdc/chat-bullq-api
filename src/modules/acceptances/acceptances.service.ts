@@ -183,6 +183,8 @@ export class AcceptancesService {
       signedAt: acc.signedAt ? acc.signedAt.toISOString() : null,
       signerName: acc.signerName ?? null,
       pdfUrl: this.pdfUrl(acc.pdfKey),
+      vouchers: ((acc.vouchers as any) ?? []) as VoucherRef[],
+      orderRef: acc.orderRef ?? null,
     };
   }
 
@@ -208,6 +210,8 @@ export class AcceptancesService {
       signerName: input.name,
       signedAt,
       signerIp: input.ip,
+      vouchers: ((acc.vouchers as any) ?? []) as VoucherRef[],
+      orderRef: acc.orderRef ?? null,
     });
     const pdfKey = `acceptances/${signedAt.toISOString().slice(0, 10)}/${acc.id}.pdf`;
     await this.storage.put(pdfKey, pdfBuf, 'application/pdf');
@@ -236,6 +240,8 @@ export class AcceptancesService {
       signedAt: signed.signedAt ? signed.signedAt.toISOString() : null,
       signerName: signed.signerName ?? null,
       pdfUrl: this.pdfUrl(signed.pdfKey),
+      vouchers: ((signed.vouchers as any) ?? []) as VoucherRef[],
+      orderRef: signed.orderRef ?? null,
     };
   }
 

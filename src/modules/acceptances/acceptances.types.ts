@@ -38,4 +38,7 @@ export interface PublicAcceptanceView {
   signedAt: string | null;
   signerName: string | null;
   pdfUrl: string | null;
+  /** Vouchers entregues, para o cliente conferir antes de assinar. */
+  vouchers: VoucherRef[];
+  orderRef: string | null;
 }

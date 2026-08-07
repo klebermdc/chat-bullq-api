@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { chromium, type BrowserType } from 'playwright';
-import { AcceptanceItem } from './acceptances.types';
+import { AcceptanceItem, VoucherRef } from './acceptances.types';
 
 export interface AcceptancePdfInput {
   organizationName: string;
@@ -9,6 +9,8 @@ export interface AcceptancePdfInput {
   signerName: string;
   signedAt: Date;
   signerIp?: string | null;
+  vouchers?: VoucherRef[];
+  orderRef?: string | null;
 }
 
 function esc(s: string): string {
@@ -25,13 +27,32 @@ export class AcceptancePdfService {
       it.qty ? ` — <strong>${it.qty}x</strong>` : ''}${it.date ? ` (${esc(it.date)})` : ''}${
       it.note ? ` — ${esc(it.note)}` : ''}</li>`).join('');
     const when = i.signedAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    // O hash de cada voucher entra no comprovante como prova de qual arquivo
+    // foi entregue. Arquivo ilegível no momento do hash fica sem `sha256` —
+    // nesse caso o nome aparece sozinho, sem rótulo de hash vazio.
+    const voucherRows = (i.vouchers ?? [])
+      .map(
+        (v) =>
+          `<li>${esc(v.filename)}${
+            v.sha256 ? ` — <code style="font-size:10px">SHA-256: ${esc(v.sha256)}</code>` : ''
+          }</li>`,
+      )
+      .join('');
+    const voucherBlock = voucherRows
+      ? `<h3>Vouchers entregues</h3><ul>${voucherRows}</ul>`
+      : '';
+    const orderBlock = i.orderRef
+      ? `<p><strong>Pedido:</strong> ${esc(i.orderRef)}</p>`
+      : '';
     return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/>
       <style>body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:40px;line-height:1.5}
       h1{font-size:20px}ul{padding-left:20px}.meta{margin-top:32px;font-size:12px;color:#444;border-top:1px solid #ddd;padding-top:16px}</style>
       </head><body>
       <h1>Comprovante de Aceite — ${esc(i.organizationName)}</h1>
+      ${orderBlock}
       <p>${esc(i.termText)}</p>
       <h3>Itens conferidos</h3><ul>${rows}</ul>
+      ${voucherBlock}
       <div class="meta">
         <div><strong>Assinado por:</strong> ${esc(i.signerName)}</div>
         <div><strong>Data/hora:</strong> ${esc(when)} (Brasília)</div>
