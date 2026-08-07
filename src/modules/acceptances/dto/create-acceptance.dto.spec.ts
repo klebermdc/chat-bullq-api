@@ -67,6 +67,36 @@ describe('OrderSentDto sob o ValidationPipe global', () => {
     expect(await messagesFor({ orderRef: 'x'.repeat(65) })).toMatch(/orderRef/);
   });
 
+  it('recusa url com esquema perigoso e aceita a URL de upload legítima', async () => {
+    // Esta `url` é persistida no aceite e vira `href` em /aceite/[token] — uma
+    // página PÚBLICA, sem sessão, onde o cliente assina. Com `@IsString()` puro,
+    // um membro autenticado da org plantava `javascript:` num link ao vivo na
+    // página de assinatura do próprio cliente. A trava é de ESQUEMA, no
+    // boundary, porque a mesma string ainda vai pro PDF e pro `content.mediaUrl`.
+    for (const url of [
+      'javascript:alert(1)',
+      'JaVaScRiPt:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+      // Relativa continua recusada de propósito: `POST messages/uploads/media`
+      // devolve absoluta (`${APP_URL}/api/v1/uploads/...`).
+      '/api/v1/uploads/media/2026-08-06/a.pdf',
+    ]) {
+      expect(await messagesFor({ vouchers: [{ ...voucher(1), url }] })).toMatch(
+        /url/,
+      );
+    }
+
+    const legitimas = [
+      'https://api.explotek.pro/api/v1/uploads/media/2026-08-06/a1b2.pdf',
+      // Valor documentado de APP_URL no dev local (.env.production.example).
+      'http://localhost:3001/api/v1/uploads/media/2026-08-06/a1b2.pdf',
+    ];
+    for (const url of legitimas) {
+      const out: any = await validate({ vouchers: [{ ...voucher(1), url }] });
+      expect(out.vouchers[0].url).toBe(url);
+    }
+  });
+
   it('recusa sha256 contrabandeado dentro de um voucher', async () => {
     // A premissa da feature inteira: o hash é prova que o SERVIDOR produziu
     // lendo o arquivo. Se o cliente conseguisse afirmar o sha256, o aceite

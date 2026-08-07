@@ -1,4 +1,4 @@
-import { BadRequestException, Logger } from '@nestjs/common';
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { PipelinesService } from './pipelines.service';
 
 /**
@@ -176,14 +176,40 @@ describe('PipelinesService.markOrderSentForConversation (E6)', () => {
     );
   });
 
+  it('devolve o messageId de cada voucher enfileirado', async () => {
+    const { service, acceptances, messages } = make();
+    acceptances.createForConversation.mockResolvedValue({
+      acceptance: { id: 'acc1' },
+      link: 'https://sendtur.com.br/aceite/tok',
+    });
+    messages.send.mockResolvedValue({ id: 'msg-1' });
+
+    const out = await service.markOrderSentForConversation('org-1', 'conv-1', undefined, {
+      withAcceptance: true,
+      items: [{ description: 'X' }],
+      createdById: 'u1',
+      vouchers: [{ url: 'https://api.x/a.pdf', filename: 'v1.pdf', size: 10 }],
+    });
+
+    // `queued`, não `sent`: o send só enfileira. Quem diz se chegou é a Message
+    // — e é o messageId que permite ir olhar o status dela depois.
+    expect(out.voucherResults).toEqual([
+      { filename: 'v1.pdf', queued: true, messageId: 'msg-1' },
+    ]);
+    expect(out.linkResult).toEqual({ queued: true, messageId: 'msg-1' });
+  });
+
   it('cria o aceite e reporta a falha quando o envio de um voucher falha', async () => {
     const { service, acceptances, messages } = make();
     acceptances.createForConversation.mockResolvedValue({
       acceptance: { id: 'acc1' },
       link: 'https://sendtur.com.br/aceite/tok',
     });
+    // Falha SÍNCRONA do send — as que existem de verdade são de nível de
+    // conversa (conversa ou canal do contato inexistente). Janela 24h fechada
+    // NÃO aparece aqui: aquilo roda no worker, depois que o send já resolveu.
     messages.send.mockImplementation((dto: any) => {
-      if (dto.type === 'DOCUMENT') throw new Error('janela de 24h fechada');
+      if (dto.type === 'DOCUMENT') throw new NotFoundException('Contact channel not found');
       return { id: 'm1' };
     });
 
@@ -199,13 +225,41 @@ describe('PipelinesService.markOrderSentForConversation (E6)', () => {
     expect(acceptances.createForConversation).toHaveBeenCalled();
     expect(out.acceptanceLink).toBe('https://sendtur.com.br/aceite/tok');
     expect(out.voucherResults).toEqual([
-      { filename: 'v1.pdf', sent: false, error: 'janela de 24h fechada' },
+      {
+        filename: 'v1.pdf',
+        queued: false,
+        error: 'Conversa ou canal do cliente não encontrado.',
+      },
     ]);
     // O link ainda foi enviado: um PDF que não passou não cancela a conferência.
     expect(messages.send.mock.calls.map((c: any[]) => c[0].type)).toEqual([
       'DOCUMENT',
       'TEXT',
     ]);
+  });
+
+  it('não vaza o texto cru da exceção pro cliente', async () => {
+    const { service, acceptances, messages } = make();
+    acceptances.createForConversation.mockResolvedValue({
+      acceptance: { id: 'acc1' },
+      link: 'https://sendtur.com.br/aceite/tok',
+    });
+    messages.send.mockImplementation((dto: any) => {
+      if (dto.type === 'DOCUMENT') {
+        throw new Error('connect ECONNREFUSED 10.0.0.7:6379 (redis-interno)');
+      }
+      return { id: 'm1' };
+    });
+
+    const out = await service.markOrderSentForConversation('org-1', 'conv-1', undefined, {
+      withAcceptance: true,
+      items: [{ description: 'X' }],
+      createdById: 'u1',
+      vouchers: [{ url: 'https://api.x/a.pdf', filename: 'v1.pdf', size: 10 }],
+    });
+
+    expect(out.voucherResults?.[0].error).toBe('Não foi possível enviar agora.');
+    expect(JSON.stringify(out.voucherResults)).not.toMatch(/ECONNREFUSED|10\.0\.0\.7/);
   });
 
   it('um voucher que falha não impede os seguintes', async () => {
@@ -215,7 +269,7 @@ describe('PipelinesService.markOrderSentForConversation (E6)', () => {
       link: 'https://sendtur.com.br/aceite/tok',
     });
     messages.send.mockImplementation((dto: any) => {
-      if (dto.content?.fileName === 'v1.pdf') throw new Error('arquivo sumiu');
+      if (dto.content?.fileName === 'v1.pdf') throw new NotFoundException('sumiu');
       return { id: 'm1' };
     });
 
@@ -230,8 +284,44 @@ describe('PipelinesService.markOrderSentForConversation (E6)', () => {
     });
 
     expect(out.voucherResults).toEqual([
-      { filename: 'v1.pdf', sent: false, error: 'arquivo sumiu' },
-      { filename: 'v2.pdf', sent: true },
+      {
+        filename: 'v1.pdf',
+        queued: false,
+        error: 'Conversa ou canal do cliente não encontrado.',
+      },
+      { filename: 'v2.pdf', queued: true, messageId: 'm1' },
+    ]);
+  });
+
+  it('reporta a falha do link em vez de estourar o request', async () => {
+    const { service, acceptances, messages } = make();
+    acceptances.createForConversation.mockResolvedValue({
+      acceptance: { id: 'acc1' },
+      link: 'https://sendtur.com.br/aceite/tok',
+    });
+    // Falha de nível de conversa derruba TODOS os envios, inclusive o do link.
+    // Sem o try/catch no link, o request virava 500 e o atendente perdia o
+    // relatório justamente quando ele mais importa.
+    messages.send.mockRejectedValue(new NotFoundException('Conversation not found'));
+
+    const out = await service.markOrderSentForConversation('org-1', 'conv-1', undefined, {
+      withAcceptance: true,
+      items: [{ description: 'X' }],
+      createdById: 'u1',
+      vouchers: [{ url: 'https://api.x/a.pdf', filename: 'v1.pdf', size: 10 }],
+    });
+
+    expect(out.acceptanceLink).toBe('https://sendtur.com.br/aceite/tok');
+    expect(out.linkResult).toEqual({
+      queued: false,
+      error: 'Conversa ou canal do cliente não encontrado.',
+    });
+    expect(out.voucherResults).toEqual([
+      {
+        filename: 'v1.pdf',
+        queued: false,
+        error: 'Conversa ou canal do cliente não encontrado.',
+      },
     ]);
   });
 
