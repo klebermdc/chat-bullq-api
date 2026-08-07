@@ -509,10 +509,14 @@ describe('AcceptancesService.resend / status', () => {
 });
 
 describe('AcceptancesService.extractVoucher', () => {
+  const URL_OK = 'https://api.x/api/v1/uploads/media/2026-08-06/a.pdf';
+
   function build(overrides: {
     buffer?: Buffer;
     text?: string;
+    images?: Buffer[];
     extracted?: { items: any[]; orderRef: string | null };
+    fromImages?: { items: any[]; orderRef: string | null };
   }) {
     const storage = {
       getBuffer: jest.fn().mockResolvedValue(overrides.buffer ?? Buffer.from('x')),
@@ -521,6 +525,9 @@ describe('AcceptancesService.extractVoucher', () => {
       extract: jest
         .fn()
         .mockResolvedValue(overrides.extracted ?? { items: [], orderRef: null }),
+      extractFromImages: jest
+        .fn()
+        .mockResolvedValue(overrides.fromImages ?? { items: [], orderRef: null }),
     } as any;
     const svc = new AcceptancesService(
       {} as any,
@@ -529,37 +536,107 @@ describe('AcceptancesService.extractVoucher', () => {
       storage,
       extractor,
     );
-    // A leitura do PDF é trocada por um stub: o teste é do fluxo do serviço,
-    // não do pdfjs (esse já tem teste próprio em pdf-text.util.spec.ts).
+    // A leitura e a rasterização do PDF são trocadas por stubs: o teste é do
+    // fluxo do serviço, não do pdfjs (esse já tem teste próprio em
+    // pdf-text.util.spec.ts e pdf-render.util.spec.ts).
     (svc as any).readPdfText = jest.fn().mockResolvedValue(overrides.text ?? '');
-    return { svc, storage, extractor };
+    const renderPdfPages = jest.fn().mockResolvedValue(overrides.images ?? []);
+    (svc as any).renderPdfPages = renderPdfPages;
+    return { svc, storage, extractor, renderPdfPages };
   }
 
-  it('devolve aviso e não chama o LLM quando o PDF não tem texto', async () => {
-    const { svc, extractor } = build({ text: '' });
-
-    const out = await svc.extractVoucher('org-1', {
-      mediaUrl: 'https://api.x/api/v1/uploads/media/2026-08-06/a.pdf',
-    });
-
-    expect(extractor.extract).not.toHaveBeenCalled();
-    expect(out.items).toEqual([]);
-    expect(out.warning).toMatch(/não consegui ler/i);
-  });
-
-  it('devolve os itens extraídos quando o PDF tem texto', async () => {
-    const { svc } = build({
+  it('PDF com texto não rasteriza nem paga visão — o caminho barato fica barato', async () => {
+    const { svc, renderPdfPages, extractor } = build({
       text: 'texto do voucher',
       extracted: { items: [{ description: 'Magic Kingdom' }], orderRef: '61293' },
     });
 
-    const out = await svc.extractVoucher('org-1', {
-      mediaUrl: 'https://api.x/api/v1/uploads/media/2026-08-06/a.pdf',
-    });
+    const out = await svc.extractVoucher('org-1', { mediaUrl: URL_OK });
 
+    expect(renderPdfPages).not.toHaveBeenCalled();
+    expect(extractor.extractFromImages).not.toHaveBeenCalled();
     expect(out.items).toEqual([{ description: 'Magic Kingdom' }]);
     expect(out.orderRef).toBe('61293');
     expect(out.warning).toBeUndefined();
+  });
+
+  it('PDF sem texto cai na visão e devolve os itens lidos das imagens', async () => {
+    const pages = [Buffer.from('png-1'), Buffer.from('png-2')];
+    const { svc, extractor } = build({
+      text: '',
+      images: pages,
+      fromImages: { items: [{ description: 'Universal Studios' }], orderRef: '77' },
+    });
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+    const out = await svc.extractVoucher('org-1', { mediaUrl: URL_OK });
+
+    expect(extractor.extract).not.toHaveBeenCalled();
+    expect(extractor.extractFromImages).toHaveBeenCalledWith(pages, 'org-1');
+    expect(out.items).toEqual([{ description: 'Universal Studios' }]);
+    expect(out.orderRef).toBe('77');
+    expect(out.warning).toBeUndefined();
+  });
+
+  it('registra o número de páginas ao cair na visão (senão ninguém vê a conta chegar)', async () => {
+    const { svc } = build({
+      text: '',
+      images: [Buffer.from('a'), Buffer.from('b')],
+      fromImages: { items: [{ description: 'X' }], orderRef: null },
+    });
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+
+    await svc.extractVoucher('org-1', { mediaUrl: URL_OK });
+
+    const logged = warn.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logged).toMatch(/vis(ã|a)o/i);
+    expect(logged).toContain('2');
+  });
+
+  it('só o nº do pedido já conta como leitura — não vira aviso', async () => {
+    const { svc } = build({
+      text: '',
+      images: [Buffer.from('a')],
+      fromImages: { items: [], orderRef: '61293' },
+    });
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+    const out = await svc.extractVoucher('org-1', { mediaUrl: URL_OK });
+
+    expect(out.orderRef).toBe('61293');
+    expect(out.warning).toBeUndefined();
+  });
+
+  it('visão também vazia → aviso citando as DUAS tentativas', async () => {
+    const { svc, extractor } = build({
+      text: '',
+      images: [Buffer.from('a')],
+      fromImages: { items: [], orderRef: null },
+    });
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+    const out = await svc.extractVoucher('org-1', { mediaUrl: URL_OK });
+
+    expect(extractor.extractFromImages).toHaveBeenCalled();
+    expect(out.items).toEqual([]);
+    expect(out.orderRef).toBeNull();
+    expect(out.warning).toMatch(/não consegui ler/i);
+    expect(out.warning).toMatch(/nem pelo texto nem pela imagem/i);
+  });
+
+  it('PDF quebrado (não lê texto nem rasteriza) devolve aviso, nunca erro', async () => {
+    // O aceite não pode ser bloqueado por um voucher ilegível: o atendente
+    // digita à mão e o voucher vai ao cliente do mesmo jeito.
+    const { svc, extractor } = build({ text: '', images: [] });
+
+    const out = await svc.extractVoucher('org-1', { mediaUrl: URL_OK });
+
+    expect(extractor.extract).not.toHaveBeenCalled();
+    expect(extractor.extractFromImages).not.toHaveBeenCalled();
+    expect(out.items).toEqual([]);
+    expect(out.warning).toMatch(/não consegui ler/i);
   });
 
   it('recusa URL que não é upload nosso', async () => {
