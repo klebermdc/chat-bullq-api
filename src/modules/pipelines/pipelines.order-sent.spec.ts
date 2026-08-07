@@ -235,6 +235,29 @@ describe('PipelinesService.markOrderSentForConversation (E6)', () => {
     ]);
   });
 
+  it('não envia NADA se a criação do aceite falha', async () => {
+    const { service, acceptances, messages } = make();
+    // APP_PUBLIC_URL ausente estoura na primeira linha do createForConversation:
+    // é justamente por isso que ele roda antes de qualquer envio. Voucher na mão
+    // do cliente sem aceite por trás é irrecuperável.
+    acceptances.createForConversation.mockRejectedValue(
+      new Error('APP_PUBLIC_URL não configurado'),
+    );
+
+    await expect(
+      service.markOrderSentForConversation('org-1', 'conv-1', undefined, {
+        withAcceptance: true,
+        items: [{ description: 'X' }],
+        createdById: 'u1',
+        vouchers: [
+          { url: 'https://api.x/a.pdf', filename: 'v1.pdf', size: 10 },
+        ],
+      }),
+    ).rejects.toThrow('APP_PUBLIC_URL não configurado');
+
+    expect(messages.send).not.toHaveBeenCalled();
+  });
+
   it('não deixa o nome do arquivo forjar linha de log', async () => {
     const { service, acceptances, messages } = make();
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);

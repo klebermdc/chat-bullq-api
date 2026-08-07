@@ -560,18 +560,36 @@ export class PipelinesService {
     } as MoveCardDto);
 
     // E-aceite (opcional): se o atendente pediu o aceite (withAcceptance !==
-    // false) e mandou os itens + quem cria, envia os vouchers, gera o aceite e
-    // envia o link no WhatsApp. Sem isso, é só o legado (acceptanceLink
-    // undefined).
+    // false) e mandou os itens + quem cria, gera o aceite e então envia os
+    // vouchers e o link no WhatsApp — nessa ordem. Sem isso, é só o legado
+    // (acceptanceLink undefined).
     let acceptanceLink: string | undefined;
     let voucherResults:
       | Array<{ filename: string; sent: boolean; error?: string }>
       | undefined;
 
     if (opts?.withAcceptance !== false && opts?.items && opts.createdById) {
+      // O aceite é criado ANTES de qualquer envio, de propósito: se ele falhar
+      // (ex.: APP_PUBLIC_URL ausente, que estoura na primeira linha), o cliente
+      // não fica com vouchers na mão e nenhum registro por trás — nada sai. O
+      // inverso é irrecuperável; já isto deixa, no pior caso, um aceite PENDING
+      // sem link entregue, que o botão "Reenviar link" resolve.
+      const { link } = await this.acceptances.createForConversation(
+        organizationId,
+        conversationId,
+        {
+          items: opts.items,
+          termText: opts.termText,
+          createdById: opts.createdById,
+          vouchers: opts.vouchers,
+          orderRef: opts.orderRef,
+        },
+      );
+      acceptanceLink = link;
+
       // Os PDFs vão ANTES do link: o cliente recebe o voucher e só então o
       // pedido de conferência. Falha de um voucher não derruba os outros nem
-      // impede a criação do aceite — o atendente vê o que faltou e reenvia.
+      // impede o envio do link — o atendente vê o que faltou e reenvia.
       voucherResults = [];
       for (const voucher of opts.vouchers ?? []) {
         try {
@@ -611,18 +629,6 @@ export class PipelinesService {
         }
       }
 
-      const { link } = await this.acceptances.createForConversation(
-        organizationId,
-        conversationId,
-        {
-          items: opts.items,
-          termText: opts.termText,
-          createdById: opts.createdById,
-          vouchers: opts.vouchers,
-          orderRef: opts.orderRef,
-        },
-      );
-      acceptanceLink = link;
       const text = `Prontinho! ✅ Já enviamos tudo pra você.\n\nPra finalizar, é só dar uma conferida nos itens que você recebeu e confirmar o recebimento neste link (leva menos de 1 minuto):\n\n${link}\n\nEle também serve como seu comprovante. Qualquer coisa, é só chamar por aqui! 😊`;
       await this.messages.send(
         { conversationId, type: 'TEXT', content: { text } } as any,
