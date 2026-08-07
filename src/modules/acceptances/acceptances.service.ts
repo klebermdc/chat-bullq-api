@@ -7,6 +7,7 @@ import { StorageService } from '../storage/storage.service';
 import { VoucherExtractorService } from './voucher-extractor.service';
 import { generateAcceptanceToken } from './acceptance-token.util';
 import { extractPdfText } from './pdf-text.util';
+import { renderPdfToPngs } from './pdf-render.util';
 import { storageKeyFromUploadUrl } from './storage-key.util';
 import { AcceptanceItem, PublicAcceptanceView, VoucherInput, VoucherRef } from './acceptances.types';
 
@@ -146,21 +147,45 @@ export class AcceptancesService {
       throw new NotFoundException('Arquivo não encontrado.');
     }
 
+    // Caminho barato primeiro: PDF com camada de texto nunca paga visão.
     const text = await this.readPdfText(buffer);
-    if (!text) {
-      return {
-        items: [],
-        orderRef: null,
-        warning:
-          'Não consegui ler este PDF (provavelmente é uma imagem escaneada). Confira os itens à mão — o voucher será enviado normalmente.',
-      };
+    if (text) {
+      const { items, orderRef } = await this.voucherExtractor.extract(
+        text,
+        organizationId,
+      );
+      return { items, orderRef };
     }
 
-    const { items, orderRef } = await this.voucherExtractor.extract(
-      text,
-      organizationId,
-    );
-    return { items, orderRef };
+    // Sem camada de texto = voucher escaneado. Rasteriza as páginas e tenta
+    // por visão. Só aqui, nunca antes: imagem custa muito mais token que texto.
+    const images = await this.renderPdfPages(buffer);
+    if (images.length) {
+      // Log deliberado e no nível `warn`: sem esta linha ninguém descobre que
+      // está pagando visão em TODO voucher — foi justamente a ausência dela
+      // que fez o diagnóstico deste caso levar meia hora.
+      this.logger.warn(
+        `voucher sem camada de texto — caindo no caminho de visão (${images.length} página(s) rasterizada(s))`,
+      );
+      const { items, orderRef } = await this.voucherExtractor.extractFromImages(
+        images,
+        organizationId,
+      );
+      // `orderRef` sozinho já é leitura: só cai no aviso quando não veio nada.
+      if (items.length || orderRef) return { items, orderRef };
+    }
+
+    return {
+      items: [],
+      orderRef: null,
+      warning:
+        'Não consegui ler este PDF, nem pelo texto nem pela imagem. Confira os itens à mão — o voucher será enviado normalmente.',
+    };
+  }
+
+  /** Seam de teste, igual ao `readPdfText`: o pdfjs tem teste próprio. */
+  protected renderPdfPages(buffer: Buffer): Promise<Buffer[]> {
+    return renderPdfToPngs(buffer);
   }
 
   private isExpired(acc: { expiresAt: Date | null }): boolean {

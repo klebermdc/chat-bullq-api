@@ -61,6 +61,11 @@
     "rxjs": "^7.8.0",
     "web-push": "^3.6.0"
   },
+  "_comment_optionalDependencies": "NÃO REMOVA. Binários musl do @napi-rs/canvas fixados à mão para o yarn.lock tê-los: o lock é gerado em Mac e só gravava o darwin-arm64, então a imagem Alpine subia sem binding e a visão do voucher (src/modules/acceptances/pdf-render.util.ts) virava no-op silencioso. Detalhes no commit que adicionou esta chave.",
+  "optionalDependencies": {
+    "@napi-rs/canvas-linux-x64-musl": "0.1.100",
+    "@napi-rs/canvas-linux-arm64-musl": "0.1.100"
+  },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
     "@nestjs/testing": "^11.1.0",

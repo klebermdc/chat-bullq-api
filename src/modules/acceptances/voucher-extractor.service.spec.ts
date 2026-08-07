@@ -78,3 +78,71 @@ describe('VoucherExtractorService', () => {
     expect(out).toEqual({ items: [], orderRef: null });
   });
 });
+
+describe('VoucherExtractorService.extractFromImages', () => {
+  const png = (b: string) => Buffer.from(b);
+
+  it('manda uma parte de imagem base64 por página, sem prefixo data:', async () => {
+    const llm = llmReturning('{"orderRef":"61293","items":[{"description":"Magic Kingdom"}]}');
+    const svc = new VoucherExtractorService(llm);
+
+    const out = await svc.extractFromImages([png('pagina-1'), png('pagina-2')], 'org-1');
+
+    const req = llm.complete.mock.calls[0][0];
+    const parts = req.messages[1].content;
+    expect(parts[0].type).toBe('text');
+    expect(parts.slice(1)).toEqual([
+      { type: 'image', base64: { mediaType: 'image/png', data: png('pagina-1').toString('base64') } },
+      { type: 'image', base64: { mediaType: 'image/png', data: png('pagina-2').toString('base64') } },
+    ]);
+    // O `data` vai cru: quem monta o `data:image/png;base64,` é o LlmService.
+    expect(parts[1].base64.data).not.toMatch(/^data:/);
+    expect(out).toEqual({ orderRef: '61293', items: [{ description: 'Magic Kingdom' }] });
+  });
+
+  it('usa o MESMO prompt grounded e temperatura 0 do caminho de texto', async () => {
+    // Um voucher lido errado por visão erra a data do parque igual a um lido
+    // errado por texto — as regras não podem afrouxar por causa do formato.
+    const llm = llmReturning('{"items":[]}');
+    const svc = new VoucherExtractorService(llm);
+
+    await svc.extractFromImages([png('x')], 'org-1');
+    await svc.extract('texto do voucher', 'org-1');
+
+    const [visao, texto] = llm.complete.mock.calls.map((c: any[]) => c[0]);
+    expect(visao.messages[0]).toEqual(texto.messages[0]);
+    expect(visao.messages[0].content[0].text).toContain('NUNCA invente ou deduza');
+    expect(visao.temperature).toBe(0);
+    expect(visao.modelId).toBe(texto.modelId);
+  });
+
+  it('devolve vazio quando o LLM falha, sem estourar', async () => {
+    const llm = { complete: jest.fn().mockRejectedValue(new Error('502')) } as any;
+    const svc = new VoucherExtractorService(llm);
+
+    const out = await svc.extractFromImages([png('x')], 'org-1');
+
+    expect(out).toEqual({ items: [], orderRef: null });
+  });
+
+  it('aplica o mesmo parse tolerante (descarta <think> e item sem descrição)', async () => {
+    const llm = llmReturning(
+      '<think>hmm</think>{"items":[{"qty":2},{"description":"Ingresso"}]}',
+    );
+    const svc = new VoucherExtractorService(llm);
+
+    const out = await svc.extractFromImages([png('x')], 'org-1');
+
+    expect(out).toEqual({ items: [{ description: 'Ingresso' }], orderRef: null });
+  });
+
+  it('nem chama o LLM quando não há páginas rasterizadas', async () => {
+    const llm = llmReturning('{}');
+    const svc = new VoucherExtractorService(llm);
+
+    const out = await svc.extractFromImages([], 'org-1');
+
+    expect(llm.complete).not.toHaveBeenCalled();
+    expect(out).toEqual({ items: [], orderRef: null });
+  });
+});

@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { esmImport } from './esm-import.util';
 
 const logger = new Logger('PdfText');
 
@@ -8,17 +9,6 @@ const logger = new Logger('PdfText');
  * (escaneado) — mandar ruído pro LLM só produz invenção de volta.
  */
 export const MIN_USEFUL_CHARS = 200;
-
-/**
- * `pdfjs-dist` é ESM puro e este projeto compila para CommonJS
- * (`tsconfig.json` → `"module": "commonjs"`). Um `await import(...)` escrito
- * direto seria transpilado pelo TypeScript para `require()`, que falha em
- * runtime com ERR_REQUIRE_ESM. O `new Function` esconde o import do
- * transpilador, preservando o `import()` dinâmico nativo do Node.
- */
-const esmImport = new Function('m', 'return import(m)') as (
-  m: string,
-) => Promise<any>;
 
 /**
  * Extrai a camada de texto de um PDF. NUNCA lança: qualquer falha (arquivo
