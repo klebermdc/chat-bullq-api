@@ -40,7 +40,21 @@ describe('AcceptancesService.createForConversation', () => {
     const { acceptance } = await svc.createForConversation('org-1', 'conv-1', {
       items: [], createdById: 'u',
     });
-    expect(acceptance.termText).toContain('Orlando Fast Pass');
+    expect(acceptance.termText).toBe(
+      'Declaro que recebi da Orlando Fast Pass todos os produtos e/ou serviços relacionados abaixo ' +
+        'e que realizei a conferência das respectivas datas, quantidades, informações e demais detalhes. ' +
+        'Confirmo que os itens estão corretos, completos e de acordo com o que foi previamente contratado e acordado.',
+    );
+  });
+
+  it('termo customizado do atendente vence o default', async () => {
+    const prisma = makePrisma();
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+    const { acceptance } = await svc.createForConversation('org-1', 'conv-1', {
+      items: [], createdById: 'u', termText: '  Termo escrito à mão pelo atendente.  ',
+    });
+    expect(acceptance.termText).toBe('Termo escrito à mão pelo atendente.');
+    expect(acceptance.termText).not.toContain('Declaro que recebi da');
   });
 
   it('lança se APP_PUBLIC_URL não estiver setado', async () => {
@@ -218,6 +232,91 @@ describe('AcceptancesService.createForConversation', () => {
       expect(acceptance.orderRef).toBeNull();
     });
   });
+
+  describe('snapshot da política de cancelamento', () => {
+    /**
+     * Prisma de mentira com a org MUTÁVEL: `conversation.findFirst` lê a
+     * política vigente no momento da chamada e `orderAcceptance.findUnique`
+     * devolve o que ficou gravado. Sem essa mutabilidade não dá pra provar
+     * que editar a configuração não reescreve um aceite já criado.
+     */
+    function makeDb(cancellationPolicy: string | null) {
+      const org = { name: 'OFP', cancellationPolicy };
+      const rows: any[] = [];
+      const prisma = {
+        conversation: {
+          findFirst: jest.fn().mockImplementation(async () => ({
+            id: 'conv-1', contactId: 'ct-1', organization: { ...org },
+          })),
+        },
+        card: { findFirst: jest.fn().mockResolvedValue({ id: 'card-1' }) },
+        orderAcceptance: {
+          create: jest.fn().mockImplementation(async ({ data }: any) => {
+            const row = { id: `acc-${rows.length + 1}`, ...data, organization: { name: org.name } };
+            rows.push(row);
+            return row;
+          }),
+          findUnique: jest.fn().mockImplementation(async ({ where }: any) =>
+            rows.find((r) => r.token === where.token) ?? null),
+          update: jest.fn().mockImplementation(async ({ where, data }: any) => {
+            const row = rows.find((r) => r.id === where.id);
+            Object.assign(row, data);
+            return row;
+          }),
+        },
+      } as any;
+      return { prisma, org };
+    }
+
+    it('copia a política da org para o aceite na criação', async () => {
+      const { prisma } = makeDb('Cancelamentos em até 7 dias.');
+      const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+      const { acceptance } = await svc.createForConversation('org-1', 'conv-1', {
+        items: [], createdById: 'u',
+      });
+      expect(acceptance.policyText).toBe('Cancelamentos em até 7 dias.');
+    });
+
+    it('org sem política grava null (aceite não exibe o bloco)', async () => {
+      const { prisma } = makeDb(null);
+      const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+      const { acceptance } = await svc.createForConversation('org-1', 'conv-1', {
+        items: [], createdById: 'u',
+      });
+      expect(acceptance.policyText).toBeNull();
+    });
+
+    it('política só com espaços em branco grava null', async () => {
+      const { prisma } = makeDb('   \n  ');
+      const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+      const { acceptance } = await svc.createForConversation('org-1', 'conv-1', {
+        items: [], createdById: 'u',
+      });
+      expect(acceptance.policyText).toBeNull();
+    });
+
+    it('editar a política da org NÃO altera um aceite já criado', async () => {
+      const { prisma, org } = makeDb('Política de agosto: reembolso integral.');
+      const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+
+      const { acceptance: antigo } = await svc.createForConversation('org-1', 'conv-1', {
+        items: [], createdById: 'u',
+      });
+
+      // O dono reescreve a política três meses depois.
+      org.cancellationPolicy = 'Política de novembro: sem reembolso.';
+
+      const { acceptance: novo } = await svc.createForConversation('org-1', 'conv-1', {
+        items: [], createdById: 'u',
+      });
+
+      // O aceite novo pega a política nova; o antigo continua com a dele —
+      // inclusive quando relido pelo link público, que é o que o cliente vê.
+      expect(novo.policyText).toBe('Política de novembro: sem reembolso.');
+      const view = await svc.getByToken(antigo.token);
+      expect(view.policyText).toBe('Política de agosto: reembolso integral.');
+    });
+  });
 });
 
 describe('AcceptancesService.sign', () => {
@@ -228,7 +327,7 @@ describe('AcceptancesService.sign', () => {
   function baseAcc(over: any = {}) {
     return { id: 'acc-1', organizationId: 'org-1', conversationId: 'conv-1', contactId: 'ct-1',
       cardId: 'card-1', token: 'tok', items: [{ description: 'Ingresso' }], termText: 'Declaro...',
-      status: 'PENDING', expiresAt: new Date(Date.now() + 1e9),
+      status: 'PENDING', expiresAt: new Date(Date.now() + 1e9), policyText: null,
       organization: { name: 'OFP' }, ...over };
   }
 
@@ -256,6 +355,41 @@ describe('AcceptancesService.sign', () => {
     expect(res).toEqual(expect.objectContaining({ status: 'SIGNED', organizationName: 'OFP', pdfUrl: expect.stringContaining('/api/v1/uploads/') }));
     expect(res).not.toHaveProperty('token');
     expect(res).not.toHaveProperty('signerIp');
+  });
+
+  it('devolve a política assinada na resposta e a manda para o PDF', async () => {
+    const acc = baseAcc({ policyText: 'Cancelamento em até 7 dias.' });
+    const prisma = {
+      orderAcceptance: {
+        findUnique: jest.fn().mockResolvedValue(acc),
+        update: jest.fn().mockImplementation(({ data }: any) => ({ ...acc, ...data, status: 'SIGNED' })),
+      },
+    } as any;
+    const pdf = { render: jest.fn().mockResolvedValue(Buffer.from('pdf')) } as any;
+    const storage = { put: jest.fn().mockResolvedValue(undefined) } as any;
+    const effects = { onSigned: jest.fn().mockResolvedValue(undefined) } as any;
+    const svc = new AcceptancesService(prisma, pdf, effects, storage, {} as any);
+
+    const res = await svc.sign('tok', { name: 'João', ip: '', userAgent: '' });
+    expect(res.policyText).toBe('Cancelamento em até 7 dias.');
+    expect(pdf.render).toHaveBeenCalledWith(
+      expect.objectContaining({ policyText: 'Cancelamento em até 7 dias.' }),
+    );
+  });
+
+  it('aceite sem política devolve policyText null', async () => {
+    const prisma = {
+      orderAcceptance: {
+        findUnique: jest.fn().mockResolvedValue(baseAcc()),
+        update: jest.fn().mockImplementation(({ data }: any) => ({ ...baseAcc(), ...data, status: 'SIGNED' })),
+      },
+    } as any;
+    const pdf = { render: jest.fn().mockResolvedValue(Buffer.from('pdf')) } as any;
+    const svc = new AcceptancesService(
+      prisma, pdf, { onSigned: jest.fn() } as any, { put: jest.fn() } as any, {} as any,
+    );
+    const res = await svc.sign('tok', { name: 'João', ip: '', userAgent: '' });
+    expect(res.policyText).toBeNull();
   });
 
   it('token inexistente → NotFound', async () => {
@@ -319,6 +453,24 @@ describe('AcceptancesService.getByToken', () => {
     const view = await svc.getByToken('tok');
     expect(view.status).toBe('EXPIRED');
     expect(view.organizationName).toBe('OFP');
+  });
+
+  it('expõe a política do snapshot para a página pública', async () => {
+    const acc = { id: 'a', status: 'PENDING', expiresAt: new Date(Date.now() + 1e9),
+      items: [], termText: 'T', policyText: 'Cancelamento em até 7 dias.',
+      signedAt: null, signerName: null, pdfKey: null, organization: { name: 'OFP' } };
+    const prisma = { orderAcceptance: { findUnique: jest.fn().mockResolvedValue(acc) } } as any;
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+    expect((await svc.getByToken('tok')).policyText).toBe('Cancelamento em até 7 dias.');
+  });
+
+  it('aceite antigo (sem coluna preenchida) devolve policyText null', async () => {
+    const acc = { id: 'a', status: 'PENDING', expiresAt: new Date(Date.now() + 1e9),
+      items: [], termText: 'T', policyText: null,
+      signedAt: null, signerName: null, pdfKey: null, organization: { name: 'OFP' } };
+    const prisma = { orderAcceptance: { findUnique: jest.fn().mockResolvedValue(acc) } } as any;
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+    expect((await svc.getByToken('tok')).policyText).toBeNull();
   });
 });
 

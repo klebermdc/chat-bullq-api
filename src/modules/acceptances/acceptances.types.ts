@@ -59,6 +59,12 @@ export interface PublicAcceptanceView {
   organizationName: string;
   items: AcceptanceItem[];
   termText: string;
+  /**
+   * Snapshot da política de cancelamento aceita junto com o termo. `null`
+   * quando a org não tinha política configurada na criação — inclusive nos
+   * aceites anteriores à feature, que não devem exibir o bloco.
+   */
+  policyText: string | null;
   signedAt: string | null;
   signerName: string | null;
   pdfUrl: string | null;
