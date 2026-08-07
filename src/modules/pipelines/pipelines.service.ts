@@ -29,7 +29,12 @@ import {
 /** E6 — nome (contains) da etapa final de entrega. Não colide com "Proposta enviada". */
 const ORDER_SENT_STAGE_NAME = 'Pedido enviado';
 
-/** Voucher de viagem é sempre PDF — o upload já recusa qualquer outra coisa. */
+/**
+ * Voucher de viagem é PDF: é o que o modal anexa e o único formato que o
+ * extrator lê. O upload genérico de mídia aceita outros tipos, então isto é
+ * uma premissa do fluxo, não uma garantia — se um dia o modal aceitar outro
+ * formato, o mime tem que vir junto com o voucher em vez de fixo aqui.
+ */
 const VOUCHER_MIME_TYPE = 'application/pdf';
 
 /**
@@ -593,7 +598,11 @@ export class PipelinesService {
           voucherResults.push({ filename: voucher.filename, sent: true });
         } catch (err) {
           const message = (err as Error)?.message ?? 'falha no envio';
-          this.logger.warn(`voucher ${voucher.filename} não enviado: ${message}`);
+          // `JSON.stringify` no nome: ele vem do cliente e uma quebra de linha
+          // deixaria forjar linha de log (mesmo motivo do `withHashes`).
+          this.logger.warn(
+            `voucher ${JSON.stringify(voucher.filename)} não enviado: ${message}`,
+          );
           voucherResults.push({
             filename: voucher.filename,
             sent: false,

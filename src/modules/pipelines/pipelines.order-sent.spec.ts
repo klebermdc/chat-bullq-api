@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 import { PipelinesService } from './pipelines.service';
 
 /**
@@ -233,6 +233,32 @@ describe('PipelinesService.markOrderSentForConversation (E6)', () => {
       { filename: 'v1.pdf', sent: false, error: 'arquivo sumiu' },
       { filename: 'v2.pdf', sent: true },
     ]);
+  });
+
+  it('não deixa o nome do arquivo forjar linha de log', async () => {
+    const { service, acceptances, messages } = make();
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    acceptances.createForConversation.mockResolvedValue({
+      acceptance: { id: 'acc1' },
+      link: 'https://sendtur.com.br/aceite/tok',
+    });
+    messages.send.mockImplementation((dto: any) => {
+      if (dto.type === 'DOCUMENT') throw new Error('falhou');
+      return { id: 'm1' };
+    });
+
+    await service.markOrderSentForConversation('org-1', 'conv-1', undefined, {
+      withAcceptance: true,
+      items: [{ description: 'X' }],
+      createdById: 'u1',
+      vouchers: [
+        { url: 'https://api.x/a.pdf', filename: 'v.pdf\n[Nest] LOG forjado', size: 10 },
+      ],
+    });
+
+    const logged = warn.mock.calls.map((c) => String(c[0])).join('');
+    expect(logged).not.toMatch(/[\n\r]/);
+    warn.mockRestore();
   });
 
   it('continua movendo o card quando withAcceptance é false', async () => {
