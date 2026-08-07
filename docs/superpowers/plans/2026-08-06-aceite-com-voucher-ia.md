@@ -12,6 +12,32 @@
 
 ---
 
+## ⚠️ Defeitos DESTE plano corrigidos durante a implementação
+
+O código abaixo foi implementado e revisado; onde ele diverge deste documento, **o
+código está certo**. Registrado aqui porque cada item era um bug real que este
+plano teria colocado em produção.
+
+| Onde | O que o plano dizia | Por que estava errado |
+|---|---|---|
+| Task 4 — `storage-key.util.ts` | aceitava chave crua, marcador em qualquer posição | **Leitura cross-tenant:** qualquer usuário autenticado lia o aceite assinado de outra org via `acceptances/<data>/<id>.pdf`. Corrigido: chave só do `pathname`, restrita ao prefixo `media/` (ver o aviso detalhado na própria Task 4) |
+| Task 5 — `dto` do voucher | `url` com `@IsString()` puro | Aceitava `javascript:...`, que virava `href` vivo na **página pública onde o cliente assina**. Corrigido com `@IsUrl({ protocols:['http','https'], require_tld:false })` — `require_tld:false` porque o padrão rejeita `http://localhost` do ambiente de dev |
+| Task 6 — envio do documento | `content.filename` | Todos os adaptadores de saída leem **`content.fileName`** (camelCase). Entregaria todo voucher ao cliente como documento **sem nome** |
+| Task 6 — `voucherResults` | campo `sent: boolean` | `MessagesService.send` só **ENFILEIRA**; o gate de janela 24h/72h roda depois no worker. Numa janela fechada o atendente leria "enviado" e o cliente não receberia nada. Corrigido para `queued` + `messageId`, e o texto da UI diz "a caminho", nunca "entregue" |
+| Task 6 — ordem das operações | aceite criado **depois** dos envios | Falha em `createForConversation` (ex.: `APP_PUBLIC_URL` ausente) deixava o cliente com os vouchers e nenhum registro. Invertido: cria primeiro, envia depois — a ordem que o cliente vê não muda |
+| Task 6 — envio do link | fora de try/catch | Com todos os vouchers falhando, a requisição dava 500 e o relatório se perdia justamente quando mais importava. Agora tem `linkResult` próprio |
+| Task 9 — regra de mescla | dedup por `Map` com data sempre na chave | Dois vouchers do mesmo produto/data com **localizadores diferentes**: um sumia de um documento que o cliente assina. E como a Ficha quase nunca tem data e o voucher sempre tem, o caso **comum** virava linha duplicada. Corrigido: consumo por índice (nenhum voucher é descartado) e data só separa quando ambos os lados têm |
+| Task 10 — estado do conflito | `setRefConflict` dentro do updater de `setOrderRef` | Updater impuro (React invoca duas vezes em StrictMode), e o `had \|\| conflict` era grudento: remover o arquivo errado nunca limpava o aviso. Corrigido derivando no render |
+| Task 10 — payload do envio | filtro `status === 'done' && url` | **CRÍTICO:** upload e leitura no mesmo `try`, então falha de transporte na leitura marcava `error` um PDF já no storage — e o envio o descartava calado, com toast de sucesso. Corrigido: try separados, e **ter URL é o que decide**, extraído para `voucher-payload.ts` com teste |
+| Task 1 — teste do pdfjs | sem consideração de timeout | A primeira carga do `pdfjs-dist` custa ~520ms ocioso e 4-6s sob contenção, contra o timeout padrão de 5s do Jest — falhava em ~2 de 11 rodadas. Corrigido aquecendo em `beforeAll` |
+
+**Lição transversal:** os defeitos mais caros não estavam na lógica, e sim em
+premissas minhas sobre o comportamento do sistema — o nome de um campo, o momento
+em que uma falha aparece, o que "sucesso" significa numa fila. Nenhum teste que eu
+escrevi teria pego, porque eu escrevi os testes com as mesmas premissas erradas.
+
+---
+
 ## Contexto que o implementador precisa saber
 
 Coisas deste repo que não são óbvias e já derrubaram produção antes:
