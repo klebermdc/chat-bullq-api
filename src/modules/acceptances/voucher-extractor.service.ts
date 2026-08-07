@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LlmService } from '../ai-agents/llm/llm.service';
+import { LlmContent } from '../ai-agents/llm/llm.types';
 import { SAKANA_SIMPLE_MODEL } from '../ai-agents/llm/llm.constants';
 import { VOUCHER_EXTRACT_SYSTEM_PROMPT } from './voucher.prompts';
 import { AcceptanceItem, ExtractedVoucher } from './acceptances.types';
@@ -24,6 +25,49 @@ export class VoucherExtractorService {
   ): Promise<ExtractedVoucher> {
     if (!voucherText?.trim()) return EMPTY;
 
+    return this.run(`<<<VOUCHER>>>\n${voucherText}\n<<<END>>>`, organizationId);
+  }
+
+  /**
+   * Caminho de VISÃO: as páginas do voucher já rasterizadas em PNG, para o PDF
+   * escaneado que não tem camada de texto.
+   *
+   * Usa o MESMO prompt e a MESMA temperatura 0 do caminho de texto de
+   * propósito: as regras que importam (proibido deduzir, omitir campo ausente,
+   * nunca incluir preço) valem igual. Um voucher lido errado por visão manda o
+   * cliente ao parque no dia errado exatamente como um lido errado por texto.
+   *
+   * O modelo efetivo vem da chave de provedor da organização (que pode fixá-lo);
+   * aqui não há escolha de modelo por caminho.
+   */
+  async extractFromImages(
+    images: Buffer[],
+    organizationId: string,
+  ): Promise<ExtractedVoucher> {
+    if (!images?.length) return EMPTY;
+
+    return this.run(
+      [
+        {
+          type: 'text' as const,
+          text: 'As imagens a seguir são as páginas de um voucher escaneado. Leia o que está escrito nelas.',
+        },
+        ...images.map((png) => ({
+          type: 'image' as const,
+          // Base64 e não URL: estes PNGs são gerados em memória a partir do
+          // PDF, não existem em lugar nenhum que o provedor possa baixar.
+          base64: { mediaType: 'image/png', data: png.toString('base64') },
+        })),
+      ],
+      organizationId,
+    );
+  }
+
+  /** Chamada única ao LLM — o que muda entre texto e visão é só o conteúdo. */
+  private async run(
+    userContent: LlmContent,
+    organizationId: string,
+  ): Promise<ExtractedVoucher> {
     try {
       const resp = await this.llm.complete({
         organizationId,
@@ -37,10 +81,7 @@ export class VoucherExtractorService {
               { type: 'text', text: VOUCHER_EXTRACT_SYSTEM_PROMPT, cache: true },
             ],
           },
-          {
-            role: 'user',
-            content: `<<<VOUCHER>>>\n${voucherText}\n<<<END>>>`,
-          },
+          { role: 'user', content: userContent },
         ],
       });
 
