@@ -2353,6 +2353,10 @@ model OrderAcceptance {
   items    Json             @default("[]")
   termText String           @map("term_text")
   status   AcceptanceStatus @default(PENDING)
+  /// Vouchers entregues: [{ url, filename, size, sha256 }].
+  vouchers Json?            @default("[]")
+  /// Nº do pedido lido do voucher, exibido no cabeçalho da página pública.
+  orderRef String?          @map("order_ref")
 
   createdById String    @map("created_by_id")
   createdAt   DateTime  @default(now()) @map("created_at")

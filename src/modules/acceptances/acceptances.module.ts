@@ -2,7 +2,9 @@ import { Module } from '@nestjs/common';
 import { chromium } from 'playwright';
 
 import { PrismaModule } from '../../database/prisma.module';
+import { LlmModule } from '../ai-agents/llm/llm.module';
 import { AcceptancesService } from './acceptances.service';
+import { VoucherExtractorService } from './voucher-extractor.service';
 import { AcceptancePdfService } from './acceptance-pdf.service';
 import { AcceptanceEffectsService } from './acceptance-effects.service';
 import { AcceptancesController } from './acceptances.controller';
@@ -20,11 +22,12 @@ import { PublicAcceptancesController } from './public-acceptances.controller';
  * sabe resolver — por isso é provido via `useFactory` com o `chromium` real.
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, LlmModule],
   controllers: [AcceptancesController, PublicAcceptancesController],
   providers: [
     AcceptancesService,
     AcceptanceEffectsService,
+    VoucherExtractorService,
     { provide: AcceptancePdfService, useFactory: () => new AcceptancePdfService(chromium) },
   ],
   exports: [AcceptancesService],

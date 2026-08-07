@@ -39,4 +39,57 @@ describe('AcceptancePdfService', () => {
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;');
   });
+
+  it('lista os vouchers entregues com nome e hash no HTML do comprovante', () => {
+    const svc = new AcceptancePdfService({} as any);
+
+    const html = (svc as any).html({
+      organizationName: 'OFP',
+      termText: 'Confirmo o recebimento.',
+      items: [{ description: 'Magic Kingdom' }],
+      signerName: 'Gabriela',
+      signedAt: new Date('2026-08-06T12:00:00Z'),
+      vouchers: [{ url: 'https://x/a.pdf', filename: 'voucher.pdf', size: 10, sha256: 'abc123' }],
+      orderRef: '61293',
+    });
+
+    expect(html).toContain('voucher.pdf');
+    expect(html).toContain('abc123');
+    expect(html).toContain('61293');
+  });
+
+  it('não quebra quando não há voucher', () => {
+    const svc = new AcceptancePdfService({} as any);
+
+    const html = (svc as any).html({
+      organizationName: 'OFP',
+      termText: 'Confirmo.',
+      items: [{ description: 'X' }],
+      signerName: 'Ana',
+      signedAt: new Date('2026-08-06T12:00:00Z'),
+    });
+
+    expect(html).toContain('Ana');
+    expect(html).not.toContain('Vouchers entregues');
+  });
+
+  it('escapa o nome do voucher e ainda lista o arquivo quando o hash está vazio', () => {
+    const svc = new AcceptancePdfService({} as any);
+
+    const html = (svc as any).html({
+      organizationName: 'OFP',
+      termText: 'Confirmo.',
+      items: [{ description: 'X' }],
+      signerName: 'Ana',
+      signedAt: new Date('2026-08-06T12:00:00Z'),
+      vouchers: [{ url: 'https://x/a.pdf', filename: '<img src=x onerror=alert(1)>.pdf', size: 10, sha256: '' }],
+      orderRef: '<b>61293</b>',
+    });
+
+    expect(html).toContain('Vouchers entregues');
+    expect(html).not.toContain('<img src=x');
+    expect(html).toContain('&lt;img src=x');
+    expect(html).not.toContain('<b>61293</b>');
+    expect(html).not.toContain('SHA-256');
+  });
 });

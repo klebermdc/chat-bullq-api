@@ -1,10 +1,14 @@
 import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { AcceptancePdfService } from './acceptance-pdf.service';
 import { AcceptanceEffectsService } from './acceptance-effects.service';
 import { StorageService } from '../storage/storage.service';
+import { VoucherExtractorService } from './voucher-extractor.service';
 import { generateAcceptanceToken } from './acceptance-token.util';
-import { AcceptanceItem, PublicAcceptanceView } from './acceptances.types';
+import { extractPdfText } from './pdf-text.util';
+import { storageKeyFromUploadUrl } from './storage-key.util';
+import { AcceptanceItem, PublicAcceptanceView, VoucherInput, VoucherRef } from './acceptances.types';
 
 const DEFAULT_TERM = (org: string) =>
   `Confirmo que recebi de ${org} os produtos/serviços listados abaixo e que conferi cada item — datas, quantidades e informações — estando tudo correto e de acordo com o combinado.`;
@@ -19,6 +23,7 @@ export class AcceptancesService {
     private readonly pdf: AcceptancePdfService,
     private readonly effects: AcceptanceEffectsService,
     private readonly storage: StorageService,
+    private readonly voucherExtractor: VoucherExtractorService,
   ) {}
 
   private baseUrl(): string {
@@ -27,10 +32,43 @@ export class AcceptancesService {
     return url.replace(/\/+$/, '');
   }
 
+  /**
+   * Calcula o SHA-256 de cada voucher lendo o arquivo do storage. O hash é
+   * calculado AQUI, não no navegador: hash mandado pelo client não prova nada.
+   * Arquivo ilegível vira hash vazio — o aceite não pode ser bloqueado por
+   * isso, mas o comprovante deixa claro quando não há hash.
+   */
+  private async withHashes(vouchers: VoucherInput[]): Promise<VoucherRef[]> {
+    return Promise.all(
+      vouchers.map(async (v) => {
+        const key = storageKeyFromUploadUrl(v.url);
+        if (!key) return { ...v, sha256: '' };
+        try {
+          const buf = await this.storage.getBuffer(key);
+          return { ...v, sha256: crypto.createHash('sha256').update(buf).digest('hex') };
+        } catch (err) {
+          // `JSON.stringify` no nome: ele vem do cliente e uma quebra de linha
+          // no nome do arquivo deixaria forjar linha de log (mesmo motivo do
+          // `extractVoucher`).
+          this.logger.warn(
+            `sem hash para ${JSON.stringify(v.filename)}: ${(err as Error)?.message ?? err}`,
+          );
+          return { ...v, sha256: '' };
+        }
+      }),
+    );
+  }
+
   async createForConversation(
     organizationId: string,
     conversationId: string,
-    input: { items: AcceptanceItem[]; termText?: string; createdById: string },
+    input: {
+      items: AcceptanceItem[];
+      termText?: string;
+      createdById: string;
+      vouchers?: VoucherInput[];
+      orderRef?: string;
+    },
   ): Promise<{ acceptance: any; link: string }> {
     const base = this.baseUrl();
     const conv = await this.prisma.conversation.findFirst({
@@ -45,6 +83,8 @@ export class AcceptancesService {
       select: { id: true },
     });
 
+    const vouchers = input.vouchers?.length ? await this.withHashes(input.vouchers) : [];
+
     const token = generateAcceptanceToken();
     const expiresAt = new Date(Date.now() + ACCEPTANCE_TTL_DAYS * 24 * 60 * 60 * 1000);
     const acceptance = await this.prisma.orderAcceptance.create({
@@ -55,6 +95,8 @@ export class AcceptancesService {
         cardId: card?.id ?? null,
         token,
         items: (input.items ?? []) as any,
+        vouchers: vouchers as any,
+        orderRef: input.orderRef?.trim() || null,
         termText: input.termText?.trim() || DEFAULT_TERM(conv.organization.name),
         status: 'PENDING',
         createdById: input.createdById,
@@ -62,6 +104,57 @@ export class AcceptancesService {
       },
     });
     return { acceptance, link: `${base}/aceite/${token}` };
+  }
+
+  /**
+   * Indireção fina para o `extractPdfText`, só para o teste do fluxo poder
+   * substituir a leitura sem carregar o pdfjs.
+   */
+  protected readPdfText(buffer: Buffer): Promise<string> {
+    return extractPdfText(buffer);
+  }
+
+  /**
+   * Lê um voucher já subido via `messages/uploads/media` e devolve os itens
+   * para o modal preencher. Falha suave: PDF ilegível devolve lista vazia com
+   * aviso, nunca erro — o atendente segue digitando à mão e o envio continua.
+   */
+  async extractVoucher(
+    organizationId: string,
+    input: { mediaUrl: string },
+  ): Promise<{ items: AcceptanceItem[]; orderRef: string | null; warning?: string }> {
+    const key = storageKeyFromUploadUrl(input.mediaUrl);
+    if (!key) {
+      throw new BadRequestException('Arquivo inválido para leitura.');
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = await this.storage.getBuffer(key);
+    } catch (err) {
+      // `JSON.stringify` na chave: ela vem do cliente e um `%0A` decodificado
+      // vira quebra de linha de verdade, deixando forjar linha de log.
+      this.logger.warn(
+        `voucher não encontrado no storage (${JSON.stringify(key)}): ${(err as Error)?.message}`,
+      );
+      throw new NotFoundException('Arquivo não encontrado.');
+    }
+
+    const text = await this.readPdfText(buffer);
+    if (!text) {
+      return {
+        items: [],
+        orderRef: null,
+        warning:
+          'Não consegui ler este PDF (provavelmente é uma imagem escaneada). Confira os itens à mão — o voucher será enviado normalmente.',
+      };
+    }
+
+    const { items, orderRef } = await this.voucherExtractor.extract(
+      text,
+      organizationId,
+    );
+    return { items, orderRef };
   }
 
   private isExpired(acc: { expiresAt: Date | null }): boolean {
@@ -90,6 +183,8 @@ export class AcceptancesService {
       signedAt: acc.signedAt ? acc.signedAt.toISOString() : null,
       signerName: acc.signerName ?? null,
       pdfUrl: this.pdfUrl(acc.pdfKey),
+      vouchers: ((acc.vouchers as any) ?? []) as VoucherRef[],
+      orderRef: acc.orderRef ?? null,
     };
   }
 
@@ -115,6 +210,8 @@ export class AcceptancesService {
       signerName: input.name,
       signedAt,
       signerIp: input.ip,
+      vouchers: ((acc.vouchers as any) ?? []) as VoucherRef[],
+      orderRef: acc.orderRef ?? null,
     });
     const pdfKey = `acceptances/${signedAt.toISOString().slice(0, 10)}/${acc.id}.pdf`;
     await this.storage.put(pdfKey, pdfBuf, 'application/pdf');
@@ -143,6 +240,8 @@ export class AcceptancesService {
       signedAt: signed.signedAt ? signed.signedAt.toISOString() : null,
       signerName: signed.signerName ?? null,
       pdfUrl: this.pdfUrl(signed.pdfKey),
+      vouchers: ((signed.vouchers as any) ?? []) as VoucherRef[],
+      orderRef: signed.orderRef ?? null,
     };
   }
 

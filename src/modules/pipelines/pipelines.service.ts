@@ -13,7 +13,12 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { CadenceRunner } from '../cadences/cadence-runner.service';
 import { MetaCapiQueue } from '../meta-capi/meta-capi.queue';
 import { AcceptancesService } from '../acceptances/acceptances.service';
-import { AcceptanceItem } from '../acceptances/acceptances.types';
+import {
+  AcceptanceItem,
+  DeliverySendResult,
+  VoucherInput,
+  VoucherSendResult,
+} from '../acceptances/acceptances.types';
 import { MessagesService } from '../messaging/messages/messages.service';
 import { pipelineCardScopeWhere } from './pipeline-scope';
 import { resolveAssignmentScope } from '../messaging/conversations/conversation-scope';
@@ -28,6 +33,30 @@ import {
 
 /** E6 — nome (contains) da etapa final de entrega. Não colide com "Proposta enviada". */
 const ORDER_SENT_STAGE_NAME = 'Pedido enviado';
+
+/**
+ * Voucher de viagem é PDF: é o que o modal anexa e o único formato que o
+ * extrator lê. O upload genérico de mídia aceita outros tipos, então isto é
+ * uma premissa do fluxo, não uma garantia — se um dia o modal aceitar outro
+ * formato, o mime tem que vir junto com o voucher em vez de fixo aqui.
+ */
+const VOUCHER_MIME_TYPE = 'application/pdf';
+
+/**
+ * Traduz a exceção de um envio num motivo curto pro atendente. O texto cru da
+ * exceção fica só no log: é um canal de dentro pra fora sem curadoria, e
+ * "Contact channel not found" não diz nada a quem está na tela.
+ */
+function sendFailureReason(err: unknown): string {
+  if (err instanceof NotFoundException) {
+    return 'Conversa ou canal do cliente não encontrado.';
+  }
+  if (err instanceof ForbiddenException) return 'Sem acesso a esta conversa.';
+  if (err instanceof BadRequestException) {
+    return 'Envio recusado para esta conversa.';
+  }
+  return 'Não foi possível enviar agora.';
+}
 
 /**
  * Dada a lista de propostas de um board, devolve um mapa
@@ -497,6 +526,46 @@ export class PipelinesService {
   }
 
   /**
+   * Dispara UMA mensagem da entrega e DEVOLVE o desfecho em vez de estourar —
+   * nem um voucher nem o link podem derrubar o resto da entrega.
+   *
+   * Atenção ao contrato: `queued: true` diz que a Message foi criada e entrou
+   * na fila, NÃO que o cliente recebeu. A trava de janela 24h/72h roda no
+   * worker (`pipeline/outbound-message.processor`) e marca FAILED bem depois
+   * deste `send` ter resolvido. Quem sabe o desfecho é a Message — por isso
+   * devolvemos o `messageId`.
+   */
+  private async queueDeliveryMessage(
+    dto: { conversationId: string; type: string; content: Record<string, unknown> },
+    senderId: string,
+    organizationId: string,
+    role: OrgRole | undefined,
+    logLabel: string,
+  ): Promise<DeliverySendResult> {
+    try {
+      const message = await this.messages.send(
+        dto as any,
+        senderId,
+        organizationId,
+        'ALL',
+        role,
+        // `system` a partir de handler HTTP contraria o docblock do `send`. É o
+        // que a mensagem do link já fazia antes desta fatia; mudar aqui mudaria
+        // em silêncio quem pode marcar "Pedido enviado". Corrigir é outra fatia.
+        { system: true, automated: true },
+      );
+      return { queued: true, messageId: (message as { id?: string } | undefined)?.id };
+    } catch (err) {
+      // Texto cru só aqui. O `logLabel` já vem com o nome do arquivo escapado:
+      // ele vem do cliente e uma quebra de linha forjaria linha de log.
+      this.logger.warn(
+        `${logLabel} não enviado: ${(err as Error)?.message ?? err}`,
+      );
+      return { queued: false, error: sendFailureReason(err) };
+    }
+  }
+
+  /**
    * E6 — Entrega: marca o pedido como enviado, movendo o card da conversa pra
    * etapa final do funil (default "Pedido enviado"). Diferente de
    * `ensureConversationAtStageByName`, a entrega é PÓS-fechamento (o card já
@@ -516,6 +585,8 @@ export class PipelinesService {
       items?: AcceptanceItem[];
       termText?: string;
       createdById?: string;
+      vouchers?: VoucherInput[];
+      orderRef?: string;
     },
     role?: OrgRole,
     currentUserId?: string,
@@ -550,10 +621,19 @@ export class PipelinesService {
     } as MoveCardDto);
 
     // E-aceite (opcional): se o atendente pediu o aceite (withAcceptance !==
-    // false) e mandou os itens + quem cria, gera o aceite e envia o link no
-    // WhatsApp. Sem isso, é só o legado (acceptanceLink undefined).
+    // false) e mandou os itens + quem cria, gera o aceite e então envia os
+    // vouchers e o link no WhatsApp — nessa ordem. Sem isso, é só o legado
+    // (acceptanceLink undefined).
     let acceptanceLink: string | undefined;
+    let voucherResults: VoucherSendResult[] | undefined;
+    let linkResult: DeliverySendResult | undefined;
+
     if (opts?.withAcceptance !== false && opts?.items && opts.createdById) {
+      // O aceite é criado ANTES de qualquer envio, de propósito: se ele falhar
+      // (ex.: APP_PUBLIC_URL ausente, que estoura na primeira linha), o cliente
+      // não fica com vouchers na mão e nenhum registro por trás — nada sai. O
+      // inverso é irrecuperável; já isto deixa, no pior caso, um aceite PENDING
+      // sem link entregue, que o botão "Reenviar link" resolve.
       const { link } = await this.acceptances.createForConversation(
         organizationId,
         conversationId,
@@ -561,21 +641,55 @@ export class PipelinesService {
           items: opts.items,
           termText: opts.termText,
           createdById: opts.createdById,
+          vouchers: opts.vouchers,
+          orderRef: opts.orderRef,
         },
       );
       acceptanceLink = link;
+
+      // Os PDFs vão ANTES do link: o cliente recebe o voucher e só então o
+      // pedido de conferência. Falha de um voucher não derruba os outros nem
+      // impede o envio do link — o atendente vê o que faltou e reenvia.
+      voucherResults = [];
+      for (const voucher of opts.vouchers ?? []) {
+        const result = await this.queueDeliveryMessage(
+          {
+            conversationId,
+            type: 'DOCUMENT',
+            content: {
+              mediaUrl: voucher.url,
+              mimeType: VOUCHER_MIME_TYPE,
+              fileSize: voucher.size,
+              // camelCase de propósito: é a chave que os adapters leem pra
+              // montar o `document.filename` do provedor.
+              fileName: voucher.filename,
+            },
+          },
+          opts.createdById,
+          organizationId,
+          role,
+          // `JSON.stringify` no nome: ele vem do cliente e uma quebra de linha
+          // deixaria forjar linha de log (mesmo motivo do `withHashes`).
+          `voucher ${JSON.stringify(voucher.filename)}`,
+        );
+        voucherResults.push({ filename: voucher.filename, ...result });
+      }
+
+      // O link também é guardado: as falhas de envio realistas são de nível de
+      // conversa (contato sem canal, conversa sumida), então elas derrubam
+      // TODOS os envios — inclusive este. Deixar estourar aqui perdia o
+      // `voucherResults` inteiro num 500, justo quando ele mais importa.
       const text = `Prontinho! ✅ Já enviamos tudo pra você.\n\nPra finalizar, é só dar uma conferida nos itens que você recebeu e confirmar o recebimento neste link (leva menos de 1 minuto):\n\n${link}\n\nEle também serve como seu comprovante. Qualquer coisa, é só chamar por aqui! 😊`;
-      await this.messages.send(
-        { conversationId, type: 'TEXT', content: { text } } as any,
+      linkResult = await this.queueDeliveryMessage(
+        { conversationId, type: 'TEXT', content: { text } },
         opts.createdById,
         organizationId,
-        'ALL',
         role,
-        { system: true, automated: true },
+        'link do aceite',
       );
     }
 
-    return { ...(moved as any), acceptanceLink };
+    return { ...(moved as any), acceptanceLink, voucherResults, linkResult };
   }
 
   /**

@@ -190,6 +190,8 @@ export class PipelinesController {
         items: body?.items,
         termText: body?.termText,
         createdById: userId,
+        vouchers: body?.vouchers,
+        orderRef: body?.orderRef,
       },
       role,
       userId,
