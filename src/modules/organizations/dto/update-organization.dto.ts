@@ -144,6 +144,19 @@ export class UpdateOrganizationDto {
   @IsString()
   @MaxLength(1000)
   offHoursMessageTemplate?: string | null;
+
+  // ─── Aceite de Entrega ─────────────────────────────────────────
+
+  @ApiPropertyOptional({
+    description:
+      'Política de cancelamento exibida no Aceite de Entrega, junto com o termo de conferência. Cada aceite copia o texto vigente no momento da criação — editar aqui não altera aceites já gerados. Vazio/null = o bloco não aparece.',
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(5000)
+  cancellationPolicy?: string | null;
 }
 
 export interface WatchdogConfigDto {

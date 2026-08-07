@@ -92,4 +92,66 @@ describe('AcceptancePdfService', () => {
     expect(html).not.toContain('<b>61293</b>');
     expect(html).not.toContain('SHA-256');
   });
+
+  describe('política de cancelamento', () => {
+    function html(over: Record<string, unknown> = {}) {
+      const svc = new AcceptancePdfService({} as any);
+      return (svc as any).html({
+        organizationName: 'OFP',
+        termText: 'Declaro que recebi.',
+        items: [{ description: 'Magic Kingdom' }],
+        signerName: 'Ana',
+        signedAt: new Date('2026-08-06T12:00:00Z'),
+        ...over,
+      }) as string;
+    }
+
+    it('renderiza a seção com o texto, depois do termo e dos itens', () => {
+      const out = html({ policyText: 'Cancelamento em até 7 dias com reembolso integral.' });
+
+      expect(out).toContain('Política de cancelamento');
+      expect(out).toContain('Cancelamento em até 7 dias com reembolso integral.');
+      expect(out.indexOf('Política de cancelamento')).toBeGreaterThan(out.indexOf('Itens conferidos'));
+      expect(out.indexOf('Política de cancelamento')).toBeGreaterThan(out.indexOf('Declaro que recebi.'));
+    });
+
+    it('preserva as quebras de linha da política (senão vira um parágrafo ilegível)', () => {
+      const out = html({ policyText: 'Regra 1: até 7 dias.\nRegra 2: taxa de 10%.' });
+
+      expect(out).toContain('white-space:pre-wrap');
+      expect(out).toContain('Regra 1: até 7 dias.\nRegra 2: taxa de 10%.');
+    });
+
+    it('sem política não renderiza heading vazio', () => {
+      expect(html()).not.toContain('Política de cancelamento');
+      expect(html({ policyText: null })).not.toContain('Política de cancelamento');
+      expect(html({ policyText: '   ' })).not.toContain('Política de cancelamento');
+    });
+
+    // O comprovante só vale em disputa se provar o ACEITE. "O texto estava na
+    // página" é atacável; "declarou ter lido e aceito" não é.
+    it('declara o aceite da política dentro do bloco da assinatura', () => {
+      const out = html({ policyText: 'Cancelamento em até 7 dias.', signerIp: '1.2.3.4' });
+
+      expect(out).toContain('Declarou ter lido e aceito a política de cancelamento acima.');
+      // Amarrada ao ato de assinar: tem que estar DEPOIS do início do bloco
+      // .meta e antes do fim dele, não flutuando no corpo do documento.
+      expect(out.indexOf('Declarou ter lido e aceito')).toBeGreaterThan(out.indexOf('class="meta"'));
+      expect(out.indexOf('Declarou ter lido e aceito')).toBeLessThan(out.indexOf('MP 2.200-2/2001'));
+    });
+
+    it('sem política não existe declaração de aceite', () => {
+      expect(html()).not.toContain('Declarou ter lido e aceito');
+      expect(html({ policyText: null })).not.toContain('Declarou ter lido e aceito');
+      expect(html({ policyText: '   ' })).not.toContain('Declarou ter lido e aceito');
+    });
+
+    it('escapa HTML da política (o texto vem do dono da org e o PDF é um documento legal)', () => {
+      const out = html({ policyText: '<script>alert(1)</script> cancelamento <b>grátis</b>' });
+
+      expect(out).not.toContain('<script>alert(1)</script>');
+      expect(out).not.toContain('<b>grátis</b>');
+      expect(out).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    });
+  });
 });

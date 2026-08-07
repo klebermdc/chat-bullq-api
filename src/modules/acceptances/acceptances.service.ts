@@ -10,8 +10,11 @@ import { extractPdfText } from './pdf-text.util';
 import { storageKeyFromUploadUrl } from './storage-key.util';
 import { AcceptanceItem, PublicAcceptanceView, VoucherInput, VoucherRef } from './acceptances.types';
 
+// O nome da org é interpolado de propósito (o texto original dizia "da OFP"):
+// numa instalação multi-org, o cliente de outra empresa não pode assinar um
+// documento declarando que recebeu da OFP.
 const DEFAULT_TERM = (org: string) =>
-  `Confirmo que recebi de ${org} os produtos/serviços listados abaixo e que conferi cada item — datas, quantidades e informações — estando tudo correto e de acordo com o combinado.`;
+  `Declaro que recebi da ${org} todos os produtos e/ou serviços relacionados abaixo e que realizei a conferência das respectivas datas, quantidades, informações e demais detalhes. Confirmo que os itens estão corretos, completos e de acordo com o que foi previamente contratado e acordado.`;
 const ACCEPTANCE_TTL_DAYS = 30;
 
 @Injectable()
@@ -73,7 +76,7 @@ export class AcceptancesService {
     const base = this.baseUrl();
     const conv = await this.prisma.conversation.findFirst({
       where: { id: conversationId, organizationId },
-      include: { organization: { select: { name: true } } },
+      include: { organization: { select: { name: true, cancellationPolicy: true } } },
     });
     if (!conv) throw new BadRequestException('Conversa não encontrada nesta organização.');
 
@@ -98,6 +101,9 @@ export class AcceptancesService {
         vouchers: vouchers as any,
         orderRef: input.orderRef?.trim() || null,
         termText: input.termText?.trim() || DEFAULT_TERM(conv.organization.name),
+        // Snapshot: o aceite guarda a política vigente AGORA. Ler por relação
+        // faria uma edição futura reescrever um documento já assinado.
+        policyText: conv.organization.cancellationPolicy?.trim() || null,
         status: 'PENDING',
         createdById: input.createdById,
         expiresAt,
@@ -180,6 +186,7 @@ export class AcceptancesService {
       organizationName: acc.organization.name,
       items: (acc.items as any) ?? [],
       termText: acc.termText,
+      policyText: acc.policyText ?? null,
       signedAt: acc.signedAt ? acc.signedAt.toISOString() : null,
       signerName: acc.signerName ?? null,
       pdfUrl: this.pdfUrl(acc.pdfKey),
@@ -206,6 +213,7 @@ export class AcceptancesService {
     const pdfBuf = await this.pdf.render({
       organizationName: acc.organization.name,
       termText: acc.termText,
+      policyText: acc.policyText ?? null,
       items: (acc.items as any) ?? [],
       signerName: input.name,
       signedAt,
@@ -237,6 +245,7 @@ export class AcceptancesService {
       organizationName: acc.organization.name,
       items: (signed.items as any) ?? [],
       termText: signed.termText,
+      policyText: signed.policyText ?? null,
       signedAt: signed.signedAt ? signed.signedAt.toISOString() : null,
       signerName: signed.signerName ?? null,
       pdfUrl: this.pdfUrl(signed.pdfKey),
