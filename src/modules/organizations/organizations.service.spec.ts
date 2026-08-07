@@ -276,3 +276,57 @@ describe('OrganizationsService.resetMemberPassword', () => {
     });
   });
 });
+
+describe('OrganizationsService.updateOrganization', () => {
+  let service: OrganizationsService;
+  let repo: jest.Mocked<Pick<OrganizationsRepository, 'findById' | 'update'>>;
+
+  beforeEach(async () => {
+    repo = {
+      findById: jest.fn().mockResolvedValue({ id: 'org-1', name: 'OFP' }),
+      update: jest.fn().mockImplementation((id, data) => ({ id, ...data })),
+    } as any;
+
+    const mod = await Test.createTestingModule({
+      providers: [
+        OrganizationsService,
+        { provide: OrganizationsRepository, useValue: repo },
+      ],
+    }).compile();
+    service = mod.get(OrganizationsService);
+  });
+
+  // O service espalha `...rest` no update. Se alguém trocar isso por uma
+  // allowlist explícita, a política passa a ser descartada EM SILÊNCIO — o
+  // dono salva, a tela mostra sucesso e nada muda. Este teste quebra antes.
+  it('repassa a política de cancelamento para o repositório', async () => {
+    await service.updateOrganization('org-1', {
+      cancellationPolicy: 'Cancelamento em até 7 dias.',
+    });
+
+    expect(repo.update).toHaveBeenCalledWith(
+      'org-1',
+      expect.objectContaining({ cancellationPolicy: 'Cancelamento em até 7 dias.' }),
+    );
+  });
+
+  it('null limpa a política; campo ausente não é enviado', async () => {
+    await service.updateOrganization('org-1', { cancellationPolicy: null });
+    expect(repo.update).toHaveBeenCalledWith(
+      'org-1',
+      expect.objectContaining({ cancellationPolicy: null }),
+    );
+
+    repo.update.mockClear();
+    await service.updateOrganization('org-1', { name: 'Novo Nome' });
+    expect(repo.update.mock.calls[0][1]).not.toHaveProperty('cancellationPolicy');
+  });
+
+  it('NotFound quando a org não existe', async () => {
+    repo.findById.mockResolvedValue(null as any);
+    await expect(
+      service.updateOrganization('ghost', { cancellationPolicy: 'x' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+});
