@@ -50,6 +50,21 @@ describe('attachWindowExpiry', () => {
     expect(out.windowKind).toBeNull();
   });
 
+  it('repassa a expiração da Meta — lead de anúncio sem referral vira 72h', () => {
+    const metaExpiry = new Date(now.getTime() + 50 * 60 * 60 * 1000);
+    const out = attachWindowExpiry(
+      {
+        lastInboundAt: new Date(now.getTime() - 25 * 60 * 60 * 1000), // CSW fechada
+        metaWindowExpiresAt: metaExpiry,
+        channel: { type: 'WHATSAPP_OFFICIAL' },
+        contact: { ctwaClidAt: null }, // referral não veio na inbound
+      },
+      now,
+    );
+    expect(out.windowExpiresAt).toBe(metaExpiry.toISOString());
+    expect(out.windowKind).toBe('ctwa72');
+  });
+
   it('preserva os campos originais da conversa', () => {
     const conv = {
       id: 'c1',

@@ -41,6 +41,7 @@ export class WhatsappWindowGate {
           conversation: {
             select: {
               lastInboundAt: true,
+              metaWindowExpiresAt: true,
               contact: { select: { ctwaClidAt: true } },
             },
           },
@@ -52,6 +53,7 @@ export class WhatsappWindowGate {
         channelType: params.channelType,
         lastInboundAt: msg.conversation.lastInboundAt ?? null,
         ctwaClidAt: msg.conversation.contact?.ctwaClidAt ?? null,
+        metaWindowExpiresAt: msg.conversation.metaWindowExpiresAt ?? null,
         now: params.now ?? new Date(),
       });
       if (window.open) return false;
