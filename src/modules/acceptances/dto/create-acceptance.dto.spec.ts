@@ -97,6 +97,75 @@ describe('OrderSentDto sob o ValidationPipe global', () => {
     }
   });
 
+  /**
+   * O ciclo fechado da feature: a extração devolve `passengers`, o modal manda
+   * os mesmos itens de volta neste body e o PDF do comprovante os lista. Se o
+   * DTO não aceitasse o campo, o `forbidNonWhitelisted` recusaria o "Pedido
+   * enviado" INTEIRO com 400 — a extração funcionaria e a entrega quebraria.
+   */
+  describe('passageiros do item', () => {
+    const item = (over: Record<string, unknown> = {}) => ({
+      description: 'WALT DISNEY WORLD - INGRESSO 1 DIA EPCOT',
+      ...over,
+    });
+
+    it('aceita o item com passageiros e preserva nome e nascimento', async () => {
+      const passengers = [
+        { name: 'Rodolpho Carvalho Costa da Rocha', birthDate: '07/11/1988' },
+        { name: 'Maria Helena Dantas Carvalho da Rocha', birthDate: '20/04/2020' },
+      ];
+
+      const out: any = await validate({
+        items: [item({ qty: 3, date: '14/09/2026', passengers })],
+      });
+
+      expect(out.items[0].passengers).toEqual(passengers);
+    });
+
+    it('aceita passageiro sem nascimento e item sem passageiros', async () => {
+      const semData: any = await validate({
+        items: [item({ passengers: [{ name: 'Ana Souza' }] })],
+      });
+      expect(semData.items[0].passengers).toEqual([{ name: 'Ana Souza' }]);
+
+      const semLista: any = await validate({ items: [item()] });
+      expect(semLista.items[0].passengers).toBeUndefined();
+    });
+
+    it('recusa passageiro sem nome', async () => {
+      expect(
+        await messagesFor({ items: [item({ passengers: [{ birthDate: '07/11/1988' }] })] }),
+      ).toMatch(/name/);
+    });
+
+    it('recusa campo desconhecido dentro do passageiro', async () => {
+      expect(
+        await messagesFor({
+          items: [item({ passengers: [{ name: 'Ana', cpf: '000.000.000-00' }] })],
+        }),
+      ).toMatch(/cpf/);
+    });
+
+    // Sem teto, um body forjado vira um comprovante de mil páginas — a lista
+    // cai no Json do aceite e no PDF sem mais nenhuma trava depois daqui.
+    it('recusa lista de passageiros e campos absurdamente grandes', async () => {
+      const muitos = Array.from({ length: 51 }, (_, n) => ({ name: `P${n}` }));
+      expect(await messagesFor({ items: [item({ passengers: muitos })] })).toMatch(
+        /passengers/,
+      );
+
+      expect(
+        await messagesFor({ items: [item({ passengers: [{ name: 'a'.repeat(121) }] })] }),
+      ).toMatch(/name/);
+
+      expect(
+        await messagesFor({
+          items: [item({ passengers: [{ name: 'Ana', birthDate: 'b'.repeat(41) }] })],
+        }),
+      ).toMatch(/birthDate/);
+    });
+  });
+
   it('recusa sha256 contrabandeado dentro de um voucher', async () => {
     // A premissa da feature inteira: o hash é prova que o SERVIDOR produziu
     // lendo o arquivo. Se o cliente conseguisse afirmar o sha256, o aceite
