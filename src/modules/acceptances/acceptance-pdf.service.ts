@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { chromium, type BrowserType } from 'playwright';
-import { AcceptanceItem, VoucherRef } from './acceptances.types';
+import {
+  AcceptanceItem,
+  AcceptancePassenger,
+  VoucherRef,
+} from './acceptances.types';
 
 export interface AcceptancePdfInput {
   organizationName: string;
@@ -24,6 +28,27 @@ function esc(s: string): string {
 export class AcceptancePdfService {
   constructor(private readonly browserType: BrowserType = chromium) {}
 
+  /**
+   * Passageiros nominais do item, como sub-lista DENTRO do `<li>` do item —
+   * não como itens irmãos. Um nome no mesmo nível do produto lê como "mais uma
+   * coisa entregue"; o que ele é, na verdade, é para quem o ingresso vale.
+   *
+   * `name` e `birthDate` passam pelo `esc()` como todo o resto: vêm de um
+   * modelo de linguagem lendo texto colado pelo atendente, ou seja, do usuário.
+   */
+  private paxList(passengers: AcceptancePassenger[] | undefined): string {
+    if (!passengers?.length) return '';
+    const rows = passengers
+      .map(
+        (p) =>
+          `<li>${esc(p.name)}${
+            p.birthDate ? ` — nascimento: ${esc(p.birthDate)}` : ''
+          }</li>`,
+      )
+      .join('');
+    return `<ul class="pax">${rows}</ul>`;
+  }
+
   private html(i: AcceptancePdfInput): string {
     // `qty` também passa pelo `esc()`. Hoje o `@IsNumber()` + pipe global já
     // recusariam markup, mas a regra deste arquivo é "tudo que vem do usuário
@@ -31,7 +56,7 @@ export class AcceptancePdfService {
     // regra é opcional e a próxima validação frouxa vira injeção.
     const rows = i.items.map((it) => `<li>${esc(it.description)}${
       it.qty ? ` — <strong>${esc(String(it.qty))}x</strong>` : ''}${it.date ? ` (${esc(it.date)})` : ''}${
-      it.note ? ` — ${esc(it.note)}` : ''}</li>`).join('');
+      it.note ? ` — ${esc(it.note)}` : ''}${this.paxList(it.passengers)}</li>`).join('');
     const when = i.signedAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     // O hash de cada voucher entra no comprovante como prova de qual arquivo
     // foi entregue. Arquivo ilegível no momento do hash fica sem `sha256` —
@@ -70,7 +95,8 @@ export class AcceptancePdfService {
     return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/>
       <style>body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:40px;line-height:1.5}
       h1{font-size:20px}ul{padding-left:20px}.meta{margin-top:32px;font-size:12px;color:#444;border-top:1px solid #ddd;padding-top:16px}
-      .policy{white-space:pre-wrap}</style>
+      .policy{white-space:pre-wrap}
+      .pax{margin:2px 0 6px;font-size:12px;color:#444;list-style:circle}</style>
       </head><body>
       <h1>Comprovante de Aceite — ${esc(i.organizationName)}</h1>
       ${orderBlock}
