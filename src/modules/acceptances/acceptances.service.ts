@@ -183,6 +183,30 @@ export class AcceptancesService {
     };
   }
 
+  /**
+   * Mesma leitura, a partir do texto COLADO pelo atendente. Existe porque a
+   * conversão PDF→texto é a etapa que falha em produção (voucher escaneado não
+   * tem camada de texto); aqui ela simplesmente não existe. Convive com o
+   * `extractVoucher` de propósito — as duas fontes se somam, não se substituem.
+   *
+   * Devolve o MESMO formato do irmão para o modal não precisar saber de onde
+   * veio a leitura.
+   */
+  async extractVoucherText(
+    organizationId: string,
+    input: { text: string },
+  ): Promise<{ items: AcceptanceItem[]; orderRef: string | null }> {
+    // Texto em branco não paga token: o extrator já devolveria vazio, mas
+    // deixar a chamada sair cobra uma ida ao LLM por campo vazio do atendente.
+    if (!input.text?.trim()) return { items: [], orderRef: null };
+
+    const { items, orderRef } = await this.voucherExtractor.extract(
+      input.text,
+      organizationId,
+    );
+    return { items, orderRef };
+  }
+
   /** Seam de teste, igual ao `readPdfText`: o pdfjs tem teste próprio. */
   protected renderPdfPages(buffer: Buffer): Promise<Buffer[]> {
     return renderPdfToPngs(buffer);
