@@ -4,6 +4,7 @@ import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentOrg } from '../../common/decorators';
 import { AcceptancesService } from './acceptances.service';
 import { ExtractVoucherDto } from './dto/extract-voucher.dto';
+import { ExtractVoucherTextDto } from './dto/extract-voucher-text.dto';
 
 @ApiTags('Acceptances')
 @ApiBearerAuth()
@@ -28,6 +29,17 @@ export class AcceptancesController {
     @CurrentOrg('id') orgId: string,
   ) {
     return this.service.extractVoucher(orgId, { mediaUrl: dto.mediaUrl });
+  }
+
+  // Também ANTES de `@Post(':id/resend')`, pelo mesmo motivo do irmão acima.
+  // Caminho paralelo ao `extract-voucher`, não substituto: o PDF continua
+  // valendo e as duas leituras se complementam.
+  @Post('extract-voucher-text')
+  extractVoucherText(
+    @Body() dto: ExtractVoucherTextDto,
+    @CurrentOrg('id') orgId: string,
+  ) {
+    return this.service.extractVoucherText(orgId, { text: dto.text });
   }
 
   @Post(':id/resend')

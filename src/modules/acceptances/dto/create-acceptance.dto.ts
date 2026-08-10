@@ -11,6 +11,28 @@ const MAX_VOUCHERS = 20;
 /** Nº do pedido do operador: um punhado de caracteres, não texto livre. */
 const MAX_ORDER_REF_LENGTH = 64;
 
+/**
+ * Tetos dos passageiros. A lista chega do modal (que a preencheu com o que a
+ * IA leu, editável à mão) e vai direto para o Json do aceite e para o PDF do
+ * comprovante — sem limite, um body forjado vira um documento legal de mil
+ * páginas. Os números são folgados para um voucher real de família/excursão.
+ */
+const MAX_PASSENGERS_PER_ITEM = 50;
+const MAX_PASSENGER_NAME_LENGTH = 120;
+/** A data vai como ESTÁ ESCRITA ("20/04/2020", "20 de abril de 2020"). */
+const MAX_PASSENGER_BIRTHDATE_LENGTH = 40;
+
+export class AcceptancePassengerDto {
+  @IsString()
+  @MaxLength(MAX_PASSENGER_NAME_LENGTH)
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_PASSENGER_BIRTHDATE_LENGTH)
+  birthDate?: string;
+}
+
 export class AcceptanceItemDto {
   @IsString()
   description!: string;
@@ -30,6 +52,18 @@ export class AcceptanceItemDto {
   @IsOptional()
   @IsString()
   ref?: string;
+
+  /**
+   * Passageiros nominais. SEM este campo aqui, o `forbidNonWhitelisted` do pipe
+   * global recusa o "Pedido enviado" INTEIRO com 400 assim que o modal manda um
+   * item lido do voucher — a extração devolveria os nomes e a entrega falharia.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_PASSENGERS_PER_ITEM)
+  @ValidateNested({ each: true })
+  @Type(() => AcceptancePassengerDto)
+  passengers?: AcceptancePassengerDto[];
 }
 
 /**

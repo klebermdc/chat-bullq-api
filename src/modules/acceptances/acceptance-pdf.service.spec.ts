@@ -93,6 +93,91 @@ describe('AcceptancePdfService', () => {
     expect(html).not.toContain('SHA-256');
   });
 
+  describe('passageiros do item', () => {
+    function html(items: unknown[]) {
+      const svc = new AcceptancePdfService({} as any);
+      return (svc as any).html({
+        organizationName: 'OFP',
+        termText: 'Declaro que recebi.',
+        items,
+        signerName: 'Ana',
+        signedAt: new Date('2026-08-06T12:00:00Z'),
+      }) as string;
+    }
+
+    it('lista nome e nascimento sob o item', () => {
+      const out = html([
+        {
+          description: 'WALT DISNEY WORLD - INGRESSO 1 DIA EPCOT',
+          qty: 3,
+          date: '14/09/2026',
+          passengers: [
+            { name: 'Rodolpho Carvalho Costa da Rocha', birthDate: '07/11/1988' },
+            { name: 'Maria Helena Dantas Carvalho da Rocha', birthDate: '20/04/2020' },
+          ],
+        },
+      ]);
+
+      expect(out).toContain('Rodolpho Carvalho Costa da Rocha');
+      expect(out).toContain('07/11/1988');
+      expect(out).toContain('Maria Helena Dantas Carvalho da Rocha');
+      expect(out).toContain('20/04/2020');
+    });
+
+    // O passageiro é DETALHE do item, não outra coisa entregue. No mesmo nível
+    // do produto, "Rodolpho" lê como um item conferido a mais.
+    it('aninha os passageiros dentro do <li> do item, não como itens irmãos', () => {
+      const out = html([
+        { description: 'Ingresso EPCOT', passengers: [{ name: 'Rodolpho' }] },
+      ]);
+
+      expect(out).toContain('<ul class="pax">');
+      // A sub-lista abre antes de o <li> do item fechar.
+      const item = out.indexOf('Ingresso EPCOT');
+      expect(out.indexOf('<ul class="pax">')).toBeGreaterThan(item);
+      expect(out.indexOf('<ul class="pax">')).toBeLessThan(
+        out.indexOf('</li>', out.indexOf('Rodolpho')),
+      );
+      expect(out).toContain('.pax{');
+    });
+
+    it('passageiro sem nascimento sai só com o nome, sem rótulo vazio', () => {
+      const out = html([
+        { description: 'Ingresso', passengers: [{ name: 'Ana Souza' }] },
+      ]);
+
+      expect(out).toContain('Ana Souza');
+      expect(out).not.toContain('nascimento:');
+    });
+
+    it('sem passageiros o layout do item não muda', () => {
+      const semLista = html([{ description: 'Ingresso', qty: 2 }]);
+      const listaVazia = html([{ description: 'Ingresso', qty: 2, passengers: [] }]);
+
+      expect(semLista).not.toContain('class="pax"');
+      expect(listaVazia).not.toContain('class="pax"');
+      expect(listaVazia).toBe(semLista);
+    });
+
+    // O nome vem de um LLM lendo texto colado pelo atendente — ou seja, do
+    // usuário. Este PDF é gerado por Chromium de verdade e vira prova legal.
+    it('escapa HTML no nome e no nascimento do passageiro', () => {
+      const out = html([
+        {
+          description: 'Ingresso',
+          passengers: [
+            { name: '<script>alert(1)</script>', birthDate: '<img src=x onerror=alert(1)>' },
+          ],
+        },
+      ]);
+
+      expect(out).not.toContain('<script>alert(1)</script>');
+      expect(out).not.toContain('<img src=x');
+      expect(out).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+      expect(out).toContain('&lt;img src=x');
+    });
+  });
+
   describe('política de cancelamento', () => {
     function html(over: Record<string, unknown> = {}) {
       const svc = new AcceptancePdfService({} as any);

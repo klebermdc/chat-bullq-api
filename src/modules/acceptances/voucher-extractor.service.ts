@@ -3,7 +3,11 @@ import { LlmService } from '../ai-agents/llm/llm.service';
 import { LlmContent } from '../ai-agents/llm/llm.types';
 import { SAKANA_SIMPLE_MODEL } from '../ai-agents/llm/llm.constants';
 import { VOUCHER_EXTRACT_SYSTEM_PROMPT } from './voucher.prompts';
-import { AcceptanceItem, ExtractedVoucher } from './acceptances.types';
+import {
+  AcceptanceItem,
+  AcceptancePassenger,
+  ExtractedVoucher,
+} from './acceptances.types';
 
 const EMPTY: ExtractedVoucher = { items: [], orderRef: null };
 
@@ -139,7 +143,34 @@ export class VoucherExtractorService {
       if (typeof r.date === 'string' && r.date.trim()) item.date = r.date.trim();
       if (typeof r.ref === 'string' && r.ref.trim()) item.ref = r.ref.trim();
       if (typeof r.note === 'string' && r.note.trim()) item.note = r.note.trim();
+
+      const passengers = this.normalizePassengers(r.passengers);
+      if (passengers.length) item.passengers = passengers;
+
       out.push(item);
+    }
+    return out;
+  }
+
+  /**
+   * Passageiro sem `name` string não-vazia é descartado, não "corrigido": o
+   * ingresso é nominal e uma linha em branco no comprovante vira discussão no
+   * portão do parque. `birthDate` é opcional e só entra se vier como string —
+   * qualquer outro tipo é lixo do modelo, e lixo aqui vira documento legal.
+   */
+  private normalizePassengers(raw: unknown): AcceptancePassenger[] {
+    if (!Array.isArray(raw)) return [];
+    const out: AcceptancePassenger[] = [];
+    for (const entry of raw) {
+      if (!entry || typeof entry !== 'object') continue;
+      const p = entry as Record<string, unknown>;
+      if (typeof p.name !== 'string' || !p.name.trim()) continue;
+
+      const passenger: AcceptancePassenger = { name: p.name.trim() };
+      if (typeof p.birthDate === 'string' && p.birthDate.trim()) {
+        passenger.birthDate = p.birthDate.trim();
+      }
+      out.push(passenger);
     }
     return out;
   }

@@ -1,3 +1,15 @@
+/**
+ * Passageiro nominal de um item. Ingresso de parque é nominal: o nome errado
+ * (ou inventado) só aparece no portão, com a família parada na fila. Por isso
+ * `name` é obrigatório e `birthDate` é opcional — voucher que não escreve o
+ * nascimento fica sem, nunca com um valor deduzido.
+ */
+export interface AcceptancePassenger {
+  name: string;
+  /** Data de nascimento como está escrita no voucher, sem reformatar. */
+  birthDate?: string;
+}
+
 export interface AcceptanceItem {
   description: string;
   qty?: number;
@@ -5,6 +17,13 @@ export interface AcceptanceItem {
   note?: string;
   /** Localizador / nº de confirmação da operadora, quando veio de um voucher. */
   ref?: string;
+  /**
+   * Passageiros nominais deste item. Costuma bater com `qty`, mas os dois
+   * campos são independentes de propósito: se o voucher disser "2 Adulto(s)" e
+   * listar 3 nomes, registramos os dois como estão escritos. Reconciliar seria
+   * deduzir, e deduzir é exatamente o que este extrator não pode fazer.
+   */
+  passengers?: AcceptancePassenger[];
 }
 
 /** Voucher entregue junto com o aceite. */

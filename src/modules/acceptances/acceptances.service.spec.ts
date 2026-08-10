@@ -681,3 +681,97 @@ describe('AcceptancesService.extractVoucher', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
+
+describe('AcceptancesService.extractVoucherText', () => {
+  function build(extracted?: { items: any[]; orderRef: string | null }) {
+    const extractor = {
+      extract: jest
+        .fn()
+        .mockResolvedValue(extracted ?? { items: [], orderRef: null }),
+      extractFromImages: jest.fn(),
+    } as any;
+    const storage = { getBuffer: jest.fn() } as any;
+    const svc = new AcceptancesService(
+      {} as any,
+      {} as any,
+      {} as any,
+      storage,
+      extractor,
+    );
+    return { svc, extractor, storage };
+  }
+
+  const TEXTO_COLADO = [
+    'Ingressos',
+    '',
+    'WALT DISNEY WORLD - INGRESSO 1 DIA EPCOT',
+    'Data: 14/09/2026',
+    'Passageiros: 1 Criança(s) - 2 Adulto(s)',
+    '',
+    'Rodolpho Carvalho Costa da Rocha - Nascimento: 07/11/1988',
+  ].join('\n');
+
+  it('devolve os itens lidos do texto colado, com passageiros', async () => {
+    const { svc, extractor } = build({
+      items: [
+        {
+          description: 'WALT DISNEY WORLD - INGRESSO 1 DIA EPCOT',
+          qty: 3,
+          date: '14/09/2026',
+          passengers: [
+            { name: 'Rodolpho Carvalho Costa da Rocha', birthDate: '07/11/1988' },
+          ],
+        },
+      ],
+      orderRef: '61293',
+    });
+
+    const out = await svc.extractVoucherText('org-1', { text: TEXTO_COLADO });
+
+    expect(extractor.extract).toHaveBeenCalledWith(TEXTO_COLADO, 'org-1');
+    expect(out.orderRef).toBe('61293');
+    expect(out.items[0].passengers).toEqual([
+      { name: 'Rodolpho Carvalho Costa da Rocha', birthDate: '07/11/1988' },
+    ]);
+  });
+
+  // Texto em branco não paga token. O extrator já devolveria vazio, mas deixar
+  // a chamada sair cobra uma ida ao LLM por campo vazio do atendente.
+  it('não chama o LLM com texto vazio ou só espaços', async () => {
+    const { svc, extractor } = build();
+
+    for (const text of ['', '   ', '\n\t  \n']) {
+      expect(await svc.extractVoucherText('org-1', { text })).toEqual({
+        items: [],
+        orderRef: null,
+      });
+    }
+    expect(extractor.extract).not.toHaveBeenCalled();
+  });
+
+  // Colar algo que não é voucher (uma conversa, um e-mail) tem que devolver
+  // vazio, não itens inventados — o prompt manda devolver lista vazia e o
+  // serviço não pode "melhorar" isso.
+  it('texto que não é voucher devolve vazio, sem inventar item', async () => {
+    const { svc } = build({ items: [], orderRef: null });
+
+    const out = await svc.extractVoucherText('org-1', {
+      text: 'oi, tudo bem? me manda o orçamento por favor',
+    });
+
+    expect(out).toEqual({ items: [], orderRef: null });
+  });
+
+  // O texto colado não toca no storage: não há arquivo, e é justamente a
+  // conversão PDF→texto (a etapa frágil) que este caminho pula.
+  it('não toca no storage nem na leitura de PDF', async () => {
+    const { svc, storage } = build({ items: [{ description: 'X' }], orderRef: null });
+    const readPdfText = jest.fn();
+    (svc as any).readPdfText = readPdfText;
+
+    await svc.extractVoucherText('org-1', { text: TEXTO_COLADO });
+
+    expect(storage.getBuffer).not.toHaveBeenCalled();
+    expect(readPdfText).not.toHaveBeenCalled();
+  });
+});
