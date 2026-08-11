@@ -8,8 +8,10 @@ import {
   Param,
   Body,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { ConversationsService } from './conversations.service';
@@ -19,6 +21,7 @@ import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { TransferConversationDto } from './dto/transfer-conversation.dto';
 import { SetOriginDto } from './dto/set-origin.dto';
 import { LeadOriginService } from '../pipeline/lead-origin.service';
+import { ConversationTranscriptService } from './conversation-transcript.service';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../../common/guards';
 import {
   CurrentUser,
@@ -39,7 +42,39 @@ export class ConversationsController {
     private readonly service: ConversationsService,
     private readonly startConversation: StartConversationService,
     private readonly leadOrigin: LeadOriginService,
+    private readonly transcript: ConversationTranscriptService,
   ) {}
+
+  @Get(':id/transcript.pdf')
+  @ApiOperation({
+    summary:
+      'Histórico do cliente em PDF (esta conversa e os atendimentos anteriores). ' +
+      'Gerado sob demanda e devolvido na resposta — nada é gravado em disco.',
+  })
+  async downloadTranscript(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('name') userName: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentChannelAccess() access: ChannelAccess,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName } = await this.transcript.render(
+      id,
+      orgId,
+      userName || 'Atendimento',
+      access,
+      userId,
+      role,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+      'Content-Length': String(buffer.length),
+    });
+    res.end(buffer);
+  }
 
   @Post('start')
   @ApiOperation({ summary: 'Inicia uma conversa proativa (Zappfy): resolve contato/canal e envia a 1a mensagem.' })
