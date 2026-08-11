@@ -134,6 +134,22 @@ export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
             continue;
           }
 
+          // Reclassificação de categoria. CUIDADO: no aviso prévio a Meta manda
+          // a categoria ATUAL em `new_category` e a futura em `correct_category`
+          // — ler `new_category` aqui gravaria a categoria velha.
+          if (change?.field === 'template_category_update') {
+            const v = change.value ?? {};
+            const pending = Boolean(v.correct_category);
+            const ts = v.category_update_timestamp;
+            (result.templateCategoryUpdates ??= []).push({
+              metaTemplateId: String(v.message_template_id),
+              category: String(pending ? v.correct_category : v.new_category),
+              pending,
+              effectiveAt: ts ? new Date(Number(ts) * 1000) : undefined,
+            });
+            continue;
+          }
+
           // Agenda do cliente espelhada do app (coexistência).
           if (change?.field === 'smb_app_state_sync') {
             const v = change.value ?? {};

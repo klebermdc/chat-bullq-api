@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   BadRequestException,
   ConflictException,
   NotFoundException,
@@ -22,6 +23,8 @@ import {
 
 @Injectable()
 export class MessageTemplatesService {
+  private readonly logger = new Logger(MessageTemplatesService.name);
+
   constructor(
     private readonly repo: MessageTemplatesRepository,
     private readonly http: WhatsAppOfficialHttpClient,
@@ -125,6 +128,25 @@ export class MessageTemplatesService {
       rejectionReason: normalizeRejectionReason(rejectionReason) ?? null,
       reviewedAt: new Date(),
     });
+  }
+
+  /**
+   * Reclassificação de categoria vinda do webhook. No aviso prévio (`pending`)
+   * a categoria ainda NÃO mudou: gravar agora deixaria o banco mentindo ao
+   * contrário. Só registramos, e o evento consumado chega depois.
+   */
+  async applyCategoryUpdate(
+    metaTemplateId: string,
+    category: string,
+    pending: boolean,
+  ) {
+    if (pending) {
+      this.logger.warn(
+        `Template ${metaTemplateId} será reclassificado para ${category} em ~24h`,
+      );
+      return;
+    }
+    return this.repo.updateByMetaId(metaTemplateId, { category });
   }
 
   async remove(orgId: string, id: string) {

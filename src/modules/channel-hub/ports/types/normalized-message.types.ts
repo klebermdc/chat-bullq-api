@@ -171,6 +171,19 @@ export interface WebhookParseResult {
     status: string;
     reason?: string;
   }>;
+  /**
+   * Reclassificação de categoria de template (webhook `template_category_update`).
+   * `category` é sempre a categoria que VAI valer, e `pending` diz se ela já
+   * está valendo. A Meta manda dois eventos com o mesmo campo: o aviso prévio
+   * (~24h antes, onde `new_category` ainda é a categoria ATUAL e a futura vem
+   * em `correct_category`) e a mudança consumada.
+   */
+  templateCategoryUpdates?: Array<{
+    metaTemplateId: string;
+    category: string;
+    pending: boolean;
+    effectiveAt?: Date;
+  }>;
   /** Eventos de conta (WABA): desconexão, banimento, tier, qualidade. */
   accountUpdates?: AccountUpdate[];
   /** Pedaços de histórico da coexistência (webhook `history`). */
