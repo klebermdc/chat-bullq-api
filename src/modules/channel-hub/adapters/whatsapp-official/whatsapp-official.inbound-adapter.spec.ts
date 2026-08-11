@@ -336,3 +336,58 @@ describe('WhatsAppOfficialInboundAdapter.validateWebhook', () => {
     expect(adapter.validateWebhook(headers, Buffer.from(body), undefined, channel)).toBe(false);
   });
 });
+
+describe('WhatsAppOfficialInboundAdapter.parseWebhook — template_category_update', () => {
+  const adapter = new WhatsAppOfficialInboundAdapter(
+    new WhatsAppOfficialMessageMapper(),
+    new WhatsAppPlatformConfigService(),
+  );
+
+  function payload(value: Record<string, unknown>) {
+    return {
+      entry: [{ changes: [{ field: 'template_category_update', value }] }],
+    };
+  }
+
+  it('mudança consumada: grava a categoria nova', () => {
+    const res = adapter.parseWebhook(
+      payload({
+        message_template_id: 278077987957091,
+        message_template_name: 'welcome_template',
+        previous_category: 'UTILITY',
+        new_category: 'MARKETING',
+      }) as any,
+      { id: 'ch1' } as any,
+    );
+
+    expect(res.templateCategoryUpdates).toContainEqual({
+      metaTemplateId: '278077987957091',
+      category: 'MARKETING',
+      pending: false,
+      effectiveAt: undefined,
+    });
+  });
+
+  // A pegadinha da Meta: no aviso prévio, `new_category` é a categoria ATUAL e
+  // `correct_category` é a que vai valer. Ler `new_category` aqui gravaria a
+  // categoria velha e jogaria fora o aviso de 24h.
+  it('aviso prévio: usa correct_category, nunca new_category', () => {
+    const res = adapter.parseWebhook(
+      payload({
+        message_template_id: 278077987957091,
+        message_template_name: 'welcome_template',
+        new_category: 'UTILITY',
+        correct_category: 'MARKETING',
+        category_update_timestamp: 1746169200,
+      }) as any,
+      { id: 'ch1' } as any,
+    );
+
+    expect(res.templateCategoryUpdates).toContainEqual({
+      metaTemplateId: '278077987957091',
+      category: 'MARKETING',
+      pending: true,
+      effectiveAt: new Date(1746169200 * 1000),
+    });
+  });
+});

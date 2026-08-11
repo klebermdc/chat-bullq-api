@@ -213,6 +213,18 @@ export class WebhookGatewayController {
         this.logger.log(`Template ${upd.metaTemplateId} → ${upd.status}`);
       }
 
+      for (const upd of parseResult.templateCategoryUpdates ?? []) {
+        await this.messageTemplatesService.applyCategoryUpdate(
+          upd.metaTemplateId,
+          upd.category,
+          upd.pending,
+        );
+        this.logger.log(
+          `Template ${upd.metaTemplateId} categoria → ${upd.category}` +
+            (upd.pending ? ' (pendente)' : ''),
+        );
+      }
+
       for (const sync of parseResult.contactSyncs ?? []) {
         await this.coexContacts
           .handle(channel, sync)

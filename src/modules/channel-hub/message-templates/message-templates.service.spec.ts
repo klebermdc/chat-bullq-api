@@ -120,3 +120,25 @@ describe('MessageTemplatesService', () => {
     );
   });
 });
+
+describe('MessageTemplatesService.applyCategoryUpdate', () => {
+  it('grava a categoria quando a reclassificação já ocorreu', async () => {
+    const { repo, service } = build();
+
+    await service.applyCategoryUpdate('META1', 'MARKETING', false);
+
+    expect(repo.updateByMetaId).toHaveBeenCalledWith('META1', {
+      category: 'MARKETING',
+    });
+  });
+
+  // Aviso prévio: a Meta diz que VAI reclassificar em ~24h. A categoria ainda
+  // não mudou, então gravar agora deixaria o banco mentindo ao contrário.
+  it('não grava quando a reclassificação ainda está pendente', async () => {
+    const { repo, service } = build();
+
+    await service.applyCategoryUpdate('META1', 'MARKETING', true);
+
+    expect(repo.updateByMetaId).not.toHaveBeenCalled();
+  });
+});
