@@ -241,6 +241,60 @@ export class MessagesController {
     );
   }
 
+  @Get('contact-history/availability')
+  @ApiOperation({
+    summary:
+      'Quantos atendimentos anteriores este cliente tem (outros protocolos e ' +
+      'outros números com o mesmo telefone). O chat chama só quando o ' +
+      'histórico da conversa atual acaba.',
+  })
+  @ApiQuery({ name: 'conversationId', required: true })
+  contactHistoryAvailability(
+    @Query('conversationId') conversationId: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentChannelAccess() access: ChannelAccess,
+  ) {
+    return this.service.contactHistoryAvailability(
+      conversationId,
+      orgId,
+      access,
+      userId,
+      role,
+    );
+  }
+
+  @Get('contact-history')
+  @ApiOperation({
+    summary:
+      'Mensagens anteriores à âncora atravessando os atendimentos anteriores ' +
+      'do mesmo cliente — o "ver conversas anteriores" do chat.',
+  })
+  @ApiQuery({ name: 'conversationId', required: true })
+  @ApiQuery({ name: 'before', required: true })
+  @ApiQuery({ name: 'limit', required: false })
+  findOlderInContactHistory(
+    @Query('conversationId') conversationId: string,
+    @Query('before') before: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentChannelAccess() access: ChannelAccess,
+    @Query('limit') limit?: string,
+  ) {
+    if (!before) throw new BadRequestException('before is required');
+    return this.service.findOlderInContactHistory(
+      conversationId,
+      orgId,
+      before,
+      clampPageSize(limit, DEFAULT_PAGE_SIZE),
+      access,
+      userId,
+      role,
+    );
+  }
+
   @Get()
   @ApiOperation({ summary: 'List messages of a conversation (paginated)' })
   @ApiQuery({ name: 'conversationId', required: true })

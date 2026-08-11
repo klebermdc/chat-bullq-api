@@ -30,6 +30,7 @@ import { resolveAssignmentScope } from '../conversations/conversation-scope';
 import { ConversationAccessService } from '../conversations/conversation-access.service';
 import { shouldAutoAssignOnReply } from './auto-assign.util';
 import { buildSnippet, messageText } from './message-search';
+import { ContactHistoryService } from './contact-history.service';
 
 @Injectable()
 export class MessagesService {
@@ -44,6 +45,7 @@ export class MessagesService {
     private readonly adapterRegistry: ChannelAdapterRegistry,
     private readonly segmentRead: SegmentReadService,
     private readonly conversationAccess: ConversationAccessService,
+    private readonly contactHistory: ContactHistoryService,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
   ) {}
 
@@ -743,6 +745,60 @@ export class MessagesService {
       beforeMessageId,
       limit,
     );
+  }
+
+  /**
+   * Quantos atendimentos anteriores este cliente tem. O chat só pergunta isso
+   * quando o histórico da conversa atual acaba, então não custa nada nas
+   * outras aberturas de conversa.
+   */
+  async contactHistoryAvailability(
+    conversationId: string,
+    organizationId: string,
+    access: ChannelAccess = 'ALL',
+    currentUserId?: string,
+    role?: OrgRole,
+  ) {
+    return this.contactHistory.availability(
+      conversationId,
+      organizationId,
+      access,
+      currentUserId,
+      role,
+    );
+  }
+
+  /**
+   * "Rolar pra cima" atravessando os atendimentos anteriores do mesmo cliente.
+   * Mesmo motor do histórico normal, só com o conjunto de conversas maior; o
+   * modo unioned ordena pelo tempo do provedor, que é a cronologia real quando
+   * as mensagens vêm de números diferentes.
+   */
+  async findOlderInContactHistory(
+    conversationId: string,
+    organizationId: string,
+    beforeMessageId: string,
+    limit: number,
+    access: ChannelAccess = 'ALL',
+    currentUserId?: string,
+    role?: OrgRole,
+  ) {
+    const scope = await this.contactHistory.resolveScope(
+      conversationId,
+      organizationId,
+      access,
+      currentUserId,
+      role,
+    );
+
+    const { messages, hasMore } = await this.repository.findOlderThan(
+      scope.conversationIds,
+      true,
+      beforeMessageId,
+      limit,
+    );
+
+    return { messages, hasMore, conversations: scope.conversations };
   }
 
   /** Janela em volta de uma mensagem — destino do "pular até" da busca. */
