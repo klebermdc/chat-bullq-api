@@ -35,6 +35,7 @@ import { MessagesController } from './messages/messages.controller';
 import { MessagesService } from './messages/messages.service';
 import { MessagesRepository } from './messages/messages.repository';
 import { ContactHistoryService } from './messages/contact-history.service';
+import { ConversationTranscriptService } from './conversations/conversation-transcript.service';
 import { TranscriptionService } from './messages/transcription.service';
 import { ConversationSummaryService } from './messages/conversation-summary.service';
 import { UploadsService } from './messages/uploads.service';
@@ -101,6 +102,7 @@ import { ContactsRepository } from './contacts/contacts.repository';
     MessagesService,
     MessagesRepository,
     ContactHistoryService,
+    ConversationTranscriptService,
     TranscriptionService,
     ConversationSummaryService,
     UploadsService,
