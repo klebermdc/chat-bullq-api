@@ -16,6 +16,7 @@ import { join } from 'path';
 import { AppModule } from './app.module';
 import { PublicApiModule } from './modules/public-api/public-api.module';
 import { StorageService } from './modules/storage/storage.service';
+import { isPubliclyServable } from './modules/storage/public-key.util';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -44,7 +45,13 @@ async function bootstrap() {
     }
     // req.path is the sub-path after the mount, e.g. "/audio/2026-07-05/x.ogg".
     const key = decodeURIComponent(req.path).replace(/^\/+/, '');
-    if (!key || key.includes('..')) {
+    // Allowlist de prefixos: esta rota não tem auth (a Meta e as tags
+    // <img>/<audio> não mandam header), então ela NÃO pode servir o bucket
+    // inteiro — que é único para todas as organizações. O PDF do aceite
+    // assinado mora em `acceptances/` e era baixável sem sessão por aqui.
+    // Ele agora sai por rotas próprias, escopadas: `/acceptances/:id/pdf`
+    // (JWT + org) e `/public/acceptances/:token/pdf` (token do aceite).
+    if (!isPubliclyServable(key)) {
       res.status(404).end();
       return;
     }

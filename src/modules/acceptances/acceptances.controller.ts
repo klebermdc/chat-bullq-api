@@ -1,8 +1,11 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, Post, Res, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentOrg } from '../../common/decorators';
+import { StorageService } from '../storage/storage.service';
 import { AcceptancesService } from './acceptances.service';
+import { streamStoredPdf } from './stream-pdf.util';
 import { ExtractVoucherDto } from './dto/extract-voucher.dto';
 import { ExtractVoucherTextDto } from './dto/extract-voucher-text.dto';
 
@@ -11,7 +14,28 @@ import { ExtractVoucherTextDto } from './dto/extract-voucher-text.dto';
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
 @Controller('acceptances')
 export class AcceptancesController {
-  constructor(private readonly service: AcceptancesService) {}
+  constructor(
+    private readonly service: AcceptancesService,
+    private readonly storage: StorageService,
+  ) {}
+
+  /**
+   * PDF do aceite assinado para o operador.
+   *
+   * Antes ele saía por `/uploads/acceptances/<data>/<id>.pdf`, rota sem
+   * autenticação: nome do cliente, assinatura e IP baixáveis por qualquer
+   * pessoa com a URL, de qualquer organização.
+   */
+  @Get(':id/pdf')
+  @ApiOperation({ summary: 'Baixa o PDF do aceite assinado (escopado por org)' })
+  async pdf(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const key = await this.service.pdfKeyForOrg(id, orgId);
+    await streamStoredPdf(this.storage, key, res);
+  }
 
   @Get('conversation/:conversationId')
   status(

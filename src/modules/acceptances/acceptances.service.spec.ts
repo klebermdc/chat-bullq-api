@@ -352,7 +352,12 @@ describe('AcceptancesService.sign', () => {
     expect(pdf.render).toHaveBeenCalled();
     expect(storage.put).toHaveBeenCalledWith(expect.stringContaining('acceptances/'), expect.any(Buffer), 'application/pdf');
     expect(effects.onSigned).toHaveBeenCalled();
-    expect(res).toEqual(expect.objectContaining({ status: 'SIGNED', organizationName: 'OFP', pdfUrl: expect.stringContaining('/api/v1/uploads/') }));
+    // O PDF NÃO sai mais por `/uploads/`: aquela rota não tem autenticação e
+    // servia o bucket inteiro, então o comprovante assinado (nome, IP e
+    // assinatura) era baixável por qualquer pessoa com a URL. A visão do
+    // cliente aponta para a rota por token, que é o fator de acesso que ele
+    // já tem para ver a página do aceite.
+    expect(res).toEqual(expect.objectContaining({ status: 'SIGNED', organizationName: 'OFP', pdfUrl: '/api/v1/public/acceptances/tok/pdf' }));
     expect(res).not.toHaveProperty('token');
     expect(res).not.toHaveProperty('signerIp');
   });
