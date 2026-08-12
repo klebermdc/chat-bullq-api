@@ -44,6 +44,13 @@ export interface ActionPreview {
 export interface PendingAction {
   /** UUID v4 */
   id: string;
+  /**
+   * Dona da ação. Toda leitura filtra por ela. É nullable no banco só por
+   * causa das linhas antigas cuja conversa já foi apagada (não há FK): elas
+   * ficam com `null` e, como o filtro é por igualdade, nunca casam com
+   * organização nenhuma — some em vez de vazar.
+   */
+  organizationId: string | null;
   /** Run that produced this pending action. */
   agentRunId: string;
   conversationId: string;
@@ -73,6 +80,7 @@ export interface PendingAction {
 }
 
 export interface CreatePendingActionInput {
+  organizationId: string;
   agentRunId: string;
   conversationId: string;
   agentId: string;

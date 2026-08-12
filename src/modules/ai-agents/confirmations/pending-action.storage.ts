@@ -49,6 +49,7 @@ export class PendingActionStorage {
       where: { id: action.id },
       create: {
         id: action.id,
+        organizationId: action.organizationId,
         agentRunId: action.agentRunId,
         conversationId: action.conversationId,
         agentId: action.agentId,
@@ -59,18 +60,28 @@ export class PendingActionStorage {
     });
   }
 
-  async get(id: string): Promise<PendingAction | null> {
-    const row = await this.prisma.aiPendingAction.findUnique({ where: { id } });
+  async get(
+    id: string,
+    organizationId: string,
+  ): Promise<PendingAction | null> {
+    // findFirst, NÃO findUnique: findUnique só aceita campo único no `where`,
+    // então não dá pra somar a organização — e era exatamente por isso que
+    // approve/reject/distribute alcançavam a ação de outra empresa pelo id.
+    const row = await this.prisma.aiPendingAction.findFirst({
+      where: { id, organizationId },
+    });
     return row ? this.toDomain(row) : null;
   }
 
   async listByStatus(
     status: PendingActionStatus,
+    organizationId: string,
     conversationId?: string,
   ): Promise<PendingAction[]> {
     const rows = await this.prisma.aiPendingAction.findMany({
       where: {
         status,
+        organizationId,
         ...(conversationId ? { conversationId } : {}),
       },
       orderBy: { createdAt: 'desc' },
@@ -78,9 +89,27 @@ export class PendingActionStorage {
     return rows.map((r) => this.toDomain(r));
   }
 
-  async listByConversation(conversationId: string): Promise<PendingAction[]> {
+  async listByConversation(
+    conversationId: string,
+    organizationId: string,
+  ): Promise<PendingAction[]> {
     const rows = await this.prisma.aiPendingAction.findMany({
-      where: { conversationId },
+      where: { conversationId, organizationId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((r) => this.toDomain(r));
+  }
+
+  /**
+   * Varredura de expiração, atravessando TODAS as organizações.
+   *
+   * É o único caminho de leitura sem escopo, e o nome diz isso na cara de
+   * propósito: quem chamar sem ser o cron está lendo dado de outra empresa.
+   * Só o `expireOverdue()` usa.
+   */
+  async listPendingAllOrgs(): Promise<PendingAction[]> {
+    const rows = await this.prisma.aiPendingAction.findMany({
+      where: { status: 'PENDING' },
       orderBy: { createdAt: 'desc' },
     });
     return rows.map((r) => this.toDomain(r));
@@ -88,6 +117,7 @@ export class PendingActionStorage {
 
   private toDomain(row: {
     id: string;
+    organizationId: string | null;
     agentRunId: string;
     conversationId: string;
     agentId: string;
@@ -106,6 +136,7 @@ export class PendingActionStorage {
   }): PendingAction {
     return {
       id: row.id,
+      organizationId: row.organizationId,
       agentRunId: row.agentRunId,
       conversationId: row.conversationId,
       agentId: row.agentId,

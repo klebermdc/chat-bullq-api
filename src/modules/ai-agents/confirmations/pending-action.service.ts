@@ -51,6 +51,7 @@ export class PendingActionService {
 
     const action: PendingAction = {
       id: randomUUID(),
+      organizationId: input.organizationId,
       agentRunId: input.agentRunId,
       conversationId: input.conversationId,
       agentId: input.agentId,
@@ -83,8 +84,12 @@ export class PendingActionService {
    * Phase 2 TODO: enqueue the actual execution of `action.toolName`
    * with `action.args` and persist `executionResult` once it runs.
    */
-  async approve(id: string, userId: string): Promise<PendingAction> {
-    const action = await this.storage.get(id);
+  async approve(
+    id: string,
+    organizationId: string,
+    userId: string,
+  ): Promise<PendingAction> {
+    const action = await this.storage.get(id, organizationId);
     if (!action) throw new NotFoundException('Pending action not found');
 
     if (action.status !== 'PENDING') {
@@ -119,7 +124,7 @@ export class PendingActionService {
     try {
       await this.executorQueue.add(
         'execute_pending',
-        { pendingActionId: id },
+        { pendingActionId: id, organizationId },
         { removeOnComplete: 100, removeOnFail: 50 },
       );
     } catch (err: any) {
@@ -183,6 +188,7 @@ export class PendingActionService {
    */
   async reject(
     id: string,
+    organizationId: string,
     userId: string,
     reason: string,
   ): Promise<PendingAction> {
@@ -190,7 +196,7 @@ export class PendingActionService {
       throw new BadRequestException('Rejection reason is required');
     }
 
-    const action = await this.storage.get(id);
+    const action = await this.storage.get(id, organizationId);
     if (!action) throw new NotFoundException('Pending action not found');
 
     if (action.status !== 'PENDING') {
@@ -248,6 +254,7 @@ export class PendingActionService {
    */
   async distribute(
     id: string,
+    organizationId: string,
     actorUserId: string,
     assignedToId: string,
   ): Promise<PendingAction> {
@@ -255,7 +262,7 @@ export class PendingActionService {
       throw new BadRequestException('assignedToId é obrigatório');
     }
 
-    const action = await this.storage.get(id);
+    const action = await this.storage.get(id, organizationId);
     if (!action) throw new NotFoundException('Pending action not found');
 
     if (action.status !== 'PENDING') {
@@ -427,25 +434,23 @@ export class PendingActionService {
   }
 
   /** List PENDING actions, optionally filtered by conversation. */
-  async listPending(conversationId?: string): Promise<PendingAction[]> {
-    return this.storage.listByStatus('PENDING', conversationId);
-  }
-
-  /** List actions for a given status. */
-  async listByStatus(
-    status: PendingActionStatus,
+  async listPending(
+    organizationId: string,
     conversationId?: string,
   ): Promise<PendingAction[]> {
-    return this.storage.listByStatus(status, conversationId);
+    return this.storage.listByStatus('PENDING', organizationId, conversationId);
   }
 
   /** List every action (any status) for a conversation. */
-  async listForConversation(conversationId: string): Promise<PendingAction[]> {
-    return this.storage.listByConversation(conversationId);
+  async listForConversation(
+    conversationId: string,
+    organizationId: string,
+  ): Promise<PendingAction[]> {
+    return this.storage.listByConversation(conversationId, organizationId);
   }
 
-  async get(id: string): Promise<PendingAction | null> {
-    return this.storage.get(id);
+  async get(id: string, organizationId: string): Promise<PendingAction | null> {
+    return this.storage.get(id, organizationId);
   }
 
   /**
@@ -456,7 +461,7 @@ export class PendingActionService {
    * to a `@Cron('* * * * *')` runner.
    */
   async expireOverdue(): Promise<number> {
-    const pending = await this.storage.listByStatus('PENDING');
+    const pending = await this.storage.listPendingAllOrgs();
     let moved = 0;
     for (const action of pending) {
       if (this.isExpired(action)) {

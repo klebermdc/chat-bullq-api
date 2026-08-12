@@ -21,7 +21,7 @@ export {
 } from './queue-names';
 
 type ExecutorJobData =
-  | { pendingActionId: string }
+  | { pendingActionId: string; organizationId: string }
   | Record<string, never>;
 
 /**
@@ -53,8 +53,15 @@ export class PendingActionExecutorProcessor extends WorkerHost {
     if (job.name === PENDING_EXPIRE_JOB) {
       return this.expireOverdueActions();
     }
-    const { pendingActionId } = job.data as { pendingActionId: string };
-    const action = await this.storage.get(pendingActionId);
+    // A organização vem no payload do job (gravada lá no approve) para o
+    // worker reler a ação já escopada. Sem isso, o único jeito de o worker
+    // buscar seria por id puro — e aí voltaria a existir um caminho de
+    // leitura sem escopo nesta tabela.
+    const { pendingActionId, organizationId } = job.data as {
+      pendingActionId: string;
+      organizationId: string;
+    };
+    const action = await this.storage.get(pendingActionId, organizationId);
 
     if (!action) {
       this.logger.warn(`Pending action ${pendingActionId} not found`);
