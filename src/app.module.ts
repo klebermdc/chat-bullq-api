@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from './database/prisma.module';
 import { CryptoModule } from './common/crypto/crypto.module';
+import { ThrottlingModule } from './common/throttling/throttling.module';
 import { ErrorReporterModule } from './modules/error-reporter/error-reporter.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -69,6 +70,9 @@ import redisConfig from './config/redis.config';
     }),
     PrismaModule,
     CryptoModule,
+    // Rate limit global por IP. Registrado cedo: o guard é APP_GUARD e vale
+    // para todo controller, inclusive os que sobem depois.
+    ThrottlingModule,
     // @Global — coleta de erro de produção. Registrado cedo porque todo
     // módulo de domínio injeta ErrorReporterService sem importar nada.
     ErrorReporterModule,
