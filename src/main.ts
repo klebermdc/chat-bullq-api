@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
@@ -23,13 +24,21 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ErrorReporterService } from './modules/error-reporter/error-reporter.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 
   // helmet blocks cross-origin media by default; relax that for <audio>/<img>
   // tags served by this API (same origin, but browsers enforce CORP).
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+  // OBRIGATÓRIO para o rate limit funcionar. A API só é alcançável pelo Caddy
+  // (o compose não publica a porta dela), então o X-Forwarded-For de um salto
+  // é confiável. Sem isto, `req.ip` é o IP do container do proxy em TODA
+  // requisição: o limite por IP trataria a internet inteira como um cliente
+  // só e o primeiro visitante consumiria a cota de todos.
+  app.set('trust proxy', 1);
   app.setGlobalPrefix('api/v1');
 
   // Serve uploads (audio, media) straight from MinIO. Registered pre-prefix
