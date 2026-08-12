@@ -1457,6 +1457,15 @@ enum AiPendingActionImpact {
 
 model AiPendingAction {
   id             String                @id @default(cuid())
+  /// Dona da ação. Toda leitura filtra por ela.
+  ///
+  /// Nullable de propósito: não existe FK para `conversations` e
+  /// `conversation.delete()` é hard delete, então pode haver linha órfã cuja
+  /// conversa já sumiu e da qual não dá pra derivar a org. Como o filtro é
+  /// por igualdade, órfã com NULL nunca casa com organização nenhuma — ela
+  /// desaparece das listagens em vez de aparecer para todo mundo. Preferido
+  /// a NOT NULL, que exigiria apagar linha de produção na migração.
+  organizationId String?               @map("organization_id")
   agentRunId     String                @map("agent_run_id")
   conversationId String                @map("conversation_id")
   agentId        String                @map("agent_id")
@@ -1484,6 +1493,7 @@ model AiPendingAction {
   @@index([conversationId, status], name: "idx_ai_pending_conv_status")
   @@index([status, expiresAt], name: "idx_ai_pending_status_exp")
   @@index([agentRunId], name: "idx_ai_pending_run")
+  @@index([organizationId, status, createdAt(sort: Desc)], name: "idx_ai_pending_org_status_time")
   @@map("ai_pending_actions")
 }
 

@@ -4,6 +4,7 @@ import { PendingActionService } from './pending-action.service';
 function make(actionOverrides: Record<string, unknown> = {}) {
   const action: any = {
     id: 'pa1',
+    organizationId: 'org1',
     conversationId: 'conv1',
     toolName: 'transferToHuman',
     status: 'PENDING',
@@ -53,7 +54,7 @@ function make(actionOverrides: Record<string, unknown> = {}) {
 describe('PendingActionService.distribute', () => {
   it('pausa IA + atribui ao atendente + move pro Esperando + resolve a pendência', async () => {
     const { svc, storage, prisma } = make();
-    await svc.distribute('pa1', 'operador1', 'atendente9');
+    await svc.distribute('pa1', 'org1', 'operador1', 'atendente9');
 
     const upd = prisma.conversation.updateMany.mock.calls[0][0];
     expect(upd.where).toEqual({ id: 'conv1', assignedToId: null });
@@ -74,7 +75,7 @@ describe('PendingActionService.distribute', () => {
   it('não promove status quando a conversa não está PENDING', async () => {
     const { svc, prisma } = make();
     prisma.conversation.findUnique.mockResolvedValue({ status: 'OPEN', firstResponseAt: new Date() });
-    await svc.distribute('pa1', 'op1', 'at1');
+    await svc.distribute('pa1', 'org1', 'op1', 'at1');
     const upd = prisma.conversation.updateMany.mock.calls[0][0];
     expect(upd.data.status).toBeUndefined();
     expect(upd.data).toMatchObject({ aiEnabled: false, awaitingHumanReply: true });
@@ -82,7 +83,7 @@ describe('PendingActionService.distribute', () => {
 
   it('aplica a tag com o nome do atendente', async () => {
     const { svc, prisma } = make();
-    await svc.distribute('pa1', 'op1', 'atendente9');
+    await svc.distribute('pa1', 'org1', 'op1', 'atendente9');
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
       where: { id: 'atendente9' },
       select: { name: true },
@@ -96,14 +97,14 @@ describe('PendingActionService.distribute', () => {
 
   it('dá uma cor estável e não-cinza pro selo do atendente', async () => {
     const { svc, prisma } = make();
-    await svc.distribute('pa1', 'op1', 'atendente9');
+    await svc.distribute('pa1', 'org1', 'op1', 'atendente9');
     const color = prisma.tag.upsert.mock.calls[0][0].create.color as string;
     expect(color).toMatch(/^#[0-9A-F]{6}$/i);
     expect(color).not.toBe('#6B7280');
 
     // Mesmo atendente → mesma cor (determinístico).
     const { svc: svc2, prisma: prisma2 } = make();
-    await svc2.distribute('pa1', 'op1', 'atendente9');
+    await svc2.distribute('pa1', 'org1', 'op1', 'atendente9');
     expect(prisma2.tag.upsert.mock.calls[0][0].create.color).toBe(color);
   });
 
@@ -111,7 +112,7 @@ describe('PendingActionService.distribute', () => {
     const { svc, prisma } = make();
     prisma.tag.upsert.mockResolvedValue({ id: 'tag1', color: '#6B7280' });
     prisma.tag.update = jest.fn().mockResolvedValue({});
-    await svc.distribute('pa1', 'op1', 'atendente9');
+    await svc.distribute('pa1', 'org1', 'op1', 'atendente9');
     expect(prisma.tag.update).toHaveBeenCalledWith({
       where: { id: 'tag1' },
       data: { color: expect.stringMatching(/^#[0-9A-F]{6}$/i) },
@@ -133,7 +134,7 @@ describe('PendingActionService.distribute', () => {
       ),
     );
 
-    await svc.distribute('pa1', 'op1', 'atendente-novo');
+    await svc.distribute('pa1', 'org1', 'op1', 'atendente-novo');
 
     // Removeu a tag do atendente anterior (match exato pelo nome).
     expect(prisma.conversationTag.deleteMany).toHaveBeenCalledWith({
@@ -146,7 +147,7 @@ describe('PendingActionService.distribute', () => {
 
   it('1ª distribuição (sem atendente anterior) não remove tag nenhuma', async () => {
     const { svc, prisma } = make(); // findUnique base não traz assignedToId
-    await svc.distribute('pa1', 'op1', 'atendente9');
+    await svc.distribute('pa1', 'org1', 'op1', 'atendente9');
     expect(prisma.conversationTag.deleteMany).not.toHaveBeenCalled();
   });
 
@@ -158,7 +159,7 @@ describe('PendingActionService.distribute', () => {
       organizationId: 'org1',
       assignedToId: 'atendente9',
     });
-    await svc.distribute('pa1', 'op1', 'atendente9');
+    await svc.distribute('pa1', 'org1', 'op1', 'atendente9');
     expect(prisma.conversationTag.deleteMany).not.toHaveBeenCalled();
   });
 
@@ -166,19 +167,19 @@ describe('PendingActionService.distribute', () => {
     const { svc, prisma } = make();
     prisma.card.findFirst.mockResolvedValue({ id: 'card1', pipelineId: 'pl1' });
     prisma.pipelineStage.findFirst.mockResolvedValue({ id: 'stage-coleta' });
-    await svc.distribute('pa1', 'op1', 'at1');
+    await svc.distribute('pa1', 'org1', 'op1', 'at1');
     // O card permanece em "Distribuir" — só vai pra Coletando no approve.
     expect(prisma.card.update).not.toHaveBeenCalled();
   });
 
   it('exige assignedToId', async () => {
     const { svc } = make();
-    await expect(svc.distribute('pa1', 'op1', '')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.distribute('pa1', 'org1', 'op1', '')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejeita se a pendência não está PENDING', async () => {
     const { svc } = make({ status: 'EXECUTED' });
-    await expect(svc.distribute('pa1', 'op1', 'at1')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.distribute('pa1', 'org1', 'op1', 'at1')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   // ── Lock otimista contra corrida de distribuição ──────────────────────
@@ -193,7 +194,7 @@ describe('PendingActionService.distribute', () => {
       organizationId: 'org1',
       assignedToId: 'atendente-antigo',
     });
-    await svc.distribute('pa1', 'op1', 'atendente-novo');
+    await svc.distribute('pa1', 'org1', 'op1', 'atendente-novo');
     const call = prisma.conversation.updateMany.mock.calls[0][0];
     // Só atualiza se o dono ainda for exatamente quem lemos antes.
     expect(call.where).toEqual({ id: 'conv1', assignedToId: 'atendente-antigo' });
@@ -202,7 +203,7 @@ describe('PendingActionService.distribute', () => {
 
   it('1ª distribuição usa assignedToId:null no where (não undefined)', async () => {
     const { svc, prisma } = make(); // base findUnique não traz assignedToId
-    await svc.distribute('pa1', 'op1', 'atendente9');
+    await svc.distribute('pa1', 'org1', 'op1', 'atendente9');
     const call = prisma.conversation.updateMany.mock.calls[0][0];
     // undefined faria o Prisma ignorar o filtro → guarda anulada. Tem que ser null.
     expect(call.where).toEqual({ id: 'conv1', assignedToId: null });
@@ -212,7 +213,7 @@ describe('PendingActionService.distribute', () => {
     const { svc, prisma, storage } = make();
     prisma.conversation.updateMany.mockResolvedValue({ count: 0 });
     await expect(
-      svc.distribute('pa1', 'op1', 'atendente9'),
+      svc.distribute('pa1', 'org1', 'op1', 'atendente9'),
     ).rejects.toBeInstanceOf(ConflictException);
     // Perdeu a corrida → NÃO marca a pendência como distribuída.
     expect(storage.save).not.toHaveBeenCalled();
@@ -222,7 +223,7 @@ describe('PendingActionService.distribute', () => {
 describe('PendingActionService.reject — tira o lead da fila "Esperando"', () => {
   it('handoff rejeitado limpa awaitingHumanReply (lead volta pro bot)', async () => {
     const { svc, prisma } = make(); // toolName default = transferToHuman
-    await svc.reject('pa1', 'op1', 'ainda não qualificado');
+    await svc.reject('pa1', 'org1', 'op1', 'ainda não qualificado');
     expect(prisma.conversation.update).toHaveBeenCalledWith({
       where: { id: 'conv1' },
       data: { awaitingHumanReply: false },
@@ -231,7 +232,7 @@ describe('PendingActionService.reject — tira o lead da fila "Esperando"', () =
 
   it('rejeição de ação NÃO-handoff não mexe na conversa', async () => {
     const { svc, prisma } = make({ toolName: 'grantAccess' });
-    await svc.reject('pa1', 'op1', 'não autorizado');
+    await svc.reject('pa1', 'org1', 'op1', 'não autorizado');
     expect(prisma.conversation.update).not.toHaveBeenCalled();
   });
 });

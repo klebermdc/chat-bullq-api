@@ -11,7 +11,8 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import { JwtAuthGuard } from '../../../common/guards';
+import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../../common/guards';
+import { CurrentOrg, Feature } from '../../../common/decorators';
 import { PendingActionService } from './pending-action.service';
 import type { PendingAction } from './confirmation.types';
 
@@ -29,7 +30,10 @@ interface AuthedRequest {
  */
 @ApiTags('AI Pending Actions')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
+// O card de handoff vive no inbox e o AGENTE precisa dele — por isso
+// `inbox.view` (ALL) e não uma feature de gestão.
+@Feature('inbox.view')
 @Controller('pending-actions')
 export class PendingActionController {
   constructor(private readonly service: PendingActionService) {}
@@ -40,15 +44,19 @@ export class PendingActionController {
       'List PENDING destructive actions. Optionally filter by conversationId.',
   })
   async list(
+    @CurrentOrg('id') organizationId: string,
     @Query('conversationId') conversationId?: string,
   ): Promise<PendingAction[]> {
-    return this.service.listPending(conversationId);
+    return this.service.listPending(organizationId, conversationId);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a single pending action by id.' })
-  async get(@Param('id') id: string): Promise<PendingAction> {
-    const action = await this.service.get(id);
+  async get(
+    @Param('id') id: string,
+    @CurrentOrg('id') organizationId: string,
+  ): Promise<PendingAction> {
+    const action = await this.service.get(id, organizationId);
     if (!action) throw new NotFoundException('Pending action not found');
     return action;
   }
@@ -57,21 +65,23 @@ export class PendingActionController {
   @ApiOperation({ summary: 'Approve a pending action and unlock execution.' })
   async approve(
     @Param('id') id: string,
+    @CurrentOrg('id') organizationId: string,
     @Req() req: AuthedRequest,
   ): Promise<PendingAction> {
     const userId = this.requireUserId(req);
-    return this.service.approve(id, userId);
+    return this.service.approve(id, organizationId, userId);
   }
 
   @Post(':id/reject')
   @ApiOperation({ summary: 'Reject a pending action with a reason.' })
   async reject(
     @Param('id') id: string,
+    @CurrentOrg('id') organizationId: string,
     @Req() req: AuthedRequest,
     @Body() body: { reason: string },
   ): Promise<PendingAction> {
     const userId = this.requireUserId(req);
-    return this.service.reject(id, userId, body?.reason ?? '');
+    return this.service.reject(id, organizationId, userId, body?.reason ?? '');
   }
 
   @Post(':id/distribute')
@@ -81,11 +91,17 @@ export class PendingActionController {
   })
   async distribute(
     @Param('id') id: string,
+    @CurrentOrg('id') organizationId: string,
     @Req() req: AuthedRequest,
     @Body() body: { assignedToId: string },
   ): Promise<PendingAction> {
     const userId = this.requireUserId(req);
-    return this.service.distribute(id, userId, body?.assignedToId ?? '');
+    return this.service.distribute(
+      id,
+      organizationId,
+      userId,
+      body?.assignedToId ?? '',
+    );
   }
 
   private requireUserId(req: AuthedRequest): string {

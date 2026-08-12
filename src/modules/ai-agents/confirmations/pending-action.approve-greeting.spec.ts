@@ -3,6 +3,7 @@ import { PendingActionService } from './pending-action.service';
 function make(actionOverrides: Record<string, unknown> = {}, convo: any = {}) {
   const action: any = {
     id: 'pa1',
+    organizationId: 'org1',
     conversationId: 'conv1',
     toolName: 'transferToHuman',
     status: 'PENDING',
@@ -40,7 +41,7 @@ describe('PendingActionService.approve — saudação do atendente', () => {
       args: { distributedTo: 'atendente9' },
     });
 
-    await svc.approve('pa1', 'operador1');
+    await svc.approve('pa1', 'org1', 'operador1');
 
     expect(attendantGreeting.greet).toHaveBeenCalledTimes(1);
     expect(attendantGreeting.greet).toHaveBeenCalledWith({
@@ -58,7 +59,7 @@ describe('PendingActionService.approve — saudação do atendente', () => {
       { assignedToId: 'atendente7' },
     );
 
-    await svc.approve('pa1', 'operador1');
+    await svc.approve('pa1', 'org1', 'operador1');
 
     expect(attendantGreeting.greet).toHaveBeenCalledWith({
       conversationId: 'conv1',
@@ -73,7 +74,7 @@ describe('PendingActionService.approve — saudação do atendente', () => {
       { assignedToId: null },
     );
 
-    await svc.approve('pa1', 'operador1');
+    await svc.approve('pa1', 'org1', 'operador1');
 
     expect(attendantGreeting.greet).toHaveBeenCalledWith({
       conversationId: 'conv1',
@@ -88,7 +89,7 @@ describe('PendingActionService.approve — saudação do atendente', () => {
       args: { someOtherArg: true },
     });
 
-    await svc.approve('pa1', 'operador1');
+    await svc.approve('pa1', 'org1', 'operador1');
 
     expect(attendantGreeting.greet).not.toHaveBeenCalled();
   });
@@ -99,7 +100,7 @@ describe('PendingActionService.approve — saudação do atendente', () => {
       args: { distributedTo: 'atendente9' },
     });
 
-    await svc.approve('pa1', 'operador1');
+    await svc.approve('pa1', 'org1', 'operador1');
 
     expect(attendantGreeting.greet).not.toHaveBeenCalled();
   });
@@ -110,7 +111,7 @@ describe('PendingActionService.approve — saudação do atendente', () => {
     });
     prisma.conversation.findUnique.mockRejectedValue(new Error('db down'));
 
-    const result = await svc.approve('pa1', 'operador1');
+    const result = await svc.approve('pa1', 'org1', 'operador1');
 
     expect(result.status).toBe('APPROVED');
     expect(attendantGreeting.greet).toHaveBeenCalledWith({
