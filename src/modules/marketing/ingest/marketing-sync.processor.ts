@@ -13,6 +13,12 @@ import { MetaInsightsClient } from './meta-insights.client';
 import { mapInsightRow } from './insights.mapper';
 import type { MarketingSyncJobData } from './marketing-sync.queue';
 
+// concurrency: 2, de propósito. Com 1, um backfill de 90 dias de um tenant
+// bloquearia o sync diário de toda organização atrás dele na fila. O overlap
+// entre dois jobs da MESMA conexão (backfill + refresh manual) é benigno:
+// cada job busca dado fresco na Meta no instante em que roda, então o pior
+// caso é uma linha ficar desatualizada por alguns minutos até o tick diário
+// seguinte corrigir — não há dado errado persistido, só um atraso pequeno.
 @Processor(MARKETING_SYNC_QUEUE, { concurrency: 2 })
 export class MarketingSyncProcessor extends WorkerHost {
   private readonly logger = new Logger(MarketingSyncProcessor.name);
@@ -56,6 +62,7 @@ export class MarketingSyncProcessor extends WorkerHost {
 
     const syncedAt = new Date();
     let gravadas = 0;
+    let falhas = 0;
 
     for (const raw of rows) {
       try {
@@ -80,6 +87,7 @@ export class MarketingSyncProcessor extends WorkerHost {
         });
         gravadas += 1;
       } catch (err) {
+        falhas += 1;
         // Uma linha estranha não pode custar o dia inteiro de dados.
         this.errorReporter.report({
           source: ErrorSource.JOB,
@@ -92,7 +100,39 @@ export class MarketingSyncProcessor extends WorkerHost {
       }
     }
 
+    // Janela sem gasto (rows.length === 0) é sucesso legítimo — nada para
+    // mapear não é a mesma coisa que tudo falhar ao mapear. O caso grave é
+    // quando a Meta devolveu linhas e NENHUMA sobreviveu ao mapeamento: sinal
+    // de que o formato mudou (campo renomeado etc.) e o sync está, na
+    // prática, ingerindo zero dado — mas sem esta checagem ele terminava
+    // marcado como sucesso todo santo dia.
+    if (rows.length > 0 && gravadas === 0) {
+      await this.repo.markFailed(
+        connection.id,
+        `todas as ${falhas} linhas da janela ${since}..${until} falharam ao mapear`,
+      );
+      this.errorReporter.report({
+        source: ErrorSource.JOB,
+        code: ERROR_CODES.MARKETING_SYNC_FAILED,
+        severity: ErrorSeverity.ERROR,
+        message: `Meta Ads: lote inteiro falhou ao mapear (${falhas}/${rows.length} linhas) — possivel mudanca de schema da Meta`,
+        organizationId: connection.organizationId,
+        context: { connectionId, since, until },
+      });
+      this.logger.error(
+        `sync conexao=${connectionId} janela=${since}..${until} TODAS as ${rows.length} linhas falharam`,
+      );
+      // Não relança: repetir o job não conserta uma mudança de schema, e a
+      // conexão já carrega o erro em lastSyncError para aparecer na UI.
+      return;
+    }
+
     await this.repo.markSynced(connection.id, syncedAt);
+    if (falhas > 0) {
+      // markSynced acima limpa lastSyncError — por isso a falha parcial só
+      // pode ser registrada DEPOIS, senão o markSynced apaga o rastro dela.
+      await this.repo.markFailed(connection.id, `${falhas} de ${rows.length} linhas invalidas`);
+    }
     this.logger.log(
       `sync conexao=${connectionId} janela=${since}..${until} linhas=${gravadas}/${rows.length}`,
     );

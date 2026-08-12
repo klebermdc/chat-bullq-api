@@ -42,7 +42,12 @@ function makeRepo(connection: any) {
   return {
     connection,
     findOneWithToken: jest.fn(async () => connection),
-    markSynced: jest.fn(async () => undefined),
+    // Espelha o repositório real: markSynced limpa lastSyncError. Sem isso o
+    // teste de falha parcial não conseguiria distinguir "markFailed nunca
+    // rodou" de "markFailed rodou mas foi apagado por um markSynced depois".
+    markSynced: jest.fn(async () => {
+      connection.lastSyncError = null;
+    }),
     markFailed: jest.fn(async (_id: string, message: string, status?: AdConnectionStatus) => {
       connection.lastSyncError = message;
       if (status) connection.status = status;
@@ -209,5 +214,26 @@ describe('MarketingSyncProcessor', () => {
     expect(errorReporter.report).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'MARKETING_SYNC_FAILED' }),
     );
+  });
+
+  it('sync em que TODA linha falhou nao e marcado como sucesso', async () => {
+    const { processor, repo } = build([{ date_start: '2026-08-10' }, { ad_id: '9' }]);
+    await processor.process(job());
+    expect(repo.markSynced).not.toHaveBeenCalled();
+    expect(repo.markFailed).toHaveBeenCalled();
+  });
+
+  it('sync parcial marca sucesso mas registra o que falhou', async () => {
+    const { processor, repo, connection } = build([RAW_ROW, { date_start: '2026-08-10' }]);
+    await processor.process(job());
+    expect(repo.markSynced).toHaveBeenCalled();
+    expect(connection.lastSyncError).toMatch(/1/);
+  });
+
+  it('janela sem gasto nenhum e sucesso legitimo', async () => {
+    const { processor, repo } = build([]);
+    await processor.process(job());
+    expect(repo.markSynced).toHaveBeenCalled();
+    expect(repo.markFailed).not.toHaveBeenCalled();
   });
 });
