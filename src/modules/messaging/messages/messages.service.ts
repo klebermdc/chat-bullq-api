@@ -802,6 +802,33 @@ export class MessagesService {
   }
 
   /** Janela em volta de uma mensagem — destino do "pular até" da busca. */
+  /**
+   * Escopo das leituras que procuram (busca e "pular até"): as conversas-irmãs
+   * de segmento MAIS o histórico do contato.
+   *
+   * União, não substituição. O segmento une o mesmo grupo de WhatsApp em
+   * números diferentes, e grupo não tem telefone — trocar um escopo pelo outro
+   * faria a busca perder as irmãs de segmento.
+   */
+  private async resolveSearchScope(
+    conversationId: string,
+    organizationId: string,
+    access: ChannelAccess,
+    currentUserId?: string,
+    role?: OrgRole,
+  ) {
+    const [segment, contact] = await Promise.all([
+      this.resolveHistoryScope(conversationId, organizationId, access, currentUserId, role),
+      this.contactHistory.resolveScope(conversationId, organizationId, access, currentUserId, role),
+    ]);
+    return {
+      conversationIds: [
+        ...new Set([...segment.conversationIds, ...contact.conversationIds]),
+      ],
+      conversations: contact.conversations,
+    };
+  }
+
   async findWindowAround(
     conversationId: string,
     organizationId: string,
@@ -811,7 +838,9 @@ export class MessagesService {
     currentUserId?: string,
     role?: OrgRole,
   ) {
-    const { conversationIds, unioned } = await this.resolveHistoryScope(
+    // Mesmo escopo da busca: o resultado clicado pode estar num atendimento
+    // anterior, e com o escopo da conversa a âncora não seria encontrada.
+    const scope = await this.resolveSearchScope(
       conversationId,
       organizationId,
       access,
@@ -819,15 +848,17 @@ export class MessagesService {
       role,
     );
 
-    return this.repository.findWindowAround(
-      conversationIds,
-      unioned,
+    const window = await this.repository.findWindowAround(
+      scope.conversationIds,
+      true,
       anchorMessageId,
       radius,
     );
+
+    return { ...window, conversations: scope.conversations };
   }
 
-  /** Busca por conteúdo dentro da conversa (e das irmãs de segmento). */
+  /** Busca por conteúdo em todo o histórico do contato. */
   async searchInConversation(
     conversationId: string,
     organizationId: string,
@@ -840,7 +871,9 @@ export class MessagesService {
     const trimmed = (term || '').trim();
     if (!trimmed) return { messages: [] };
 
-    const { conversationIds } = await this.resolveHistoryScope(
+    // Dar visibilidade dos atendimentos anteriores sem estender a busca
+    // deixaria o atendente vendo na tela uma mensagem que a lupa jura não existir.
+    const scope = await this.resolveSearchScope(
       conversationId,
       organizationId,
       access,
@@ -849,7 +882,7 @@ export class MessagesService {
     );
 
     const messages = await this.repository.searchInConversations(
-      conversationIds,
+      scope.conversationIds,
       trimmed,
       limit,
     );
@@ -863,7 +896,12 @@ export class MessagesService {
         providerTimestamp: m.providerTimestamp,
         senderName: m.senderName,
         snippet: buildSnippet(messageText(m.content), trimmed),
+        // De qual atendimento veio — sem isso um resultado de outro número
+        // aparece sem contexto nenhum.
+        conversation: scope.conversations[m.conversationId] ?? null,
+        isCurrentConversation: m.conversationId === conversationId,
       })),
+      conversations: scope.conversations,
     };
   }
 }

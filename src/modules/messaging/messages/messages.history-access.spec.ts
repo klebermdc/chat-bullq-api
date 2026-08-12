@@ -1,19 +1,30 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { MessagesService } from './messages.service';
+import { ContactHistoryService } from './contact-history.service';
 
 /**
  * As três leituras novas de histórico (rolar pra cima, janela do "pular até" e
  * busca por conteúdo) compartilham a MESMA guarda de `findByConversation`.
+ *
+ * A janela e a busca resolvem escopo pelo `ContactHistoryService` (elas varrem
+ * o histórico inteiro do contato), então aqui ele entra REAL, com o mesmo
+ * prisma falso. Stubá-lo apagaria justamente a guarda que estes testes provam.
  * Guarda compartilhada tem um risco próprio: um caminho novo que esqueça de
  * chamá-la vaza histórico inteiro de outra organização. Estes testes prendem
  * as quatro entradas no mesmo contrato.
  */
 function makeService(conversation: Record<string, unknown> | null) {
   const prisma: any = {
-    conversation: { findUnique: jest.fn().mockResolvedValue(conversation) },
+    conversation: {
+      findUnique: jest.fn().mockResolvedValue(conversation),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    contact: { findMany: jest.fn().mockResolvedValue([]) },
   };
   const channelAccess = {
+    hasAccess: (access: unknown, channelId: string) =>
+      access === 'ALL' || (access as Set<string>).has(channelId),
     assertChannelAccess: jest.fn((access: unknown, channelId: string) => {
       if (access !== 'ALL' && !(access as Set<string>).has(channelId)) {
         throw new ForbiddenException();
@@ -30,8 +41,19 @@ function makeService(conversation: Record<string, unknown> | null) {
     searchInConversations: jest.fn().mockResolvedValue([]),
   };
 
+  const contactHistory = new ContactHistoryService(
+    prisma as any,
+    channelAccess as any,
+  );
+
   const svc: MessagesService = Object.create(MessagesService.prototype);
-  Object.assign(svc, { prisma, channelAccess, segmentRead, repository });
+  Object.assign(svc, {
+    prisma,
+    channelAccess,
+    segmentRead,
+    repository,
+    contactHistory,
+  });
   return { svc, repository, segmentRead };
 }
 
@@ -40,6 +62,7 @@ const CONVERSATION = {
   organizationId: 'org1',
   channelId: 'chan1',
   assignedToId: 'colega-u2',
+  contact: { id: 'contact1', phone: null },
 };
 
 /** Cada entrada de leitura, com os argumentos que só variam no meio. */
