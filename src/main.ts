@@ -20,6 +20,7 @@ import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ErrorReporterService } from './modules/error-reporter/error-reporter.service';
+import { isPubliclyServableKey } from './common/storage/public-storage-keys';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
@@ -45,6 +46,15 @@ async function bootstrap() {
     // req.path is the sub-path after the mount, e.g. "/audio/2026-07-05/x.ogg".
     const key = decodeURIComponent(req.path).replace(/^\/+/, '');
     if (!key || key.includes('..')) {
+      res.status(404).end();
+      return;
+    }
+    // Aberta só para o que provedor externo precisa baixar. O PDF assinado do
+    // aceite saiu daqui: ele tem assinatura, IP e dado pessoal, e era baixável
+    // por qualquer um que tivesse a URL — de qualquer organização. Vai por
+    // `/public/acceptances/:token/pdf` (cliente) ou `/acceptances/:id/pdf`
+    // (sessão). 404, não 403: quem não pode ver não precisa saber que existe.
+    if (!isPubliclyServableKey(key)) {
       res.status(404).end();
       return;
     }

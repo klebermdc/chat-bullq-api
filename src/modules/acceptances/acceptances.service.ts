@@ -216,8 +216,51 @@ export class AcceptancesService {
     return !!acc.expiresAt && acc.expiresAt.getTime() < Date.now();
   }
 
-  private pdfUrl(pdfKey: string | null): string | null {
-    return pdfKey ? `/api/v1/uploads/${pdfKey}` : null;
+  /**
+   * O PDF assinado saiu de `/uploads`, que serve sem sessão para provedor
+   * externo baixar mídia. Ele tem assinatura, IP e dado pessoal, e ficava
+   * baixável por quem tivesse a URL — de qualquer organização.
+   *
+   * Agora tem dois caminhos autorizados, um por audiência: o cliente não tem
+   * login, mas tem o token do aceite; o atendente tem sessão.
+   */
+  private pdfUrlForToken(token: string, pdfKey: string | null): string | null {
+    return pdfKey ? `/api/v1/public/acceptances/${token}/pdf` : null;
+  }
+
+  private pdfUrlForOrg(id: string, pdfKey: string | null): string | null {
+    return pdfKey ? `/api/v1/acceptances/${id}/pdf` : null;
+  }
+
+  /** Bytes do PDF para o cliente, autorizado pelo token do próprio aceite. */
+  async pdfForToken(token: string): Promise<{ buffer: Buffer; fileName: string }> {
+    const acc = await this.prisma.orderAcceptance.findUnique({
+      where: { token },
+      select: { id: true, pdfKey: true },
+    });
+    return this.readPdf(acc);
+  }
+
+  /** Bytes do PDF para o atendente, escopado à organização dele. */
+  async pdfForOrg(
+    id: string,
+    organizationId: string,
+  ): Promise<{ buffer: Buffer; fileName: string }> {
+    const acc = await this.prisma.orderAcceptance.findFirst({
+      where: { id, organizationId },
+      select: { id: true, pdfKey: true },
+    });
+    return this.readPdf(acc);
+  }
+
+  private async readPdf(acc: { id: string; pdfKey: string | null } | null) {
+    // Mesmo 404 para "não existe" e "não é seu": diferenciar os dois confirmaria
+    // a existência de um aceite alheio para quem chutar ids.
+    if (!acc?.pdfKey) throw new NotFoundException('Aceite não encontrado.');
+    return {
+      buffer: await this.storage.getBuffer(acc.pdfKey),
+      fileName: `aceite-${acc.id}.pdf`,
+    };
   }
 
   async getByToken(token: string): Promise<PublicAcceptanceView> {
@@ -238,7 +281,7 @@ export class AcceptancesService {
       policyText: acc.policyText ?? null,
       signedAt: acc.signedAt ? acc.signedAt.toISOString() : null,
       signerName: acc.signerName ?? null,
-      pdfUrl: this.pdfUrl(acc.pdfKey),
+      pdfUrl: this.pdfUrlForToken(token, acc.pdfKey),
       vouchers: ((acc.vouchers as any) ?? []) as VoucherRef[],
       orderRef: acc.orderRef ?? null,
     };
@@ -297,7 +340,7 @@ export class AcceptancesService {
       policyText: signed.policyText ?? null,
       signedAt: signed.signedAt ? signed.signedAt.toISOString() : null,
       signerName: signed.signerName ?? null,
-      pdfUrl: this.pdfUrl(signed.pdfKey),
+      pdfUrl: this.pdfUrlForToken(token, signed.pdfKey),
       vouchers: ((signed.vouchers as any) ?? []) as VoucherRef[],
       orderRef: signed.orderRef ?? null,
     };
@@ -324,7 +367,7 @@ export class AcceptancesService {
       id: acc.id, status: acc.status, items: acc.items,
       signedAt: acc.signedAt, signerName: acc.signerName,
       signerIp: acc.signerIp, signerUserAgent: acc.signerUserAgent,
-      pdfUrl: this.pdfUrl(acc.pdfKey), createdAt: acc.createdAt, expiresAt: acc.expiresAt,
+      pdfUrl: this.pdfUrlForOrg(acc.id, acc.pdfKey), createdAt: acc.createdAt, expiresAt: acc.expiresAt,
     };
   }
 }

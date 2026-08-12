@@ -352,7 +352,12 @@ describe('AcceptancesService.sign', () => {
     expect(pdf.render).toHaveBeenCalled();
     expect(storage.put).toHaveBeenCalledWith(expect.stringContaining('acceptances/'), expect.any(Buffer), 'application/pdf');
     expect(effects.onSigned).toHaveBeenCalled();
-    expect(res).toEqual(expect.objectContaining({ status: 'SIGNED', organizationName: 'OFP', pdfUrl: expect.stringContaining('/api/v1/uploads/') }));
+    expect(res).toEqual(expect.objectContaining({ status: 'SIGNED', organizationName: 'OFP' }));
+    // O PDF assinado NÃO pode voltar apontando pra `/uploads`: aquela rota serve
+    // sem sessão nenhuma, e o documento tem assinatura, IP e dado pessoal.
+    expect(res.pdfUrl).not.toContain('/uploads/');
+    expect(res.pdfUrl).toContain('/public/acceptances/');
+    expect(res.pdfUrl).toContain('/pdf');
     expect(res).not.toHaveProperty('token');
     expect(res).not.toHaveProperty('signerIp');
   });

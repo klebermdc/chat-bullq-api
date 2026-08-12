@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Res, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentOrg } from '../../common/decorators';
 import { AcceptancesService } from './acceptances.service';
@@ -12,6 +13,25 @@ import { ExtractVoucherTextDto } from './dto/extract-voucher-text.dto';
 @Controller('acceptances')
 export class AcceptancesController {
   constructor(private readonly service: AcceptancesService) {}
+
+  /**
+   * PDF assinado para o atendente, escopado à organização dele. Substitui o
+   * link direto de `/uploads`, que servia o documento sem sessão nenhuma.
+   */
+  @Get(':id/pdf')
+  async pdf(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName } = await this.service.pdfForOrg(id, orgId);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${fileName}"`,
+      'Content-Length': String(buffer.length),
+    });
+    res.end(buffer);
+  }
 
   @Get('conversation/:conversationId')
   status(
