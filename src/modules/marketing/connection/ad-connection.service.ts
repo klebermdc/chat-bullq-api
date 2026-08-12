@@ -5,6 +5,7 @@ import { MARKETING_BACKFILL_DAYS, MARKETING_SYNC_WINDOW_DAYS, META_ADS_SCOPES } 
 import { MarketingSyncQueue } from '../ingest/marketing-sync.queue';
 import { AdConnectionRepository } from './ad-connection.repository';
 import { MetaAdAccount, MetaOAuthClient } from './meta-oauth.client';
+import { OAuthHandshakeStore } from './oauth-handshake.store';
 
 /** Data no formato YYYY-MM-DD que a Graph API espera. */
 function isoDay(d: Date): string {
@@ -24,6 +25,7 @@ export class AdConnectionService {
     private readonly oauth: MetaOAuthClient,
     private readonly crypto: CryptoService,
     private readonly queue: MarketingSyncQueue,
+    private readonly handshakes: OAuthHandshakeStore,
   ) {}
 
   list(organizationId: string) {
@@ -32,28 +34,49 @@ export class AdConnectionService {
 
   /**
    * Passo 1 do fluxo: troca o code e devolve as contas para o usuário escolher.
-   * NÃO persiste — se o usuário desistir na tela de escolha, nada fica no banco.
+   *
+   * O `code` do OAuth é de uso único (RFC 6749 §4.1.2) — não dá para guardá-lo
+   * e trocar de novo no passo 2. Por isso a troca acontece aqui, uma vez só, e
+   * o resultado (token cifrado + contas) fica num handshake de curta duração
+   * no servidor. Nada é persistido no banco: se o usuário desistir na tela de
+   * escolha, o handshake expira sozinho e nada fica no banco.
    */
-  async listAvailableAccounts(code: string): Promise<MetaAdAccount[]> {
+  async listAvailableAccounts(
+    code: string,
+  ): Promise<{ handshakeId: string; accounts: MetaAdAccount[] }> {
     if (!code?.trim()) throw new BadRequestException('code ausente');
-    const { accessToken } = await this.oauth.exchangeCodeForLongLivedToken(code.trim());
-    return this.oauth.listAdAccounts(accessToken);
+    const { accessToken, expiresAt } = await this.oauth.exchangeCodeForLongLivedToken(
+      code.trim(),
+    );
+    const accounts = await this.oauth.listAdAccounts(accessToken);
+
+    const handshakeId = await this.handshakes.save({
+      tokenEnc: this.crypto.encrypt(accessToken),
+      expiresAt: expiresAt ? expiresAt.toISOString() : null,
+      accounts,
+    });
+
+    return { handshakeId, accounts };
   }
 
-  /** Passo 2: grava a conexão da conta escolhida e dispara o backfill. */
+  /**
+   * Passo 2: consome o handshake do passo 1 (uma vez só) e grava a conexão da
+   * conta escolhida. Não fala com a Meta de novo — o token já foi trocado.
+   */
   async createConnection(
     organizationId: string,
     userId: string,
-    input: { code: string; adAccountId: string },
+    input: { handshakeId: string; adAccountId: string },
   ) {
-    if (!input.code?.trim()) throw new BadRequestException('code ausente');
+    if (!input.handshakeId?.trim()) throw new BadRequestException('handshakeId ausente');
     if (!input.adAccountId?.trim()) throw new BadRequestException('adAccountId ausente');
 
-    const { accessToken, expiresAt } = await this.oauth.exchangeCodeForLongLivedToken(
-      input.code.trim(),
-    );
-    const accounts = await this.oauth.listAdAccounts(accessToken);
-    const chosen = accounts.find((a) => a.id === input.adAccountId.trim());
+    const handshake = await this.handshakes.consume(input.handshakeId.trim());
+    if (!handshake) {
+      throw new BadRequestException('Sessao de conexao expirada — refaca o login com o Meta');
+    }
+
+    const chosen = handshake.accounts.find((a) => a.id === input.adAccountId.trim());
     if (!chosen) {
       throw new BadRequestException(
         'Esta conta de anuncios nao esta acessivel pela conta do Meta conectada',
@@ -68,9 +91,9 @@ export class AdConnectionService {
       currency: chosen.currency,
       timezoneName: chosen.timezoneName,
       businessId: chosen.businessId,
-      accessTokenEnc: this.crypto.encrypt(accessToken),
+      accessTokenEnc: handshake.tokenEnc,
       tokenScopes: [...META_ADS_SCOPES],
-      tokenExpiresAt: expiresAt,
+      tokenExpiresAt: handshake.expiresAt ? new Date(handshake.expiresAt) : null,
       connectedByUserId: userId,
     });
 
@@ -81,13 +104,7 @@ export class AdConnectionService {
       reason: 'backfill',
     });
 
-    // Blindagem própria: mesmo que o repositório algum dia devolva a linha
-    // crua (sem passar pelo `select` público), o token cifrado nunca sai
-    // deste serviço.
-    const { accessTokenEnc: _accessTokenEnc, ...publicConnection } = connection as typeof connection & {
-      accessTokenEnc?: string;
-    };
-    return publicConnection;
+    return connection;
   }
 
   async triggerSync(organizationId: string, id: string) {

@@ -31,13 +31,18 @@ function makeRepo() {
           r.organizationId === data.organizationId &&
           r.externalAccountId === data.externalAccountId,
       );
+      let row: any;
       if (existing) {
         Object.assign(existing, data, { status: AdConnectionStatus.ACTIVE });
-        return existing;
+        row = existing;
+      } else {
+        row = { id: `c${++seq}`, status: AdConnectionStatus.ACTIVE, ...data };
+        rows.push(row);
       }
-      const row = { id: `c${++seq}`, status: AdConnectionStatus.ACTIVE, ...data };
-      rows.push(row);
-      return row;
+      // Espelha o `select: CONNECTION_PUBLIC_SELECT` do repositório real: o
+      // token cifrado fica gravado na linha, mas nunca sai do upsert.
+      const { accessTokenEnc: _accessTokenEnc, ...publicRow } = row;
+      return publicRow;
     }),
     delete: jest.fn(async (organizationId: string, id: string) => {
       const i = rows.findIndex((r) => r.id === id && r.organizationId === organizationId);
@@ -61,23 +66,49 @@ function makeQueue() {
   return { enqueueSync: jest.fn(async () => undefined) };
 }
 
-function build(overrides: { oauth?: any; repo?: any; queue?: any } = {}) {
+function makeHandshakes() {
+  const map = new Map<string, any>();
+  let seq = 0;
+  return {
+    map,
+    save: jest.fn(async (payload: any) => {
+      const id = `hs${++seq}`;
+      map.set(id, payload);
+      return id;
+    }),
+    consume: jest.fn(async (id: string) => {
+      const found = map.get(id) ?? null;
+      map.delete(id);
+      return found;
+    }),
+  };
+}
+
+function build(overrides: { oauth?: any; repo?: any; queue?: any; handshakes?: any } = {}) {
   const repo = overrides.repo ?? makeRepo();
   const oauth = overrides.oauth ?? makeOauth();
   const queue = overrides.queue ?? makeQueue();
+  const handshakes = overrides.handshakes ?? makeHandshakes();
   const service = new AdConnectionService(
     repo as any,
     oauth as any,
     makeCrypto(),
     queue as any,
+    handshakes as any,
   );
-  return { service, repo, oauth, queue };
+  return { service, repo, oauth, queue, handshakes };
+}
+
+/** Passo 1 + passo 2, como um cliente real faria. */
+async function connect(service: any, adAccountId = 'act_1') {
+  const { handshakeId } = await service.listAvailableAccounts('CODE');
+  return service.createConnection(ORG, 'user-1', { handshakeId, adAccountId });
 }
 
 describe('AdConnectionService', () => {
   it('lista as contas disponiveis sem persistir nada', async () => {
     const { service, repo } = build();
-    const accounts = await service.listAvailableAccounts('CODE');
+    const { accounts } = await service.listAvailableAccounts('CODE');
     expect(accounts).toHaveLength(1);
     expect(repo.rows).toHaveLength(0);
   });
@@ -89,10 +120,7 @@ describe('AdConnectionService', () => {
 
   it('cria a conexao com o token cifrado e nunca devolve o token', async () => {
     const { service, repo } = build();
-    const created = await service.createConnection(ORG, 'user-1', {
-      code: 'CODE',
-      adAccountId: 'act_1',
-    });
+    const created = await connect(service);
 
     expect(created).not.toHaveProperty('accessTokenEnc');
     const stored = repo.rows[0];
@@ -103,14 +131,20 @@ describe('AdConnectionService', () => {
 
   it('recusa ad account que o token nao enxerga', async () => {
     const { service } = build();
+    await expect(connect(service, 'act_999')).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('recusa adAccountId vazio', async () => {
+    const { service } = build();
+    const { handshakeId } = await service.listAvailableAccounts('CODE');
     await expect(
-      service.createConnection(ORG, 'user-1', { code: 'CODE', adAccountId: 'act_999' }),
+      service.createConnection(ORG, 'user-1', { handshakeId, adAccountId: '  ' }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('enfileira o backfill ao conectar', async () => {
     const { service, queue } = build();
-    await service.createConnection(ORG, 'user-1', { code: 'CODE', adAccountId: 'act_1' });
+    await connect(service);
     expect(queue.enqueueSync).toHaveBeenCalledTimes(1);
     const arg = queue.enqueueSync.mock.calls[0][0];
     expect(arg.reason).toBe('backfill');
@@ -118,11 +152,11 @@ describe('AdConnectionService', () => {
 
   it('reconectar a mesma conta reativa em vez de duplicar', async () => {
     const { service, repo } = build();
-    await service.createConnection(ORG, 'user-1', { code: 'CODE', adAccountId: 'act_1' });
+    await connect(service);
     repo.rows[0].status = AdConnectionStatus.INVALID_TOKEN;
     repo.rows[0].lastSyncError = 'Session has expired';
 
-    await service.createConnection(ORG, 'user-1', { code: 'CODE2', adAccountId: 'act_1' });
+    await connect(service);
 
     expect(repo.rows).toHaveLength(1);
     expect(repo.rows[0].status).toBe(AdConnectionStatus.ACTIVE);
@@ -130,13 +164,13 @@ describe('AdConnectionService', () => {
 
   it('grava o provider META', async () => {
     const { service, repo } = build();
-    await service.createConnection(ORG, 'user-1', { code: 'CODE', adAccountId: 'act_1' });
+    await connect(service);
     expect(repo.rows[0].provider).toBe(AdProvider.META);
   });
 
   it('sync manual enfileira com reason daily', async () => {
     const { service, repo, queue } = build();
-    await service.createConnection(ORG, 'user-1', { code: 'CODE', adAccountId: 'act_1' });
+    await connect(service);
     queue.enqueueSync.mockClear();
 
     await service.triggerSync(ORG, repo.rows[0].id);
@@ -147,7 +181,7 @@ describe('AdConnectionService', () => {
 
   it('sync manual de conexao de outra org da 404', async () => {
     const { service, repo } = build();
-    await service.createConnection(ORG, 'user-1', { code: 'CODE', adAccountId: 'act_1' });
+    await connect(service);
     await expect(service.triggerSync('org-2', repo.rows[0].id)).rejects.toBeInstanceOf(
       NotFoundException,
     );
@@ -155,10 +189,39 @@ describe('AdConnectionService', () => {
 
   it('remover conexao de outra org da 404', async () => {
     const { service, repo } = build();
-    await service.createConnection(ORG, 'user-1', { code: 'CODE', adAccountId: 'act_1' });
+    await connect(service);
     await expect(service.remove('org-2', repo.rows[0].id)).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(repo.rows).toHaveLength(1);
+  });
+
+  it('list delega para o repositorio', async () => {
+    const { service, repo } = build();
+    await service.list(ORG);
+    expect(repo.findAllPublic).toHaveBeenCalledWith(ORG);
+  });
+
+  it('troca o code UMA vez so — createConnection nao chama a Meta de novo', async () => {
+    const { service, oauth } = build();
+    await connect(service);
+    expect(oauth.exchangeCodeForLongLivedToken).toHaveBeenCalledTimes(1);
+    expect(oauth.listAdAccounts).toHaveBeenCalledTimes(1);
+  });
+
+  it('handshake serve uma vez so', async () => {
+    const { service } = build();
+    const { handshakeId } = await service.listAvailableAccounts('CODE');
+    await service.createConnection(ORG, 'user-1', { handshakeId, adAccountId: 'act_1' });
+    await expect(
+      service.createConnection(ORG, 'user-1', { handshakeId, adAccountId: 'act_1' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('handshake expirado ou desconhecido da erro claro', async () => {
+    const { service } = build();
+    await expect(
+      service.createConnection(ORG, 'user-1', { handshakeId: 'nao-existe', adAccountId: 'act_1' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
