@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
+import axios, { AxiosResponse } from 'axios';
 import { GRAPH_API_VERSION, GRAPH_TIMEOUT_MS } from '../marketing.constants';
 
 export interface MetaAdAccount {
@@ -19,6 +19,20 @@ export interface MetaAdAccount {
 export interface LongLivedToken {
   accessToken: string;
   expiresAt: Date | null;
+}
+
+/** Forma crua de /me/adaccounts. Só o que a gente lê. */
+interface RawAdAccount {
+  id: string;
+  name?: string;
+  currency?: string;
+  timezone_name?: string;
+  business?: { id?: string };
+}
+
+interface AdAccountsPage {
+  data?: RawAdAccount[];
+  paging?: { next?: string };
 }
 
 /**
@@ -60,6 +74,7 @@ export class MetaOAuthClient {
     });
     const shortToken = short.data?.access_token;
     if (!shortToken) {
+      this.logger.warn('Meta nao retornou access_token na troca do code (1a etapa)');
       throw new BadRequestException('Meta nao retornou access_token na troca do code');
     }
 
@@ -74,6 +89,9 @@ export class MetaOAuthClient {
     });
     const accessToken = long.data?.access_token;
     if (!accessToken) {
+      this.logger.warn(
+        'Meta nao retornou token de longa duracao (2a etapa, fb_exchange_token)',
+      );
       throw new BadRequestException('Meta nao retornou token de longa duracao');
     }
 
@@ -89,7 +107,7 @@ export class MetaOAuthClient {
   /** Todas as contas de anúncio que o token enxerga. */
   async listAdAccounts(token: string): Promise<MetaAdAccount[]> {
     const accounts: MetaAdAccount[] = [];
-    let url: string | undefined = `${this.base()}/me/adaccounts`;
+    let url: string | null = `${this.base()}/me/adaccounts`;
     let params: Record<string, unknown> | undefined = {
       fields: 'id,name,currency,timezone_name,business',
       limit: 100,
@@ -97,7 +115,12 @@ export class MetaOAuthClient {
     };
 
     while (url) {
-      const response: { data: any } = await axios.get(url, { params, timeout: GRAPH_TIMEOUT_MS });
+      // A anotação explícita quebra a inferência circular do TS: `url` é
+      // reatribuído a partir da própria resposta que ele ajuda a tipar (TS7022).
+      const response: AxiosResponse<AdAccountsPage> = await axios.get(url, {
+        params,
+        timeout: GRAPH_TIMEOUT_MS,
+      });
       const data = response.data;
       for (const row of data?.data ?? []) {
         accounts.push({
@@ -109,7 +132,7 @@ export class MetaOAuthClient {
         });
       }
       // O `next` já vem com todos os parâmetros embutidos.
-      url = data?.paging?.next ?? undefined;
+      url = data?.paging?.next ?? null;
       params = undefined;
     }
 

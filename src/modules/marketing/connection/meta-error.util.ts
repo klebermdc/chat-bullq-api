@@ -11,9 +11,9 @@ const REVOKED_SUBCODES = new Set([458, 459, 466]);
 const RATE_LIMIT_CODES = new Set([4, 17, 32, 613, 80000, 80003, 80004, 80014]);
 
 export type MetaFailure =
-  | { kind: 'credential'; status: AdConnectionStatus; message: string }
-  | { kind: 'rate_limit'; message: string }
-  | { kind: 'transient'; message: string };
+  | { kind: 'credential'; status: AdConnectionStatus; message: string; code?: number }
+  | { kind: 'rate_limit'; message: string; code?: number }
+  | { kind: 'transient'; message: string; code?: number };
 
 interface GraphErrorBody {
   code?: number;
@@ -34,17 +34,19 @@ export function classifyMetaError(err: unknown): MetaFailure {
     return { kind: 'transient', message };
   }
 
-  if (graph.code === 190 || graph.code === 102) {
+  const code = graph.code;
+
+  if (code === 190 || code === 102) {
     const status =
       graph.error_subcode !== undefined && REVOKED_SUBCODES.has(graph.error_subcode)
         ? AdConnectionStatus.REVOKED
         : AdConnectionStatus.INVALID_TOKEN;
-    return { kind: 'credential', status, message };
+    return { kind: 'credential', status, message, code };
   }
 
-  if (RATE_LIMIT_CODES.has(graph.code)) {
-    return { kind: 'rate_limit', message };
+  if (RATE_LIMIT_CODES.has(code)) {
+    return { kind: 'rate_limit', message, code };
   }
 
-  return { kind: 'transient', message };
+  return { kind: 'transient', message, code };
 }

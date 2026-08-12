@@ -43,4 +43,13 @@ describe('classifyMetaError', () => {
     const result = classifyMetaError(graphError(190, 463, 'Session has expired'));
     expect(result.message).toContain('Session has expired');
   });
+
+  it('preserva o codigo numerico da Meta', () => {
+    expect(classifyMetaError(graphError(80004)).code).toBe(80004);
+    expect(classifyMetaError(graphError(190, 463)).code).toBe(190);
+  });
+
+  it('deixa o codigo indefinido quando nao ha corpo de erro da Graph', () => {
+    expect(classifyMetaError(new Error('ECONNRESET')).code).toBeUndefined();
+  });
 });
