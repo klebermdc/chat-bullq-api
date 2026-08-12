@@ -277,6 +277,7 @@ model Organization {
   metaCapiEvents            MetaCapiEvent[]
   emailSubscribers          EmailSubscriber[]
   emailCampaigns            EmailCampaign[]
+  adAccountConnections      AdAccountConnection[]
 
   @@map("organizations")
 }
@@ -2739,4 +2740,88 @@ model EmailEvent {
   @@index([providerId])
   @@index([organizationId, type, occurredAt])
   @@map("email_events")
+}
+
+// ─── Marketing / Meta Ads ────────────────────────────────────────────────
+
+enum AdProvider {
+  META
+  GOOGLE
+}
+
+enum AdConnectionStatus {
+  ACTIVE
+  INVALID_TOKEN
+  REVOKED
+  DISABLED
+}
+
+/// Conta de anúncios vinculada a uma organização. O token é cifrado pelo
+/// CryptoService. O token do Facebook Login for Business dura ~60 dias e a
+/// renovação exige o usuário — por isso `status` e `tokenExpiresAt` existem:
+/// expiração é estado de primeira classe, não exceção.
+model AdAccountConnection {
+  id                String             @id @default(cuid())
+  organizationId    String             @map("organization_id")
+  provider          AdProvider
+  externalAccountId String             @map("external_account_id")
+  accountName       String?            @map("account_name")
+  currency          String?
+  timezoneName      String?            @map("timezone_name")
+  businessId        String?            @map("business_id")
+  accessTokenEnc    String             @map("access_token_enc")
+  tokenScopes       String[]           @map("token_scopes")
+  tokenExpiresAt    DateTime?          @map("token_expires_at")
+  status            AdConnectionStatus @default(ACTIVE)
+  lastSyncAt        DateTime?          @map("last_sync_at")
+  lastSyncError     String?            @map("last_sync_error")
+  connectedByUserId String?            @map("connected_by_user_id")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider, externalAccountId])
+  @@index([status])
+  @@map("ad_account_connections")
+}
+
+/// Um dia de métricas de UM anúncio. Conta e campanha saem de groupBy na
+/// leitura — não existem linhas de rollup. O grão de anúncio é o que permite
+/// o join com Contact.ctwaSourceId na etapa 1.3.
+///
+/// `connectionId` NÃO tem foreign key de propósito. Desconectar uma conta de
+/// anúncios precisa preservar o histórico: com onDelete Cascade o relatório do
+/// mês passado sumiria, e com Restrict o desconectar falharia assim que
+/// existisse um dia de dado. A linha órfã continua legível porque adName,
+/// campaignName e currency são gravados desnormalizados aqui. Não "conserte"
+/// isso adicionando a relação.
+model AdDailyStat {
+  id               String   @id @default(cuid())
+  organizationId   String   @map("organization_id")
+  connectionId     String   @map("connection_id")
+  date             DateTime @db.Date
+  adId             String   @map("ad_id")
+  adName           String?  @map("ad_name")
+  adsetId          String?  @map("adset_id")
+  adsetName        String?  @map("adset_name")
+  campaignId       String?  @map("campaign_id")
+  campaignName     String?  @map("campaign_name")
+  currency         String
+  spend            Decimal  @default(0) @db.Decimal(14, 2)
+  impressions      Int      @default(0)
+  reach            Int      @default(0)
+  clicks           Int      @default(0)
+  linkClicks       Int      @default(0) @map("link_clicks")
+  landingPageViews Int      @default(0) @map("landing_page_views")
+  frequency        Decimal  @default(0) @db.Decimal(8, 4)
+  ctr              Decimal  @default(0) @db.Decimal(8, 4)
+  cpc              Decimal  @default(0) @db.Decimal(14, 4)
+  actions          Json?
+  syncedAt         DateTime @map("synced_at")
+
+  @@unique([connectionId, date, adId])
+  @@index([organizationId, date])
+  @@index([organizationId, adId])
+  @@map("ad_daily_stats")
 }

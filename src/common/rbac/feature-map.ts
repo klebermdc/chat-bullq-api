@@ -40,6 +40,8 @@ export const FEATURE_MAP = {
   'dashboard.view': ALL, // escopado: AGENT só a própria linha
   'sales-reports.view': ALL, // escopado por email: só os pedidos dele
   'crm-reports.view': STAFF,
+  'marketing.view': STAFF,
+  'marketing.manage': STAFF, // conectar, desconectar, forcar sync
 
   // --- Biblioteca de arquivos -------------------------------------------
   'media.use': ALL,

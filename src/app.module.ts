@@ -42,6 +42,7 @@ import { CallsModule } from './modules/calls/calls.module';
 import { OrderFichaModule } from './modules/order-ficha/order-ficha.module';
 import { AcceptancesModule } from './modules/acceptances/acceptances.module';
 import { MetaCapiModule } from './modules/meta-capi/meta-capi.module';
+import { MarketingModule } from './modules/marketing/marketing.module';
 import { EmailCoreModule } from './modules/email-core/email-core.module';
 import { EmailAudienceModule } from './modules/email-audience/email-audience.module';
 import { EmailCampaignsModule } from './modules/email-campaigns/email-campaigns.module';
@@ -114,6 +115,7 @@ import redisConfig from './config/redis.config';
     OrderFichaModule,
     AcceptancesModule,
     MetaCapiModule,
+    MarketingModule,
     EmailCoreModule,
     EmailAudienceModule,
     EmailCampaignsModule,
