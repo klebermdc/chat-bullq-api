@@ -8,7 +8,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../../common/guards';
+import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../../common/guards';
+import { CurrentOrg, Feature } from '../../../common/decorators';
 import { PrismaService } from '../../../database/prisma.service';
 import { EvalRunnerService } from './runner.service';
 import { EvalReporterService } from './reporter.service';
@@ -40,7 +41,8 @@ interface RunEvalsResponse {
  */
 @ApiTags('AI Agents - Evals')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
+@Feature('ai-agents.view')
 @Controller('agents/:id/evals')
 export class EvalsController {
   constructor(
@@ -56,10 +58,14 @@ export class EvalsController {
   })
   async run(
     @Param('id') agentId: string,
+    @CurrentOrg('id') organizationId: string,
     @Body() body: RunEvalsBody,
   ): Promise<RunEvalsResponse> {
-    const agent = await this.prisma.aiAgent.findUnique({
-      where: { id: agentId },
+    // findFirst com a org no `where`, NÃO findUnique por id: a busca só por id
+    // deixava qualquer usuário autenticado rodar o agent de outra empresa —
+    // gastando o token dela e lendo o comportamento do agent pelo relatório.
+    const agent = await this.prisma.aiAgent.findFirst({
+      where: { id: agentId, organizationId, deletedAt: null },
     });
     if (!agent) {
       throw new NotFoundException(`Agent ${agentId} not found`);
