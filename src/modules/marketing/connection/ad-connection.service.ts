@@ -1,7 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { AdProvider } from '@prisma/client';
 import { CryptoService } from '../../../common/crypto/crypto.service';
-import { MARKETING_BACKFILL_DAYS, MARKETING_SYNC_WINDOW_DAYS, META_ADS_SCOPES } from '../marketing.constants';
+import {
+  MARKETING_BACKFILL_CHUNK_DAYS,
+  MARKETING_BACKFILL_DAYS,
+  MARKETING_SYNC_WINDOW_DAYS,
+  META_ADS_SCOPES,
+} from '../marketing.constants';
 import { MarketingSyncQueue } from '../ingest/marketing-sync.queue';
 import { AdConnectionRepository } from './ad-connection.repository';
 import { MetaAdAccount, MetaOAuthClient } from './meta-oauth.client';
@@ -16,6 +21,32 @@ function daysAgo(n: number): Date {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - n);
   return d;
+}
+
+/**
+ * Divide os MARKETING_BACKFILL_DAYS em blocos de no máximo
+ * MARKETING_BACKFILL_CHUNK_DAYS, do mais antigo para o mais novo, sem buraco
+ * e sem sobreposição (o `since` de um bloco é sempre o dia seguinte ao
+ * `until` do anterior). O motivo é isolamento de falha: um único job de 90
+ * dias que falha no meio descarta a janela inteira e o BullMQ reprocessa os
+ * 90 dias do zero em cada uma das 3 tentativas; em blocos, cada fatia tem
+ * seu próprio retry independente.
+ */
+function backfillWindows(): Array<{ since: string; until: string }> {
+  const windows: Array<{ since: string; until: string }> = [];
+  let cursorDaysAgo = MARKETING_BACKFILL_DAYS;
+
+  while (cursorDaysAgo > 0) {
+    const nextCursorDaysAgo = Math.max(cursorDaysAgo - MARKETING_BACKFILL_CHUNK_DAYS, 0);
+    const isLastChunk = nextCursorDaysAgo === 0;
+    windows.push({
+      since: isoDay(daysAgo(cursorDaysAgo)),
+      until: isoDay(daysAgo(isLastChunk ? 0 : nextCursorDaysAgo + 1)),
+    });
+    cursorDaysAgo = nextCursorDaysAgo;
+  }
+
+  return windows;
 }
 
 @Injectable()
@@ -97,12 +128,14 @@ export class AdConnectionService {
       connectedByUserId: userId,
     });
 
-    await this.queue.enqueueSync({
-      connectionId: connection.id,
-      since: isoDay(daysAgo(MARKETING_BACKFILL_DAYS)),
-      until: isoDay(daysAgo(0)),
-      reason: 'backfill',
-    });
+    for (const window of backfillWindows()) {
+      await this.queue.enqueueSync({
+        connectionId: connection.id,
+        since: window.since,
+        until: window.until,
+        reason: 'backfill',
+      });
+    }
 
     return connection;
   }

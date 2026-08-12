@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AdConnectionStatus, AdProvider } from '@prisma/client';
 import { AdConnectionService } from './ad-connection.service';
 import { CryptoService } from '../../../common/crypto/crypto.service';
+import { MARKETING_BACKFILL_CHUNK_DAYS, MARKETING_BACKFILL_DAYS } from '../marketing.constants';
 
 const SECRET = 'a'.repeat(64);
 const ORG = 'org-1';
@@ -145,9 +146,52 @@ describe('AdConnectionService', () => {
   it('enfileira o backfill ao conectar', async () => {
     const { service, queue } = build();
     await connect(service);
-    expect(queue.enqueueSync).toHaveBeenCalledTimes(1);
+    expect(queue.enqueueSync).toHaveBeenCalled();
     const arg = queue.enqueueSync.mock.calls[0][0];
     expect(arg.reason).toBe('backfill');
+  });
+
+  it('backfill vai em blocos, nao num job de 90 dias', async () => {
+    const { service, queue } = build();
+    await connect(service);
+
+    expect(queue.enqueueSync.mock.calls.length).toBeGreaterThan(1);
+    for (const [arg] of queue.enqueueSync.mock.calls) {
+      expect(arg.reason).toBe('backfill');
+      const since = new Date(`${arg.since}T00:00:00Z`).getTime();
+      const until = new Date(`${arg.until}T00:00:00Z`).getTime();
+      const dias = Math.round((until - since) / 86400000);
+      expect(dias).toBeGreaterThan(0);
+      expect(dias).toBeLessThanOrEqual(MARKETING_BACKFILL_CHUNK_DAYS);
+    }
+  });
+
+  it('os blocos do backfill cobrem a janela toda sem buraco', async () => {
+    const { service, queue } = build();
+    await connect(service);
+
+    const janelas = queue.enqueueSync.mock.calls
+      .map(([a]: any[]) => ({ since: a.since, until: a.until }))
+      .sort((a: any, b: any) => (a.since < b.since ? -1 : 1));
+
+    const primeiro = new Date(`${janelas[0].since}T00:00:00Z`).getTime();
+    const ultimo = new Date(`${janelas[janelas.length - 1].until}T00:00:00Z`).getTime();
+    const cobertura = Math.round((ultimo - primeiro) / 86400000);
+    expect(cobertura).toBe(MARKETING_BACKFILL_DAYS);
+
+    // Cada bloco começa no dia seguinte ao fim do anterior — sem buraco, sem sobreposição.
+    for (let i = 1; i < janelas.length; i++) {
+      const fimAnterior = new Date(`${janelas[i - 1].until}T00:00:00Z`).getTime();
+      const inicioAtual = new Date(`${janelas[i].since}T00:00:00Z`).getTime();
+      expect(Math.round((inicioAtual - fimAnterior) / 86400000)).toBe(1);
+    }
+  });
+
+  it('cada bloco vira um job distinto', async () => {
+    const { service, queue } = build();
+    await connect(service);
+    const chaves = queue.enqueueSync.mock.calls.map(([a]: any[]) => `${a.since}..${a.until}`);
+    expect(new Set(chaves).size).toBe(chaves.length);
   });
 
   it('reconectar a mesma conta reativa em vez de duplicar', async () => {
