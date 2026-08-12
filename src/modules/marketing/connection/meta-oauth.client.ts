@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosResponse } from 'axios';
 import { GRAPH_API_VERSION, GRAPH_TIMEOUT_MS } from '../marketing.constants';
+import { classifyMetaError } from './meta-error.util';
 
 export interface MetaAdAccount {
   id: string;
@@ -62,32 +63,63 @@ export class MetaOAuthClient {
   }
 
   /**
+   * Chama a Graph e, quando ela recusa, GRAVA O CORPO DA RESPOSTA no log e
+   * devolve a mensagem da Meta para a tela.
+   *
+   * Sem isto o axios só diz "Request failed with status code 400": o motivo
+   * real (code expirado, redirect_uri divergente, permissão faltando) fica
+   * invisível, e o operador vê um 500 opaco sem nenhuma pista do que fazer.
+   */
+  private async graphGet<T>(
+    path: string,
+    params: Record<string, unknown>,
+    etapa: string,
+  ): Promise<T> {
+    try {
+      const { data } = await axios.get(`${this.base()}${path}`, {
+        params,
+        timeout: GRAPH_TIMEOUT_MS,
+      });
+      return data as T;
+    } catch (err) {
+      const body = (err as { response?: { data?: unknown } })?.response?.data;
+      const failure = classifyMetaError(err);
+      this.logger.error(
+        `Meta recusou [${etapa}]: ${failure.message} (code=${failure.code ?? '?'}) body=${JSON.stringify(body ?? {})}`,
+      );
+      throw new BadRequestException(`Meta recusou (${etapa}): ${failure.message}`);
+    }
+  }
+
+  /**
    * O `code` vira um token de 1-2h. O segundo passo (fb_exchange_token) é
    * obrigatório: sem ele o sync morre no mesmo dia.
    */
   async exchangeCodeForLongLivedToken(code: string): Promise<LongLivedToken> {
     const { appId, appSecret } = this.credentials();
 
-    const short = await axios.get(`${this.base()}/oauth/access_token`, {
-      params: { client_id: appId, client_secret: appSecret, code },
-      timeout: GRAPH_TIMEOUT_MS,
-    });
-    const shortToken = short.data?.access_token;
+    const short = await this.graphGet<{ access_token?: string }>(
+      '/oauth/access_token',
+      { client_id: appId, client_secret: appSecret, code },
+      'troca do code',
+    );
+    const shortToken = short?.access_token;
     if (!shortToken) {
       this.logger.warn('Meta nao retornou access_token na troca do code (1a etapa)');
       throw new BadRequestException('Meta nao retornou access_token na troca do code');
     }
 
-    const long = await axios.get(`${this.base()}/oauth/access_token`, {
-      params: {
+    const long = await this.graphGet<{ access_token?: string; expires_in?: number }>(
+      '/oauth/access_token',
+      {
         grant_type: 'fb_exchange_token',
         client_id: appId,
         client_secret: appSecret,
         fb_exchange_token: shortToken,
       },
-      timeout: GRAPH_TIMEOUT_MS,
-    });
-    const accessToken = long.data?.access_token;
+      'token de longa duracao',
+    );
+    const accessToken = long?.access_token;
     if (!accessToken) {
       this.logger.warn(
         'Meta nao retornou token de longa duracao (2a etapa, fb_exchange_token)',
@@ -95,7 +127,7 @@ export class MetaOAuthClient {
       throw new BadRequestException('Meta nao retornou token de longa duracao');
     }
 
-    const expiresIn = Number(long.data?.expires_in);
+    const expiresIn = Number(long?.expires_in);
     const expiresAt =
       Number.isFinite(expiresIn) && expiresIn > 0
         ? new Date(Date.now() + expiresIn * 1000)
