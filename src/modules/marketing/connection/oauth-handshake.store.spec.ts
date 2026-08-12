@@ -1,4 +1,3 @@
-import { ConfigService } from '@nestjs/config';
 import { OAuthHandshakeStore, HANDSHAKE_TTL_SECONDS } from './oauth-handshake.store';
 
 /** Fake mínimo de ioredis: só SET com EX, GET e DEL. */
@@ -18,10 +17,7 @@ function makeFakeRedis() {
 
 function build() {
   const redis = makeFakeRedis();
-  const config = { get: () => undefined } as unknown as ConfigService;
-  const store = new OAuthHandshakeStore(config);
-  // Substitui o cliente real pelo fake, como os outros specs do projeto fazem.
-  (store as any).redis = redis;
+  const store = new OAuthHandshakeStore(redis as any);
   return { store, redis };
 }
 

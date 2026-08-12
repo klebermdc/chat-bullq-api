@@ -1,7 +1,7 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import Redis from 'ioredis';
+import { MARKETING_REDIS_CLIENT } from '../marketing-redis.provider';
 import { MetaAdAccount } from './meta-oauth.client';
 
 /** Dez minutos: tempo de sobra para escolher a conta, curto para vazar. */
@@ -28,17 +28,8 @@ export interface OAuthHandshake {
 @Injectable()
 export class OAuthHandshakeStore implements OnModuleDestroy {
   private readonly logger = new Logger(OAuthHandshakeStore.name);
-  private readonly redis: Redis;
 
-  constructor(private readonly config: ConfigService) {
-    this.redis = new Redis({
-      host: this.config.get<string>('REDIS_HOST', 'localhost'),
-      port: this.config.get<number>('REDIS_PORT', 6379),
-      password: this.config.get<string>('REDIS_PASSWORD') || undefined,
-      maxRetriesPerRequest: null,
-      enableReadyCheck: false,
-    });
-  }
+  constructor(@Inject(MARKETING_REDIS_CLIENT) private readonly redis: Redis) {}
 
   async onModuleDestroy(): Promise<void> {
     try {
