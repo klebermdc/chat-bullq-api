@@ -190,6 +190,12 @@ export interface WebhookParseResult {
   historyChunks?: HistoryChunk[];
   /** Mudanças de agenda vindas do app (webhook `smb_app_state_sync`). */
   contactSyncs?: ContactSync[];
+  /**
+   * Campos que a Meta mandou e nós não tratamos. Existe para o descarte deixar
+   * rastro: sem isto, um campo assinado e sem handler some sem log nenhum — foi
+   * assim que `template_category_update` ficou invisível por meses.
+   */
+  unhandledFields?: string[];
 }
 
 /**

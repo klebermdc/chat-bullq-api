@@ -255,6 +255,13 @@ export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
             continue;
           }
 
+          // Tudo que chegou até aqui e não é `messages` é campo sem handler.
+          // Deixar rastro em vez de descartar calado.
+          if (change?.field && change.field !== 'messages') {
+            (result.unhandledFields ??= []).push(String(change.field));
+            continue;
+          }
+
           const value = change?.value;
           if (!value) continue;
 

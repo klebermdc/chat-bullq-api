@@ -213,6 +213,16 @@ export class WebhookGatewayController {
         this.logger.log(`Template ${upd.metaTemplateId} → ${upd.status}`);
       }
 
+      // Campo assinado na Meta e sem handler aqui. Não é erro — é ponto cego.
+      // Aparecer no log é o que nos deixa descobrir isso em minutos em vez de
+      // meses (ver o buraco do template_category_update).
+      if (parseResult.unhandledFields?.length) {
+        this.logger.warn(
+          `Webhook com campo sem handler no canal ${channel.id}: ` +
+            `${[...new Set(parseResult.unhandledFields)].join(', ')}`,
+        );
+      }
+
       for (const upd of parseResult.templateCategoryUpdates ?? []) {
         await this.messageTemplatesService.applyCategoryUpdate(
           upd.metaTemplateId,
