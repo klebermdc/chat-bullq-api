@@ -391,3 +391,60 @@ describe('WhatsAppOfficialInboundAdapter.parseWebhook — template_category_upda
     });
   });
 });
+
+describe('WhatsAppOfficialInboundAdapter.parseWebhook — campo não tratado', () => {
+  const adapter = new WhatsAppOfficialInboundAdapter(
+    new WhatsAppOfficialMessageMapper(),
+    new WhatsAppPlatformConfigService(),
+  );
+
+  function payload(field: string, value: Record<string, unknown> = {}) {
+    return { entry: [{ changes: [{ field, value }] }] };
+  }
+
+  // Sem isto, todo campo que a gente assina e não trata some sem log nenhum.
+  // Foi assim que `template_category_update` ficou invisível por meses.
+  it('reporta campo assinado mas não tratado', () => {
+    const res = adapter.parseWebhook(
+      payload('message_template_quality_update', { message_template_id: '1' }) as any,
+      { id: 'ch1' } as any,
+    );
+    expect(res.unhandledFields).toEqual(['message_template_quality_update']);
+  });
+
+  it('não reporta os campos que já tratamos', () => {
+    for (const field of [
+      'messages',
+      'message_template_status_update',
+      'template_category_update',
+      'account_update',
+      'history',
+      'smb_app_state_sync',
+      'smb_message_echoes',
+    ]) {
+      const res = adapter.parseWebhook(payload(field) as any, { id: 'ch1' } as any);
+      expect(res.unhandledFields ?? []).not.toContain(field);
+    }
+  });
+
+  it('campo não tratado não impede o resto do lote de ser processado', () => {
+    const res = adapter.parseWebhook(
+      {
+        entry: [
+          {
+            changes: [
+              { field: 'campo_futuro_da_meta', value: {} },
+              {
+                field: 'message_template_status_update',
+                value: { message_template_id: 'META1', event: 'APPROVED' },
+              },
+            ],
+          },
+        ],
+      } as any,
+      { id: 'ch1' } as any,
+    );
+    expect(res.unhandledFields).toEqual(['campo_futuro_da_meta']);
+    expect(res.templateStatusUpdates).toHaveLength(1);
+  });
+});
