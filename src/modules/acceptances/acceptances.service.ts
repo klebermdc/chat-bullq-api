@@ -216,8 +216,46 @@ export class AcceptancesService {
     return !!acc.expiresAt && acc.expiresAt.getTime() < Date.now();
   }
 
-  private pdfUrl(pdfKey: string | null): string | null {
-    return pdfKey ? `/api/v1/uploads/${pdfKey}` : null;
+  /**
+   * URL do PDF para o OPERADOR — escopada por JWT + organização.
+   *
+   * Aponta para `/acceptances/:id/pdf`, não mais para `/uploads/<chave>`: a
+   * rota de uploads não tem autenticação (a Meta e as tags `<img>`/`<audio>`
+   * não mandam header), então servir o PDF assinado por lá deixava nome do
+   * cliente, assinatura e IP baixáveis por qualquer pessoa com a URL.
+   */
+  private pdfUrl(id: string, pdfKey: string | null): string | null {
+    return pdfKey ? `/api/v1/acceptances/${id}/pdf` : null;
+  }
+
+  /**
+   * URL do PDF para o CLIENTE, que não tem conta no sistema.
+   *
+   * O token do aceite (32 bytes aleatórios) já é o único fator de acesso à
+   * página pública inteira — servir o PDF por ele não afrouxa nada.
+   */
+  private pdfUrlPublica(token: string, pdfKey: string | null): string | null {
+    return pdfKey ? `/api/v1/public/acceptances/${token}/pdf` : null;
+  }
+
+  /** Chave do PDF assinado, conferindo a organização dona. */
+  async pdfKeyForOrg(id: string, organizationId: string): Promise<string> {
+    const acc = await this.prisma.orderAcceptance.findFirst({
+      where: { id, organizationId },
+      select: { pdfKey: true },
+    });
+    if (!acc?.pdfKey) throw new NotFoundException('PDF do aceite não encontrado.');
+    return acc.pdfKey;
+  }
+
+  /** Chave do PDF assinado a partir do token do aceite. */
+  async pdfKeyByToken(token: string): Promise<string> {
+    const acc = await this.prisma.orderAcceptance.findUnique({
+      where: { token },
+      select: { pdfKey: true },
+    });
+    if (!acc?.pdfKey) throw new NotFoundException('PDF do aceite não encontrado.');
+    return acc.pdfKey;
   }
 
   async getByToken(token: string): Promise<PublicAcceptanceView> {
@@ -238,7 +276,7 @@ export class AcceptancesService {
       policyText: acc.policyText ?? null,
       signedAt: acc.signedAt ? acc.signedAt.toISOString() : null,
       signerName: acc.signerName ?? null,
-      pdfUrl: this.pdfUrl(acc.pdfKey),
+      pdfUrl: this.pdfUrlPublica(acc.token, acc.pdfKey),
       vouchers: ((acc.vouchers as any) ?? []) as VoucherRef[],
       orderRef: acc.orderRef ?? null,
     };
@@ -297,7 +335,7 @@ export class AcceptancesService {
       policyText: signed.policyText ?? null,
       signedAt: signed.signedAt ? signed.signedAt.toISOString() : null,
       signerName: signed.signerName ?? null,
-      pdfUrl: this.pdfUrl(signed.pdfKey),
+      pdfUrl: this.pdfUrlPublica(signed.token, signed.pdfKey),
       vouchers: ((signed.vouchers as any) ?? []) as VoucherRef[],
       orderRef: signed.orderRef ?? null,
     };
@@ -324,7 +362,7 @@ export class AcceptancesService {
       id: acc.id, status: acc.status, items: acc.items,
       signedAt: acc.signedAt, signerName: acc.signerName,
       signerIp: acc.signerIp, signerUserAgent: acc.signerUserAgent,
-      pdfUrl: this.pdfUrl(acc.pdfKey), createdAt: acc.createdAt, expiresAt: acc.expiresAt,
+      pdfUrl: this.pdfUrl(acc.id, acc.pdfKey), createdAt: acc.createdAt, expiresAt: acc.expiresAt,
     };
   }
 }

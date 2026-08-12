@@ -43,7 +43,7 @@ describe('AcceptancesController.extractVoucherText', () => {
         .fn()
         .mockResolvedValue({ items: [], orderRef: null }),
     } as any;
-    const controller = new AcceptancesController(service);
+    const controller = new AcceptancesController(service, {} as never);
 
     await controller.extractVoucherText({ text: 'voucher colado' }, 'org-1');
 
