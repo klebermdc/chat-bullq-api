@@ -14,6 +14,12 @@ import { MarketingSyncCron } from './ingest/marketing-sync.cron';
 import { MarketingSyncProcessor } from './ingest/marketing-sync.processor';
 import { MarketingSyncQueue } from './ingest/marketing-sync.queue';
 import { MetaInsightsClient } from './ingest/meta-insights.client';
+import { HealthIndicatorsService } from './metrics/health-indicators.service';
+import { MarketingRepository } from './metrics/marketing.repository';
+import { MarketingMetricsService } from './metrics/marketing-metrics.service';
+import { MarketingMetricsController } from './metrics/marketing-metrics.controller';
+import { MarketingGoalsService } from './goals/marketing-goals.service';
+import { MarketingGoalsController } from './goals/marketing-goals.controller';
 
 // `PrismaModule` e `CryptoModule` sao @Global no projeto — PrismaService e
 // CryptoService sao injetaveis sem importar nada aqui.
@@ -27,7 +33,7 @@ import { MetaInsightsClient } from './ingest/meta-insights.client';
       { name: MARKETING_SYNC_CRON_QUEUE },
     ),
   ],
-  controllers: [AdConnectionController],
+  controllers: [AdConnectionController, MarketingMetricsController, MarketingGoalsController],
   providers: [
     marketingRedisProvider,
     AdConnectionRepository,
@@ -38,6 +44,10 @@ import { MetaInsightsClient } from './ingest/meta-insights.client';
     MetaInsightsClient,
     MarketingSyncProcessor,
     MarketingSyncCron,
+    HealthIndicatorsService,
+    MarketingRepository,
+    MarketingMetricsService,
+    MarketingGoalsService,
   ],
 })
 export class MarketingModule {}
