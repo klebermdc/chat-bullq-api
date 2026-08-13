@@ -92,28 +92,23 @@ export class MetaOAuthClient {
   }
 
   /**
-   * O `code` vira um token de 1-2h. O segundo passo (fb_exchange_token) é
-   * obrigatório: sem ele o sync morre no mesmo dia.
+   * Recebe o token CURTO (1-2h) que o `FB.login` devolveu no navegador e o
+   * troca pelo de ~60 dias. Esse segundo passo é obrigatório: sem ele o sync
+   * morre no mesmo dia.
+   *
+   * Por que não usamos o fluxo de `code`: o `FB.login` do SDK não redireciona
+   * de verdade, então a Meta registra internamente um `redirect_uri` dela
+   * própria no diálogo. Trocar o code exige repetir esse valor exato, que o
+   * servidor não tem como reproduzir — omitir ou mandar vazio devolve
+   * OAuthException code 100 / subcode 36008. O Embedded Signup do WhatsApp
+   * escapa disso porque emite um code de Tech Provider, de outro tipo.
+   *
+   * O token curto transita pelo navegador, onde o SDK já o mantinha de
+   * qualquer forma. O de 60 dias nasce e permanece no servidor.
    */
-  async exchangeCodeForLongLivedToken(code: string): Promise<LongLivedToken> {
+  async exchangeUserTokenForLongLived(userAccessToken: string): Promise<LongLivedToken> {
     const { appId, appSecret } = this.credentials();
-
-    // `redirect_uri` VAZIO, e não ausente. O code vem do FB.login do SDK, que
-    // não redireciona — e a variação General do Login for Business usa o code
-    // OAuth padrão, que exige o parâmetro presente e idêntico ao do diálogo.
-    // Omiti-lo devolve "Error validating verification code. Please make sure
-    // your redirect_uri is identical...". O Embedded Signup do WhatsApp não
-    // precisa disso porque emite um code de Tech Provider, de outro tipo.
-    const short = await this.graphGet<{ access_token?: string }>(
-      '/oauth/access_token',
-      { client_id: appId, client_secret: appSecret, code, redirect_uri: '' },
-      'troca do code',
-    );
-    const shortToken = short?.access_token;
-    if (!shortToken) {
-      this.logger.warn('Meta nao retornou access_token na troca do code (1a etapa)');
-      throw new BadRequestException('Meta nao retornou access_token na troca do code');
-    }
+    const shortToken = userAccessToken;
 
     const long = await this.graphGet<{ access_token?: string; expires_in?: number }>(
       '/oauth/access_token',

@@ -73,11 +73,11 @@ export class AdConnectionService {
    * escolha, o handshake expira sozinho e nada fica no banco.
    */
   async listAvailableAccounts(
-    code: string,
+    userAccessToken: string,
   ): Promise<{ handshakeId: string; accounts: MetaAdAccount[] }> {
-    if (!code?.trim()) throw new BadRequestException('code ausente');
-    const { accessToken, expiresAt } = await this.oauth.exchangeCodeForLongLivedToken(
-      code.trim(),
+    if (!userAccessToken?.trim()) throw new BadRequestException('accessToken ausente');
+    const { accessToken, expiresAt } = await this.oauth.exchangeUserTokenForLongLived(
+      userAccessToken.trim(),
     );
     const accounts = await this.oauth.listAdAccounts(accessToken);
 

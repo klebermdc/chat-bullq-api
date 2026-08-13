@@ -18,32 +18,45 @@ function makeConfig(overrides: Record<string, string | undefined> = {}) {
 describe('MetaOAuthClient', () => {
   beforeEach(() => jest.resetAllMocks());
 
-  it('troca o code por token de longa duracao em dois passos', async () => {
-    mockedAxios.get
-      .mockResolvedValueOnce({ data: { access_token: 'curto' } })
-      .mockResolvedValueOnce({ data: { access_token: 'longo', expires_in: 5184000 } });
+  it('troca o token curto pelo de longa duracao numa chamada so', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { access_token: 'longo', expires_in: 5184000 },
+    });
 
     const client = new MetaOAuthClient(makeConfig());
-    const result = await client.exchangeCodeForLongLivedToken('CODE');
+    const result = await client.exchangeUserTokenForLongLived('CURTO');
 
     expect(result.accessToken).toBe('longo');
     expect(result.expiresAt).toBeInstanceOf(Date);
 
-    const [firstUrl, firstCfg] = mockedAxios.get.mock.calls[0];
-    expect(firstUrl).toContain('/oauth/access_token');
-    expect((firstCfg as any).params).toMatchObject({ client_id: 'app-123', code: 'CODE' });
+    // Uma chamada só: o fluxo de `code` foi abandonado porque exige repetir o
+    // redirect_uri interno do diálogo do SDK (OAuthException 100 / 36008).
+    expect(mockedAxios.get).toHaveBeenCalledTimes(1);
 
-    const [, secondCfg] = mockedAxios.get.mock.calls[1];
-    expect((secondCfg as any).params).toMatchObject({ grant_type: 'fb_exchange_token', fb_exchange_token: 'curto' });
+    const [url, cfg] = mockedAxios.get.mock.calls[0];
+    expect(url).toContain('/oauth/access_token');
+    expect((cfg as any).params).toMatchObject({
+      grant_type: 'fb_exchange_token',
+      client_id: 'app-123',
+      fb_exchange_token: 'CURTO',
+    });
+  });
+
+  it('nunca manda code nem redirect_uri', async () => {
+    mockedAxios.get.mockResolvedValueOnce({ data: { access_token: 'longo' } });
+    const client = new MetaOAuthClient(makeConfig());
+    await client.exchangeUserTokenForLongLived('CURTO');
+
+    const [, cfg] = mockedAxios.get.mock.calls[0];
+    expect((cfg as any).params).not.toHaveProperty('code');
+    expect((cfg as any).params).not.toHaveProperty('redirect_uri');
   });
 
   it('devolve expiresAt nulo quando a Meta nao informa expires_in', async () => {
-    mockedAxios.get
-      .mockResolvedValueOnce({ data: { access_token: 'curto' } })
-      .mockResolvedValueOnce({ data: { access_token: 'longo' } });
+    mockedAxios.get.mockResolvedValueOnce({ data: { access_token: 'longo' } });
 
     const client = new MetaOAuthClient(makeConfig());
-    const result = await client.exchangeCodeForLongLivedToken('CODE');
+    const result = await client.exchangeUserTokenForLongLived('CURTO');
 
     expect(result.expiresAt).toBeNull();
   });
@@ -51,12 +64,12 @@ describe('MetaOAuthClient', () => {
   it('falha claro quando a Meta nao devolve access_token', async () => {
     mockedAxios.get.mockResolvedValueOnce({ data: {} });
     const client = new MetaOAuthClient(makeConfig());
-    await expect(client.exchangeCodeForLongLivedToken('CODE')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(client.exchangeUserTokenForLongLived('CURTO')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('falha claro quando as credenciais do app nao estao configuradas', async () => {
     const client = new MetaOAuthClient(makeConfig({ META_ADS_APP_ID: undefined }));
-    await expect(client.exchangeCodeForLongLivedToken('CODE')).rejects.toBeInstanceOf(
+    await expect(client.exchangeUserTokenForLongLived('CURTO')).rejects.toBeInstanceOf(
       InternalServerErrorException,
     );
   });

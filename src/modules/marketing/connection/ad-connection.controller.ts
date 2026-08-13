@@ -23,7 +23,7 @@ export class AdConnectionController {
   @Post('meta/exchange')
   @Feature('marketing.manage')
   exchange(@Body() dto: ExchangeCodeDto) {
-    return this.service.listAvailableAccounts(dto.code);
+    return this.service.listAvailableAccounts(dto.accessToken);
   }
 
   /** Passo 2: consome o handshake e grava a conexao da conta escolhida. */
