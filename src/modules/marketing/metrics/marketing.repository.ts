@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { CardStatus, Prisma } from '@prisma/client';
+import { AdConnectionStatus, CardStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 
 export interface MediaAggregate {
@@ -28,9 +28,17 @@ export interface CrmTotals {
   wonRevenue: number;
 }
 
+export interface BrokenConnection {
+  status: AdConnectionStatus;
+  accountName: string | null;
+  lastSyncError: string | null;
+}
+
 export interface ConnectionState {
   hasConnection: boolean;
   lastSyncAt: Date | null;
+  /** Preenchido quando alguma conexão da org não está ACTIVE. */
+  brokenConnection: BrokenConnection | null;
 }
 
 /**
@@ -141,19 +149,39 @@ export class MarketingRepository {
   }
 
   /** Sync mais recente entre as conexões da org, e se existe alguma conexão. */
+  /**
+   * Além de "existe conexão?", devolve se ALGUMA está quebrada.
+   *
+   * Sem isso o painel mostra o histórico inteiro de uma conta cujo token
+   * morreu, sem nenhum sinal de que parou de atualizar — os números ficam
+   * plausíveis e velhos ao mesmo tempo, que é o pior estado possível. A saúde
+   * da conexão só aparecia em Configurações, onde ninguém olha ao ler KPI.
+   */
   async connectionState(organizationId: string): Promise<ConnectionState> {
-    const [count, latest] = await Promise.all([
+    const [count, latest, broken] = await Promise.all([
       this.prisma.adAccountConnection.count({ where: { organizationId } }),
       this.prisma.adAccountConnection.findFirst({
         where: { organizationId, lastSyncAt: { not: null } },
         select: { lastSyncAt: true },
         orderBy: { lastSyncAt: 'desc' },
       }),
+      this.prisma.adAccountConnection.findFirst({
+        where: { organizationId, status: { not: AdConnectionStatus.ACTIVE } },
+        select: { status: true, lastSyncError: true, accountName: true },
+        orderBy: { updatedAt: 'desc' },
+      }),
     ]);
 
     return {
       hasConnection: count > 0,
       lastSyncAt: latest?.lastSyncAt ?? null,
+      brokenConnection: broken
+        ? {
+            status: broken.status,
+            accountName: broken.accountName,
+            lastSyncError: broken.lastSyncError,
+          }
+        : null,
     };
   }
 

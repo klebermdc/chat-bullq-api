@@ -1,3 +1,4 @@
+import { AdConnectionStatus } from '@prisma/client';
 import { MarketingMetricsService } from './marketing-metrics.service';
 import { HealthGoals, HealthIndicator } from './health-indicators.service';
 import {
@@ -33,9 +34,25 @@ const ZERO_CRM: CrmTotals = { leads: 0, wonDeals: 0, wonRevenue: 0 };
 const CONNECTED: ConnectionState = {
   hasConnection: true,
   lastSyncAt: new Date('2026-01-08T05:10:00.000Z'),
+  brokenConnection: null,
 };
 
-const NOT_CONNECTED: ConnectionState = { hasConnection: false, lastSyncAt: null };
+/** Conexão existe mas o token morreu — o pior caso: dado plausível e velho. */
+const CONNECTED_BROKEN: ConnectionState = {
+  hasConnection: true,
+  lastSyncAt: new Date('2026-01-02T05:10:00.000Z'),
+  brokenConnection: {
+    status: AdConnectionStatus.INVALID_TOKEN,
+    accountName: 'CA Kleber',
+    lastSyncError: 'Session has expired',
+  },
+};
+
+const NOT_CONNECTED: ConnectionState = {
+  hasConnection: false,
+  lastSyncAt: null,
+  brokenConnection: null,
+};
 
 const FAKE_INDICATORS: HealthIndicator[] = [
   { key: 'cpl', label: 'Custo por lead', value: null, target: null, color: 'grey', format: 'currency' },
@@ -305,6 +322,26 @@ describe('MarketingMetricsService', () => {
       expect(series[1]).toEqual({ date: '2026-01-02', spend: 0, leads: 4 });
       expect(series[2]).toEqual({ date: '2026-01-03', spend: 50, leads: 0 });
       expect(series[3]).toEqual({ date: '2026-01-04', spend: 0, leads: 0 });
+    });
+  });
+  describe('conexao quebrada', () => {
+    it('expoe a conexao quebrada para a tela poder avisar', async () => {
+      // O pior estado possivel: o painel mostra o historico inteiro, plausivel
+      // e velho, sem nenhum sinal de que parou de atualizar.
+      const { service } = build({ connectionState: CONNECTED_BROKEN });
+      const overview = await service.getOverview(ORG, FROM, TO);
+
+      expect(overview.hasConnection).toBe(true);
+      expect(overview.brokenConnection).toMatchObject({
+        status: AdConnectionStatus.INVALID_TOKEN,
+        lastSyncError: 'Session has expired',
+      });
+    });
+
+    it('conexao saudavel nao levanta aviso', async () => {
+      const { service } = build({ connectionState: CONNECTED });
+      const overview = await service.getOverview(ORG, FROM, TO);
+      expect(overview.brokenConnection).toBeNull();
     });
   });
 });

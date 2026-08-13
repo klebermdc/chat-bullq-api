@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { HealthGoals, HealthIndicator, HealthIndicatorsService } from './health-indicators.service';
-import { MarketingRepository } from './marketing.repository';
+import { BrokenConnection, MarketingRepository } from './marketing.repository';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -29,6 +29,8 @@ export interface MarketingOverview {
   hasConnection: boolean;
   lastSyncAt: Date | null;
   currencyMismatch: boolean;
+  /** Não-nulo quando alguma conexão da org parou (token morto/revogado). */
+  brokenConnection: BrokenConnection | null;
 }
 
 export interface DailySeriesPoint {
@@ -116,6 +118,7 @@ export class MarketingMetricsService {
         hasConnection: false,
         lastSyncAt: null,
         currencyMismatch: false,
+        brokenConnection: null,
       };
     }
 
@@ -178,6 +181,7 @@ export class MarketingMetricsService {
       hasConnection: true,
       lastSyncAt: connection.lastSyncAt,
       currencyMismatch,
+      brokenConnection: connection.brokenConnection,
     };
   }
 
