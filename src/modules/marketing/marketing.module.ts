@@ -20,6 +20,9 @@ import { MarketingMetricsService } from './metrics/marketing-metrics.service';
 import { MarketingMetricsController } from './metrics/marketing-metrics.controller';
 import { MarketingGoalsService } from './goals/marketing-goals.service';
 import { MarketingGoalsController } from './goals/marketing-goals.controller';
+import { AttributionRepository } from './attribution/attribution.repository';
+import { AttributionService } from './attribution/attribution.service';
+import { AttributionController } from './attribution/attribution.controller';
 
 // `PrismaModule` e `CryptoModule` sao @Global no projeto — PrismaService e
 // CryptoService sao injetaveis sem importar nada aqui.
@@ -33,7 +36,12 @@ import { MarketingGoalsController } from './goals/marketing-goals.controller';
       { name: MARKETING_SYNC_CRON_QUEUE },
     ),
   ],
-  controllers: [AdConnectionController, MarketingMetricsController, MarketingGoalsController],
+  controllers: [
+    AdConnectionController,
+    MarketingMetricsController,
+    MarketingGoalsController,
+    AttributionController,
+  ],
   providers: [
     marketingRedisProvider,
     AdConnectionRepository,
@@ -48,6 +56,8 @@ import { MarketingGoalsController } from './goals/marketing-goals.controller';
     MarketingRepository,
     MarketingMetricsService,
     MarketingGoalsService,
+    AttributionRepository,
+    AttributionService,
   ],
 })
 export class MarketingModule {}
