@@ -55,7 +55,7 @@ function makeRepo() {
 
 function makeOauth(accounts: any[] = [{ id: 'act_1', name: 'Conta 1', currency: 'BRL', timezoneName: 'America/Sao_Paulo', businessId: 'biz-1' }]) {
   return {
-    exchangeCodeForLongLivedToken: jest.fn(async () => ({
+    exchangeUserTokenForLongLived: jest.fn(async () => ({
       accessToken: 'TOKEN-LONGO',
       expiresAt: new Date('2026-10-01T00:00:00Z'),
     })),
@@ -249,7 +249,7 @@ describe('AdConnectionService', () => {
   it('troca o code UMA vez so — createConnection nao chama a Meta de novo', async () => {
     const { service, oauth } = build();
     await connect(service);
-    expect(oauth.exchangeCodeForLongLivedToken).toHaveBeenCalledTimes(1);
+    expect(oauth.exchangeUserTokenForLongLived).toHaveBeenCalledTimes(1);
     expect(oauth.listAdAccounts).toHaveBeenCalledTimes(1);
   });
 
