@@ -27,3 +27,18 @@ export const GRAPH_TIMEOUT_MS = 60000;
 
 /** Escopos pedidos no Facebook Login for Business. */
 export const META_ADS_SCOPES = ['ads_read', 'business_management'];
+
+/**
+ * Tolerância do farol, relativa ao próprio alvo. Verde = melhor ou igual ao
+ * alvo. Amarelo = pior, mas dentro da tolerância. Vermelho = além dela.
+ *
+ * Substitui os dez pares de limites cravados no código do ofphub por uma
+ * regra só.
+ */
+export const GOAL_TOLERANCE_PCT = 50;
+
+/**
+ * Budget pace não usa a regra acima: é vermelho quando o percentual gasto
+ * supera o percentual do mês decorrido em mais que estes pontos percentuais.
+ */
+export const BUDGET_PACE_TOLERANCE_PP = 10;
