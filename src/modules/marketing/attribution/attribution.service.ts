@@ -5,7 +5,8 @@ export interface AttributionRow {
   adId: string;
   adName: string | null;
   campaignName: string | null;
-  spend: number;
+  /** `null` quando nao ha linha de gasto ingerida para o anuncio. */
+  spend: number | null;
   leads: number;
   deals: number;
   revenue: number;
@@ -132,7 +133,13 @@ export class AttributionService {
       const leads = leadsByAd.get(adId) ?? 0;
       const deals = won?.deals ?? 0;
       const revenue = won?.revenue ?? 0;
-      const spend = media?.spend ?? 0;
+      // `null` = NAO temos linha de gasto desse anuncio (rodou antes da
+      // ingestao comecar, ou e de uma conta nunca conectada). Diferente de
+      // "gastou zero". Colapsar os dois em 0 fabricaria um CPL de R$ 0,00 —
+      // numero calculavel, de aparencia real — e mandaria esse anuncio pro
+      // TOPO do ranking de criativos, lido como "o lead mais barato do
+      // periodo", quando o custo e simplesmente desconhecido.
+      const spend = media ? media.spend : null;
 
       return {
         adId,
@@ -142,8 +149,8 @@ export class AttributionService {
         leads,
         deals,
         revenue,
-        cpl: safeDivide(spend, leads),
-        roas: safeDivide(revenue, spend),
+        cpl: spend === null ? null : safeDivide(spend, leads),
+        roas: spend === null ? null : safeDivide(revenue, spend),
       };
     });
   }

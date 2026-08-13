@@ -102,11 +102,54 @@ describe('AttributionService', () => {
       expect(spentNoLeads.cpl).toBeNull();
       expect(Number.isFinite(spentNoLeads.cpl as any)).toBe(false);
 
+      // Anuncio com lead mas SEM linha de gasto ingerida: custo desconhecido,
+      // nao zero. Devolver 0 aqui fabricaria "o lead mais barato do periodo".
       const leadNoSpend = byId.get('ad-free-lead')!;
+      expect(leadNoSpend.spend).toBeNull();
+      expect(leadNoSpend.cpl).toBeNull();
       expect(leadNoSpend.roas).toBeNull();
-      expect(Number.isFinite(leadNoSpend.roas as any)).toBe(false);
-      // 5 leads e zero gasto -> cpl computável (0), não é o caso de divisão por zero.
-      expect(leadNoSpend.cpl).toBe(0);
+    });
+
+    it('distingue "sem linha de gasto" de "gastou zero de verdade"', async () => {
+      const { service } = build({
+        leadsByAd: [
+          { adId: 'ad-sem-dado', leads: 5 },
+          { adId: 'ad-gastou-zero', leads: 4 },
+        ],
+        mediaByAd: [
+          // Linha existe e o gasto e zero de fato — CPL zero e verdade aqui.
+          { adId: 'ad-gastou-zero', adName: null, campaignName: null, spend: 0, impressions: 0, clicks: 0 },
+        ],
+      });
+
+      const byId = new Map(
+        (await service.getAttribution(ORG, FROM, TO)).rows.map((r) => [r.adId, r]),
+      );
+
+      expect(byId.get('ad-sem-dado')!.spend).toBeNull();
+      expect(byId.get('ad-sem-dado')!.cpl).toBeNull();
+
+      expect(byId.get('ad-gastou-zero')!.spend).toBe(0);
+      expect(byId.get('ad-gastou-zero')!.cpl).toBe(0);
+    });
+
+    it('anuncio sem linha de gasto NAO encabeca o ranking de criativos', async () => {
+      // O bug que isto trava: com cpl 0 fabricado, o anuncio de custo
+      // desconhecido ganhava a medalha de ouro de "lead mais barato".
+      const { service } = build({
+        leadsByAd: [
+          { adId: 'ad-sem-dado', leads: 10 },
+          { adId: 'ad-barato', leads: 10 },
+        ],
+        mediaByAd: [
+          { adId: 'ad-barato', adName: null, campaignName: null, spend: 50, impressions: 0, clicks: 0 },
+        ],
+      });
+
+      const creatives = await service.getCreatives(ORG, FROM, TO);
+
+      expect(creatives[0].adId).toBe('ad-barato');
+      expect(creatives[creatives.length - 1].adId).toBe('ad-sem-dado');
     });
 
     it('balde não-atribuído sempre existe, mesmo com tudo zerado, e spend é sempre nulo', async () => {
