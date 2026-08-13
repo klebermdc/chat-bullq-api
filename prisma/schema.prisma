@@ -278,6 +278,7 @@ model Organization {
   emailSubscribers          EmailSubscriber[]
   emailCampaigns            EmailCampaign[]
   adAccountConnections      AdAccountConnection[]
+  marketingGoal             MarketingGoal?
 
   @@map("organizations")
 }
@@ -2834,4 +2835,25 @@ model AdDailyStat {
   @@index([organizationId, date])
   @@index([organizationId, adId])
   @@map("ad_daily_stats")
+}
+
+/// Metas do farol, por organização. No ofphub esses limites eram cravados no
+/// código (CPL < 12, CTR > 2%, frequência < 3x); aqui cada organização define
+/// os seus. Campo nulo = indicador aparece cinza, sem semáforo — nunca
+/// vermelho por falta de configuração.
+model MarketingGoal {
+  id                  String   @id @default(cuid())
+  organizationId      String   @unique @map("organization_id")
+  monthlyBudget       Decimal? @db.Decimal(14, 2) @map("monthly_budget")
+  targetCpl           Decimal? @db.Decimal(14, 2) @map("target_cpl")
+  targetCtrPct        Decimal? @db.Decimal(6, 2)  @map("target_ctr_pct")
+  targetLeadsPerDay   Int?     @map("target_leads_per_day")
+  targetFrequencyMax  Decimal? @db.Decimal(6, 2)  @map("target_frequency_max")
+  targetConversionPct Decimal? @db.Decimal(6, 2)  @map("target_conversion_pct")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("marketing_goals")
 }
