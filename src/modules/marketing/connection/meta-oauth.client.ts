@@ -98,9 +98,15 @@ export class MetaOAuthClient {
   async exchangeCodeForLongLivedToken(code: string): Promise<LongLivedToken> {
     const { appId, appSecret } = this.credentials();
 
+    // `redirect_uri` VAZIO, e não ausente. O code vem do FB.login do SDK, que
+    // não redireciona — e a variação General do Login for Business usa o code
+    // OAuth padrão, que exige o parâmetro presente e idêntico ao do diálogo.
+    // Omiti-lo devolve "Error validating verification code. Please make sure
+    // your redirect_uri is identical...". O Embedded Signup do WhatsApp não
+    // precisa disso porque emite um code de Tech Provider, de outro tipo.
     const short = await this.graphGet<{ access_token?: string }>(
       '/oauth/access_token',
-      { client_id: appId, client_secret: appSecret, code },
+      { client_id: appId, client_secret: appSecret, code, redirect_uri: '' },
       'troca do code',
     );
     const shortToken = short?.access_token;
