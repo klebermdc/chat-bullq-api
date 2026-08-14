@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ConversationStatus, Prisma } from '@prisma/client';
+import { ChannelType, ConversationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { attachWindowExpiry } from './attach-window-expiry';
 import { buildSearchOr } from './inbox-search';
@@ -8,6 +8,13 @@ export interface InboxFilters {
   organizationId: string;
   status?: ConversationStatus[];
   channelId?: string;
+  /**
+   * Filtra pelo TIPO do canal — ex.: todo Instagram, independente de
+   * quantos canais daquele tipo a org tenha, hoje ou depois. Usado pelo
+   * Inbox Instagram. Compõe com channelId/channelIds e continua sujeito
+   * ao teto de accessibleChannelIds (é um AND, não substitui o RBAC).
+   */
+  channelType?: ChannelType;
   /** Used by inbox views that pin multiple channels at once. Combines
    *  with accessibleChannelIds via intersection. */
   channelIds?: string[];
@@ -147,6 +154,11 @@ export class ConversationsRepository {
     } else if (requested) {
       where.channelId =
         requested.length === 1 ? requested[0] : { in: requested };
+    }
+    // Relation filter: intersecta com o channelId resolvido acima e com o
+    // teto de RBAC, porque no Prisma ambos caem no mesmo `where` (AND).
+    if (filters.channelType) {
+      where.channel = { type: filters.channelType };
     }
     if (filters.conversationIds !== undefined) {
       if (filters.conversationIds.length === 0) {
