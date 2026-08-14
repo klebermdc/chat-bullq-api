@@ -7,7 +7,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import {
+import { ChannelType,
   Conversation,
   ConversationStatus,
   MessageContentType,
@@ -132,6 +132,7 @@ export class ConversationsService {
        */
       awaitingHumanReply?: boolean;
       channelId?: string;
+      channelType?: ChannelType;
       channelIds?: string[];
       conversationIds?: string[];
       kind?: 'INDIVIDUAL' | 'GROUP';

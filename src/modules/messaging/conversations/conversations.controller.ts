@@ -13,8 +13,17 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
-import { OrgRole } from '@prisma/client';
+import { ChannelType, OrgRole } from '@prisma/client';
 import { ConversationsService } from './conversations.service';
+
+/**
+ * Query string é entrada de borda: um tipo fora do enum viraria erro do
+ * Prisma em runtime. Valor inválido é tratado como "sem filtro".
+ */
+function isChannelType(value?: string): value is ChannelType {
+  return !!value && Object.values(ChannelType).includes(value as ChannelType);
+}
+
 import { StartConversationService } from './start-conversation.service';
 import { StartConversationDto } from './dto/start-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
@@ -99,6 +108,12 @@ export class ConversationsController {
       'Aba de atendimento: waiting (Esperando) | inbox (Caixa de entrada) | closed (Finalizados)',
   })
   @ApiQuery({ name: 'channelId', required: false })
+  @ApiQuery({
+    name: 'channelType',
+    required: false,
+    description:
+      'Filtra por TIPO de canal (ex.: INSTAGRAM) — pega todos os canais daquele tipo. Usado pelo Inbox Instagram.',
+  })
   @ApiQuery({ name: 'assignedToId', required: false })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'page', required: false })
@@ -143,6 +158,7 @@ export class ConversationsController {
     @Query('status') status?: string,
     @Query('tab') tab?: string,
     @Query('channelId') channelId?: string,
+    @Query('channelType') channelType?: string,
     @Query('assignedToId') assignedToId?: string,
     @Query('search') search?: string,
     @Query('page') page?: string,
@@ -179,6 +195,9 @@ export class ConversationsController {
         status,
         tab: parsedTab,
         channelId,
+        // Só repassa valor que existe no enum — query string é entrada de
+        // borda e um tipo inválido viraria erro do Prisma em runtime.
+        channelType: isChannelType(channelType) ? channelType : undefined,
         assignedToId,
         search,
         archived: archivedScope,
