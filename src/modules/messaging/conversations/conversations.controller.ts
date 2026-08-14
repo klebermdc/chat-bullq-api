@@ -14,14 +14,40 @@ import {
 import type { Response } from 'express';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { ChannelType, OrgRole } from '@prisma/client';
+import { FEATURE_MAP } from '../../../common/rbac/feature-map';
 import { ConversationsService } from './conversations.service';
 
 /**
  * Query string é entrada de borda: um tipo fora do enum viraria erro do
- * Prisma em runtime. Valor inválido é tratado como "sem filtro".
+ * Prisma em runtime. Valores inválidos são descartados.
  */
-function isChannelType(value?: string): value is ChannelType {
-  return !!value && Object.values(ChannelType).includes(value as ChannelType);
+function parseChannelTypes(raw?: string): ChannelType[] | undefined {
+  if (!raw) return undefined;
+  const parsed = raw
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v): v is ChannelType =>
+      Object.values(ChannelType).includes(v as ChannelType),
+    );
+  return parsed.length > 0 ? parsed : undefined;
+}
+
+/**
+ * Esconder o menu não é permissão. Se o cargo não tem
+ * `inbox.instagram.view`, INSTAGRAM sai da lista aqui — um Operador que
+ * forje `?channelTypes=INSTAGRAM` na mão recebe lista vazia, não as
+ * conversas.
+ */
+function enforceInstagramAccess(
+  types: ChannelType[] | undefined,
+  role: OrgRole,
+): ChannelType[] | undefined {
+  if (!types) return undefined;
+  if (FEATURE_MAP['inbox.instagram.view'].includes(role)) return types;
+  const allowed = types.filter((t) => t !== ChannelType.INSTAGRAM);
+  // Pediu SÓ Instagram sem ter acesso: devolve um filtro impossível em vez
+  // de cair no "sem filtro", que mostraria tudo.
+  return allowed.length > 0 ? allowed : [];
 }
 
 import { StartConversationService } from './start-conversation.service';
@@ -109,10 +135,10 @@ export class ConversationsController {
   })
   @ApiQuery({ name: 'channelId', required: false })
   @ApiQuery({
-    name: 'channelType',
+    name: 'channelTypes',
     required: false,
     description:
-      'Filtra por TIPO de canal (ex.: INSTAGRAM) — pega todos os canais daquele tipo. Usado pelo Inbox Instagram.',
+      'Lista separada por vírgula de TIPOS de canal (ex.: INSTAGRAM, ou WHATSAPP_OFFICIAL,WHATSAPP_ZAPPFY,WHATSAPP_WASENDER). Pega todos os canais daqueles tipos.',
   })
   @ApiQuery({ name: 'assignedToId', required: false })
   @ApiQuery({ name: 'search', required: false })
@@ -158,7 +184,7 @@ export class ConversationsController {
     @Query('status') status?: string,
     @Query('tab') tab?: string,
     @Query('channelId') channelId?: string,
-    @Query('channelType') channelType?: string,
+    @Query('channelTypes') channelTypes?: string,
     @Query('assignedToId') assignedToId?: string,
     @Query('search') search?: string,
     @Query('page') page?: string,
@@ -195,9 +221,10 @@ export class ConversationsController {
         status,
         tab: parsedTab,
         channelId,
-        // Só repassa valor que existe no enum — query string é entrada de
-        // borda e um tipo inválido viraria erro do Prisma em runtime.
-        channelType: isChannelType(channelType) ? channelType : undefined,
+        channelTypes: enforceInstagramAccess(
+          parseChannelTypes(channelTypes),
+          role,
+        ),
         assignedToId,
         search,
         archived: archivedScope,
