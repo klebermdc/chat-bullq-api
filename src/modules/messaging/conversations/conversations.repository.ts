@@ -9,12 +9,12 @@ export interface InboxFilters {
   status?: ConversationStatus[];
   channelId?: string;
   /**
-   * Filtra pelo TIPO do canal — ex.: todo Instagram, independente de
-   * quantos canais daquele tipo a org tenha, hoje ou depois. Usado pelo
-   * Inbox Instagram. Compõe com channelId/channelIds e continua sujeito
-   * ao teto de accessibleChannelIds (é um AND, não substitui o RBAC).
+   * Filtra pelos TIPOS de canal — ex.: só Instagram, ou os três sabores
+   * de WhatsApp. É lista porque "WhatsApp" não é um tipo só
+   * (OFFICIAL/ZAPPFY/WASENDER). Compõe com channelId/channelIds e continua
+   * sujeito ao teto de accessibleChannelIds (é um AND, não substitui RBAC).
    */
-  channelType?: ChannelType;
+  channelTypes?: ChannelType[];
   /** Used by inbox views that pin multiple channels at once. Combines
    *  with accessibleChannelIds via intersection. */
   channelIds?: string[];
@@ -157,8 +157,8 @@ export class ConversationsRepository {
     }
     // Relation filter: intersecta com o channelId resolvido acima e com o
     // teto de RBAC, porque no Prisma ambos caem no mesmo `where` (AND).
-    if (filters.channelType) {
-      where.channel = { type: filters.channelType };
+    if (filters.channelTypes && filters.channelTypes.length > 0) {
+      where.channel = { type: { in: filters.channelTypes } };
     }
     if (filters.conversationIds !== undefined) {
       if (filters.conversationIds.length === 0) {
