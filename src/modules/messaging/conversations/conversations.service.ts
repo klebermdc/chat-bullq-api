@@ -238,6 +238,11 @@ export class ConversationsService {
       // canais resolvidos (necessário pro plano da query); senão, o do usuário.
       channelId: isGroupResolved ? undefined : filters.channelId,
       channelIds: isGroupResolved ? resolvedChannelIds : filters.channelIds,
+      // Sem ternário de propósito: channelTypes é o ESCOPO DA PÁGINA (inbox
+      // do WhatsApp vs do Instagram), não um filtro que o usuário escolheu.
+      // Ele vale inclusive em filtro de grupo — senão o Inbox Instagram
+      // passaria a mostrar WhatsApp assim que alguém filtrasse por segmento.
+      channelTypes: filters.channelTypes,
       conversationIds,
       kind: isGroupResolved ? 'GROUP' : filters.kind,
       tagIds: filters.tagIds,
