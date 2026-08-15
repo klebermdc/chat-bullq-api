@@ -132,7 +132,7 @@ export class ConversationsService {
        */
       awaitingHumanReply?: boolean;
       channelId?: string;
-      channelType?: ChannelType;
+      channelTypes?: ChannelType[];
       channelIds?: string[];
       conversationIds?: string[];
       kind?: 'INDIVIDUAL' | 'GROUP';

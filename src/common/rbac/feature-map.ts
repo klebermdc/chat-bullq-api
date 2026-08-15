@@ -24,6 +24,9 @@ export const FEATURE_MAP = {
   'inbox.call': ALL,
   'inbox.schedule': ALL,
   'inbox.deal.win': ALL, // Marcar como Ganho / pedido enviado / proposta
+  // Inbox do Instagram é separado do geral: Operador (AGENT) não enxerga
+  // nem o item de menu nem as conversas, mesmo forjando o parâmetro.
+  'inbox.instagram.view': STAFF,
   'inbox.view.unassigned': STAFF,
   'inbox.ai.toggle': STAFF,
   'inbox.bulk': STAFF,
