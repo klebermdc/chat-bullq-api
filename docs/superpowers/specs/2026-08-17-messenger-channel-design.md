@@ -152,13 +152,18 @@ depois pelo `ad_id`, mas é outro trabalho.
 
 ### Mídia
 
-Anexo chega como `attachments[].payload.url` — CDN da Meta, que expira.
-Re-hospedar em `/api/v1/uploads` na entrada; nunca guardar a URL da Meta como
-fonte permanente (regra 5 do projeto).
+Anexo chega como `attachments[].payload.url` — CDN da Meta, que expira. Nunca
+guardar essa URL como fonte permanente (regra 5 do projeto).
 
-> **A confirmar no plano:** o mecanismo exato de re-hospedagem não foi
-> rastreado neste desenho. O caminho do Instagram deve ser lido durante o
-> planejamento e reaproveitado tal como está — não inventar caminho novo.
+**Mecanismo (rastreado):** a re-hospedagem é feita pelo `MediaResolverService`,
+que é **agnóstico de canal** — ele chama `adapter.downloadMedia(channel, url)`
+pelo registry e grava via `uploads.saveInboundMedia`. O Messenger herda esse
+caminho de graça, bastando implementar `downloadMedia` no adapter de saída.
+
+Correção em relação a uma versão anterior deste texto: a re-hospedagem é **sob
+demanda** (na primeira vez que a mídia é pedida), não no momento da ingestão. Se
+falhar, o serviço cai de volta na URL do provedor sem cachear, para a próxima
+tentativa refazer.
 
 **Figurinha tem prazo.** Até **30/08/2026** a Meta manda os dois tipos
 (`sticker` e `image`); depois disso, só `sticker`. O mapper prioriza `sticker` e
