@@ -4,12 +4,19 @@ import { PrismaService } from '../../../database/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { computeWhatsappWindow } from '../conversations/whatsapp-window.util';
 
-const BLOCK_REASON =
+const BLOCK_REASON_WHATSAPP =
   'Janela de atendimento (24h/72h) fechada — envie um template aprovado.';
+const BLOCK_REASON_MESSENGER =
+  'Janela de atendimento do Messenger (24h) fechada — a Meta nao permite ' +
+  'enviar fora dela. Aguarde o cliente responder.';
+
+// Vale nos canais da Meta que tem janela de atendimento: WhatsApp oficial
+// (24h/72h) e Messenger (24h fixas).
+const GATED_CHANNELS = ['WHATSAPP_OFFICIAL', 'MESSENGER'];
 
 @Injectable()
-export class WhatsappWindowGate {
-  private readonly logger = new Logger(WhatsappWindowGate.name);
+export class MetaWindowGate {
+  private readonly logger = new Logger(MetaWindowGate.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -30,8 +37,7 @@ export class WhatsappWindowGate {
   }): Promise<boolean> {
     // Template é o único permitido fora da janela — nunca gateia.
     if (params.messageType === MessageContentType.TEMPLATE) return false;
-    // Regra só existe no canal oficial da Meta.
-    if (params.channelType !== 'WHATSAPP_OFFICIAL') return false;
+    if (!GATED_CHANNELS.includes(params.channelType)) return false;
 
     try {
       const msg = await this.prisma.message.findUnique({
@@ -58,9 +64,13 @@ export class WhatsappWindowGate {
       });
       if (window.open) return false;
 
+      const failedReason =
+        params.channelType === 'MESSENGER'
+          ? BLOCK_REASON_MESSENGER
+          : BLOCK_REASON_WHATSAPP;
       const updated = await this.prisma.message.update({
         where: { id: params.messageId },
-        data: { status: MessageStatus.FAILED, failedReason: BLOCK_REASON },
+        data: { status: MessageStatus.FAILED, failedReason },
         select: { id: true, conversationId: true },
       });
       this.realtime.emitToConversation(updated.conversationId, 'message:status', {

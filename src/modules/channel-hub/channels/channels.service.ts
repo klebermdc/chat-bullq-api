@@ -20,6 +20,7 @@ import { ChannelAdapterRegistry } from '../channel-adapter.registry';
 import { ZappfyHttpClient } from '../adapters/zappfy/zappfy.http-client';
 import { WhatsAppOfficialHttpClient } from '../adapters/whatsapp-official/whatsapp-official.http-client';
 import { InstagramHttpClient } from '../adapters/instagram/instagram.http-client';
+import { MessengerHttpClient } from '../adapters/messenger/messenger.http-client';
 import { ChannelSyncOrchestrator } from '../sync/channel-sync.orchestrator';
 import {
   ChannelAccessService,
@@ -37,6 +38,9 @@ export class ChannelsService {
     private readonly zappfyHttpClient: ZappfyHttpClient,
     private readonly waOfficialHttpClient: WhatsAppOfficialHttpClient,
     private readonly instagramHttpClient: InstagramHttpClient,
+    // Obrigatório, sem `?` e sem @Optional(): parâmetro opcional de construtor
+    // sem @Optional() já derrubou o boot da API em produção (#159).
+    private readonly messengerHttpClient: MessengerHttpClient,
     private readonly syncOrchestrator: ChannelSyncOrchestrator,
     private readonly prisma: PrismaService,
     private readonly channelAccess: ChannelAccessService,
@@ -389,6 +393,19 @@ export class ChannelsService {
               igUserId: info.user_id || info.id,
               accountType: info.account_type,
               name: info.name,
+            },
+          };
+        }
+
+        case ChannelType.MESSENGER: {
+          const page = await this.messengerHttpClient.getPage(channel);
+          return {
+            success: true,
+            status: 'connected',
+            data: {
+              pageId: page.id,
+              name: page.name,
+              category: page.category,
             },
           };
         }

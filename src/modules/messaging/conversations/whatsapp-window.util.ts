@@ -36,15 +36,19 @@ export interface WhatsappWindowState {
 export function computeWhatsappWindow(
   input: WhatsappWindowInput,
 ): WhatsappWindowState {
-  if (input.channelType !== 'WHATSAPP_OFFICIAL') {
+  if (input.channelType !== 'WHATSAPP_OFFICIAL' && input.channelType !== 'MESSENGER') {
     return { applicable: false, open: true, expiresAt: null, kind: null };
   }
   const csw = input.lastInboundAt
     ? input.lastInboundAt.getTime() + CSW_WINDOW_MS
     : null;
-  const ctwa = input.ctwaClidAt
-    ? input.ctwaClidAt.getTime() + CTWA_WINDOW_MS
-    : null;
+  // A extensao de 72h do Click-to-WhatsApp so existe no WhatsApp. No Messenger
+  // a janela e sempre 24h a partir da ultima mensagem de entrada.
+  const isWhatsapp = input.channelType === 'WHATSAPP_OFFICIAL';
+  const ctwa =
+    isWhatsapp && input.ctwaClidAt
+      ? input.ctwaClidAt.getTime() + CTWA_WINDOW_MS
+      : null;
 
   let expMs: number | null = null;
   let kind: 'csw24' | 'ctwa72' | null = null;
@@ -59,10 +63,12 @@ export function computeWhatsappWindow(
   // A Meta só emite `conversation.expiration_timestamp` para free entry point
   // (conversa de anúncio, `billable:false`), então quando ele estende a janela
   // é sempre a regra de 72h que está valendo. Só ESTENDE — um valor menor não
-  // pode encurtar a CSW de 24h, que a Meta honra de qualquer forma.
-  const meta = input.metaWindowExpiresAt
-    ? input.metaWindowExpiresAt.getTime()
-    : null;
+  // pode encurtar a CSW de 24h, que a Meta honra de qualquer forma. É, assim
+  // como o CTWA, um conceito exclusivo do WhatsApp.
+  const meta =
+    isWhatsapp && input.metaWindowExpiresAt
+      ? input.metaWindowExpiresAt.getTime()
+      : null;
   if (meta !== null && (expMs === null || meta > expMs)) {
     expMs = meta;
     kind = 'ctwa72';

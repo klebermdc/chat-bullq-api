@@ -16,7 +16,7 @@ import { AttendantGreetingModule } from './attendant-greeting/attendant-greeting
 import { OrderFichaModule } from '../order-ficha/order-ficha.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { IdempotencyService } from './pipeline/idempotency.service';
-import { WhatsappWindowGate } from './pipeline/whatsapp-window-gate.service';
+import { MetaWindowGate } from './pipeline/meta-window-gate.service';
 import { ContactResolverService } from './pipeline/contact-resolver.service';
 import { ConversationResolverService } from './pipeline/conversation-resolver.service';
 import { LeadSourceTaggerService } from './pipeline/lead-source-tagger.service';
@@ -86,7 +86,7 @@ import { ContactsRepository } from './contacts/contacts.repository';
   controllers: [ConversationsController, MessagesController, ContactsController],
   providers: [
     IdempotencyService,
-    WhatsappWindowGate,
+    MetaWindowGate,
     ContactResolverService,
     ConversationResolverService,
     LeadSourceTaggerService,
