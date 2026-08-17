@@ -15,6 +15,12 @@ export interface MessengerUserProfile {
   profile_pic?: string;
 }
 
+export interface MessengerPageInfo {
+  id: string;
+  name?: string;
+  category?: string;
+}
+
 @Injectable()
 export class MessengerHttpClient {
   private readonly logger = new Logger(MessengerHttpClient.name);
@@ -46,6 +52,27 @@ export class MessengerHttpClient {
       return data;
     } catch (err: unknown) {
       throw this.wrapGraphError(err, 'sendMessage');
+    }
+  }
+
+  /**
+   * Dados da Página dona do token. Serve ao "Testar conexão" da tela de canais:
+   * se o Page Access Token estiver vencido ou for de outra Página, isto falha
+   * com o motivo real da Meta em vez de o atendente descobrir só quando uma
+   * mensagem não sair.
+   *
+   * Diferente do `getUserProfile`, NÃO engole o erro — quem chama precisa
+   * distinguir "conectado" de "token quebrado".
+   */
+  async getPage(channel: Channel): Promise<MessengerPageInfo> {
+    const client = this.createClient(channel);
+    try {
+      const { data } = await client.get('/me', {
+        params: { fields: 'id,name,category' },
+      });
+      return data;
+    } catch (err: unknown) {
+      throw this.wrapGraphError(err, 'getPage');
     }
   }
 

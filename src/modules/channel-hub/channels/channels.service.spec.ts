@@ -22,6 +22,7 @@ const build = () => {
     {} as any, // zappfyHttpClient
     {} as any, // waOfficialHttpClient
     {} as any, // instagramHttpClient
+    {} as any, // messengerHttpClient
     {} as any, // syncOrchestrator
     {} as any, // prisma
     {} as any, // channelAccess
