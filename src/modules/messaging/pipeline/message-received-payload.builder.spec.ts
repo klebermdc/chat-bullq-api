@@ -86,4 +86,37 @@ describe('buildMessageReceivedPayload', () => {
     });
     expect(p.hasAttachment).toBe(true);
   });
+
+  it('marca storyKind=reply quando a mensagem responde a um story', () => {
+    const p = buildMessageReceivedPayload({
+      ...base,
+      message: message({
+        replyTo: { story: { id: 'story-9', url: 'https://cdn/x.jpg', kind: 'reply' } },
+      }),
+    });
+    expect(p.storyKind).toBe('reply');
+  });
+
+  it('marca storyKind=mention quando a mensagem e mencao em story', () => {
+    const p = buildMessageReceivedPayload({
+      ...base,
+      message: message({
+        replyTo: { story: { id: 'story-9', url: 'https://cdn/x.jpg', kind: 'mention' } },
+      }),
+    });
+    expect(p.storyKind).toBe('mention');
+  });
+
+  it('devolve storyKind null em DM comum', () => {
+    const p = buildMessageReceivedPayload({ ...base, message: message() });
+    expect(p.storyKind).toBeNull();
+  });
+
+  it('devolve storyKind null quando o replyTo e resposta a mensagem, nao a story', () => {
+    const p = buildMessageReceivedPayload({
+      ...base,
+      message: message({ replyTo: { externalMessageId: 'mid-1' } }),
+    });
+    expect(p.storyKind).toBeNull();
+  });
 });

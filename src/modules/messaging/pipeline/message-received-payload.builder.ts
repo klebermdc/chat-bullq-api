@@ -52,6 +52,7 @@ export function buildMessageReceivedPayload(
     // ver comentário em automations.types.ts.
     type: String(message.type),
     hasAttachment: ATTACHMENT_TYPES.has(message.type),
+    storyKind: message.replyTo?.story?.kind ?? null,
     isFromCustomer: true,
   };
 }

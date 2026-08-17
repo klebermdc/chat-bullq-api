@@ -45,6 +45,10 @@ export interface MessageReceivedPayload extends BaseEventPayload {
   body: string | null;
   type: string; // MessageContentType — kept loose to avoid Prisma circular dep
   hasAttachment: boolean;
+  // 'reply'   = a pessoa respondeu a um Story
+  // 'mention' = a pessoa mencionou o perfil no Story dela
+  // null      = DM comum, ou canal sem Story (WhatsApp, Messenger)
+  storyKind: 'reply' | 'mention' | null;
   isFromCustomer: true; // INBOUND only — outbound never enters this trigger
 }
 
