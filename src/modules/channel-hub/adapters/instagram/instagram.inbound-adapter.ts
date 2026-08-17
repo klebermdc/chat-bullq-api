@@ -1,12 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Channel, ChannelType } from '@prisma/client';
-import * as crypto from 'crypto';
 import {
   InboundChannelPort,
   ChannelLocator,
 } from '../../ports/inbound-channel.port';
 import { WebhookParseResult, VerificationResponse } from '../../ports/types';
 import { InstagramMessageMapper } from './instagram.message-mapper';
+import {
+  verifyMetaSignature,
+  handleMetaVerification,
+} from '../meta-shared/meta-signature.util';
 
 @Injectable()
 export class InstagramInboundAdapter implements InboundChannelPort {
@@ -47,22 +50,7 @@ export class InstagramInboundAdapter implements InboundChannelPort {
     channel?: Channel,
   ): boolean {
     const appSecret = (channel?.config as Record<string, any> | undefined)?.appSecret;
-    if (!appSecret) return true;
-
-    const signature = headers['x-hub-signature-256'];
-    if (!signature) return false;
-
-    const expected = 'sha256=' +
-      crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex');
-
-    try {
-      return crypto.timingSafeEqual(
-        Buffer.from(signature),
-        Buffer.from(expected),
-      );
-    } catch {
-      return false;
-    }
+    return verifyMetaSignature(headers, rawBody, appSecret);
   }
 
   parseWebhook(payload: unknown, channel?: Channel): WebhookParseResult {
@@ -129,16 +117,12 @@ export class InstagramInboundAdapter implements InboundChannelPort {
     query: Record<string, string>,
     webhookSecret?: string,
   ): VerificationResponse {
-    const mode = query['hub.mode'];
-    const token = query['hub.verify_token'];
-    const challenge = query['hub.challenge'];
-
-    if (mode === 'subscribe' && token === webhookSecret) {
+    const result = handleMetaVerification(query, webhookSecret);
+    if (result.statusCode === 200) {
       this.logger.log('Instagram webhook verification successful');
-      return { statusCode: 200, body: challenge };
+    } else {
+      this.logger.warn('Instagram webhook verification failed');
     }
-
-    this.logger.warn('Instagram webhook verification failed');
-    return { statusCode: 403, body: { error: 'Verification failed' } };
+    return result;
   }
 }
