@@ -139,4 +139,50 @@ describe('computeWhatsappWindow', () => {
     });
     expect(w).toEqual({ applicable: false, open: true, expiresAt: null, kind: null });
   });
+
+  // ─── Messenger: janela aplicável, mas SEM extensão de 72h ──────────────
+  // A extensão de 72h do Click-to-WhatsApp e o `metaWindowExpiresAt` são
+  // conceitos exclusivos da API oficial do WhatsApp. Se vazassem pro
+  // Messenger, uma conversa ganharia 72h indevidas e a Meta recusaria o
+  // envio quando a janela real (24h) já tivesse fechado.
+
+  it('Messenger: aplicável e regido pela CSW de 24h', () => {
+    const w = computeWhatsappWindow({
+      channelType: 'MESSENGER',
+      lastInboundAt: at(10),
+      ctwaClidAt: null,
+      now: base,
+    });
+    expect(w.applicable).toBe(true);
+    expect(w.open).toBe(true);
+    expect(w.kind).toBe('csw24');
+    expect(w.expiresAt!.getTime()).toBe(at(10).getTime() + 24 * H);
+  });
+
+  it('Messenger: ctwaClidAt é ignorado mesmo dentro das 72h (CSW fechada → fechado)', () => {
+    const w = computeWhatsappWindow({
+      channelType: 'MESSENGER',
+      lastInboundAt: at(30), // CSW fechou
+      ctwaClidAt: at(30), // estaria dentro das 72h se contasse — não deve contar
+      now: base,
+    });
+    expect(w.open).toBe(false);
+    // A janela vigente continua sendo a CSW de 24h (fechada) — se o CTWA
+    // tivesse vazado pro Messenger, `open` seria true (dentro das 72h).
+    expect(w.kind).toBe('csw24');
+  });
+
+  it('Messenger: metaWindowExpiresAt é ignorado (conceito exclusivo do WhatsApp)', () => {
+    const w = computeWhatsappWindow({
+      channelType: 'MESSENGER',
+      lastInboundAt: at(30), // CSW fechou
+      ctwaClidAt: null,
+      metaWindowExpiresAt: new Date(base.getTime() + 10 * H), // estenderia se contasse
+      now: base,
+    });
+    expect(w.open).toBe(false);
+    // Se a expiração da Meta contasse, `expiresAt` seria essa data futura e
+    // `open` seria true — a expiração real permanece a CSW (no passado).
+    expect(w.expiresAt!.getTime()).toBe(at(30).getTime() + 24 * H);
+  });
 });

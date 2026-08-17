@@ -7,7 +7,7 @@ import { ChannelAdapterRegistry } from '../../channel-hub/channel-adapter.regist
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { NormalizedOutboundMessage } from '../../channel-hub/ports/types';
 import { IdempotencyService } from './idempotency.service';
-import { WhatsappWindowGate } from './whatsapp-window-gate.service';
+import { MetaWindowGate } from './meta-window-gate.service';
 import { CadenceRunner } from '../../cadences/cadence-runner.service';
 
 interface OutboundJobData {
@@ -26,7 +26,7 @@ export class OutboundMessageProcessor extends WorkerHost {
     private readonly adapterRegistry: ChannelAdapterRegistry,
     private readonly realtimeGateway: RealtimeGateway,
     private readonly idempotency: IdempotencyService,
-    private readonly windowGate: WhatsappWindowGate,
+    private readonly windowGate: MetaWindowGate,
     @Inject(forwardRef(() => CadenceRunner))
     private readonly cadenceRunner: CadenceRunner,
   ) {
