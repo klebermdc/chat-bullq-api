@@ -10,12 +10,15 @@ import {
  *
  * - WA Official: { phoneNumberId, businessAccountId? }
  * - Instagram:   { igBusinessId }
+ * - Messenger:   { pageId }
  * - Zappfy:      { instanceId?, token? }
  */
 export interface ChannelLocator {
   phoneNumberId?: string;
   businessAccountId?: string;
   igBusinessId?: string;
+  // Messenger: o `entry[].id` do webhook é o ID da Página, não o do usuário.
+  pageId?: string;
   instanceId?: string;
   token?: string;
 }
