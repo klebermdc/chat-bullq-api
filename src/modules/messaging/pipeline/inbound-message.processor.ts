@@ -13,6 +13,7 @@ import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { NormalizedInboundMessage, StatusUpdate } from '../../channel-hub/ports/types';
 import { InstagramContactEnricherService } from '../../channel-hub/adapters/instagram/instagram-contact-enricher.service';
 import { ZappfyContactEnricherService } from '../../channel-hub/adapters/zappfy/zappfy-contact-enricher.service';
+import { MessengerContactEnricherService } from '../../channel-hub/adapters/messenger/messenger-contact-enricher.service';
 import { WebhookEventsService } from '../../channel-hub/webhook-events.service';
 import { AgentRouterService } from '../../ai-agents/router/agent-router.service';
 import { AiAgentRunnerService } from '../../ai-agents/runner/agent-runner.service';
@@ -103,6 +104,7 @@ export class InboundMessageProcessor extends WorkerHost {
     private readonly realtimeGateway: RealtimeGateway,
     private readonly instagramEnricher: InstagramContactEnricherService,
     private readonly zappfyEnricher: ZappfyContactEnricherService,
+    private readonly messengerEnricher: MessengerContactEnricherService,
     private readonly webhookEvents: WebhookEventsService,
     private readonly agentRouter: AgentRouterService,
     private readonly agentRunner: AiAgentRunnerService,
@@ -169,6 +171,27 @@ export class InboundMessageProcessor extends WorkerHost {
             .enrich(channel, message.externalContactId)
             .catch((err) =>
               this.logger.warn(`IG enrichment failed: ${err.message}`),
+            );
+        }
+      }
+
+      if (message.channelType === ChannelType.MESSENGER) {
+        const [channel, contact] = await Promise.all([
+          this.prisma.channel.findUnique({ where: { id: channelId } }),
+          isNewContact
+            ? Promise.resolve(null)
+            : this.prisma.contact.findUnique({
+                where: { id: contactId },
+                select: { name: true, avatarUrl: true },
+              }),
+        ]);
+        const needsEnrichment = isNewContact || !contact?.name || !contact?.avatarUrl;
+        if (channel && needsEnrichment) {
+          // Fire-and-forget: enriquecimento nunca pode bloquear a entrega.
+          this.messengerEnricher
+            .enrich(channel, message.externalContactId)
+            .catch((err) =>
+              this.logger.warn(`Enriquecimento do Messenger falhou: ${err.message}`),
             );
         }
       }

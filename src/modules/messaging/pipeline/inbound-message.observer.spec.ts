@@ -16,11 +16,11 @@ describe('InboundMessageProcessor — observação SHADOW independe do gate', ()
     // Ordem posicional EXATA do construtor de InboundMessageProcessor:
     //  1 prisma, 2 idempotency, 3 contactResolver, 4 conversationResolver,
     //  5 realtimeGateway, 6 instagramEnricher, 7 zappfyEnricher,
-    //  8 webhookEvents, 9 agentRouter, 10 agentRunner, 11 transcription,
-    //  12 outbox, 13 watchdog, 14 salesRecovery, 15 agentAvailability,
-    //  16 scheduled, 17 cadenceInbound, 18 chatbotQueue, 19 shadowObserver,
-    //  20 leadSourceTagger, 21 leadCard, 22 orderFichaQueue,
-    //  23 channelUsage, 24 inboundNotifier, 25 orgOffHours.
+    //  8 messengerEnricher, 9 webhookEvents, 10 agentRouter, 11 agentRunner,
+    //  12 transcription, 13 outbox, 14 watchdog, 15 salesRecovery,
+    //  16 agentAvailability, 17 scheduled, 18 cadenceInbound, 19 chatbotQueue,
+    //  20 shadowObserver, 21 leadSourceTagger, 22 leadCard, 23 orderFichaQueue,
+    //  24 channelUsage, 25 inboundNotifier, 26 orgOffHours.
     return new InboundMessageProcessor(
       overrides.prisma, // 1 prisma
       {} as any, // 2 idempotency
@@ -29,26 +29,27 @@ describe('InboundMessageProcessor — observação SHADOW independe do gate', ()
       {} as any, // 5 realtimeGateway
       {} as any, // 6 instagramEnricher
       {} as any, // 7 zappfyEnricher
-      {} as any, // 8 webhookEvents
-      overrides.agentRouter, // 9 agentRouter
-      overrides.agentRunner, // 10 agentRunner
-      {} as any, // 11 transcription
-      {} as any, // 12 outbox
-      // 13 watchdog — fireAgentRun chama watchdog.cancelCheck().catch() após
+      {} as any, // 8 messengerEnricher
+      {} as any, // 9 webhookEvents
+      overrides.agentRouter, // 10 agentRouter
+      overrides.agentRunner, // 11 agentRunner
+      {} as any, // 12 transcription
+      {} as any, // 13 outbox
+      // 14 watchdog — fireAgentRun chama watchdog.cancelCheck().catch() após
       // um run bem-sucedido; stub que resolve pra não gerar ERROR no log.
       { cancelCheck: jest.fn().mockResolvedValue(undefined) } as any,
-      {} as any, // 14 salesRecovery
-      { onInboundReply: jest.fn().mockResolvedValue(undefined) } as any, // 15 agentAvailability
-      {} as any, // 16 scheduled
-      {} as any, // 17 cadenceInbound
-      {} as any, // 18 chatbotQueue
-      overrides.shadowObserver, // 19 shadowObserver
-      { tagInstagramOrganicIfMatch: jest.fn().mockResolvedValue(false) } as any, // 20 leadSourceTagger
-      { ensureLeadCard: jest.fn().mockResolvedValue(null) } as any, // 21 leadCard
-      { add: jest.fn().mockResolvedValue(undefined) } as any, // 22 orderFichaQueue
-      { recordWindow: jest.fn().mockResolvedValue(undefined) } as any, // 23 channelUsage
-      { onInboundMessage: jest.fn().mockResolvedValue(undefined) } as any, // 24 inboundNotifier
-      { onInboundReply: jest.fn().mockResolvedValue(undefined) } as any, // 25 orgOffHours
+      {} as any, // 15 salesRecovery
+      { onInboundReply: jest.fn().mockResolvedValue(undefined) } as any, // 16 agentAvailability
+      {} as any, // 17 scheduled
+      {} as any, // 18 cadenceInbound
+      {} as any, // 19 chatbotQueue
+      overrides.shadowObserver, // 20 shadowObserver
+      { tagInstagramOrganicIfMatch: jest.fn().mockResolvedValue(false) } as any, // 21 leadSourceTagger
+      { ensureLeadCard: jest.fn().mockResolvedValue(null) } as any, // 22 leadCard
+      { add: jest.fn().mockResolvedValue(undefined) } as any, // 23 orderFichaQueue
+      { recordWindow: jest.fn().mockResolvedValue(undefined) } as any, // 24 channelUsage
+      { onInboundMessage: jest.fn().mockResolvedValue(undefined) } as any, // 25 inboundNotifier
+      { onInboundReply: jest.fn().mockResolvedValue(undefined) } as any, // 26 orgOffHours
     );
   }
 
