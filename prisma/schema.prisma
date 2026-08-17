@@ -29,6 +29,7 @@ enum ChannelType {
   // registros. Criar canal novo desse tipo é barrado no ChannelsService.
   WHATSAPP_WASENDER
   INSTAGRAM
+  MESSENGER
 }
 
 // ORG    = todos os membros da org enxergam (default — preserva o comportamento legado)
