@@ -17,6 +17,9 @@ import { InstagramModule } from './adapters/instagram/instagram.module';
 import { InstagramInboundAdapter } from './adapters/instagram/instagram.inbound-adapter';
 import { InstagramOutboundAdapter } from './adapters/instagram/instagram.outbound-adapter';
 import { InstagramSyncAdapter } from './adapters/instagram/instagram.sync-adapter';
+import { MessengerModule } from './adapters/messenger/messenger.module';
+import { MessengerInboundAdapter } from './adapters/messenger/messenger.inbound-adapter';
+import { MessengerOutboundAdapter } from './adapters/messenger/messenger.outbound-adapter';
 import { ChannelSyncOrchestrator } from './sync/channel-sync.orchestrator';
 import { ChannelSyncProcessor } from './sync/channel-sync.processor';
 import { CHANNEL_SYNC_QUEUE } from './sync/channel-sync.constants';
@@ -44,6 +47,7 @@ import { MessageTemplatesModule } from './message-templates/message-templates.mo
     ZappfyModule,
     WhatsAppOfficialModule,
     InstagramModule,
+    MessengerModule,
     forwardRef(() => MessagingModule),
     forwardRef(() => MessageTemplatesModule),
     // AccountUpdateService avisa OWNER/ADMIN quando a Meta desconecta ou
@@ -71,6 +75,7 @@ import { MessageTemplatesModule } from './message-templates/message-templates.mo
     ChannelSyncOrchestrator,
     WebhookEventsService,
     InstagramModule,
+    MessengerModule,
     ZappfyModule,
   ],
 })
@@ -85,12 +90,15 @@ export class ChannelHubModule implements OnModuleInit {
     private readonly instagramInbound: InstagramInboundAdapter,
     private readonly instagramOutbound: InstagramOutboundAdapter,
     private readonly instagramSync: InstagramSyncAdapter,
+    private readonly messengerInbound: MessengerInboundAdapter,
+    private readonly messengerOutbound: MessengerOutboundAdapter,
   ) {}
 
   onModuleInit() {
     this.registry.register(this.zappfyInbound, this.zappfyOutbound);
     this.registry.register(this.waOfficialInbound, this.waOfficialOutbound);
     this.registry.register(this.instagramInbound, this.instagramOutbound);
+    this.registry.register(this.messengerInbound, this.messengerOutbound);
     this.registry.registerHistorySync(this.zappfySync);
     this.registry.registerHistorySync(this.instagramSync);
   }
