@@ -86,7 +86,7 @@ Crie `src/modules/messaging/pipeline/message-received-payload.builder.spec.ts`:
 
 ```ts
 import { buildMessageReceivedPayload } from './message-received-payload.builder';
-import { NormalizedInboundMessage } from '../../channel-hub/ports/inbound-channel.port';
+import { NormalizedInboundMessage } from '../../channel-hub/ports/types';
 
 const base = {
   organizationId: 'org-1',
@@ -156,7 +156,7 @@ Expected: FAIL com `Cannot find module './message-received-payload.builder'`
 Crie `src/modules/messaging/pipeline/message-received-payload.builder.ts`:
 
 ```ts
-import { NormalizedInboundMessage } from '../../channel-hub/ports/inbound-channel.port';
+import { NormalizedInboundMessage } from '../../channel-hub/ports/types';
 import { MessageReceivedPayload } from '../../automations/automations.types';
 
 // Tipos de conteúdo que contam como anexo para efeito de condição de
@@ -264,6 +264,17 @@ git commit -m "refactor(automations): extrai montagem do MESSAGE_RECEIVED para f
 - Modify: `src/modules/messaging/pipeline/message-received-payload.builder.spec.ts`
 
 - [ ] **Step 1: Escrever os testes que falham**
+
+> **Correção registrada na execução da Task 1.** O plano original supunha um
+> shape de `NormalizedInboundMessage` que não existe (com `from`/`to`) e um
+> caminho de import errado. O real é: import de `../../channel-hub/ports/types`,
+> campos obrigatórios `externalMessageId`, `externalContactId`, `channelType`,
+> `timestamp`, `type`, `content`, `rawPayload`. O helper `message()` já foi
+> reescrito na Task 1 com assinatura `over: Partial<NormalizedInboundMessage>` e
+> **sem nenhum cast**. Os blocos abaixo usam `as any` no argumento: **remova o
+> cast** e passe `replyTo` tipado — se o `replyTo` não estiver no tipo
+> `NormalizedInboundMessage`, pare e reporte, porque isso significaria que o
+> adapter do Instagram devolve campo fora do contrato.
 
 Acrescente ao `describe` em
 `src/modules/messaging/pipeline/message-received-payload.builder.spec.ts`:
