@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { ChannelType } from '@prisma/client';
 import {
   NormalizedInboundMessage,
+  NormalizedOutboundMessage,
   MessageContentType,
+  StatusUpdate,
   TemplateButton,
   TemplateElement,
 } from '../../ports/types';
@@ -59,6 +61,67 @@ export class MessengerMessageMapper {
     }
 
     return result;
+  }
+
+  normalizeStatus(messaging: Record<string, any>): StatusUpdate | null {
+    const delivery = messaging.delivery;
+    if (!delivery?.mids?.length) return null;
+
+    return {
+      externalMessageId: delivery.mids[0],
+      status: 'delivered',
+      timestamp: new Date(messaging.timestamp),
+    };
+  }
+
+  /**
+   * A Meta manda `read` com um `watermark` (sem mids): tudo que foi enviado ate
+   * aquele instante foi lido. O processor faz a atualizacao em massa.
+   */
+  normalizeReadStatus(messaging: Record<string, any>): StatusUpdate | null {
+    const read = messaging.read;
+    if (!read?.watermark) return null;
+
+    return {
+      externalMessageId: `messenger-read-watermark:${read.watermark}`,
+      status: 'read',
+      timestamp: new Date(Number(read.watermark) || messaging.timestamp),
+    };
+  }
+
+  denormalize(
+    message: NormalizedOutboundMessage,
+    contactExternalId: string,
+  ): Record<string, any> {
+    const base = { recipient: { id: contactExternalId } };
+
+    // A Messenger Send API nao suporta reply nativo. Degradamos citando o
+    // trecho no corpo da mensagem — mesmo tratamento do Instagram (media
+    // ignora a citacao la tambem: sem suporte a envio composto, o quote em
+    // midia fica pra depois).
+    const quotePrefix = buildQuotePrefix(message.replyTo);
+    const withQuote = (text: string): string => (quotePrefix ? `${quotePrefix}${text}` : text);
+
+    const asAttachment = (type: string) => ({
+      ...base,
+      message: {
+        attachment: { type, payload: { url: message.content.mediaUrl, is_reusable: true } },
+      },
+    });
+
+    switch (message.type) {
+      case MessageContentType.IMAGE:
+      case MessageContentType.STICKER:
+        return asAttachment('image');
+      case MessageContentType.AUDIO:
+        return asAttachment('audio');
+      case MessageContentType.VIDEO:
+        return asAttachment('video');
+      case MessageContentType.DOCUMENT:
+        return asAttachment('file');
+      default:
+        return { ...base, message: { text: withQuote(message.content.text || '') } };
+    }
   }
 
   private resolveContentType(msg: Record<string, any>): MessageContentType {
@@ -188,4 +251,25 @@ export class MessengerMessageMapper {
       },
     };
   }
+}
+
+/**
+ * O Send API do Messenger nao suporta reply nativo. Degradamos citando o
+ * trecho no corpo da mensagem — mesmo tratamento usado no Instagram
+ * (`buildIgQuotePrefix` em `instagram.message-mapper.ts`).
+ *
+ * Sem nome nem preview uteis, nao cita nada: melhor sem citacao do que
+ * mostrar "> undefined" pro cliente.
+ */
+function buildQuotePrefix(replyTo: NormalizedOutboundMessage['replyTo']): string {
+  if (!replyTo) return '';
+
+  const sender = replyTo.senderName?.trim();
+  let preview = replyTo.previewText?.trim() ?? '';
+  if (!sender && !preview) return '';
+  if (preview.length > 120) preview = preview.slice(0, 117) + '…';
+
+  const senderLine = sender ? `> ${sender} disse:\n` : '';
+  const previewLine = preview ? `> ${preview}\n\n` : '\n';
+  return `${senderLine}${previewLine}`;
 }

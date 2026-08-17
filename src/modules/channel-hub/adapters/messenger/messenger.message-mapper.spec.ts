@@ -165,3 +165,73 @@ describe('MessengerMessageMapper.normalizeInbound', () => {
     expect(result?.replyTo).toEqual({ externalMessageId: 'm_original' });
   });
 });
+
+describe('MessengerMessageMapper.denormalize', () => {
+  const mapper = new MessengerMessageMapper();
+
+  it('monta payload de texto', () => {
+    const payload = mapper.denormalize(
+      { type: MessageContentType.TEXT, content: { text: 'oi' } },
+      'PSID_1',
+    );
+
+    expect(payload).toEqual({ recipient: { id: 'PSID_1' }, message: { text: 'oi' } });
+  });
+
+  it('monta payload de imagem', () => {
+    const payload = mapper.denormalize(
+      { type: MessageContentType.IMAGE, content: { mediaUrl: 'https://x/y.jpg' } },
+      'PSID_1',
+    );
+
+    expect(payload).toEqual({
+      recipient: { id: 'PSID_1' },
+      message: {
+        attachment: { type: 'image', payload: { url: 'https://x/y.jpg', is_reusable: true } },
+      },
+    });
+  });
+
+  it('prefixa citacao textual quando ha replyTo', () => {
+    const payload = mapper.denormalize(
+      {
+        type: MessageContentType.TEXT,
+        content: { text: 'claro!' },
+        replyTo: { externalMessageId: 'm_1', previewText: 'tem vaga?', senderName: 'Ana' },
+      },
+      'PSID_1',
+    );
+
+    expect(payload.message.text).toBe('> Ana disse:\n> tem vaga?\n\nclaro!');
+  });
+
+  it('nao cita nada quando replyTo vem sem preview e sem nome', () => {
+    const payload = mapper.denormalize(
+      { type: MessageContentType.TEXT, content: { text: 'ok' }, replyTo: { externalMessageId: 'm_1' } },
+      'PSID_1',
+    );
+
+    expect(payload.message.text).toBe('ok');
+  });
+});
+
+describe('MessengerMessageMapper status', () => {
+  const mapper = new MessengerMessageMapper();
+
+  it('normaliza entrega', () => {
+    expect(
+      mapper.normalizeStatus({ timestamp: 1458692752478, delivery: { mids: ['m_1'] } }),
+    ).toEqual({ externalMessageId: 'm_1', status: 'delivered', timestamp: new Date(1458692752478) });
+  });
+
+  it('devolve null quando entrega vem sem mids', () => {
+    expect(mapper.normalizeStatus({ timestamp: 1, delivery: {} })).toBeNull();
+  });
+
+  it('normaliza leitura pelo watermark', () => {
+    const result = mapper.normalizeReadStatus({ timestamp: 1, read: { watermark: 1458692752478 } });
+
+    expect(result?.status).toBe('read');
+    expect(result?.externalMessageId).toBe('messenger-read-watermark:1458692752478');
+  });
+});
