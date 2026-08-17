@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AutomationTrigger } from '@prisma/client';
-import { AutomationEventPayload } from '../automations.types';
+import {
+  AutomationEventPayload,
+  MessageReceivedPayload,
+} from '../automations.types';
 
 // ─── Condition shape ────────────────────────────────────────────────
 //
@@ -81,6 +84,13 @@ export const FIELDS_BY_TRIGGER: Record<
     body: (p) => (p as any).body,
     type: (p) => (p as any).type,
     hasAttachment: (p) => (p as any).hasAttachment,
+    // ?? null protects events enqueued before this field existed — old
+    // outbox rows deserialize without the key, so `.storyKind` reads
+    // `undefined` rather than `null`. `is_set`/`is_not_set` already treat
+    // undefined and null the same way, but `equals`/`not_equals` use
+    // strict `===`, so without this normalization a rule like
+    // `equals: null` would silently stop matching legacy events.
+    storyKind: (p) => (p as MessageReceivedPayload).storyKind ?? null,
     channelId: (p) => p.channelId,
     contactId: (p) => p.contactId,
     conversationId: (p) => p.conversationId,

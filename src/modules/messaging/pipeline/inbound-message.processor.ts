@@ -27,6 +27,7 @@ import { ChannelUsageService } from '../../channel-usage/channel-usage.service';
 import { ORDER_FICHA_QUEUE } from '../../order-ficha/order-ficha.processor';
 import { IngestInput as OrderFichaIngestInput } from '../../order-ficha/order-ficha.service';
 import { InboundNotifierService } from '../../notifications/inbound-notifier.service';
+import { buildMessageReceivedPayload } from './message-received-payload.builder';
 import {
   AutomationTrigger,
   ChannelType,
@@ -251,33 +252,17 @@ export class InboundMessageProcessor extends WorkerHost {
             result.isNew &&
             direction === MessageDirection.INBOUND
           ) {
-            const content = (message.content ?? {}) as Record<string, any>;
-            const body =
-              typeof content.text === 'string'
-                ? content.text
-                : typeof content.caption === 'string'
-                  ? content.caption
-                  : null;
-            const hasAttachment =
-              message.type === 'IMAGE' ||
-              message.type === 'AUDIO' ||
-              message.type === 'VIDEO' ||
-              message.type === 'DOCUMENT' ||
-              message.type === 'STICKER';
             await this.outbox.enqueue(
               tx,
               AutomationTrigger.MESSAGE_RECEIVED,
-              {
+              buildMessageReceivedPayload({
                 organizationId,
                 contactId,
                 conversationId,
                 channelId,
                 messageId: result.message.id,
-                body,
-                type: String(message.type),
-                hasAttachment,
-                isFromCustomer: true,
-              },
+                message,
+              }),
             );
           }
           return result;
