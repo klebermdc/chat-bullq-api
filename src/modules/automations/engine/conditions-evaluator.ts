@@ -114,6 +114,13 @@ export const FIELDS_BY_TRIGGER: Record<
     contactId: (p) => p.contactId,
     channelId: (p) => p.channelId,
   },
+  [AutomationTrigger.COMMENT_RECEIVED]: {
+    body: (p) => (p as any).body,
+    postId: (p) => (p as any).postId,
+    isReply: (p) => (p as any).isReply,
+    channelId: (p) => p.channelId,
+    contactId: (p) => p.contactId,
+  },
 };
 
 // ─── Evaluator ───────────────────────────────────────────────────────

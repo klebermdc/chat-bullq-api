@@ -1805,6 +1805,10 @@ enum AutomationTrigger {
   // Emitido junto do TAG_ADDED quando a tag aplicada tem marksQualifiedLead.
   // Carrega a atribuição do anúncio (ctwa_clid) para uso externo (CAPI/sGTM).
   LEAD_QUALIFIED
+  // Comentário em post/Reel. NÃO gera conversa — o comentário é público e
+  // 1-para-muitos; a conversa nasce depois, quando a private reply for
+  // respondida.
+  COMMENT_RECEIVED
 }
 
 enum AutomationRunStatus {
