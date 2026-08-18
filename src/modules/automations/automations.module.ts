@@ -21,6 +21,7 @@ import { AssignUserHandler } from './actions/handlers/assign-user.handler';
 import { SendMessageHandler } from './actions/handlers/send-message.handler';
 import { DelayHandler } from './actions/handlers/delay.handler';
 import { SendPrivateReplyHandler } from './actions/handlers/send-private-reply.handler';
+import { ReplyPublicCommentHandler } from './actions/handlers/reply-public-comment.handler';
 import { AutomationsService } from './automations.service';
 import { AutomationsController } from './automations.controller';
 import { AutomationsRunsController } from './automations-runs.controller';
@@ -75,6 +76,7 @@ import { AutomationResumeProcessor } from './workers/automation-resume.processor
     SendMessageHandler,
     DelayHandler,
     SendPrivateReplyHandler,
+    ReplyPublicCommentHandler,
     ActionRegistryService,
     AutomationResumeWatchdogCron,
   ],

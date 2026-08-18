@@ -8,6 +8,7 @@ import { AssignUserHandler } from './handlers/assign-user.handler';
 import { SendMessageHandler } from './handlers/send-message.handler';
 import { DelayHandler } from './handlers/delay.handler';
 import { SendPrivateReplyHandler } from './handlers/send-private-reply.handler';
+import { ReplyPublicCommentHandler } from './handlers/reply-public-comment.handler';
 
 // Centralized lookup so the executor doesn't need to know about specific
 // handler classes — it just asks the registry for "the handler for type X".
@@ -25,6 +26,7 @@ export class ActionRegistryService implements OnModuleInit {
     private readonly sendMessage: SendMessageHandler,
     private readonly delay: DelayHandler,
     private readonly sendPrivateReply: SendPrivateReplyHandler,
+    private readonly replyPublicComment: ReplyPublicCommentHandler,
   ) {}
 
   onModuleInit() {
@@ -37,6 +39,7 @@ export class ActionRegistryService implements OnModuleInit {
       this.sendMessage,
       this.delay,
       this.sendPrivateReply,
+      this.replyPublicComment,
     ]) {
       this.handlers.set(handler.type, handler);
     }
