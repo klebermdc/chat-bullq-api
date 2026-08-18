@@ -101,6 +101,54 @@ export class MessengerHttpClient {
   }
 
   /**
+   * Resposta privada a partir de um comentário — abre uma DM.
+   * `POST /{comment-id}/private_replies`. A Meta aceita só UMA por
+   * comentário e só dentro de 7 dias; a checagem de "já respondido" é
+   * responsabilidade de quem chama (o handler consulta o `SocialComment`
+   * ANTES de vir até aqui), este método não tenta adivinhar pelo erro.
+   */
+  async sendPrivateReply(
+    channel: Channel,
+    commentId: string,
+    message: string,
+  ): Promise<any> {
+    const client = this.createClient(channel);
+    try {
+      const { data } = await client.post(`/${commentId}/private_replies`, { message });
+      return data;
+    } catch (err: unknown) {
+      throw this.wrapGraphError(err, 'sendPrivateReply');
+    }
+  }
+
+  /**
+   * Réplica pública no próprio thread do comentário.
+   * `POST /{comment-id}/replies`.
+   */
+  async replyToComment(
+    channel: Channel,
+    commentId: string,
+    message: string,
+  ): Promise<any> {
+    const client = this.createClient(channel);
+    try {
+      const { data } = await client.post(`/${commentId}/replies`, { message });
+      return data;
+    } catch (err: unknown) {
+      throw this.wrapGraphError(err, 'replyToComment');
+    }
+  }
+
+  /**
+   * ID da própria Página dono do canal, direto da config (sem chamada
+   * HTTP) — usado pela guarda anti-laço do `reply_public_comment`: se o
+   * autor do comentário é a própria Página, não responder.
+   */
+  getOwnAccountId(channel: Channel): string | undefined {
+    return this.getConfig(channel).pageId;
+  }
+
+  /**
    * A Meta devolve o motivo real em `error.message`; sem isso o erro chega no
    * `failedReason` como "Request failed with status code 400" e o atendente
    * fica sem saber o que aconteceu.
