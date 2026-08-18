@@ -265,3 +265,25 @@ describe('ConditionsEvaluator — storyKind end-to-end', () => {
     expect(result).toBe(true);
   });
 });
+
+describe('FIELDS_BY_TRIGGER — COMMENT_RECEIVED', () => {
+  const commentFields = () => FIELDS_BY_TRIGGER[AutomationTrigger.COMMENT_RECEIVED];
+
+  it('expoe os campos de condicao do comentario', () => {
+    const f = commentFields();
+    expect(f.body).toBeDefined();
+    expect(f.postId).toBeDefined();
+    expect(f.isReply).toBeDefined();
+    expect(f.channelId).toBeDefined();
+    expect(f.contactId).toBeDefined();
+  });
+
+  it('le o texto do comentario em body', () => {
+    expect(commentFields().body({ body: 'quero preco' } as any)).toBe('quero preco');
+  });
+
+  it('nao expoe commentId como campo de condicao', () => {
+    // Condicionar por ID de comentario nao tem uso real e polui a UI.
+    expect(commentFields().commentId).toBeUndefined();
+  });
+});

@@ -3,6 +3,8 @@ import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from '../../database/prisma.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { WebhooksModule } from '../webhooks/webhooks.module';
+import { MessengerModule } from '../channel-hub/adapters/messenger/messenger.module';
+import { InstagramModule } from '../channel-hub/adapters/instagram/instagram.module';
 import { OutboxService } from './outbox/outbox.service';
 import { OutboxPollerService } from './outbox/outbox-poller.service';
 import { AutomationEventProcessor } from './workers/automation-event.processor';
@@ -18,6 +20,8 @@ import { MovePipelineStageHandler } from './actions/handlers/move-pipeline-stage
 import { AssignUserHandler } from './actions/handlers/assign-user.handler';
 import { SendMessageHandler } from './actions/handlers/send-message.handler';
 import { DelayHandler } from './actions/handlers/delay.handler';
+import { SendPrivateReplyHandler } from './actions/handlers/send-private-reply.handler';
+import { ReplyPublicCommentHandler } from './actions/handlers/reply-public-comment.handler';
 import { AutomationsService } from './automations.service';
 import { AutomationsController } from './automations.controller';
 import { AutomationsRunsController } from './automations-runs.controller';
@@ -36,6 +40,10 @@ import { AutomationResumeProcessor } from './workers/automation-resume.processor
     PrismaModule,
     RealtimeModule,
     WebhooksModule,
+    // send_private_reply/reply_public_comment chamam a Meta pelo mesmo
+    // cliente HTTP do canal-hub — reusar, não reinventar axios solto.
+    MessengerModule,
+    InstagramModule,
     BullModule.registerQueue(
       { name: AUTOMATION_QUEUE },
       // send_message uses the existing outbound queue. Registering it
@@ -67,6 +75,8 @@ import { AutomationResumeProcessor } from './workers/automation-resume.processor
     AssignUserHandler,
     SendMessageHandler,
     DelayHandler,
+    SendPrivateReplyHandler,
+    ReplyPublicCommentHandler,
     ActionRegistryService,
     AutomationResumeWatchdogCron,
   ],

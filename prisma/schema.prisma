@@ -371,6 +371,7 @@ model Channel {
   scheduledMessages  ScheduledMessage[]
   messageTemplates   MessageTemplate[]
   whatsappWindows    WhatsappWindow[]
+  socialComments     SocialComment[]
 
   @@index([organizationId, type], name: "idx_channel_org_type")
   @@map("channels")
@@ -564,6 +565,7 @@ model Contact {
   proposals         Proposal[]
   orderFichas       OrderFicha[]
   orderAcceptances  OrderAcceptance[]
+  socialComments    SocialComment[]
 
   @@index([organizationId, phone], name: "idx_contact_org_phone")
   @@index([organizationId, email], name: "idx_contact_org_email")
@@ -584,6 +586,48 @@ model ContactChannel {
 
   @@unique([channelId, externalId], name: "uq_contact_channel_external")
   @@map("contact_channels")
+}
+
+// Comentário em post/Reel capturado pelo webhook. NÃO vira conversa — o
+// comentário é público e 1-para-muitos; a conversa nasce depois, quando a
+// private reply for respondida. Guardado para idempotência (a Meta
+// reentrega webhook) e atribuição de origem.
+model SocialComment {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  channelId      String @map("channel_id")
+
+  // ID do comentário na Meta. Único por canal — é o que barra a DM dupla
+  // quando a Meta reentrega o webhook.
+  externalCommentId String  @map("external_comment_id")
+  // Presente quando é resposta a outro comentário, não comentário raiz.
+  parentCommentId   String? @map("parent_comment_id")
+
+  postId        String  @map("post_id")
+  postPermalink String? @map("post_permalink")
+
+  // Mesmo IGSID/PSID do DM — é o que permite casar comentário e conversa.
+  authorExternalId String  @map("author_external_id")
+  authorUsername   String? @map("author_username")
+  contactId        String  @map("contact_id")
+
+  text      String
+  createdAt DateTime @map("created_at")
+
+  // Resposta privada: uma por comentário, dentro de 7 dias (regra da Meta).
+  privateReplyAt    DateTime? @map("private_reply_at")
+  privateReplyError String?   @map("private_reply_error")
+  publicReplyAt     DateTime? @map("public_reply_at")
+
+  ingestedAt DateTime @default(now()) @map("ingested_at")
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, externalCommentId], map: "uq_social_comment_channel_external")
+  @@index([organizationId, createdAt])
+  @@index([contactId])
+  @@map("social_comments")
 }
 
 // ─── Conversations ───────────────────────────────
@@ -1761,6 +1805,10 @@ enum AutomationTrigger {
   // Emitido junto do TAG_ADDED quando a tag aplicada tem marksQualifiedLead.
   // Carrega a atribuição do anúncio (ctwa_clid) para uso externo (CAPI/sGTM).
   LEAD_QUALIFIED
+  // Comentário em post/Reel. NÃO gera conversa — o comentário é público e
+  // 1-para-muitos; a conversa nasce depois, quando a private reply for
+  // respondida.
+  COMMENT_RECEIVED
 }
 
 enum AutomationRunStatus {

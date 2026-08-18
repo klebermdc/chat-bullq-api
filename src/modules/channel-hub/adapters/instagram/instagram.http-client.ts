@@ -198,6 +198,57 @@ export class InstagramHttpClient {
   }
 
   /**
+   * Resposta privada a partir de um comentário — abre uma DM.
+   * `POST /{comment-id}/private_replies`. A Meta aceita só UMA por
+   * comentário e só dentro de 7 dias; a checagem de "já respondido" é
+   * responsabilidade de quem chama (o handler consulta o `SocialComment`
+   * ANTES de vir até aqui), este método não tenta adivinhar pelo erro.
+   */
+  async sendPrivateReply(
+    channel: Channel,
+    commentId: string,
+    message: string,
+  ): Promise<any> {
+    const client = this.createClient(channel);
+    try {
+      const { data } = await client.post(`/${commentId}/private_replies`, { message });
+      return data;
+    } catch (err: any) {
+      throw this.wrapGraphError(err, 'sendPrivateReply');
+    }
+  }
+
+  /**
+   * Réplica pública no próprio thread do comentário.
+   * `POST /{comment-id}/replies`.
+   */
+  async replyToComment(
+    channel: Channel,
+    commentId: string,
+    message: string,
+  ): Promise<any> {
+    const client = this.createClient(channel);
+    try {
+      const { data } = await client.post(`/${commentId}/replies`, { message });
+      return data;
+    } catch (err: any) {
+      throw this.wrapGraphError(err, 'replyToComment');
+    }
+  }
+
+  /**
+   * ID da própria conta IG dona do canal, direto da config (sem chamada
+   * HTTP) — usado pela guarda anti-laço do `reply_public_comment`: se o
+   * autor do comentário é o próprio perfil, não responder. Deliberadamente
+   * NÃO cai para `resolveBusinessId` (que faz `GET /me` ao vivo quando a
+   * config não tem o id) — a guarda de laço não pode depender de uma
+   * chamada de rede extra a cada comentário.
+   */
+  getOwnAccountId(channel: Channel): string | undefined {
+    return this.getConfig(channel).igBusinessId;
+  }
+
+  /**
    * Tenta deletar/unsend uma DM no Instagram via Graph API.
    * Meta NÃO documenta esse endpoint pra Direct Messages e, na prática,
    * a maioria das apps recebe `(#10) Application does not have permission`

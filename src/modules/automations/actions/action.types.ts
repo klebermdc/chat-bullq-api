@@ -13,6 +13,8 @@ export const ACTION_TYPES = [
   'assign_user',
   'send_message',
   'delay',
+  'send_private_reply',
+  'reply_public_comment',
 ] as const;
 
 export type ActionType = (typeof ACTION_TYPES)[number];

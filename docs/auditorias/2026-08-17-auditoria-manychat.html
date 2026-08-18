@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ManyChat → Sendtur · Auditoria + Blueprint de Implantação</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+  --txt:#e6e9ef; --mut:#9aa3b2; --dim:#6b7385;
+  --ok:#3ecf8e; --warn:#f0b429; --bad:#f2555a; --info:#5b9bff; --accent:#8b7cf6;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+a{color:var(--info)}
+header{padding:36px 28px 22px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#151922,#0f1115)}
+.wrap{max-width:1180px;margin:0 auto}
+h1{margin:0 0 6px;font-size:27px;letter-spacing:-.4px}
+.sub{color:var(--mut);font-size:14px}
+nav{position:sticky;top:0;z-index:20;background:rgba(15,17,21,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;gap:4px;overflow-x:auto;padding:8px 28px}
+nav button{background:none;border:0;color:var(--mut);padding:9px 14px;border-radius:8px;font:600 13.5px/1 inherit;cursor:pointer;white-space:nowrap}
+nav button:hover{color:var(--txt);background:var(--panel)}
+nav button.on{background:var(--accent);color:#fff}
+main{padding:28px}
+section{display:none}
+section.on{display:block}
+h2{font-size:20px;margin:34px 0 14px;letter-spacing:-.3px}
+h2:first-child{margin-top:0}
+h3{font-size:15.5px;margin:24px 0 10px;color:var(--txt)}
+p{color:var(--mut)}
+.grid{display:grid;gap:14px}
+.g4{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.g2{grid-template-columns:repeat(auto-fit,minmax(360px,1fr))}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.kpi .n{font-size:30px;font-weight:700;letter-spacing:-1px;line-height:1.1}
+.kpi .l{color:var(--dim);font-size:12.5px;text-transform:uppercase;letter-spacing:.6px;margin-top:4px}
+.kpi .d{color:var(--mut);font-size:13px;margin-top:8px}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:6px}
+th{text-align:left;color:var(--dim);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.6px;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:9px 10px;border-bottom:1px solid #21252e;vertical-align:top}
+tr:hover td{background:#1b1f28}
+.pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.p-ok{background:rgba(62,207,142,.14);color:var(--ok)}
+.p-warn{background:rgba(240,180,41,.14);color:var(--warn)}
+.p-bad{background:rgba(242,85,90,.15);color:var(--bad)}
+.p-info{background:rgba(91,155,255,.14);color:var(--info)}
+.p-dim{background:#252a34;color:var(--mut)}
+.bar{height:6px;background:#252a34;border-radius:4px;overflow:hidden;margin-top:6px;min-width:70px}
+.bar i{display:block;height:100%;border-radius:4px;background:var(--info)}
+.note{border-left:3px solid var(--accent);background:var(--panel2);padding:12px 16px;border-radius:0 10px 10px 0;margin:14px 0;font-size:14px;color:var(--mut)}
+.note.bad{border-color:var(--bad)}
+.note.ok{border-color:var(--ok)}
+.note b{color:var(--txt)}
+ul{color:var(--mut);padding-left:20px}
+li{margin:5px 0}
+code{background:#22262f;padding:1.5px 6px;border-radius:5px;font-size:12.5px;color:#c9d3e6;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#12151b;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-size:12.5px;line-height:1.55;color:#c9d3e6}
+pre code{background:none;padding:0}
+.tl{position:relative;padding-left:26px;margin-top:10px}
+.tl:before{content:"";position:absolute;left:7px;top:6px;bottom:6px;width:2px;background:var(--line)}
+.tl .it{position:relative;margin-bottom:18px}
+.tl .it:before{content:"";position:absolute;left:-23px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--accent);border:3px solid var(--bg)}
+.tl h4{margin:0 0 4px;font-size:15px}
+.chk{list-style:none;padding:0}
+.chk li{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #21252e}
+.chk .bx{width:16px;height:16px;border:2px solid var(--dim);border-radius:4px;flex:0 0 auto;margin-top:3px}
+.chk .bx.d{background:var(--ok);border-color:var(--ok)}
+.chk .bx.h{background:var(--warn);border-color:var(--warn)}
+footer{padding:30px 28px 60px;color:var(--dim);font-size:12.5px;border-top:1px solid var(--line);margin-top:40px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--mut);margin:10px 0 0}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>ManyChat → Sendtur</h1>
+  <div class="sub">Auditoria completa da conta <b>Orlando Fast Pass</b> (ID <code>328790557879731</code>) + blueprint funcional e técnico para implantar no Sendtur · 17 ago 2026</div>
+</div></header>
+
+<nav><div class="wrap" id="nav"></div></nav>
+
+<main class="wrap">
+
+<!-- ============ 1. RESUMO ============ -->
+<section id="s-resumo" class="on">
+  <h2>Panorama da conta</h2>
+  <div class="grid g4">
+    <div class="card kpi"><div class="n">2.229</div><div class="l">Contatos</div><div class="d">Base acumulada IG + Messenger</div></div>
+    <div class="card kpi"><div class="n" style="color:var(--warn)">2 / 7</div><div class="l">Canais ativos</div><div class="d">Instagram + Messenger. WhatsApp caiu.</div></div>
+    <div class="card kpi"><div class="n">21</div><div class="l">Automações</div><div class="d">18 LIVE · 3 STOPPED</div></div>
+    <div class="card kpi"><div class="n">~348</div><div class="l">Execuções totais</div><div class="d">Últimas 4 semanas de atividade</div></div>
+    <div class="card kpi"><div class="n" style="color:var(--ok)">92</div><div class="l">Interações da IA</div><div class="d">74 respostas + 18 comentários</div></div>
+    <div class="card kpi"><div class="n" style="color:var(--bad)">0%</div><div class="l">Sucesso da meta de IA</div><div class="d">50 tentativas, 0 cliques no wa.me</div></div>
+    <div class="card kpi"><div class="n" style="color:var(--bad)">0</div><div class="l">Campos personalizados</div><div class="d">Nenhum user field ou bot field</div></div>
+    <div class="card kpi"><div class="n" style="color:var(--bad)">0</div><div class="l">Broadcasts enviados</div><div class="d">Módulo nunca utilizado</div></div>
+  </div>
+
+  <div class="note bad">
+    <b>Diagnóstico em uma frase:</b> a operação está montada e funcionando na <b>captura</b> (comment-to-DM, story reply, keywords com CTR de 34% a 71%), mas <b>quebra na conversão</b> — o canal WhatsApp está desconectado, não existem campos personalizados nem eventos de conversão, a meta de IA que leva ao WhatsApp tem 0% de sucesso e não há nenhuma integração ou API ativa para levar o lead adiante.
+  </div>
+
+  <h2>Os 3 problemas que mais custam dinheiro hoje</h2>
+  <div class="grid g3">
+    <div class="card">
+      <span class="pill p-bad">Crítico</span>
+      <h3>WhatsApp desconectado</h3>
+      <p>Banner ativo: <i>"O canal do WhatsApp foi desconectado devido à desinstalação do WhatsApp Business"</i>. Todo o fluxo <b>"Encaminhe Leads do Instagram para o WhatsApp"</b> (CTR 55,6%) e a meta da IA morrem aqui. O lead clica e cai no vazio.</p>
+    </div>
+    <div class="card">
+      <span class="pill p-bad">Crítico</span>
+      <h3>Meta da IA com 0% de sucesso</h3>
+      <p>50 tentativas de enviar o link <code>wa.me/551151944192</code> e <b>zero cliques registrados</b>. Consequência direta do item acima + link sem rastreio próprio.</p>
+    </div>
+    <div class="card">
+      <span class="pill p-warn">Alto</span>
+      <h3>Zero dados estruturados</h3>
+      <p>Nenhum campo personalizado, nenhum evento de conversão, apenas 2 tags. Não dá para segmentar, remarketizar, nem medir receita por fluxo. A base de 2.229 contatos é praticamente anônima.</p>
+    </div>
+  </div>
+
+  <h2>O que o Sendtur precisa fazer melhor</h2>
+  <ul>
+    <li><b>Dado primeiro:</b> todo contato nasce com schema (origem, campanha, produto de interesse, estágio, valor). O ManyChat deixa isso opcional — e por isso ninguém preenche.</li>
+    <li><b>Handoff nativo IG→WhatsApp:</b> em vez de link <code>wa.me</code> solto, gerar link rastreado com <code>ref</code> que reidentifica o contato do outro lado e continua o fluxo.</li>
+    <li><b>Resiliência de canal:</b> monitor de saúde de token/conexão com alerta ativo. A conta ficou semanas com WhatsApp fora do ar sem ninguém agir.</li>
+    <li><b>Atribuição de receita:</b> conversion events obrigatórios por fluxo, com CAPI para Meta e webhook próprio.</li>
+  </ul>
+</section>
+
+<!-- ============ 2. CANAIS ============ -->
+<section id="s-canais">
+  <h2>Status dos canais</h2>
+  <table>
+    <tr><th>Canal</th><th>Status</th><th>Detalhe</th><th>Impacto</th></tr>
+    <tr><td><b>Instagram</b></td><td><span class="pill p-warn">Parcial</span></td><td>@orlando.fastpass conectado via <b>Instagram OAuth</b>, não via Meta for Business</td><td>Perde recursos: "cumprimentar novos seguidores" está <b>indisponível</b> por falta de permissão</td></tr>
+    <tr><td><b>Messenger</b></td><td><span class="pill p-ok">Ativo</span></td><td>Página "Orlando Fast Pass". CAPI conectada (dataset <code>343648994758202</code>)</td><td>Único canal com Conversions API funcionando</td></tr>
+    <tr><td><b>WhatsApp</b></td><td><span class="pill p-bad">Desconectado</span></td><td>Desinstalação do WhatsApp Business. Página de settings nem carrega</td><td>Destino final de todos os fluxos de venda está fora do ar</td></tr>
+    <tr><td>TikTok</td><td><span class="pill p-dim">Não conectado</span></td><td>Disponível para conectar (+ integração TikTok Ads em beta)</td><td>Canal de aquisição não explorado</td></tr>
+    <tr><td>SMS</td><td><span class="pill p-dim">Não conectado</span></td><td>—</td><td>Sem canal de lembrete/urgência</td></tr>
+    <tr><td>E-mail</td><td><span class="pill p-dim">Não conectado</span></td><td>—</td><td>Sem nurturing fora da janela de 24h</td></tr>
+    <tr><td>Telegram</td><td><span class="pill p-dim">Não conectado</span></td><td>—</td><td>Baixa prioridade para o público BR de turismo</td></tr>
+  </table>
+
+  <h3>Configurações por canal — o que está e o que falta</h3>
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="margin-top:0">Instagram</h3>
+      <ul class="chk">
+        <li><span class="bx d"></span><div>Resposta padrão ativa → <code>Instagram Default Reply</code> (36 execuções, <b style="color:var(--bad)">CTR 0%</b>)</div></li>
+        <li><span class="bx d"></span><div>Resposta a menção em story ativa (1 execução, 0%)</div></li>
+        <li><span class="bx d"></span><div>Opt-in / Opt-out padrão do sistema</div></li>
+        <li><span class="bx"></span><div><b>Menu principal não configurado</b></div></li>
+        <li><span class="bx h"></span><div>Iniciadores de conversa <b>SUSPENSOS</b></div></li>
+        <li><span class="bx"></span><div>Saudação a novos seguidores <b>indisponível</b> — exige atualizar permissões</div></li>
+        <li><span class="bx"></span><div><b>Meta CAPI não configurada</b> (sem dataset ID no Instagram)</div></li>
+        <li><span class="bx"></span><div>Conexão via OAuth simples — migrar para Meta for Business</div></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Messenger</h3>
+      <ul class="chk">
+        <li><span class="bx d"></span><div>Welcome Message ativa (0 execuções)</div></li>
+        <li><span class="bx d"></span><div>Meta CAPI conectada — dataset <code>343648994758202</code></div></li>
+        <li><span class="bx d"></span><div>Lista de inscrição "Messenger List" criada</div></li>
+        <li><span class="bx"></span><div><b>Resposta padrão NÃO configurada</b> — DMs não reconhecidas ficam sem resposta</div></li>
+        <li><span class="bx"></span><div>Menu principal e iniciadores de conversa não revisados</div></li>
+        <li><span class="bx"></span><div>Personas na caixa de entrada desativadas</div></li>
+        <li><span class="bx"></span><div>Handover protocol: <code>Unknown</code> — pode conflitar com outros apps</div></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3. AUTOMAÇÕES ============ -->
+<section id="s-fluxos">
+  <h2>21 automações — desempenho real</h2>
+  <div class="legend">
+    <span><span class="pill p-ok">LIVE</span> ativo</span>
+    <span><span class="pill p-dim">STOPPED</span> parado</span>
+    <span>CTR = cliques sobre entregas</span>
+  </div>
+  <table id="flowtable">
+    <tr><th>Automação</th><th>Gatilho</th><th style="text-align:right">Exec.</th><th style="width:150px">CTR</th><th>Status</th></tr>
+  </table>
+
+  <div class="note ok">
+    <b>O que está performando:</b> os fluxos de <b>comment-to-DM</b> e <b>story reply</b> são o motor da conta — "Auto-DM de links dos comentários" (ingressos) com 48 execuções e 43,8% de CTR, "Auto-send links in DM" (orçamento) com 71,4%, (urgência) com 70%, e "Encaminhe Leads para o WhatsApp" com 55,6%. Esse padrão precisa ser primeira classe no Sendtur.
+  </div>
+  <div class="note bad">
+    <b>O que está morto:</b> 6 fluxos com <b>0 execuções</b> (Auto-DM Urgência Facebook, Welcome Message, Facebook Comentários - Suporte, Facebook DM - Suporte, Auto-send links in DM suporte, Sequence Message 2). O <code>Instagram Default Reply</code> roda 36× e converte <b>0%</b> — é a maior fuga de leads da conta. As 3 <code>Sequence Message</code> estão STOPPED, o que quebra o nurturing.
+  </div>
+
+  <h2>Sequências (drip)</h2>
+  <table>
+    <tr><th>Sequência</th><th style="text-align:right">Assinantes</th><th style="text-align:right">Msgs</th><th style="text-align:right">Abertura</th><th style="text-align:right">CTR</th><th>Leitura</th></tr>
+    <tr><td>Nurturing – Leads que não foram pro WhatsApp</td><td style="text-align:right">42</td><td style="text-align:right">3</td><td style="text-align:right"><b style="color:var(--ok)">80,0%</b></td><td style="text-align:right">10%</td><td>Abertura excelente, CTA fraco</td></tr>
+    <tr><td>Reengajamento – Contatos Antigos</td><td style="text-align:right">0</td><td style="text-align:right">1</td><td style="text-align:right">0%</td><td style="text-align:right">0%</td><td>Nunca acionada — sem gatilho de entrada</td></tr>
+  </table>
+
+  <h2>Widgets / Growth tools em uso</h2>
+  <table>
+    <tr><th>Widget</th><th style="text-align:right">Contatos gerados</th></tr>
+    <tr><td>Post or Reel Comments #2</td><td style="text-align:right">51</td></tr>
+    <tr><td>Quick Automation PT (26/06 16:47)</td><td style="text-align:right">47</td></tr>
+    <tr><td>Post or Reel Comments #1</td><td style="text-align:right">40</td></tr>
+    <tr><td>Quick Automation PT (26/06 15:12)</td><td style="text-align:right">26</td></tr>
+    <tr><td>Facebook Comments #6</td><td style="text-align:right">3</td></tr>
+  </table>
+  <p style="font-size:13.5px">Total identificável: ~167 contatos vindos de widgets — contra 2.229 na base. A maior parte da base entrou por outros caminhos e <b>não tem origem rastreada</b>.</p>
+</section>
+
+<!-- ============ 4. DADOS E IA ============ -->
+<section id="s-dados">
+  <h2>Camada de dados — o buraco da operação</h2>
+  <div class="grid g3">
+    <div class="card"><span class="pill p-bad">Vazio</span><h3>Campos personalizados</h3><p><b>0 user fields · 0 bot fields.</b> Nenhum dado de qualificação é capturado: destino, data da viagem, nº de pessoas, orçamento, parque de interesse.</p></div>
+    <div class="card"><span class="pill p-bad">Vazio</span><h3>Eventos de conversão</h3><p><b>Nenhum evento criado.</b> Não há como atribuir receita a fluxo, nem otimizar campanhas Meta por conversão real.</p></div>
+    <div class="card"><span class="pill p-warn">Mínimo</span><h3>Tags</h3><p><b>2 tags:</b> <code>Lead Ingresso</code> (42) e <code>foiparaowhatsapp</code> (0 — nunca aplicada). Duas pastas organizacionais.</p></div>
+    <div class="card"><span class="pill p-dim">Ausente</span><h3>Segmentos</h3><p>Nenhum segmento salvo. Toda análise é manual.</p></div>
+    <div class="card"><span class="pill p-dim">Ausente</span><h3>API pública</h3><p>Chave de API <b>não gerada</b>. Nenhuma automação externa consome a base.</p></div>
+    <div class="card"><span class="pill p-dim">Ausente</span><h3>Integrações</h3><p>Nenhuma conectada. Disponíveis e não usadas: Google Sheets, Hotmart, HubSpot, ActiveCampaign, MailChimp, Klaviyo, ChatGPT, Claude, TikTok Ads.</p></div>
+    <div class="card"><span class="pill p-dim">Ausente</span><h3>Pagamentos</h3><p>Stripe e PayPal não conectados. <b>0 pedidos</b>. Venda acontece fora e não volta como dado.</p></div>
+    <div class="card"><span class="pill p-warn">Não verificado</span><h3>Pixel ManyChat</h3><p>Script gerado (<code>widget.manychat.com/328790557879731.js</code>) mas sem sinal de eventos de site chegando.</p></div>
+  </div>
+
+  <h2>Manychat AI (beta Instagram)</h2>
+  <div class="grid g4">
+    <div class="card kpi"><div class="n">74</div><div class="l">Respostas da IA</div></div>
+    <div class="card kpi"><div class="n">18</div><div class="l">Comentários da IA</div></div>
+    <div class="card kpi"><div class="n">50</div><div class="l">Tentativas da meta</div></div>
+    <div class="card kpi"><div class="n" style="color:var(--bad)">0%</div><div class="l">Sucesso da meta</div></div>
+  </div>
+  <table style="margin-top:16px">
+    <tr><th>Módulo</th><th>Estado</th><th>Observação</th></tr>
+    <tr><td>Knowledge (base de conhecimento)</td><td><span class="pill p-warn">1 fonte</span></td><td>"Serviços e atendimento Orlando Fast Pass", atualizada há 4 semanas. Muito pouco para um catálogo de parques, ingressos e datas.</td></tr>
+    <tr><td>Behavior (persona, tom, diretrizes)</td><td><span class="pill p-ok">Configurado</span></td><td>Função da IA, tom da marca e restrições definidos</td></tr>
+    <tr><td>AI Answers</td><td><span class="pill p-ok">Ativo</span></td><td>Responde DMs e comentários</td></tr>
+    <tr><td>AI Comments</td><td><span class="pill p-ok">Ativo</span></td><td>Responde comentários positivos no tom da marca</td></tr>
+    <tr><td>Goals</td><td><span class="pill p-bad">1/3, 0% sucesso</span></td><td>Meta única "compartilhe um link" apontando para <code>wa.me/551151944192</code> — canal quebrado</td></tr>
+  </table>
+</section>
+
+<!-- ============ 5. BLUEPRINT ============ -->
+<section id="s-blueprint">
+  <h2>Blueprint funcional do Sendtur</h2>
+  <p>Mapa completo do que o ManyChat entrega, traduzido em módulos para o Sendtur. A coluna <b>Prioridade</b> indica o que entra no MVP.</p>
+  <table>
+    <tr><th>Módulo ManyChat</th><th>O que faz</th><th>Equivalente no Sendtur</th><th>Prioridade</th></tr>
+    <tr><td>Contas / Workspaces</td><td>Uma conta por página/perfil, com cópia e template entre contas</td><td><code>workspaces</code> multi-marca + clonagem de workspace</td><td><span class="pill p-bad">P0</span></td></tr>
+    <tr><td>Conexão de canais</td><td>OAuth Meta, WhatsApp Cloud API, tokens, health check</td><td><code>channels</code> + serviço de refresh de token + <b>monitor de saúde com alerta</b></td><td><span class="pill p-bad">P0</span></td></tr>
+    <tr><td>Contatos</td><td>Perfil, status (inscrito/visitante), última interação, origem</td><td><code>contacts</code> com <code>source</code>, <code>opt_in_status</code>, <code>last_seen_at</code> por canal</td><td><span class="pill p-bad">P0</span></td></tr>
+    <tr><td>Custom fields</td><td>User fields e bot fields tipados</td><td><code>custom_fields</code> + <code>contact_field_values</code> — <b>com schema obrigatório por vertical (turismo)</b></td><td><span class="pill p-bad">P0</span></td></tr>
+    <tr><td>Tags</td><td>Marcação livre + pastas</td><td><code>tags</code> / <code>contact_tags</code> com namespace e auto-tag por fluxo</td><td><span class="pill p-bad">P0</span></td></tr>
+    <tr><td>Flow builder</td><td>Editor visual: mensagem, botões, condição, delay, ação, randomizer, HTTP request</td><td>Canvas de nós (<code>flows</code>, <code>flow_nodes</code>, <code>flow_edges</code>) + runtime de execução</td><td><span class="pill p-bad">P0</span></td></tr>
+    <tr><td>Gatilhos</td><td>Keyword, comentário em post/reel, story reply, story mention, DM padrão, opt-in/out, ref URL, widget, novo seguidor, anúncios</td><td><code>triggers</code> polimórficos com matcher por tipo + fila de eventos do webhook Meta</td><td><span class="pill p-bad">P0</span></td></tr>
+    <tr><td>Sequências</td><td>Drip com intervalos, abertura e CTR por passo</td><td><code>sequences</code> + <code>sequence_steps</code> + <code>sequence_subscriptions</code> com scheduler</td><td><span class="pill p-warn">P1</span></td></tr>
+    <tr><td>Broadcasts</td><td>Envio imediato/agendado para segmento</td><td><code>broadcasts</code> + segmentação por query salva + respeito à janela 24h/HSM</td><td><span class="pill p-warn">P1</span></td></tr>
+    <tr><td>Live Chat / Inbox</td><td>Conversas unificadas, atribuição automática, personas, pausa do bot</td><td><code>conversations</code> + <code>messages</code> em realtime, roteamento por regra, takeover humano</td><td><span class="pill p-warn">P1</span></td></tr>
+    <tr><td>IA</td><td>Knowledge (RAG), behavior, AI answers, AI comments, goals</td><td><code>ai_knowledge</code> (embeddings/pgvector), <code>ai_persona</code>, <code>ai_goals</code> com métrica de sucesso real</td><td><span class="pill p-warn">P1</span></td></tr>
+    <tr><td>Growth tools / Widgets</td><td>Comment-to-DM, ref links, landing my.manychat, overlay de site</td><td><code>growth_widgets</code> + gerador de link <code>ref</code> rastreado + página pública de captura</td><td><span class="pill p-warn">P1</span></td></tr>
+    <tr><td>Conversion events + CAPI</td><td>Eventos nomeados com moeda, enviados à Meta</td><td><code>conversion_events</code> + worker de envio CAPI (IG, FB, WhatsApp) e TikTok Events</td><td><span class="pill p-warn">P1</span></td></tr>
+    <tr><td>Analytics</td><td>Execuções, CTR, abertura, contatos por widget</td><td>Tabela de eventos append-only + views materializadas por fluxo/dia</td><td><span class="pill p-warn">P1</span></td></tr>
+    <tr><td>API pública + webhooks</td><td>REST + chave de API</td><td>API REST com chave por workspace + webhooks de saída assinados</td><td><span class="pill p-info">P2</span></td></tr>
+    <tr><td>Integrações</td><td>Sheets, CRMs, e-mail marketing, LLMs, Hotmart</td><td>Camada de conectores plugável; começar por Google Sheets + webhook genérico</td><td><span class="pill p-info">P2</span></td></tr>
+    <tr><td>Pagamentos</td><td>Stripe/PayPal, botão comprar, histórico de pedidos</td><td><code>orders</code> + checkout link (Stripe/Pix/Mercado Pago para o BR)</td><td><span class="pill p-info">P2</span></td></tr>
+    <tr><td>Equipe e permissões</td><td>Membros, papéis, logs de auditoria</td><td><code>team_members</code> com RBAC + <code>audit_logs</code></td><td><span class="pill p-info">P2</span></td></tr>
+    <tr><td>Templates de conta</td><td>Clonar conta inteira ou compartilhar como template</td><td>Export/import de workspace em JSON versionado</td><td><span class="pill p-info">P2</span></td></tr>
+  </table>
+</section>
+
+<!-- ============ 6. TÉCNICO ============ -->
+<section id="s-tecnico">
+  <h2>Arquitetura sugerida</h2>
+  <p>Baseada no stack que você já usa (Supabase + Next.js). Ajuste nomes conforme a convenção do Sendtur.</p>
+
+  <h3>Modelo de dados — núcleo</h3>
+<pre><code>workspaces(id, name, timezone, plan, created_at)
+channels(id, workspace_id, type, external_id, access_token_ref,
+         status, health_checked_at, meta)            -- type: instagram|messenger|whatsapp|telegram|sms|email|tiktok
+
+contacts(id, workspace_id, external_id, channel_id, name, username,
+         avatar_url, status, locale, source, first_seen_at, last_seen_at,
+         opted_out_at, last_inbound_at)               -- last_inbound_at = base da janela de 24h
+custom_fields(id, workspace_id, key, label, type, options)  -- text|number|date|bool|select
+contact_field_values(contact_id, field_id, value)
+tags(id, workspace_id, name, folder)
+contact_tags(contact_id, tag_id, applied_at, applied_by_flow_id)
+
+flows(id, workspace_id, name, folder, status, version)
+flow_nodes(id, flow_id, type, config jsonb, position)  -- message|buttons|condition|delay|action|http|ai|split|goto
+flow_edges(id, flow_id, from_node, to_node, condition jsonb)
+triggers(id, workspace_id, flow_id, type, config jsonb, enabled)
+      -- type: keyword | comment | story_reply | story_mention | default_reply
+      --     | optin | optout | ref_link | widget | new_follower | ad_click | webhook | api
+
+executions(id, flow_id, contact_id, trigger_id, started_at, finished_at, status)
+execution_steps(id, execution_id, node_id, at, result jsonb)
+
+conversations(id, workspace_id, contact_id, channel_id, assignee_id,
+              bot_paused_until, status, last_message_at)
+messages(id, conversation_id, direction, type, payload jsonb,
+         sent_at, delivered_at, read_at, clicked_at, error)
+
+sequences(id, workspace_id, name)
+sequence_steps(id, sequence_id, position, delay_interval, flow_id)
+sequence_subscriptions(id, sequence_id, contact_id, current_step, next_run_at, state)
+
+broadcasts(id, workspace_id, name, segment jsonb, flow_id, scheduled_at, status, stats jsonb)
+
+ai_knowledge(id, workspace_id, source_type, title, content, embedding vector)
+ai_persona(workspace_id, role, tone, guidelines, restrictions)
+ai_goals(id, workspace_id, name, target jsonb, attempts, successes, enabled)
+
+conversion_events(id, workspace_id, name, currency, value_default)
+event_log(id, workspace_id, contact_id, event_id, flow_id, value, at, meta jsonb)
+orders(id, workspace_id, contact_id, provider, amount, currency, status, external_id)
+
+integrations(id, workspace_id, provider, credentials_ref, config jsonb, status)
+api_keys(id, workspace_id, hash, scopes, last_used_at)
+outbound_webhooks(id, workspace_id, url, events text[], secret_ref)
+team_members(workspace_id, user_id, role)
+audit_logs(id, workspace_id, actor, action, target, at, diff jsonb)</code></pre>
+
+  <h3>Ingestão de eventos Meta</h3>
+  <p>Um único endpoint de webhook por app, despachando por <code>field</code>:</p>
+  <table>
+    <tr><th>Webhook field</th><th>Dispara</th><th>Gatilho no Sendtur</th></tr>
+    <tr><td><code>messages</code></td><td>DM recebida (IG/Messenger/WhatsApp)</td><td>keyword, default_reply, optin/optout</td></tr>
+    <tr><td><code>messaging_postbacks</code></td><td>Clique em botão / menu</td><td>continuação de fluxo, ref_link</td></tr>
+    <tr><td><code>comments</code> / <code>feed</code></td><td>Comentário em post ou Reel</td><td>comment-to-DM (o motor da conta)</td></tr>
+    <tr><td><code>message_reactions</code></td><td>Reação em mensagem</td><td>engajamento / tag automática</td></tr>
+    <tr><td><code>messaging_referral</code></td><td>Clique em anúncio CTM/CTWA, ref link</td><td>ad_click com atribuição de campanha</td></tr>
+    <tr><td><code>standby</code></td><td>Handover para outro app</td><td>controle de takeover humano</td></tr>
+  </table>
+
+  <div class="note">
+    <b>Regras de plataforma que precisam estar no runtime desde o dia 1:</b>
+    <ul>
+      <li><b>Janela de 24h</b> (IG/Messenger/WhatsApp): fora dela só templates aprovados (HSM) ou message tags. Guardar <code>last_inbound_at</code> e bloquear o envio automaticamente.</li>
+      <li><b>Rate limits</b> por página/número — fila com backoff, não envio direto.</li>
+      <li><b>Opt-out obrigatório</b>: "parar"/"sair" deve encerrar em qualquer ponto do fluxo.</li>
+      <li><b>Idempotência</b> de webhook: a Meta reenvia. Deduplicar por <code>message_id</code>.</li>
+      <li><b>Expiração de token</b>: refresh automático + alerta quando falhar (foi exatamente o que derrubou o WhatsApp aqui).</li>
+    </ul>
+  </div>
+
+  <h3>Schema de campos para o Sendtur (vertical turismo)</h3>
+  <p>Isto é o que faltou completamente no ManyChat. Sugestão de campos obrigatórios já no MVP:</p>
+<pre><code>destino            select   Orlando | Miami | Nova York | Outro
+data_viagem        date
+adultos            number
+criancas           number
+idades_criancas    text
+parques_interesse  multi     Disney | Universal | SeaWorld | Busch Gardens
+tipo_ingresso      select   Base | Park Hopper | Express | Combo
+orcamento_faixa    select   ate 5k | 5-10k | 10-20k | 20k+
+estagio            select   novo | qualificado | proposta | fechado | perdido
+origem             text     (widget/post/anúncio que gerou o lead)
+canal_preferido    select   whatsapp | instagram | email
+valor_negocio      number</code></pre>
+</section>
+
+<!-- ============ 7. ROADMAP ============ -->
+<section id="s-roadmap">
+  <h2>Plano de implantação</h2>
+
+  <h3>Fase 0 — Consertar o que está sangrando (esta semana, no ManyChat mesmo)</h3>
+  <ul class="chk">
+    <li><span class="bx"></span><div><b>Reconectar o WhatsApp Business</b> — reinstalar e refazer a conexão. Sem isso, todo o resto é teórico.</div></li>
+    <li><span class="bx"></span><div><b>Atualizar as permissões do Instagram</b> e migrar de Instagram OAuth para Meta for Business (libera saudação a novos seguidores)</div></li>
+    <li><span class="bx"></span><div><b>Reescrever o <code>Instagram Default Reply</code></b> — 36 execuções e 0% de CTR. Colocar 2-3 botões de escolha rápida em vez de texto solto.</div></li>
+    <li><span class="bx"></span><div><b>Reativar as 3 <code>Sequence Message</code></b> (estão STOPPED) e ligar a sequência "Reengajamento" a um gatilho de entrada</div></li>
+    <li><span class="bx"></span><div><b>Configurar a resposta padrão do Messenger</b> (hoje inexistente)</div></li>
+    <li><span class="bx"></span><div><b>Reativar os iniciadores de conversa</b> do Instagram (suspensos)</div></li>
+    <li><span class="bx"></span><div><b>Criar campos personalizados</b> e eventos de conversão mínimos — mesmo que só para gerar histórico até o Sendtur assumir</div></li>
+    <li><span class="bx"></span><div><b>Trocar o link da meta de IA</b> por um link rastreado com UTM/ref, para parar de medir 0%</div></li>
+  </ul>
+
+  <h3>Fases de construção do Sendtur</h3>
+  <div class="tl">
+    <div class="it">
+      <h4>Fase 1 — Núcleo (MVP funcional)</h4>
+      <p>Workspaces · conexão IG + Messenger + WhatsApp Cloud API · webhook unificado com fila e idempotência · contatos com campos e tags · flow builder com nós de mensagem/botão/condição/delay/ação · gatilhos de keyword, comentário e story reply · inbox básica com pausa de bot.<br><b>Critério de pronto:</b> reproduzir o fluxo "Auto-DM de links dos comentários" ponta a ponta com métrica de CTR.</p>
+    </div>
+    <div class="it">
+      <h4>Fase 2 — Conversão</h4>
+      <p>Handoff IG→WhatsApp com <code>ref</code> rastreado e reidentificação do contato · eventos de conversão + CAPI (Meta e TikTok) · sequências com scheduler · broadcasts com respeito à janela de 24h · segmentos salvos · dashboard de funil por fluxo.<br><b>Critério de pronto:</b> conseguir responder "quanto de receita veio do fluxo X".</p>
+    </div>
+    <div class="it">
+      <h4>Fase 3 — Inteligência</h4>
+      <p>Knowledge base com RAG (pgvector) e múltiplas fontes · persona/behavior configurável · AI answers e AI comments · metas de IA com medição real de sucesso · qualificação automática preenchendo os campos personalizados durante a conversa.<br><b>Critério de pronto:</b> IA que qualifica o lead e grava <code>destino</code>, <code>data_viagem</code>, <code>parques_interesse</code> sozinha.</p>
+    </div>
+    <div class="it">
+      <h4>Fase 4 — Escala e ecossistema</h4>
+      <p>API pública com chaves por workspace · webhooks de saída · conectores (Google Sheets, HubSpot, Hotmart) · pagamentos (Stripe/Pix) · equipe com RBAC e auditoria · clonagem de workspace e templates · canais adicionais (TikTok, e-mail, SMS).</p>
+    </div>
+  </div>
+
+  <div class="note ok">
+    <b>Atalho útil:</b> o ManyChat tem <i>"Copiar essa conta"</i> e <i>"Criar um modelo de conta"</i> em Configurações → Geral. Antes de migrar, use isso para congelar um snapshot da operação atual — e exporte os contatos. É a sua massa de teste real para validar o motor do Sendtur.
+  </div>
+</section>
+
+</main>
+
+<footer class="wrap">
+  Auditoria feita por inspeção direta do painel ManyChat (conta 328790557879731) em 17/08/2026. Métricas conforme exibidas pela própria plataforma no momento da coleta. Nenhuma configuração foi alterada.
+</footer>
+
+<script>
+const SECTIONS = [
+  ["s-resumo","Resumo executivo"],
+  ["s-canais","Canais"],
+  ["s-fluxos","Automações"],
+  ["s-dados","Dados & IA"],
+  ["s-blueprint","Blueprint Sendtur"],
+  ["s-tecnico","Arquitetura técnica"],
+  ["s-roadmap","Roadmap"]
+];
+const nav = document.getElementById('nav');
+SECTIONS.forEach(([id,label],i)=>{
+  const b=document.createElement('button');
+  b.textContent=label; if(i===0)b.className='on';
+  b.onclick=()=>{
+    document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('section').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); document.getElementById(id).classList.add('on');
+    window.scrollTo({top:0,behavior:'smooth'});
+  };
+  nav.appendChild(b);
+});
+
+const FLOWS = [
+  ["Auto-DM de links dos comentários (ingressos)","Comentário: ingresso, disney, universal, seaworld, busch, epcot, magic kingdom, hollywood, comprar, quero",48,43.8,"LIVE"],
+  ["TOP 1 - INGRESSO DISNEY E INGRESSO UNIVERSAL","Comentário em publicação/Reel específico",37,5.4,"LIVE"],
+  ["Turn story replies into leads","Resposta a qualquer Story",29,37.9,"LIVE"],
+  ["Auto-DM de links dos comentários","Comentário em qualquer publicação ou Reel",26,34.6,"LIVE"],
+  ["Boas-vindas e opt-in de novos contatos","Mensagem contém: oi, olá, bom dia, boa tarde, boa noite, oii, ola, hello, hi, quero saber",104,44.7,"LIVE"],
+  ["Auto-send links in DM (orçamento)","Mensagem contém: orçamento, preço, guiamento virtual, conhecer nossos serviços",16,71.4,"LIVE"],
+  ["Instagram DM - IA Atendimento","Mensagem contém: oi, olá, ingresso, disney, universal",14,null,"LIVE"],
+  ["Auto-send links in DM (urgência)","Mensagem contém: urgente, preciso, viajando, viagem proxima, semana que vem, quero comprar, fechar",10,70.0,"LIVE"],
+  ["Encaminhe Leads do Instagram para o WhatsApp","Mensagem contém: WhatsApp, atendimento",10,55.6,"LIVE"],
+  ["GUIA LATUS","Comentário em publicação/Reel específico",23,8.7,"LIVE"],
+  ["Instagram Default Reply","Resposta padrão do Instagram",36,0,"LIVE"],
+  ["Facebook Comentários - Ingressos","Comentário contém: ingresso, disney",2,0,"LIVE"],
+  ["Story Mention Reply","Menção da conta em Story",1,0,"LIVE"],
+  ["Auto-DM de links dos comentários (suporte)","Comentário contém: problema, reclamacao, ninguem responde, reembolso, ajuda…",1,100,"LIVE"],
+  ["Auto-send links in DM (indicação)","Mensagem contém: indicacao, indicar, indiquei, amigos, familia, conhecidos",1,100,"LIVE"],
+  ["Auto-DM Urgência - Ingressos Facebook","Mensagem contém: urgente, preciso, viajando",0,null,"LIVE"],
+  ["Welcome Message","Botão Iniciar (Messenger)",0,null,"LIVE"],
+  ["Facebook Comentários - Suporte ao Cliente","Comentário contém termos de reclamação",0,null,"LIVE"],
+  ["Facebook DM - Suporte ao Cliente","Mensagem contém termos de reclamação",0,null,"LIVE"],
+  ["Auto-send links in DM (suporte)","Mensagem contém termos de reclamação",0,null,"LIVE"],
+  ["Sequence Message 1","Passo de sequência",9,11.1,"STOPPED"],
+  ["Sequence Message 3","Passo de sequência",1,0,"STOPPED"],
+  ["Sequence Message 2","Passo de sequência",0,null,"STOPPED"]
+];
+const t=document.getElementById('flowtable');
+FLOWS.forEach(([n,g,e,c,s])=>{
+  const tr=document.createElement('tr');
+  const ctr = c===null ? '<span style="color:var(--dim)">indisponível</span>'
+    : `<b style="color:${c>=35?'var(--ok)':c>=10?'var(--warn)':'var(--bad)'}">${String(c).replace('.',',')}%</b><div class="bar"><i style="width:${Math.min(c,100)}%;background:${c>=35?'var(--ok)':c>=10?'var(--warn)':'var(--bad)'}"></i></div>`;
+  tr.innerHTML = `<td><b>${n}</b></td><td style="color:var(--dim);font-size:12.5px">${g}</td>
+    <td style="text-align:right"><b>${e}</b></td><td>${ctr}</td>
+    <td><span class="pill ${s==='LIVE'?'p-ok':'p-dim'}">${s}</span></td>`;
+  t.appendChild(tr);
+});
+</script>
+</body>
+</html>

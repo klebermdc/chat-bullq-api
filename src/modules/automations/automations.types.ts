@@ -71,6 +71,18 @@ export interface ConversationCreatedPayload extends BaseEventPayload {
   channelId: string;
 }
 
+// Comentário em post/Reel. Sem conversationId de propósito — comentário é
+// público e 1-para-muitos; a conversa nasce depois, quando a private reply
+// for respondida (BaseEventPayload já trata conversationId como opcional).
+export interface CommentReceivedPayload extends BaseEventPayload {
+  channelId: string;
+  commentId: string;
+  postId: string;
+  body: string;
+  // true = resposta a outro comentário; false = comentário raiz no post.
+  isReply: boolean;
+}
+
 export type AutomationEventPayload =
   | TagAddedPayload
   | TagRemovedPayload
@@ -78,7 +90,8 @@ export type AutomationEventPayload =
   | ConversationStatusChangedPayload
   | ConversationAssignedPayload
   | ConversationCreatedPayload
-  | LeadQualifiedPayload;
+  | LeadQualifiedPayload
+  | CommentReceivedPayload;
 
 // Discriminated union by trigger — used by the listener factory and by
 // tests to construct events with the correct payload shape.
@@ -95,6 +108,7 @@ export type TriggerToPayload = {
   [AutomationTrigger.CONVERSATION_ASSIGNED]: ConversationAssignedPayload;
   [AutomationTrigger.CONVERSATION_CREATED]: ConversationCreatedPayload;
   [AutomationTrigger.LEAD_QUALIFIED]: LeadQualifiedPayload;
+  [AutomationTrigger.COMMENT_RECEIVED]: CommentReceivedPayload;
 };
 
 // ─── BullMQ job shape ────────────────────────────────────────────────
