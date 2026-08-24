@@ -17,6 +17,42 @@ import { PendingActionStorage } from './pending-action.storage';
 import { PENDING_ACTION_EXECUTOR_QUEUE } from './queue-names';
 import { PrismaService } from '../../../database/prisma.service';
 
+/** Cor cinza padrão do model Tag — usada só pra detectar selos por recolorir. */
+const DEFAULT_TAG_COLOR = '#6B7280';
+
+/**
+ * Paleta de cores distintas (Tailwind 600) pros selos de atendente. Não inclui
+ * o cinza padrão de propósito — a graça é cada atendente ter a sua cor.
+ */
+const ATTENDANT_TAG_COLORS = [
+  '#DC2626', // red
+  '#EA580C', // orange
+  '#CA8A04', // amber
+  '#65A30D', // lime
+  '#059669', // emerald
+  '#0D9488', // teal
+  '#0891B2', // cyan
+  '#2563EB', // blue
+  '#4F46E5', // indigo
+  '#7C3AED', // violet
+  '#9333EA', // purple
+  '#DB2777', // pink
+  '#E11D48', // rose
+];
+
+/**
+ * Escolhe uma cor estável pra um atendente a partir do id dele. Hash simples
+ * (djb2) → índice na paleta; mesmo atendente sempre cai na mesma cor.
+ */
+function attendantTagColor(key: string): string {
+  let hash = 5381;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 33) ^ key.charCodeAt(i);
+  }
+  const idx = Math.abs(hash) % ATTENDANT_TAG_COLORS.length;
+  return ATTENDANT_TAG_COLORS[idx];
+}
+
 /**
  * Service that owns the lifecycle of `PendingAction` records.
  *
@@ -286,12 +322,23 @@ export class PendingActionService {
     const name = (user?.name ?? '').trim();
     if (!name) return null;
 
+    // Cada atendente ganha uma cor estável (derivada do id) pra os selos
+    // ficarem visualmente distintos na lista do inbox.
+    const color = attendantTagColor(assignedToId);
     const tag = await this.prisma.tag.upsert({
       where: { organizationId_name: { organizationId, name } },
-      create: { organizationId, name },
+      create: { organizationId, name, color },
       update: {},
-      select: { id: true },
+      select: { id: true, color: true },
     });
+    // Backfill: selos antigos ficaram no cinza padrão (#6B7280). Recolore só
+    // esses — nunca sobrescreve uma cor escolhida à mão.
+    if (tag.color === DEFAULT_TAG_COLOR) {
+      await this.prisma.tag.update({
+        where: { id: tag.id },
+        data: { color },
+      });
+    }
     await this.prisma.conversationTag.upsert({
       where: { conversationId_tagId: { conversationId, tagId: tag.id } },
       create: { conversationId, tagId: tag.id },

@@ -25,7 +25,7 @@ const BUILTIN_TOOL_DESCRIPTIONS: Record<string, string> = {
   tagConversation:
     'tagConversation(tags): marca a conversa com tags pra triagem (ex: "billing", "lead-quente", "duvida-tecnica").',
   transferToHuman:
-    'transferToHuman(reason): escala pra atendente humano. Use SOMENTE quando você não conseguir resolver. Não use pra "fechar ticket" depois de resolver — conversa resolvida fica resolvida.',
+    'transferToHuman(reason, summary): PASSA a conversa pro atendente humano. Esta é a ÚNICA forma de transferir/encerrar seu atendimento. Ao chamá-la, o sistema JÁ avisa o cliente, cria o card no funil (etapa Distribuir) e grava seu resumo — você NÃO faz nada disso na mão. NUNCA escreva a mensagem de despedida/transferência ("vou te passar pro consultor", "já tenho tudo", etc.) como texto: se for transferir, a ação é SEMPRE esta tool, nunca uma resposta em texto. Passe o resumo da qualificação no parâmetro `summary`.',
   delegateToAgent:
     'delegateToAgent(agentId, briefing): transfere a conversa pra outro agent especialista (orquestrador → worker). Handoff é INVISÍVEL ao cliente.',
   handBackToOrchestrator:
@@ -136,6 +136,9 @@ export class CapabilitiesLayerService {
     );
     sections.push(
       '- Confirme com o cliente antes de executar ações irreversíveis (liberar acesso, processar pagamento, etc).',
+    );
+    sections.push(
+      '- AÇÃO ≠ TEXTO: nunca ANUNCIE em texto uma ação que tem tool própria — EXECUTE a tool. Se você fosse escrever "vou transferir", "vou te passar pro consultor", "já tenho tudo que preciso" ou qualquer despedida/handoff, a resposta correta NÃO é texto: é chamar transferToHuman. O sistema é quem avisa o cliente e move o card; se você só escrever o texto, o lead fica preso e o time NUNCA recebe.',
     );
 
     const content = sections.join('\n');

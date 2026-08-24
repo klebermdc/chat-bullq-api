@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
   NotFoundException,
 } from '@nestjs/common';
 import { MessageTemplatesRepository } from './message-templates.repository';
@@ -34,17 +35,21 @@ export class MessageTemplatesService {
       );
     }
     await this.requireOfficialChannel(orgId, channelId);
-    return this.repo.create({
-      organizationId: orgId,
-      channelId,
-      name: dto.name,
-      displayName: dto.displayName,
-      category: dto.category,
-      language: dto.language ?? 'pt_BR',
-      status: 'DRAFT',
-      components: dto.components as any,
-      variableExamples: (dto.variableExamples ?? {}) as any,
-    });
+    try {
+      return await this.repo.create({
+        organizationId: orgId,
+        channelId,
+        name: dto.name,
+        displayName: dto.displayName,
+        category: dto.category,
+        language: dto.language ?? 'pt_BR',
+        status: 'DRAFT',
+        components: dto.components as any,
+        variableExamples: (dto.variableExamples ?? {}) as any,
+      });
+    } catch (e) {
+      throw this.translateDuplicateName(e, dto.name);
+    }
   }
 
   list(orgId: string, channelId: string) {
@@ -61,16 +66,20 @@ export class MessageTemplatesService {
     if (dto.name && !validateTemplateName(dto.name)) {
       throw new BadRequestException('Nome inválido');
     }
-    return this.repo.update(id, {
-      ...(dto.name && { name: dto.name }),
-      ...(dto.displayName !== undefined && { displayName: dto.displayName }),
-      ...(dto.category && { category: dto.category }),
-      ...(dto.language && { language: dto.language }),
-      ...(dto.components && { components: dto.components as any }),
-      ...(dto.variableExamples && {
-        variableExamples: dto.variableExamples as any,
-      }),
-    });
+    try {
+      return await this.repo.update(id, {
+        ...(dto.name && { name: dto.name }),
+        ...(dto.displayName !== undefined && { displayName: dto.displayName }),
+        ...(dto.category && { category: dto.category }),
+        ...(dto.language && { language: dto.language }),
+        ...(dto.components && { components: dto.components as any }),
+        ...(dto.variableExamples && {
+          variableExamples: dto.variableExamples as any,
+        }),
+      });
+    } catch (e) {
+      throw this.translateDuplicateName(e, dto.name ?? t.name);
+    }
   }
 
   async submit(orgId: string, id: string) {
@@ -137,6 +146,21 @@ export class MessageTemplatesService {
     const channel = await this.requireOfficialChannel(orgId, channelId);
     const handle = await this.http.uploadHeaderSample(channel, file);
     return { handle };
+  }
+
+  /**
+   * O schema tem `@@unique([channelId, name])`. Sem tratamento, um nome
+   * repetido estoura Prisma P2002 → NestJS devolve 500 "Internal server
+   * error". Aqui traduzimos para um 409 legível; qualquer outro erro segue cru.
+   */
+  private translateDuplicateName(e: unknown, name?: string): unknown {
+    if ((e as { code?: string })?.code === 'P2002') {
+      return new ConflictException(
+        `Já existe um template com o nome "${name}" neste canal. ` +
+          'Escolha outro nome ou edite/exclua o existente.',
+      );
+    }
+    return e;
   }
 
   private async mustFind(orgId: string, id: string) {

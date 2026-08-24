@@ -83,6 +83,38 @@ describe('PendingActionService.distribute', () => {
     expect(prisma.conversationTag.upsert).toHaveBeenCalled();
   });
 
+  it('dá uma cor estável e não-cinza pro selo do atendente', async () => {
+    const { svc, prisma } = make();
+    await svc.distribute('pa1', 'op1', 'atendente9');
+    const color = prisma.tag.upsert.mock.calls[0][0].create.color as string;
+    expect(color).toMatch(/^#[0-9A-F]{6}$/i);
+    expect(color).not.toBe('#6B7280');
+
+    // Mesmo atendente → mesma cor (determinístico).
+    const { svc: svc2, prisma: prisma2 } = make();
+    await svc2.distribute('pa1', 'op1', 'atendente9');
+    expect(prisma2.tag.upsert.mock.calls[0][0].create.color).toBe(color);
+  });
+
+  it('recolore selo antigo que ficou no cinza padrão', async () => {
+    const { svc, prisma } = make();
+    prisma.tag.upsert.mockResolvedValue({ id: 'tag1', color: '#6B7280' });
+    prisma.tag.update = jest.fn().mockResolvedValue({});
+    await svc.distribute('pa1', 'op1', 'atendente9');
+    expect(prisma.tag.update).toHaveBeenCalledWith({
+      where: { id: 'tag1' },
+      data: { color: expect.stringMatching(/^#[0-9A-F]{6}$/i) },
+    });
+  });
+
+  it('não sobrescreve cor escolhida à mão', async () => {
+    const { svc, prisma } = make();
+    prisma.tag.upsert.mockResolvedValue({ id: 'tag1', color: '#123456' });
+    prisma.tag.update = jest.fn().mockResolvedValue({});
+    await svc.distribute('pa1', 'op1', 'atendente9');
+    expect(prisma.tag.update).not.toHaveBeenCalled();
+  });
+
   it('NÃO move o card no distribuir (Coletando só no Iniciar atendimento)', async () => {
     const { svc, prisma } = make();
     prisma.card.findFirst.mockResolvedValue({ id: 'card1', pipelineId: 'pl1' });

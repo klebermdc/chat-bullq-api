@@ -240,6 +240,14 @@ export class WhatsAppOfficialMessageMapper {
           };
         }
         return { text: '[Interactive message]' };
+      // Toque em botão de quick-reply de TEMPLATE (HSM) chega como
+      // `type: "button"` (não `interactive`): o texto do botão está em
+      // `button.text` e o identificador do dev em `button.payload`.
+      case 'button':
+        return {
+          interactive: { type: 'button', payload: msg.button?.payload },
+          text: msg.button?.text,
+        };
       default:
         return { text: `[${msg.type || 'unknown'}]` };
     }

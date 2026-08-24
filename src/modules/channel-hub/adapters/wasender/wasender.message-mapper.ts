@@ -325,6 +325,27 @@ export class WasenderMessageMapper {
         },
       };
     }
+    // Resposta a botão (Baileys): o texto exibido do botão que o cliente
+    // tocou fica em selectedDisplayText — usamos ele como texto da mensagem.
+    if (message.buttonsResponseMessage) {
+      const m = message.buttonsResponseMessage;
+      return {
+        interactive: { type: 'button', buttonId: m.selectedButtonId },
+        text: m.selectedDisplayText || m.selectedButtonId || '',
+      };
+    }
+    // Resposta a lista (Baileys): título da opção escolhida em `title`,
+    // e o id da linha em singleSelectReply.selectedRowId.
+    if (message.listResponseMessage) {
+      const m = message.listResponseMessage;
+      return {
+        interactive: {
+          type: 'list',
+          listRowId: m.singleSelectReply?.selectedRowId,
+        },
+        text: m.title || m.singleSelectReply?.selectedRowId || '',
+      };
+    }
     return { text: '[Tipo de mensagem não suportado]' };
   }
 }

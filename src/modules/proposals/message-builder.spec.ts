@@ -35,7 +35,7 @@ describe('buildProposalMessage', () => {
     expect(msg).toContain('Para 1 Adulto e 1 Criança entre os dias');
   });
 
-  it('lista todos os parques, um por linha', () => {
+  it('lista todos os parques, com linha em branco entre cada um', () => {
     const msg = buildProposalMessage(
       {
         ...base,
@@ -48,6 +48,9 @@ describe('buildProposalMessage', () => {
     );
     expect(msg).toContain('UNIVERSAL [5 dias] - 02/10/2026');
     expect(msg).toContain('WALT DISNEY WORLD [4 dias] - 03/10/2026');
+    expect(msg).toContain(
+      'UNIVERSAL [5 dias] - 02/10/2026\n\nWALT DISNEY WORLD [4 dias] - 03/10/2026',
+    );
   });
 
   it('modo UPDATE usa a saudação curta, sem a frase longa de boas-vindas', () => {
