@@ -23,6 +23,7 @@ const PREFIXOS_PUBLICOS = [
   'audio/', // notas de voz (OGG/Opus)
   'inbound/', // mídia recebida, re-hospedada a partir da Meta/provedor
   'playback/', // rendição M4A para Safari/iOS
+  'library/', // Biblioteca de Arquivos — a Meta/provedor baixam pela URL no envio
 ] as const;
 
 /**
