@@ -33,10 +33,14 @@ export class QuickRepliesRepository {
     return this.prisma.quickReply.update({ where: { id }, data });
   }
 
-  async softDelete(id: string) {
+  /**
+   * O índice único (org, atalho) não olha `deletedAt`: renomeia o atalho da
+   * apagada pra ele poder ser cadastrado de novo (senão recriar dava 500).
+   */
+  async softDelete(id: string, shortcut: string) {
     return this.prisma.quickReply.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), shortcut: `${shortcut}~apagado~${id}` },
     });
   }
 }
