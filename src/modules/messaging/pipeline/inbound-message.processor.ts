@@ -81,6 +81,7 @@ const NON_TRIGGERING_MESSAGE_TYPES: PrismaContentType[] = [
   PrismaContentType.SYSTEM,
 ];
 
+import { resolveInboundReplyTo } from './reply-context.resolver';
 @Processor('inbound-messages', { concurrency: 10 })
 export class InboundMessageProcessor extends WorkerHost {
   private readonly logger = new Logger(InboundMessageProcessor.name);
@@ -242,12 +243,16 @@ export class InboundMessageProcessor extends WorkerHost {
       // doesn't exist in the DB. `isNew` lets us emit only on the FIRST
       // creation — webhook re-deliveries that hit the (conv,external)
       // unique find existing rows and skip the emit.
+      // Fora da transação de propósito: uma query que falha dentro dela
+      // abortaria a gravação da mensagem do cliente. Citação é enfeite.
+      const messageToSave = await this.withResolvedReplyTo(conversationId, message);
+
       const { message: savedMessage, isNew } = await this.prisma.$transaction(
         async (tx) => {
           const result = await this.upsertMessage(
             tx,
             conversationId,
-            message,
+            messageToSave,
             direction,
             isEcho,
           );
@@ -680,6 +685,22 @@ export class InboundMessageProcessor extends WorkerHost {
         if (racer) return { message: racer, isNew: false };
       }
       throw err;
+    }
+  }
+
+  private async withResolvedReplyTo(
+    conversationId: string,
+    message: NormalizedInboundMessage,
+  ): Promise<NormalizedInboundMessage> {
+    if (!message.replyTo?.externalMessageId) return message;
+    try {
+      const replyTo = await resolveInboundReplyTo(this.prisma, conversationId, message.replyTo);
+      return { ...message, replyTo };
+    } catch (err) {
+      this.logger.warn(
+        `Citação não resolvida (conv ${conversationId}, ${message.replyTo.externalMessageId}): ${(err as Error).message}`,
+      );
+      return message;
     }
   }
 

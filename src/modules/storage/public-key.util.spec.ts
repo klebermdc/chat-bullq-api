@@ -18,6 +18,9 @@ describe('isPubliclyServable', () => {
     'audio/2026-07-05/x.ogg',
     'inbound/canal1/2026-08-01/doc.pdf',
     'playback/abc123.m4a',
+    // Biblioteca de Arquivos: a Meta/Zappfy baixam pela URL na hora do envio.
+    // Ficou de fora da allowlist e todo envio da biblioteca passou a dar 404.
+    'library/2026-07-12/0123456789abcdef0123456789abcdef.pdf',
   ])('serve o prefixo público %s', (chave) => {
     expect(isPubliclyServable(chave)).toBe(true);
   });

@@ -5,6 +5,10 @@ import {
   NormalizedOutboundMessage,
   MessageContentType,
   StatusUpdate,
+  ReplyContext,
+  SharedContact,
+  contactsSummary,
+  parseVcard,
 } from '../../ports/types';
 
 @Injectable()
@@ -49,13 +53,53 @@ export class ZappfyMessageMapper {
       rawPayload: event,
     };
 
-    if (typeof msg.content === 'object' && msg.content?.contextInfo?.stanzaId) {
-      result.replyTo = {
-        externalMessageId: msg.content.contextInfo.stanzaId,
-      };
-    }
+    const replyTo = this.extractReplyTo(msg);
+    if (replyTo) result.replyTo = replyTo;
 
     return result;
+  }
+
+  /**
+   * Cliente respondeu citando uma mensagem. O id vem no `contextInfo` (ou no
+   * `quoted` de topo do uazapi) e o conteúdo citado costuma vir junto — dá
+   * prévia mesmo quando a original não está no nosso banco.
+   */
+  private extractReplyTo(msg: any): ReplyContext | null {
+    const ci = typeof msg.content === 'object' ? msg.content?.contextInfo : undefined;
+    const quotedId: string | undefined =
+      ci?.stanzaId || ci?.stanzaID || (typeof msg.quoted === 'string' && msg.quoted ? msg.quoted : undefined);
+    if (!quotedId) return null;
+    const replyTo: ReplyContext = { externalMessageId: quotedId };
+    const previewText = this.quotedPreview(ci?.quotedMessage);
+    if (previewText) replyTo.previewText = previewText;
+    return replyTo;
+  }
+
+  private quotedPreview(q: any): string | undefined {
+    if (!q || typeof q !== 'object') return undefined;
+    const text =
+      q.conversation ||
+      q.extendedTextMessage?.text ||
+      q.imageMessage?.caption ||
+      q.videoMessage?.caption ||
+      q.documentMessage?.caption ||
+      q.documentMessage?.fileName;
+    if (text) return String(text);
+    if (q.contactMessage) return `👤 ${q.contactMessage.displayName ?? 'Contato'}`;
+    if (q.imageMessage) return '[imagem]';
+    if (q.videoMessage) return '[vídeo]';
+    if (q.audioMessage) return '[áudio]';
+    if (q.stickerMessage) return '[figurinha]';
+    if (q.locationMessage) return '[localização]';
+    return undefined;
+  }
+
+  private extractContacts(msg: any, content: any): SharedContact[] {
+    if (Array.isArray(content.contacts)) {
+      return content.contacts.map((c: any) => parseVcard(c?.vcard ?? '', c?.displayName));
+    }
+    const vcard = content.vcard ?? msg.vcard;
+    return vcard ? [parseVcard(vcard, content.displayName)] : [];
   }
 
   /**
@@ -265,6 +309,8 @@ export class ZappfyMessageMapper {
     const type = (msg.messageType || '').toLowerCase();
     if (type.includes('text') || type === 'conversation' || type === 'extendedtextmessage')
       return MessageContentType.TEXT;
+    // Cartão de contato: TEXT com `content.contacts` (resumo em `text`).
+    if (type.includes('contact')) return MessageContentType.TEXT;
     if (type.includes('image')) return MessageContentType.IMAGE;
     if (type.includes('audio') || type.includes('ptt')) return MessageContentType.AUDIO;
     if (type.includes('video')) return MessageContentType.VIDEO;
@@ -287,6 +333,10 @@ export class ZappfyMessageMapper {
 
     const content = raw || {};
 
+    if (type.includes('contact')) {
+      const contacts = this.extractContacts(msg, content);
+      if (contacts.length > 0) return { text: contactsSummary(contacts), contacts };
+    }
     if (type.includes('text') || type === 'conversation' || type === 'extendedtextmessage') {
       return { text: content.text || content.conversation || '' };
     }

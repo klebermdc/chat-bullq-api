@@ -32,6 +32,7 @@ import { shouldAutoAssignOnReply } from './auto-assign.util';
 import { buildSnippet, messageText } from './message-search';
 import { ContactHistoryService } from './contact-history.service';
 
+import { buildQuotePreview } from '../pipeline/reply-context.resolver';
 @Injectable()
 export class MessagesService {
   private readonly logger = new Logger(MessagesService.name);
@@ -167,11 +168,7 @@ export class MessagesService {
           'Mensagem citada ainda não foi sincronizada com o provider — tente novamente em alguns segundos.',
         );
       }
-      const c = (original.content ?? {}) as Record<string, any>;
-      const previewText: string | undefined =
-        (typeof c.text === 'string' && c.text) ||
-        (typeof c.caption === 'string' && c.caption) ||
-        `[${original.type.toLowerCase()}]`;
+      const previewText = buildQuotePreview(original);
       replyTo = {
         externalMessageId: original.externalId,
         previewText,

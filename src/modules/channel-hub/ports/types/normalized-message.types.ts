@@ -1,4 +1,5 @@
 import { ChannelType } from '@prisma/client';
+import type { SharedContact } from './shared-contact.util';
 
 export enum MessageContentType {
   TEXT = 'TEXT',
@@ -52,6 +53,8 @@ export interface NormalizedMessageContent {
     buttons?: TemplateButton[];
     elements?: TemplateElement[];
   };
+  /** Cartão(ões) de contato compartilhado(s) pelo cliente. `text` traz o resumo. */
+  contacts?: SharedContact[];
 }
 
 /**
@@ -63,6 +66,15 @@ export interface NormalizedMessageContent {
  */
 export interface ReplyContext {
   externalMessageId?: string;
+  /**
+   * Mesmo formato do "Responder" do atendente (metadata.replyTo): o inbound
+   * completa com a mensagem original achada no banco; o Zappfy já manda o
+   * conteúdo citado no payload.
+   */
+  messageId?: string;
+  previewText?: string;
+  senderName?: string;
+  fromMe?: boolean;
   story?: { id?: string; url?: string; kind?: 'reply' | 'mention' };
   ad?: { id?: string; title?: string };
 }

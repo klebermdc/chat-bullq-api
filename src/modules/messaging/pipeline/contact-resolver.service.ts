@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { NormalizedInboundMessage } from '../../channel-hub/ports/types';
 import { IdempotencyService } from './idempotency.service';
+import { externalIdVariants } from '../../../common/utils/phone.util';
 
 export interface ResolvedContact {
   contactId: string;
@@ -45,8 +46,11 @@ export class ContactResolverService {
 
     // Slow path: needs insert. Serialise per (channel, externalId) to avoid
     // race between concurrent webhooks for the same brand-new contact.
+    // Chave canônica (mesma para as formas com/sem o 9º dígito): duas
+    // mensagens simultâneas, uma em cada forma, não criam dois contatos.
+    const canonicalId = [...externalIdVariants(message.externalContactId)].sort()[0];
     return this.idempotency.withLock(
-      `contact:${channelId}:${message.externalContactId}`,
+      `contact:${channelId}:${canonicalId}`,
       async () => {
         // Re-check inside the lock — another worker may have just created it.
         const racer = await this.prisma.contactChannel.findUnique({
@@ -63,6 +67,26 @@ export class ContactResolverService {
           return {
             contactId: racer.contactId,
             contactChannelId: racer.id,
+            isNew: false,
+          };
+        }
+
+        const sibling = await this.findNinthDigitSibling(channelId, message.externalContactId);
+        if (sibling) {
+          // Contato criado pelo operador com a outra forma do celular (com/sem
+          // o 9). Adota o id que o WhatsApp usa, pra próxima cair no caminho
+          // rápido e as respostas irem pro mesmo id.
+          await this.prisma.contactChannel.update({
+            where: { id: sibling.id },
+            data: { externalId: message.externalContactId },
+          });
+          await this.applyProfileUpdates(sibling, message);
+          this.logger.log(
+            `Contato ${sibling.contactId}: id ${sibling.externalId} -> ${message.externalContactId} (9º dígito)`,
+          );
+          return {
+            contactId: sibling.contactId,
+            contactChannelId: sibling.id,
             isNew: false,
           };
         }
@@ -97,6 +121,15 @@ export class ContactResolverService {
         };
       },
     );
+  }
+
+  private async findNinthDigitSibling(channelId: string, externalContactId: string) {
+    const others = externalIdVariants(externalContactId).filter((v) => v !== externalContactId);
+    if (others.length === 0) return null;
+    return this.prisma.contactChannel.findFirst({
+      where: { channelId, externalId: { in: others } },
+      include: { contact: true },
+    });
   }
 
   private async applyProfileUpdates(

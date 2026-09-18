@@ -140,3 +140,27 @@ describe('WhatsAppOfficialMessageMapper — captura de referral (Click-to-WhatsA
     expect(res?.referral).toBeUndefined();
   });
 });
+
+describe('WhatsAppOfficialMessageMapper.normalizeInbound — contato', () => {
+  const mapper = new WhatsAppOfficialMessageMapper();
+
+  it('type contacts vira texto-resumo + contacts estruturado (antes: "[contacts]")', () => {
+    const out = mapper.normalizeInbound({
+      id: 'wamid.1', from: '5511982015967', timestamp: '1700000000', type: 'contacts',
+      contacts: [{ name: { formatted_name: 'João' }, phones: [{ phone: '+55 11 98201-5967', wa_id: '5511982015967' }] }],
+    } as any, undefined as any);
+    expect(out?.type).toBe('TEXT');
+    expect(out?.content).toEqual({
+      text: '👤 João',
+      contacts: [{ name: 'João', phones: [{ phone: '+55 11 98201-5967', waId: '5511982015967' }] }],
+    });
+  });
+
+  it('mantém o id da mensagem citada', () => {
+    const out = mapper.normalizeInbound({
+      id: 'wamid.2', from: '5511982015967', timestamp: '1700000000', type: 'text',
+      text: { body: 'essa' }, context: { id: 'wamid.ORIG' },
+    } as any, undefined as any);
+    expect(out?.replyTo).toEqual({ externalMessageId: 'wamid.ORIG' });
+  });
+});

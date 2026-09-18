@@ -4,6 +4,8 @@ import {
   NormalizedInboundMessage,
   NormalizedOutboundMessage,
   MessageContentType,
+  contactsFromMeta,
+  contactsSummary,
   StatusUpdate,
 } from '../../ports/types';
 
@@ -303,6 +305,11 @@ export class WhatsAppOfficialMessageMapper {
           interactive: { type: 'button', payload: msg.button?.payload },
           text: msg.button?.text,
         };
+      case 'contacts': {
+        const contacts = contactsFromMeta(msg.contacts);
+        if (contacts.length === 0) return { text: '[contacts]' };
+        return { text: contactsSummary(contacts), contacts };
+      }
       default:
         return { text: `[${msg.type || 'unknown'}]` };
     }
