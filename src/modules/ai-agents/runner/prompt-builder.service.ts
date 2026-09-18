@@ -587,8 +587,11 @@ export class PromptBuilderService {
     let prefix = '';
     if (meta?.replyTo?.story) {
       prefix = '[respondeu a um story do Instagram] ';
-    } else if (meta?.replyTo?.message?.text) {
-      prefix = `[respondeu à mensagem "${String(meta.replyTo.message.text).slice(0, 80)}"] `;
+    } else {
+      // `previewText` é o formato gravado hoje (inbound e "Responder");
+      // `message.text` fica pelo legado.
+      const quoted = meta?.replyTo?.previewText ?? meta?.replyTo?.message?.text;
+      if (quoted) prefix = `[respondeu à mensagem "${String(quoted).slice(0, 80)}"] `;
     }
 
     if (typeof content?.text === 'string') return prefix + (content.text as string);
