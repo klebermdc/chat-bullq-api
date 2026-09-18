@@ -46,8 +46,11 @@ export class ContactResolverService {
 
     // Slow path: needs insert. Serialise per (channel, externalId) to avoid
     // race between concurrent webhooks for the same brand-new contact.
+    // Chave canônica (mesma para as formas com/sem o 9º dígito): duas
+    // mensagens simultâneas, uma em cada forma, não criam dois contatos.
+    const canonicalId = [...externalIdVariants(message.externalContactId)].sort()[0];
     return this.idempotency.withLock(
-      `contact:${channelId}:${message.externalContactId}`,
+      `contact:${channelId}:${canonicalId}`,
       async () => {
         // Re-check inside the lock — another worker may have just created it.
         const racer = await this.prisma.contactChannel.findUnique({

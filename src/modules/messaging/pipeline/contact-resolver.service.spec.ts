@@ -53,6 +53,17 @@ describe('ContactResolverService.resolve — 9º dígito', () => {
     expect(prisma.contact.create).toHaveBeenCalled();
   });
 
+  // Duas mensagens simultâneas, uma com cada forma do número, não podem criar
+  // dois contatos: a trava tem que ser a mesma para as duas formas.
+  it('usa a mesma trava para as duas formas do 9º dígito', async () => {
+    const a = make();
+    await a.svc.resolve('org1', 'ch1', inbound('551182015967@s.whatsapp.net'));
+    const b = make();
+    await b.svc.resolve('org1', 'ch1', inbound('5511982015967@s.whatsapp.net'));
+    const keyOf = (svc: any) => svc.idempotency.withLock.mock.calls[0][0];
+    expect(keyOf(a.svc)).toBe(keyOf(b.svc));
+  });
+
   it('não procura variante para id que não é telefone (@lid)', async () => {
     const { svc, prisma } = make();
     await svc.resolve('org1', 'ch1', inbound('123456789@lid'));
