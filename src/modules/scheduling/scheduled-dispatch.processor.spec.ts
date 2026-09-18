@@ -432,34 +432,29 @@ describe('ScheduledDispatchProcessor', () => {
       );
     });
 
-    // Regressão 2026-08-06: lead de anúncio cuja inbound não trouxe `referral`
-    // (comum sob pricing PMP) tinha ctwaClidAt null, então o toque de +24h caía
-    // como "janela fechada" e a cadência morria sem enviar nada — mesmo com a
-    // Meta tendo concedido 72h de free entry point no webhook de status.
-    it('texto livre PASSA quando a Meta concedeu 72h, mesmo sem ctwaClidAt', async () => {
+    // 2026-09-18: as 72h do free entry point (metaWindowExpiresAt) só tornam
+    // a msg gratuita. Texto livre fora da CSW de 24h a Meta recusa com 131047,
+    // então o toque sem HSM NÃO pode sair como texto — falha com motivo claro.
+    it('texto livre NÃO passa dentro das 72h da Meta quando a CSW fechou', async () => {
       const conversation = {
         ...OFICIAL,
         lastInboundAt: new Date(Date.now() - 30 * 3600_000), // CSW de 24h fechada
         metaWindowExpiresAt: new Date(Date.now() + 42 * 3600_000), // 72h da Meta
       };
       const { processor, repo, messages } = makeOfficialDeps(
-        { ...cadenceRow, templateId: null }, // passo sem HSM — antes morria aqui
+        { ...cadenceRow, templateId: null },
         conversation,
       );
 
       await processor.process({ data: { scheduledMessageId: 's1' } } as any);
 
-      expect(messages.send).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'TEXT', content: cadenceRow.content }),
-        'user1',
-        'org1',
-        'ALL',
-        undefined,
-        { system: true },
-      );
+      expect(messages.send).not.toHaveBeenCalled();
       expect(repo.update).toHaveBeenCalledWith(
         's1',
-        expect.objectContaining({ status: 'SENT' }),
+        expect.objectContaining({
+          status: 'FAILED',
+          failedReason: expect.stringContaining('template'),
+        }),
       );
     });
 

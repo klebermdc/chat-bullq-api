@@ -117,7 +117,7 @@ describe('ConversationsRepository.countByStatus (RN-05 assignment scope)', () =>
   });
 });
 
-describe('ConversationsRepository.findById (janela 24h/72h no detalhe)', () => {
+describe('ConversationsRepository.findById (janelas no detalhe)', () => {
   const buildRepo = (findUnique: jest.Mock) => {
     const prisma = { conversation: { findUnique } };
     return new ConversationsRepository(prisma as any);
@@ -143,14 +143,16 @@ describe('ConversationsRepository.findById (janela 24h/72h no detalhe)', () => {
     );
   });
 
-  // Regressão: o detalhe vinha SEM windowExpiresAt e o inbox (refetch de 5s)
-  // sobrescrevia o objeto da lista, derrubando a janela de CTWA pro fallback
-  // de 24h — selo errado e compositor exigindo template das 24h às 72h.
-  it('mantém a janela de 72h do CTWA mesmo com o inbound mais recente', async () => {
+  // Regressão: o detalhe vinha SEM os campos de janela e o inbox (refetch de
+  // 5s) sobrescrevia o objeto da lista. O free entry point de 72h do CTWA
+  // precisa chegar no detalhe — mas como contagem de template grátis, nunca
+  // estendendo o texto livre (a Meta recusa com 131047 depois das 24h).
+  it('anexa freeEntryExpiresAt do CTWA sem estender o texto livre', async () => {
     const ctwaClidAt = hoursAgo(2);
+    const lastInboundAt = hoursAgo(1);
     const findUnique = jest.fn().mockResolvedValue({
       id: 'c1',
-      lastInboundAt: hoursAgo(1),
+      lastInboundAt,
       channel: { id: 'ch-1', type: 'WHATSAPP_OFFICIAL', name: 'Comercial' },
       contact: { ctwaClidAt },
     });
@@ -158,8 +160,11 @@ describe('ConversationsRepository.findById (janela 24h/72h no detalhe)', () => {
 
     const out: any = await repo.findById('c1');
 
-    expect(out.windowKind).toBe('ctwa72');
+    expect(out.windowKind).toBe('csw24');
     expect(out.windowExpiresAt).toBe(
+      new Date(lastInboundAt.getTime() + 24 * 3600_000).toISOString(),
+    );
+    expect(out.freeEntryExpiresAt).toBe(
       new Date(ctwaClidAt.getTime() + 72 * 3600_000).toISOString(),
     );
   });

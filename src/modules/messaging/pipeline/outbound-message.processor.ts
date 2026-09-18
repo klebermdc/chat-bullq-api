@@ -42,7 +42,7 @@ export class OutboundMessageProcessor extends WorkerHost {
 
     const adapter = this.adapterRegistry.getOutbound(channel.type);
 
-    // Backstop de janela: não deixa texto livre sair fora das 24h/72h num
+    // Backstop de janela: não deixa texto livre sair fora das 24h num
     // canal oficial (a Meta rejeitaria com 131047). Marca a msg e encerra o
     // job com SUCESSO — janela fechada não é transitório, não re-tentar.
     const blocked = await this.windowGate.blockIfClosed({

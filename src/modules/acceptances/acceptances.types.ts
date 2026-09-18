@@ -48,7 +48,7 @@ export type VoucherInput = Omit<VoucherRef, 'sha256'>;
  * `queued` significa ENFILEIRADO, não entregue: `MessagesService.send` persiste
  * a Message, joga na fila `outbound-messages` e volta. Quem decide se aquilo
  * chega ao cliente é o worker (`pipeline/outbound-message.processor`) — a trava
- * de janela 24h/72h roda LÁ e marca a Message como FAILED depois que este
+ * de janela de 24h roda LÁ e marca a Message como FAILED depois que este
  * `send` já resolveu. Por isso o `messageId`: o desfecho real mora na Message
  * (`status` QUEUED/SENT/FAILED + `failedReason`), e sem esse id não há como
  * ligar o aceite ao que de fato saiu.

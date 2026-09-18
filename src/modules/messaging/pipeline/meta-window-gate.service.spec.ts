@@ -68,7 +68,10 @@ describe('MetaWindowGate.blockIfClosed', () => {
     expect(prisma.message.update).not.toHaveBeenCalled();
   });
 
-  it('CTWA dentro de 72h (CSW fechada) → NÃO bloqueia', async () => {
+  // Caso real 2026-09-18: as 72h do CTWA só tornam a msg gratuita. Texto
+  // livre fora da CSW volta `[131047] Re-engagement message` da Meta — melhor
+  // barrar aqui, com motivo claro, do que gastar a chamada e falhar lá.
+  it('CTWA dentro de 72h (CSW fechada) → BLOQUEIA texto livre', async () => {
     const { gate, prisma } = make({ lastInboundAt: hoursAgo(30), ctwaClidAt: hoursAgo(40) });
     const blocked = await gate.blockIfClosed({
       messageId: 'msg1',
@@ -76,8 +79,8 @@ describe('MetaWindowGate.blockIfClosed', () => {
       messageType: MessageContentType.TEXT,
       now,
     });
-    expect(blocked).toBe(false);
-    expect(prisma.message.update).not.toHaveBeenCalled();
+    expect(blocked).toBe(true);
+    expect(prisma.message.update).toHaveBeenCalled();
   });
 
   it('janela aberta (inbound recente) → NÃO bloqueia', async () => {
@@ -148,10 +151,9 @@ describe('MetaWindowGate.blockIfClosed', () => {
     expect(blocked).toBe(true);
   });
 
-  // Guarda de regressao: o mesmo cenario NO WHATSAPP continua liberado pelas
-  // 72h do CTWA. Sem este teste, restringir a extensao poderia quebrar o
-  // WhatsApp em silencio.
-  it('WhatsApp continua liberado pelas 72h do CTWA', async () => {
+  // Guarda de regressao: no WhatsApp o CTWA tambem NAO libera texto livre —
+  // os dois canais seguem a mesma CSW de 24h.
+  it('WhatsApp tambem bloqueia texto livre fora da CSW mesmo dentro das 72h do CTWA', async () => {
     const { gate } = make({ lastInboundAt: hoursAgo(30), ctwaClidAt: hoursAgo(30) });
     const blocked = await gate.blockIfClosed({
       messageId: 'msg1',
@@ -159,6 +161,6 @@ describe('MetaWindowGate.blockIfClosed', () => {
       messageType: MessageContentType.TEXT,
       now,
     });
-    expect(blocked).toBe(false);
+    expect(blocked).toBe(true);
   });
 });

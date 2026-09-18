@@ -530,7 +530,7 @@ export class PipelinesService {
    * nem um voucher nem o link podem derrubar o resto da entrega.
    *
    * Atenção ao contrato: `queued: true` diz que a Message foi criada e entrou
-   * na fila, NÃO que o cliente recebeu. A trava de janela 24h/72h roda no
+   * na fila, NÃO que o cliente recebeu. A trava de janela de 24h roda no
    * worker (`pipeline/outbound-message.processor`) e marca FAILED bem depois
    * deste `send` ter resolvido. Quem sabe o desfecho é a Message — por isso
    * devolvemos o `messageId`.

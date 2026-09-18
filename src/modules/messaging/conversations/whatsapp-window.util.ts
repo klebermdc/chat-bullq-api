@@ -8,78 +8,80 @@ export interface WhatsappWindowInput {
   ctwaClidAt: Date | null;
   /**
    * `conversation.expiration_timestamp` que a PRÓPRIA Meta manda no webhook de
-   * status. É a fonte autoritativa: sob pricing PMP ela parou de anexar
-   * `referral` na mensagem de entrada e só informa o free entry point aqui, de
-   * modo que `ctwaClidAt` fica null em parte dos leads de anúncio. Opcional
-   * porque só existe depois do 1º envio nosso na conversa.
+   * status para o free entry point (lead de anúncio). Sob pricing PMP ela parou
+   * de anexar `referral` na mensagem de entrada, então `ctwaClidAt` fica null
+   * em parte dos leads de anúncio e esta é a única fonte. Opcional porque só
+   * existe depois do 1º envio nosso na conversa.
    */
   metaWindowExpiresAt?: Date | null;
   now: Date;
 }
 
 export interface WhatsappWindowState {
-  /** true só para WHATSAPP_OFFICIAL — os demais canais não têm a regra da Meta. */
+  /** true para WHATSAPP_OFFICIAL e MESSENGER — os demais canais não têm a regra da Meta. */
   applicable: boolean;
   /** Pode enviar texto livre agora? (não-aplicável ⇒ sempre true) */
   open: boolean;
-  /** Quando a janela de texto livre fecha. null quando não aplicável ou nunca abriu. */
+  /** Quando a janela de texto livre (CSW 24h) fecha. null quando não aplicável ou nunca abriu. */
   expiresAt: Date | null;
-  /** Qual regra deu a janela vigente. */
-  kind: 'csw24' | 'ctwa72' | null;
+  /** Regra da janela de texto livre — hoje só existe a CSW de 24h. */
+  kind: 'csw24' | null;
+  /**
+   * Fim do free entry point de 72h (lead Click-to-WhatsApp): até aqui as
+   * mensagens saem GRATUITAS, mas fora da CSW só vai template. É uma contagem
+   * de custo, NÃO libera texto livre. null quando não há anúncio conhecido.
+   */
+  freeEntryExpiresAt: Date | null;
+}
+
+/** Maior timestamp não-nulo, ou null quando nenhum existe. */
+function latest(...dates: Array<number | null>): number | null {
+  const known = dates.filter((d): d is number => d !== null);
+  return known.length > 0 ? Math.max(...known) : null;
 }
 
 /**
- * Janela efetiva de texto livre = max(lastInboundAt+24h, ctwaClidAt+72h,
- * metaWindowExpiresAt). Só vale para o canal oficial (Meta). Sem timestamps
- * ⇒ fechada (a 1ª msg de uma conversa oficial exige template).
+ * Duas contagens independentes, só para canais da Meta:
+ *
+ * - Texto livre = lastInboundAt + 24h (customer service window). É a ÚNICA
+ *   regra que a Meta aplica a mensagens não-template: fora dela o envio volta
+ *   `[131047] Re-engagement message` — inclusive dentro das 72h de anúncio
+ *   (caso real de 2026-09-18, 47 envios derrubados em 30 dias).
+ * - Template grátis (free entry point) = max(ctwaClidAt + 72h,
+ *   metaWindowExpiresAt). Só WhatsApp; no Messenger não existe.
  */
 export function computeWhatsappWindow(
   input: WhatsappWindowInput,
 ): WhatsappWindowState {
   if (input.channelType !== 'WHATSAPP_OFFICIAL' && input.channelType !== 'MESSENGER') {
-    return { applicable: false, open: true, expiresAt: null, kind: null };
+    return {
+      applicable: false,
+      open: true,
+      expiresAt: null,
+      kind: null,
+      freeEntryExpiresAt: null,
+    };
   }
-  const csw = input.lastInboundAt
-    ? input.lastInboundAt.getTime() + CSW_WINDOW_MS
-    : null;
-  // A extensao de 72h do Click-to-WhatsApp so existe no WhatsApp. No Messenger
-  // a janela e sempre 24h a partir da ultima mensagem de entrada.
-  const isWhatsapp = input.channelType === 'WHATSAPP_OFFICIAL';
-  const ctwa =
-    isWhatsapp && input.ctwaClidAt
-      ? input.ctwaClidAt.getTime() + CTWA_WINDOW_MS
-      : null;
 
-  let expMs: number | null = null;
-  let kind: 'csw24' | 'ctwa72' | null = null;
-  if (csw !== null) {
-    expMs = csw;
-    kind = 'csw24';
+  const isWhatsapp = input.channelType === 'WHATSAPP_OFFICIAL';
+  const freeEntryMs = isWhatsapp
+    ? latest(
+        input.ctwaClidAt ? input.ctwaClidAt.getTime() + CTWA_WINDOW_MS : null,
+        input.metaWindowExpiresAt ? input.metaWindowExpiresAt.getTime() : null,
+      )
+    : null;
+  const freeEntryExpiresAt = freeEntryMs === null ? null : new Date(freeEntryMs);
+
+  if (!input.lastInboundAt) {
+    return { applicable: true, open: false, expiresAt: null, kind: null, freeEntryExpiresAt };
   }
-  if (ctwa !== null && (expMs === null || ctwa > expMs)) {
-    expMs = ctwa;
-    kind = 'ctwa72';
-  }
-  // A Meta só emite `conversation.expiration_timestamp` para free entry point
-  // (conversa de anúncio, `billable:false`), então quando ele estende a janela
-  // é sempre a regra de 72h que está valendo. Só ESTENDE — um valor menor não
-  // pode encurtar a CSW de 24h, que a Meta honra de qualquer forma. É, assim
-  // como o CTWA, um conceito exclusivo do WhatsApp.
-  const meta =
-    isWhatsapp && input.metaWindowExpiresAt
-      ? input.metaWindowExpiresAt.getTime()
-      : null;
-  if (meta !== null && (expMs === null || meta > expMs)) {
-    expMs = meta;
-    kind = 'ctwa72';
-  }
-  if (expMs === null) {
-    return { applicable: true, open: false, expiresAt: null, kind: null };
-  }
+
+  const cswMs = input.lastInboundAt.getTime() + CSW_WINDOW_MS;
   return {
     applicable: true,
-    open: input.now.getTime() < expMs,
-    expiresAt: new Date(expMs),
-    kind,
+    open: input.now.getTime() < cswMs,
+    expiresAt: new Date(cswMs),
+    kind: 'csw24',
+    freeEntryExpiresAt,
   };
 }

@@ -450,12 +450,11 @@ export class ConversationsRepository {
 
   /**
    * Detalhe de UMA conversa. Passa pelo MESMO `attachWindowExpiry` da listagem
-   * (findMany acima) — o front trata `windowExpiresAt` como fonte única da
-   * janela 24h/72h e, sem ele, cai num fallback de 24h a partir do último
-   * inbound. O inbox re-busca este endpoint a cada 5s e sobrescreve o objeto
-   * que veio da lista, então a ausência do campo aqui apagava a janela de 72h
-   * de CTWA no chat aberto (selo errado + compositor exigindo template das
-   * 24h às 72h). O `include` abaixo já traz `contact` inteiro (logo
+   * (findMany acima) — o front trata `windowExpiresAt` (texto livre, 24h) e
+   * `freeEntryExpiresAt` (template grátis, 72h de anúncio) como fonte única.
+   * O inbox re-busca este endpoint a cada 5s e sobrescreve o objeto que veio
+   * da lista, então a ausência dos campos aqui apagava as contagens no chat
+   * aberto. O `include` abaixo já traz `contact` inteiro (logo
    * `ctwaClidAt`) e `channel.type`, que é tudo que o helper lê.
    */
   async findById(id: string) {

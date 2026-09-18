@@ -105,7 +105,7 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       return;
     }
 
-    // Fora da janela de 24h/72h (canal oficial) texto livre é recusado pela
+    // Fora da janela de texto livre de 24h (canal oficial) texto livre é recusado pela
     // Meta — o envio só passa como template HSM. Resolve aqui qual dos dois vai.
     const outbound = await this.resolveOutboundPayload(row, conversation);
     if (!outbound.ok) {
@@ -254,7 +254,7 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       return {
         ok: false,
         reason:
-          'Janela de 24h/72h fechada e o passo não tem template HSM configurado — nada foi enviado.',
+          'Janela de texto livre (24h) fechada e o passo não tem template HSM configurado — nada foi enviado.',
       };
     }
 
@@ -264,7 +264,7 @@ export class ScheduledDispatchProcessor extends WorkerHost {
     if (!template || template.status !== 'APPROVED') {
       return {
         ok: false,
-        reason: `Janela de 24h/72h fechada e o template HSM do passo não está aprovado (status=${template?.status ?? 'inexistente'}).`,
+        reason: `Janela de texto livre (24h) fechada e o template HSM do passo não está aprovado (status=${template?.status ?? 'inexistente'}).`,
       };
     }
 
@@ -276,7 +276,7 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       return {
         ok: false,
         reason:
-          'Janela de 24h/72h fechada e o template HSM do passo exige cabeçalho de mídia — não suportado em envio automático.',
+          'Janela de texto livre (24h) fechada e o template HSM do passo exige cabeçalho de mídia — não suportado em envio automático.',
       };
     }
     return { ok: true, type: MessageContentType.TEMPLATE, content: built };

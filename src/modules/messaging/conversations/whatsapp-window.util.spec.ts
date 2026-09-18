@@ -4,6 +4,14 @@ const H = 60 * 60 * 1000;
 const base = new Date('2026-07-25T12:00:00.000Z');
 const at = (hoursAgo: number) => new Date(base.getTime() - hoursAgo * H);
 
+const NOT_APPLICABLE = {
+  applicable: false,
+  open: true,
+  expiresAt: null,
+  kind: null,
+  freeEntryExpiresAt: null,
+};
+
 describe('computeWhatsappWindow', () => {
   it('canal não-oficial → não aplicável e sempre aberto', () => {
     const w = computeWhatsappWindow({
@@ -12,7 +20,7 @@ describe('computeWhatsappWindow', () => {
       ctwaClidAt: null,
       now: base,
     });
-    expect(w).toEqual({ applicable: false, open: true, expiresAt: null, kind: null });
+    expect(w).toEqual(NOT_APPLICABLE);
   });
 
   it('oficial, sem inbound e sem ctwa → fechado (só template abre a 1ª msg)', () => {
@@ -25,6 +33,7 @@ describe('computeWhatsappWindow', () => {
     expect(w.applicable).toBe(true);
     expect(w.open).toBe(false);
     expect(w.expiresAt).toBeNull();
+    expect(w.freeEntryExpiresAt).toBeNull();
   });
 
   it('CSW 24h: inbound há 10h → aberto, kind csw24', () => {
@@ -49,30 +58,72 @@ describe('computeWhatsappWindow', () => {
     expect(w.open).toBe(false);
   });
 
-  it('CTWA 72h: clique há 30h, inbound há 25h → aberto pela regra ctwa72', () => {
+  // ─── Free entry point (72h do Click-to-WhatsApp) ────────────────────────
+  // Caso real de 2026-09-18 (lead Leidiany): inbound às 09:19 de 16/09, clique
+  // no anúncio → Meta informou expiração de 72h. Texto livre enviado 29h
+  // depois voltou `[131047] Re-engagement message`. As 72h só tornam as
+  // mensagens GRATUITAS; texto livre continua preso à CSW de 24h. Tratar as
+  // 72h como janela de texto derrubou 47 envios em 30 dias.
+
+  it('CTWA dentro das 72h mas CSW fechada → texto livre FECHADO', () => {
     const w = computeWhatsappWindow({
       channelType: 'WHATSAPP_OFFICIAL',
       lastInboundAt: at(25), // CSW já fechou
       ctwaClidAt: at(30), // dentro das 72h
       now: base,
     });
-    expect(w.open).toBe(true);
-    expect(w.kind).toBe('ctwa72');
-    expect(w.expiresAt!.getTime()).toBe(at(30).getTime() + 72 * H);
+    expect(w.open).toBe(false);
+    expect(w.kind).toBe('csw24');
+    expect(w.expiresAt!.getTime()).toBe(at(25).getTime() + 24 * H);
   });
 
-  it('usa a MAIOR das duas janelas (reply recente estende além das 72h da entrada)', () => {
+  it('CTWA vira contagem separada de template grátis (clique + 72h)', () => {
     const w = computeWhatsappWindow({
       channelType: 'WHATSAPP_OFFICIAL',
-      lastInboundAt: at(1), // CSW até base+23h
-      ctwaClidAt: at(71), // ctwa até base+1h
+      lastInboundAt: at(25),
+      ctwaClidAt: at(30),
       now: base,
     });
-    expect(w.kind).toBe('csw24');
+    expect(w.freeEntryExpiresAt!.getTime()).toBe(at(30).getTime() + 72 * H);
+  });
+
+  it('expiração da Meta (status webhook) também alimenta só a contagem de template', () => {
+    const metaExpiry = new Date(at(29).getTime() + 72 * H);
+    const w = computeWhatsappWindow({
+      channelType: 'WHATSAPP_OFFICIAL',
+      lastInboundAt: at(29),
+      ctwaClidAt: null, // referral ausente na inbound (pricing PMP)
+      metaWindowExpiresAt: metaExpiry,
+      now: base,
+    });
+    expect(w.open).toBe(false);
+    expect(w.freeEntryExpiresAt!.getTime()).toBe(metaExpiry.getTime());
+  });
+
+  it('contagem de template usa a MAIOR entre clique+72h e a expiração da Meta', () => {
+    const metaExpiry = new Date(base.getTime() + 60 * H);
+    const w = computeWhatsappWindow({
+      channelType: 'WHATSAPP_OFFICIAL',
+      lastInboundAt: at(2),
+      ctwaClidAt: at(40), // clique+72h = base+32h
+      metaWindowExpiresAt: metaExpiry,
+      now: base,
+    });
+    expect(w.freeEntryExpiresAt!.getTime()).toBe(metaExpiry.getTime());
+  });
+
+  it('inbound recente: texto livre aberto pela CSW, independentemente do CTWA', () => {
+    const w = computeWhatsappWindow({
+      channelType: 'WHATSAPP_OFFICIAL',
+      lastInboundAt: at(1),
+      ctwaClidAt: at(71),
+      now: base,
+    });
+    expect(w.open).toBe(true);
     expect(w.expiresAt!.getTime()).toBe(at(1).getTime() + 24 * H);
   });
 
-  it('CTWA há 80h e sem inbound → fechado', () => {
+  it('CTWA há 80h e sem inbound → fechado, contagem de template já vencida', () => {
     const w = computeWhatsappWindow({
       channelType: 'WHATSAPP_OFFICIAL',
       lastInboundAt: null,
@@ -80,53 +131,18 @@ describe('computeWhatsappWindow', () => {
       now: base,
     });
     expect(w.open).toBe(false);
+    expect(w.expiresAt).toBeNull();
+    expect(w.freeEntryExpiresAt!.getTime()).toBe(at(80).getTime() + 72 * H);
   });
 
-  // ─── Expiração autoritativa da Meta (status webhook) ───────────────────
-  // Caso real de 2026-08-06: sob pricing PMP a Meta parou de mandar
-  // `referral` na inbound e só informa o free entry point no status de saída
-  // (`pricing.category=referral_conversion` + `conversation.expiration_
-  // timestamp`). Sem isso o lead de anúncio caía em 24h — selo errado, gate
-  // recusando texto livre e cadência morrendo com "janela fechada".
-
-  it('Meta 72h manda mesmo sem ctwaClidAt (referral não veio na inbound)', () => {
-    const metaExpiry = new Date(at(25).getTime() + 72 * H); // inbound+72h
+  it('sem CTWA nem expiração da Meta → sem contagem de template', () => {
     const w = computeWhatsappWindow({
       channelType: 'WHATSAPP_OFFICIAL',
-      lastInboundAt: at(25), // CSW de 24h já fechou
-      ctwaClidAt: null, // referral ausente — é o bug
-      metaWindowExpiresAt: metaExpiry,
-      now: base,
-    });
-    expect(w.open).toBe(true);
-    expect(w.kind).toBe('ctwa72');
-    expect(w.expiresAt!.getTime()).toBe(metaExpiry.getTime());
-  });
-
-  it('expiração da Meta NUNCA encurta a CSW de 24h', () => {
-    const metaExpiry = new Date(base.getTime() + 1 * H); // bem antes da CSW
-    const w = computeWhatsappWindow({
-      channelType: 'WHATSAPP_OFFICIAL',
-      lastInboundAt: at(1), // CSW até base+23h
+      lastInboundAt: at(3),
       ctwaClidAt: null,
-      metaWindowExpiresAt: metaExpiry,
       now: base,
     });
-    expect(w.kind).toBe('csw24');
-    expect(w.expiresAt!.getTime()).toBe(at(1).getTime() + 24 * H);
-  });
-
-  it('Meta já expirada e CSW fechada → fechado', () => {
-    const w = computeWhatsappWindow({
-      channelType: 'WHATSAPP_OFFICIAL',
-      lastInboundAt: at(80),
-      ctwaClidAt: null,
-      metaWindowExpiresAt: at(5), // venceu há 5h
-      now: base,
-    });
-    expect(w.open).toBe(false);
-    // Continua sendo a MAIOR das expirações — só que todas no passado.
-    expect(w.expiresAt!.getTime()).toBe(at(5).getTime());
+    expect(w.freeEntryExpiresAt).toBeNull();
   });
 
   it('canal não-oficial ignora a expiração da Meta', () => {
@@ -137,14 +153,10 @@ describe('computeWhatsappWindow', () => {
       metaWindowExpiresAt: new Date(base.getTime() + 10 * H),
       now: base,
     });
-    expect(w).toEqual({ applicable: false, open: true, expiresAt: null, kind: null });
+    expect(w).toEqual(NOT_APPLICABLE);
   });
 
-  // ─── Messenger: janela aplicável, mas SEM extensão de 72h ──────────────
-  // A extensão de 72h do Click-to-WhatsApp e o `metaWindowExpiresAt` são
-  // conceitos exclusivos da API oficial do WhatsApp. Se vazassem pro
-  // Messenger, uma conversa ganharia 72h indevidas e a Meta recusaria o
-  // envio quando a janela real (24h) já tivesse fechado.
+  // ─── Messenger: CSW de 24h, sem free entry point ───────────────────────
 
   it('Messenger: aplicável e regido pela CSW de 24h', () => {
     const w = computeWhatsappWindow({
@@ -159,30 +171,15 @@ describe('computeWhatsappWindow', () => {
     expect(w.expiresAt!.getTime()).toBe(at(10).getTime() + 24 * H);
   });
 
-  it('Messenger: ctwaClidAt é ignorado mesmo dentro das 72h (CSW fechada → fechado)', () => {
+  it('Messenger: ctwaClidAt e expiração da Meta não geram contagem de template', () => {
     const w = computeWhatsappWindow({
       channelType: 'MESSENGER',
-      lastInboundAt: at(30), // CSW fechou
-      ctwaClidAt: at(30), // estaria dentro das 72h se contasse — não deve contar
+      lastInboundAt: at(30),
+      ctwaClidAt: at(30),
+      metaWindowExpiresAt: new Date(base.getTime() + 10 * H),
       now: base,
     });
     expect(w.open).toBe(false);
-    // A janela vigente continua sendo a CSW de 24h (fechada) — se o CTWA
-    // tivesse vazado pro Messenger, `open` seria true (dentro das 72h).
-    expect(w.kind).toBe('csw24');
-  });
-
-  it('Messenger: metaWindowExpiresAt é ignorado (conceito exclusivo do WhatsApp)', () => {
-    const w = computeWhatsappWindow({
-      channelType: 'MESSENGER',
-      lastInboundAt: at(30), // CSW fechou
-      ctwaClidAt: null,
-      metaWindowExpiresAt: new Date(base.getTime() + 10 * H), // estenderia se contasse
-      now: base,
-    });
-    expect(w.open).toBe(false);
-    // Se a expiração da Meta contasse, `expiresAt` seria essa data futura e
-    // `open` seria true — a expiração real permanece a CSW (no passado).
-    expect(w.expiresAt!.getTime()).toBe(at(30).getTime() + 24 * H);
+    expect(w.freeEntryExpiresAt).toBeNull();
   });
 });

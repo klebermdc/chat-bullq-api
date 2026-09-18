@@ -9,13 +9,18 @@ export interface WindowSource {
 }
 
 /**
- * Anexa `windowExpiresAt` (ISO string | null) e `windowKind` à conversa,
- * computados no servidor (fonte única). Não muta o objeto original.
+ * Anexa `windowExpiresAt` (texto livre, CSW 24h), `windowKind` e
+ * `freeEntryExpiresAt` (template grátis, 72h de anúncio) à conversa, computados
+ * no servidor (fonte única). Não muta o objeto original.
  */
 export function attachWindowExpiry<T extends WindowSource>(
   conversation: T,
   now: Date = new Date(),
-): T & { windowExpiresAt: string | null; windowKind: 'csw24' | 'ctwa72' | null } {
+): T & {
+  windowExpiresAt: string | null;
+  windowKind: 'csw24' | null;
+  freeEntryExpiresAt: string | null;
+} {
   const w = computeWhatsappWindow({
     channelType: conversation.channel?.type ?? '',
     lastInboundAt: conversation.lastInboundAt ?? null,
@@ -27,5 +32,8 @@ export function attachWindowExpiry<T extends WindowSource>(
     ...conversation,
     windowExpiresAt: w.expiresAt ? w.expiresAt.toISOString() : null,
     windowKind: w.kind,
+    freeEntryExpiresAt: w.freeEntryExpiresAt
+      ? w.freeEntryExpiresAt.toISOString()
+      : null,
   };
 }
