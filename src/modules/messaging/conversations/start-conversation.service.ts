@@ -6,7 +6,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { ConversationResolverService } from '../pipeline/conversation-resolver.service';
-import { normalizePhone } from '../../../common/utils/phone.util';
+import { externalIdVariants, normalizePhone, phoneVariants } from '../../../common/utils/phone.util';
 import { StartConversationDto } from './dto/start-conversation.dto';
 import type { ChannelAccess } from '../../iam/channel-access/channel-access.service';
 
@@ -64,9 +64,9 @@ export class StartConversationService {
       phone = normalizePhone(dto.phone as string);
     }
 
-    const externalId = this.toExternalId(channel.type, phone);
-    const contactId = await this.resolveContact(organizationId, channel.id, {
-      phone, name: dto.name, email: dto.email, notes: dto.notes, externalId, preferContactId: dto.contactId,
+    const { contactId, externalId } = await this.resolveContact(organizationId, channel.id, {
+      phone, name: dto.name, email: dto.email, notes: dto.notes,
+      externalId: this.toExternalId(channel.type, phone), preferContactId: dto.contactId,
     });
 
     const { conversationId } = await this.resolver.resolve(organizationId, channel.id, contactId);
@@ -81,28 +81,32 @@ export class StartConversationService {
     organizationId: string,
     channelId: string,
     data: { phone: string; name?: string; email?: string; notes?: string; externalId: string; preferContactId?: string },
-  ): Promise<string> {
-    const existingCC = await this.prisma.contactChannel.findUnique({
-      where: { uq_contact_channel_external: { channelId, externalId: data.externalId } },
+  ): Promise<{ contactId: string; externalId: string }> {
+    // Casa também a forma com/sem o 9º dígito: se o cliente já falou com a
+    // gente, o canal dele está gravado como o WhatsApp o identifica — e é pra
+    // esse id que a mensagem tem que ir.
+    const existingCC = await this.prisma.contactChannel.findFirst({
+      where: { channelId, externalId: { in: externalIdVariants(data.externalId) } },
     });
-    if (existingCC) return existingCC.contactId;
+    if (existingCC) return { contactId: existingCC.contactId, externalId: existingCC.externalId };
+    const linked = (contactId: string) => ({ contactId, externalId: data.externalId });
 
     try {
       if (data.preferContactId) {
         await this.prisma.contactChannel.create({
           data: { contactId: data.preferContactId, channelId, externalId: data.externalId, profileName: data.name },
         });
-        return data.preferContactId;
+        return linked(data.preferContactId);
       }
 
       const existingContact = await this.prisma.contact.findFirst({
-        where: { organizationId, phone: data.phone, deletedAt: null },
+        where: { organizationId, phone: { in: phoneVariants(data.phone) }, deletedAt: null },
       });
       if (existingContact) {
         await this.prisma.contactChannel.create({
           data: { contactId: existingContact.id, channelId, externalId: data.externalId, profileName: data.name },
         });
-        return existingContact.id;
+        return linked(existingContact.id);
       }
 
       const contact = await this.prisma.contact.create({
@@ -116,13 +120,13 @@ export class StartConversationService {
         },
       });
       this.logger.log(`Start-conversation: contato criado ${contact.id} (${data.phone})`);
-      return contact.id;
+      return linked(contact.id);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         const racer = await this.prisma.contactChannel.findUnique({
           where: { uq_contact_channel_external: { channelId, externalId: data.externalId } },
         });
-        if (racer) return racer.contactId;
+        if (racer) return linked(racer.contactId);
       }
       throw err;
     }

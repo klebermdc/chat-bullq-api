@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { NormalizedInboundMessage } from '../../channel-hub/ports/types';
 import { IdempotencyService } from './idempotency.service';
+import { externalIdVariants } from '../../../common/utils/phone.util';
 
 export interface ResolvedContact {
   contactId: string;
@@ -67,6 +68,26 @@ export class ContactResolverService {
           };
         }
 
+        const sibling = await this.findNinthDigitSibling(channelId, message.externalContactId);
+        if (sibling) {
+          // Contato criado pelo operador com a outra forma do celular (com/sem
+          // o 9). Adota o id que o WhatsApp usa, pra próxima cair no caminho
+          // rápido e as respostas irem pro mesmo id.
+          await this.prisma.contactChannel.update({
+            where: { id: sibling.id },
+            data: { externalId: message.externalContactId },
+          });
+          await this.applyProfileUpdates(sibling, message);
+          this.logger.log(
+            `Contato ${sibling.contactId}: id ${sibling.externalId} -> ${message.externalContactId} (9º dígito)`,
+          );
+          return {
+            contactId: sibling.contactId,
+            contactChannelId: sibling.id,
+            isNew: false,
+          };
+        }
+
         const contact = await this.prisma.contact.create({
           data: {
             organizationId,
@@ -97,6 +118,15 @@ export class ContactResolverService {
         };
       },
     );
+  }
+
+  private async findNinthDigitSibling(channelId: string, externalContactId: string) {
+    const others = externalIdVariants(externalContactId).filter((v) => v !== externalContactId);
+    if (others.length === 0) return null;
+    return this.prisma.contactChannel.findFirst({
+      where: { channelId, externalId: { in: others } },
+      include: { contact: true },
+    });
   }
 
   private async applyProfileUpdates(
