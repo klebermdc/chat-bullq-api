@@ -145,20 +145,21 @@ model User {
   updatedAt    DateTime  @updatedAt @map("updated_at")
   deletedAt    DateTime? @map("deleted_at")
 
-  organizations         UserOrganization[]
-  assignedConversations Conversation[]     @relation("AssignedAgent")
-  projectsResponsible   Project[]          @relation("ProjectResponsible")
-  sentMessages          Message[]          @relation("MessageSender")
-  revokedMessages       Message[]          @relation("MessageRevoker")
-  notifications         Notification[]
-  pushSubscriptions     PushSubscription[]
-  sentInvitations       Invitation[]
-  apiKeys               ApiKey[]
-  inboxViews            InboxView[]
-  conversationReads     ConversationRead[]
-  assignedCards         Card[]             @relation("CardAssignee")
-  scheduledMessages     ScheduledMessage[] @relation("ScheduledMessageCreator")
-  initiatedCalls        Call[]             @relation("CallAgent")
+  organizations            UserOrganization[]
+  assignedConversations    Conversation[]          @relation("AssignedAgent")
+  projectsResponsible      Project[]               @relation("ProjectResponsible")
+  contatosLegadoVendedores ContatoLegadoVendedor[]
+  sentMessages             Message[]               @relation("MessageSender")
+  revokedMessages          Message[]               @relation("MessageRevoker")
+  notifications            Notification[]
+  pushSubscriptions        PushSubscription[]
+  sentInvitations          Invitation[]
+  apiKeys                  ApiKey[]
+  inboxViews               InboxView[]
+  conversationReads        ConversationRead[]
+  assignedCards            Card[]                  @relation("CardAssignee")
+  scheduledMessages        ScheduledMessage[]      @relation("ScheduledMessageCreator")
+  initiatedCalls           Call[]                  @relation("CallAgent")
 
   @@map("users")
 }
@@ -2905,4 +2906,30 @@ model MarketingGoal {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("marketing_goals")
+}
+
+/// Carteira legada de contatos importada da planilha de vendedores (via \copy).
+/// Consultada pela função SQL buscar_vendedor_legado na entrada do lead.
+model ContatoLegado {
+  telefone         String   @id
+  nome             String?
+  email            String?
+  vendedor         String?
+  vendedoresExtras String?  @map("vendedores_extras")
+  etapa            String?
+  tags             String?
+  importadoEm      DateTime @default(now()) @map("importado_em") @db.Timestamptz(6)
+
+  @@index([vendedor])
+  @@map("contatos_legado")
+}
+
+/// Nome do vendedor na planilha legada -> usuário do sistema.
+model ContatoLegadoVendedor {
+  vendedor String @id
+  userId   String @map("user_id")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("contatos_legado_vendedores")
 }

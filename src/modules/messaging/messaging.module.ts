@@ -21,6 +21,7 @@ import { ContactResolverService } from './pipeline/contact-resolver.service';
 import { ConversationResolverService } from './pipeline/conversation-resolver.service';
 import { LeadSourceTaggerService } from './pipeline/lead-source-tagger.service';
 import { LeadCardService } from './pipeline/lead-card.service';
+import { LegacyOwnerRoutingService } from './pipeline/legacy-owner-routing.service';
 import { LeadOriginService } from './pipeline/lead-origin.service';
 import { HistoryImportService } from './pipeline/history-import.service';
 import { InboundMessageProcessor } from './pipeline/inbound-message.processor';
@@ -91,6 +92,7 @@ import { ContactsRepository } from './contacts/contacts.repository';
     ConversationResolverService,
     LeadSourceTaggerService,
     LeadCardService,
+    LegacyOwnerRoutingService,
     LeadOriginService,
     HistoryImportService,
     InboundMessageProcessor,
