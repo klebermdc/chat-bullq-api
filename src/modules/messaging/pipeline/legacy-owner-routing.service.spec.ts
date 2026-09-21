@@ -167,15 +167,15 @@ describe('LegacyOwnerRoutingService.routeNewConversation', () => {
     );
   });
 
-  it('aplica as etiquetas mesmo quando o vendedor não está mapeado', async () => {
+  it('não aplica etiquetas quando o vendedor não está mapeado (saiu das vendas)', async () => {
     const { service, prisma, fsm } = make({
-      rows: [{ ...LEGACY_ROW, user_id: null, tags: 'URGENTE' }],
+      rows: [{ ...LEGACY_ROW, vendedor: 'Gabi', user_id: null, tags: 'URGENTE' }],
     });
 
     await service.routeNewConversation(PARAMS);
 
     expect(fsm.assign).not.toHaveBeenCalled();
-    expect(prisma.contactTag.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.contactTag.upsert).not.toHaveBeenCalled();
   });
 
   it('falha nas etiquetas não impede a atribuição', async () => {

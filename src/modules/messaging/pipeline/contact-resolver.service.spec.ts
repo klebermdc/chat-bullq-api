@@ -7,14 +7,16 @@ import { ContactResolverService } from './contact-resolver.service';
  * que ninguém estava olhando — "a mensagem não chega".
  */
 describe('ContactResolverService.resolve — 9º dígito', () => {
-  function make(opts: { exact?: any; variant?: any } = {}) {
+  function make(opts: { exact?: any; variant?: any; byPhone?: any } = {}) {
     const prisma = {
       contactChannel: {
         findUnique: jest.fn().mockResolvedValue(opts.exact ?? null),
         findFirst: jest.fn().mockResolvedValue(opts.variant ?? null),
         update: jest.fn().mockResolvedValue({}),
+        create: jest.fn().mockResolvedValue({ id: 'cc-linked' }),
       },
       contact: {
+        findFirst: jest.fn().mockResolvedValue(opts.byPhone ?? null),
         create: jest.fn().mockResolvedValue({ id: 'c-new', channels: [{ id: 'cc-new' }] }),
         update: jest.fn().mockResolvedValue({}),
       },
@@ -68,6 +70,46 @@ describe('ContactResolverService.resolve — 9º dígito', () => {
     const { svc, prisma } = make();
     await svc.resolve('org1', 'ch1', inbound('123456789@lid'));
     expect(prisma.contactChannel.findFirst).not.toHaveBeenCalled();
+    expect(prisma.contact.create).toHaveBeenCalled();
+  });
+
+  // Contato que já existe na org mas nunca falou por ESTE canal (importado da
+  // Umbler, ou cliente que muda de número de atendimento): tem que ser
+  // reconhecido pelo telefone, senão nasce um contato duplicado sem as
+  // etiquetas e sem o histórico.
+  it('reaproveita contato da org pelo telefone quando não há vínculo neste canal', async () => {
+    const byPhone = { id: 'c-importado', name: 'Maria', phone: '5511982015967' };
+    const { svc, prisma } = make({ byPhone });
+
+    const res = await svc.resolve('org1', 'ch1', inbound('551182015967@s.whatsapp.net'));
+
+    expect(res).toEqual({ contactId: 'c-importado', contactChannelId: 'cc-linked', isNew: false });
+    expect(prisma.contact.findFirst).toHaveBeenCalledWith({
+      where: {
+        organizationId: 'org1',
+        phone: { in: ['551182015967', '5511982015967'] },
+        deletedAt: null,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(prisma.contactChannel.create).toHaveBeenCalledWith({
+      data: {
+        contactId: 'c-importado',
+        channelId: 'ch1',
+        externalId: '551182015967@s.whatsapp.net',
+        profileName: 'João',
+        profileAvatarUrl: undefined,
+      },
+    });
+    expect(prisma.contact.create).not.toHaveBeenCalled();
+  });
+
+  it('não procura por telefone quando a mensagem não traz telefone (Instagram)', async () => {
+    const { svc, prisma } = make();
+
+    await svc.resolve('org1', 'ch1', { externalContactId: 'ig-123', contactName: 'Ana' } as any);
+
+    expect(prisma.contact.findFirst).not.toHaveBeenCalled();
     expect(prisma.contact.create).toHaveBeenCalled();
   });
 });
