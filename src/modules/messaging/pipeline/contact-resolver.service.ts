@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { NormalizedInboundMessage } from '../../channel-hub/ports/types';
 import { IdempotencyService } from './idempotency.service';
-import { externalIdVariants } from '../../../common/utils/phone.util';
+import { externalIdVariants, phoneVariants } from '../../../common/utils/phone.util';
 
 export interface ResolvedContact {
   contactId: string;
@@ -91,6 +91,26 @@ export class ContactResolverService {
           };
         }
 
+        const byPhone = await this.findOrgContactByPhone(organizationId, message.contactPhone);
+        if (byPhone) {
+          // Contato que a org já tem (importado, criado à mão ou vindo de outro
+          // canal) mas que nunca falou por este canal: liga em vez de duplicar,
+          // senão o cliente perde etiquetas, notas e histórico.
+          const link = await this.prisma.contactChannel.create({
+            data: {
+              contactId: byPhone.id,
+              channelId,
+              externalId: message.externalContactId,
+              profileName: message.contactName,
+              profileAvatarUrl: message.contactAvatarUrl,
+            },
+          });
+          this.logger.log(
+            `Contato ${byPhone.id} reconhecido pelo telefone no canal ${channelId}`,
+          );
+          return { contactId: byPhone.id, contactChannelId: link.id, isNew: false };
+        }
+
         const contact = await this.prisma.contact.create({
           data: {
             organizationId,
@@ -121,6 +141,16 @@ export class ContactResolverService {
         };
       },
     );
+  }
+
+  /** Contato da org com o mesmo telefone (com ou sem o 9º dígito). O mais antigo vence. */
+  private async findOrgContactByPhone(organizationId: string, phone: string | undefined | null) {
+    const digits = (phone ?? '').replace(/\D/g, '');
+    if (!digits) return null;
+    return this.prisma.contact.findFirst({
+      where: { organizationId, phone: { in: phoneVariants(digits) }, deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+    });
   }
 
   private async findNinthDigitSibling(channelId: string, externalContactId: string) {

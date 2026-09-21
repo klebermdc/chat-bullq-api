@@ -58,14 +58,15 @@ export class LegacyOwnerRoutingService {
     if (!owner?.vendedor) return { routed: false, reason: 'not_found' };
 
     const vendedor = owner.vendedor;
-    await this.applyLegacyTags(organizationId, contactId, owner.tags);
-
+    // Vendedor sem mapeamento saiu do processo de vendas (ex.: Gabi): o
+    // cliente entra "limpo", sem as etiquetas da carteira dele.
     if (!owner.user_id) {
       this.logger.warn(
         `legado: vendedor "${vendedor}" sem usuário mapeado — distribuição normal (conv=${conversationId})`,
       );
       return { routed: false, reason: 'unmapped', vendedor };
     }
+    await this.applyLegacyTags(organizationId, contactId, owner.tags);
 
     const member = await this.prisma.userOrganization.findFirst({
       where: {
