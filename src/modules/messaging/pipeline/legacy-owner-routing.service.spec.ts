@@ -38,6 +38,15 @@ function make(
     conversation: {
       update: jest.fn().mockResolvedValue(updated),
     },
+    tag: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      upsert: jest
+        .fn()
+        .mockImplementation(({ create }: any) => Promise.resolve({ id: `tag-${create.name}` })),
+    },
+    contactTag: {
+      upsert: jest.fn().mockResolvedValue({}),
+    },
   } as any;
   const fsm = { assign: jest.fn().mockResolvedValue(undefined) } as any;
   const realtime = {
@@ -127,6 +136,56 @@ describe('LegacyOwnerRoutingService.routeNewConversation', () => {
     expect(result).toEqual({ routed: false, reason: 'inactive', vendedor: 'Renata' });
     expect(fsm.assign).not.toHaveBeenCalled();
     expect(prisma.conversation.update).not.toHaveBeenCalled();
+  });
+
+  it('aplica no contato as etiquetas da planilha', async () => {
+    const { service, prisma } = make({ rows: [{ ...LEGACY_ROW, tags: 'CRM | Guia' }] });
+
+    await service.routeNewConversation(PARAMS);
+
+    expect(prisma.contactTag.upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.contactTag.upsert).toHaveBeenCalledWith({
+      where: { contactId_tagId: { contactId: 'contact-1', tagId: 'tag-CRM' } },
+      create: { contactId: 'contact-1', tagId: 'tag-CRM' },
+      update: {},
+    });
+  });
+
+  it('reaproveita etiqueta existente com outra grafia (GUIA -> Guia)', async () => {
+    const { service, prisma } = make({ rows: [{ ...LEGACY_ROW, tags: 'GUIA' }] });
+    prisma.tag.findFirst.mockResolvedValue({ id: 'tag-guia' });
+
+    await service.routeNewConversation(PARAMS);
+
+    expect(prisma.tag.findFirst).toHaveBeenCalledWith({
+      where: { organizationId: 'org-1', name: { equals: 'GUIA', mode: 'insensitive' } },
+      select: { id: true },
+    });
+    expect(prisma.tag.upsert).not.toHaveBeenCalled();
+    expect(prisma.contactTag.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: { contactId: 'contact-1', tagId: 'tag-guia' } }),
+    );
+  });
+
+  it('aplica as etiquetas mesmo quando o vendedor não está mapeado', async () => {
+    const { service, prisma, fsm } = make({
+      rows: [{ ...LEGACY_ROW, user_id: null, tags: 'URGENTE' }],
+    });
+
+    await service.routeNewConversation(PARAMS);
+
+    expect(fsm.assign).not.toHaveBeenCalled();
+    expect(prisma.contactTag.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('falha nas etiquetas não impede a atribuição', async () => {
+    const { service, prisma, fsm } = make({ rows: [{ ...LEGACY_ROW, tags: 'CRM' }] });
+    prisma.tag.upsert.mockRejectedValue(new Error('db down'));
+
+    const result = await service.routeNewConversation(PARAMS);
+
+    expect(result.routed).toBe(true);
+    expect(fsm.assign).toHaveBeenCalled();
   });
 
   it('não desliga a IA se a atribuição falhar (ex.: corrida com outro atendente)', async () => {
