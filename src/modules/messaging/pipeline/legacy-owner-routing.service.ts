@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { ConversationFsmService } from '../conversations/conversation-fsm.service';
+import { parseLegacyTags } from './legacy-tags.util';
 
 export interface LegacyRouteParams {
   organizationId: string;
@@ -23,8 +24,9 @@ interface LegacyOwnerRow {
 
 /**
  * Carteira legada: cliente que já era de um vendedor na planilha antiga
- * (tabela `contatos_legado`) volta direto para ele quando abre conversa nova.
- * Pula a triagem da Aline e a fila "Distribuir".
+ * (tabela `contatos_legado`, exportada da Umbler) volta direto para ele quando
+ * abre conversa nova. Pula a triagem da Aline e a fila "Distribuir". As
+ * etiquetas da planilha vão para o contato; a do vendedor vem do `fsm.assign`.
  *
  * O nome da planilha ("Renata", "Carol"...) vira usuário pela tabela
  * `contatos_legado_vendedores`. Sem mapeamento, ou com o vendedor inativo /
@@ -56,6 +58,8 @@ export class LegacyOwnerRoutingService {
     if (!owner?.vendedor) return { routed: false, reason: 'not_found' };
 
     const vendedor = owner.vendedor;
+    await this.applyLegacyTags(organizationId, contactId, owner.tags);
+
     if (!owner.user_id) {
       this.logger.warn(
         `legado: vendedor "${vendedor}" sem usuário mapeado — distribuição normal (conv=${conversationId})`,
@@ -98,5 +102,40 @@ export class LegacyOwnerRoutingService {
       `legado: conv=${conversationId} atribuída a "${vendedor}" (user=${owner.user_id})`,
     );
     return { routed: true, userId: owner.user_id, vendedor };
+  }
+
+  /**
+   * Etiquetas são enfeite: falha aqui só loga, nunca impede a atribuição.
+   * Reaproveita a etiqueta da org com o mesmo nome ignorando maiúsculas
+   * ("GUIA" cai na "Guia" já existente) antes de criar uma nova.
+   */
+  private async applyLegacyTags(
+    organizationId: string,
+    contactId: string,
+    rawTags: string | null,
+  ): Promise<void> {
+    for (const name of parseLegacyTags(rawTags)) {
+      try {
+        const tag =
+          (await this.prisma.tag.findFirst({
+            where: { organizationId, name: { equals: name, mode: 'insensitive' } },
+            select: { id: true },
+          })) ??
+          (await this.prisma.tag.upsert({
+            where: { organizationId_name: { organizationId, name } },
+            create: { organizationId, name },
+            update: {},
+            select: { id: true },
+          }));
+        await this.prisma.contactTag.upsert({
+          where: { contactId_tagId: { contactId, tagId: tag.id } },
+          create: { contactId, tagId: tag.id },
+          update: {},
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`legado: etiqueta "${name}" falhou (contato=${contactId}): ${message}`);
+      }
+    }
   }
 }
