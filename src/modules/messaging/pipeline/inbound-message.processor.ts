@@ -9,6 +9,7 @@ import { ContactResolverService } from './contact-resolver.service';
 import { ConversationResolverService } from './conversation-resolver.service';
 import { LeadSourceTaggerService } from './lead-source-tagger.service';
 import { LeadCardService } from './lead-card.service';
+import { LegacyOwnerRoutingService } from './legacy-owner-routing.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { NormalizedInboundMessage, StatusUpdate } from '../../channel-hub/ports/types';
 import { InstagramContactEnricherService } from '../../channel-hub/adapters/instagram/instagram-contact-enricher.service';
@@ -126,6 +127,7 @@ export class InboundMessageProcessor extends WorkerHost {
     private readonly channelUsage: ChannelUsageService,
     private readonly inboundNotifier: InboundNotifierService,
     private readonly orgOffHours: OrgOffHoursNoticeService,
+    private readonly legacyOwnerRouting: LegacyOwnerRoutingService,
   ) {
     super();
   }
@@ -334,6 +336,30 @@ export class InboundMessageProcessor extends WorkerHost {
         message: savedMessage,
       });
 
+      // Carteira legada: lead novo que já era de um vendedor volta direto pra
+      // ele, antes do sino (que então avisa o vendedor) e antes do chatbot e
+      // da Aline (que ficam de fora). Falha aqui cai no fluxo normal.
+      let routedToLegacyOwner = false;
+      if (
+        conversationIsNew &&
+        isNew &&
+        direction === MessageDirection.INBOUND &&
+        !message.isGroup
+      ) {
+        try {
+          const legacy = await this.legacyOwnerRouting.routeNewConversation({
+            organizationId,
+            conversationId,
+            contactId,
+          });
+          routedToLegacyOwner = legacy.routed;
+        } catch (err: any) {
+          this.logger.warn(
+            `roteamento legado falhou (segue distribuição normal) conv=${conversationId}: ${err?.message ?? err}`,
+          );
+        }
+      }
+
       // Notificação persistente NEW_MESSAGE (sino/badge). Best-effort e só
       // para mensagem genuína do cliente (INBOUND, não-echo). O guard `isNew`
       // (dedup de persistência da mensagem) evita disparar item duplicado no
@@ -430,6 +456,7 @@ export class InboundMessageProcessor extends WorkerHost {
 
       if (
         !isEcho &&
+        !routedToLegacyOwner &&
         (status === ConversationStatus.BOT ||
           status === ConversationStatus.PENDING)
       ) {
