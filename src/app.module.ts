@@ -19,6 +19,7 @@ import { MediaLibraryModule } from './modules/media-library/media-library.module
 import { TagsModule } from './modules/tags/tags.module';
 import { ChatbotModule } from './modules/chatbot/chatbot.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { TeamPresenceModule } from './modules/team-presence/team-presence.module';
 import { RatingsModule } from './modules/ratings/ratings.module';
 import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { AiProviderKeysModule } from './modules/ai-provider-keys/ai-provider-keys.module';
@@ -97,6 +98,7 @@ import redisConfig from './config/redis.config';
     TagsModule,
     ChatbotModule,
     DashboardModule,
+    TeamPresenceModule,
     RatingsModule,
     ApiKeysModule,
     AiProviderKeysModule,
