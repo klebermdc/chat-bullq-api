@@ -12,6 +12,14 @@ import {
   isWithinHours,
   type BusinessHoursConfig,
 } from '../../routing/availability/business-hours.util';
+import { OnCallService, type OnCallContext } from '../on-call/on-call.service';
+
+export interface HandleDecision {
+  handle: boolean;
+  reason?: string;
+  /** Presente quando a IA entra de plantão no lugar do vendedor. */
+  onCall?: OnCallContext;
+}
 
 export interface AgentSelection {
   agentId: string;
@@ -30,6 +38,7 @@ export class AgentRouterService {
     private readonly prisma: PrismaService,
     private readonly classifier: IntentClassifierService,
     private readonly intentRouter: IntentRouterService,
+    private readonly onCall?: OnCallService,
   ) {}
 
   /**
@@ -197,10 +206,7 @@ export class AgentRouterService {
    * `null` if it should not, or the resolved active agent for the run.
    * The runner does the actual execution.
    */
-  async shouldHandle(conversation: Conversation): Promise<{
-    handle: boolean;
-    reason?: string;
-  }> {
+  async shouldHandle(conversation: Conversation): Promise<HandleDecision> {
     // Hierarquia de override (mais específico ganha):
     //   conv.aiEnabled (true/false) — força resposta da conversa específica
     //   channel.aiEnabled (true/false) — força no canal inteiro
@@ -210,7 +216,15 @@ export class AgentRouterService {
     const convOverride = conversation.aiEnabled;
 
     if (convOverride === false) {
-      return { handle: false, reason: 'conversation.aiEnabled=force-off' };
+      // Única exceção ao "desligado na conversa": o vendedor está fora do
+      // horário e a Aline cobre o plantão dele.
+      const onCall = conversation.assignedToId
+        ? await this.onCall?.evaluate(conversation)
+        : null;
+      if (!onCall) {
+        return { handle: false, reason: 'conversation.aiEnabled=force-off' };
+      }
+      return this.checkOnCallRun(conversation, onCall);
     }
 
     // Carrega channel + org pra cascade de checks.
@@ -261,26 +275,65 @@ export class AgentRouterService {
     }
 
     // Cap mensal vale sempre — proteção de orçamento, não dá pra furar.
-    if (org.aiMonthlyTokenCap) {
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
-
-      const used = await this.prisma.aiAgentRun.aggregate({
-        where: {
-          organizationId: org.id,
-          startedAt: { gte: startOfMonth },
-        },
-        _sum: { inputTokens: true, outputTokens: true },
-      });
-      const total =
-        (used._sum.inputTokens ?? 0) + (used._sum.outputTokens ?? 0);
-      if (total >= org.aiMonthlyTokenCap) {
-        return { handle: false, reason: 'monthly-token-cap-reached' };
-      }
+    if (await this.isOverTokenCap(org)) {
+      return { handle: false, reason: 'monthly-token-cap-reached' };
     }
 
     return { handle: true };
+  }
+
+  /**
+   * Plantão: obedece ao interruptor da org e do canal, ao agente do canal e ao
+   * teto de tokens, mas NÃO ao horário da org. O horário que vale é o do
+   * vendedor, já checado pelo OnCallService.
+   */
+  private async checkOnCallRun(
+    conversation: Conversation,
+    onCall: OnCallContext,
+  ): Promise<HandleDecision> {
+    const [channel, org] = await Promise.all([
+      this.prisma.channel.findUnique({
+        where: { id: conversation.channelId },
+        select: { aiEnabled: true },
+      }),
+      this.prisma.organization.findUnique({
+        where: { id: conversation.organizationId },
+      }),
+    ]);
+    if (!org) return { handle: false, reason: 'org-not-found' };
+    if (!org.aiEnabled) return { handle: false, reason: 'org.aiEnabled=false' };
+    if (channel?.aiEnabled === false) {
+      return { handle: false, reason: 'channel.aiEnabled=force-off' };
+    }
+    const link = await this.prisma.aiAgentChannel.findFirst({
+      where: {
+        channelId: conversation.channelId,
+        mode: 'AUTONOMOUS',
+        agent: { isActive: true, deletedAt: null },
+      },
+    });
+    if (!link) return { handle: false, reason: 'no-agent-for-channel' };
+    if (await this.isOverTokenCap(org)) {
+      return { handle: false, reason: 'monthly-token-cap-reached' };
+    }
+    return { handle: true, onCall, reason: 'assignee-off-hours' };
+  }
+
+  private async isOverTokenCap(org: Organization): Promise<boolean> {
+    if (!org.aiMonthlyTokenCap) return false;
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const used = await this.prisma.aiAgentRun.aggregate({
+      where: {
+        organizationId: org.id,
+        startedAt: { gte: startOfMonth },
+      },
+      _sum: { inputTokens: true, outputTokens: true },
+    });
+    const total = (used._sum.inputTokens ?? 0) + (used._sum.outputTokens ?? 0);
+    return total >= org.aiMonthlyTokenCap;
   }
 
   private isWithinBusinessHours(org: Organization): boolean {

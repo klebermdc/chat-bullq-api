@@ -13,6 +13,7 @@ import { AgentRunJanitorService } from './runner/agent-run-janitor.service';
 import { CatalogSyncService } from './runner/catalog-sync.service';
 import { MediaUrlResolverService } from './runner/media-url-resolver.service';
 import { AgentRouterService } from './router/agent-router.service';
+import { OnCallService } from './on-call/on-call.service';
 import { AgentsService } from './agents/agents.service';
 import { AgentsController } from './agents/agents.controller';
 import { ToolsCatalogService } from './catalog/tools.service';
@@ -56,6 +57,7 @@ import { ShadowLearningModule } from './shadow-learning/shadow-learning.module';
     ModelRouterService,
     AgentRunJanitorService,
     AgentRouterService,
+    OnCallService,
     AgentsService,
     ToolsCatalogService,
     SkillsCatalogService,

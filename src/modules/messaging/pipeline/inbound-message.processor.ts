@@ -276,7 +276,9 @@ export class InboundMessageProcessor extends WorkerHost {
               // app do WhatsApp Business. Aqui SIM sai de "Esperando", porque
               // um atendente de verdade respondeu. Não vale pro echo comum de
               // Baileys, onde a msg pode ser nossa (o bot se auto-silenciaria).
-              ...(humanEcho ? { awaitingHumanReply: false } : {}),
+              ...(humanEcho
+                ? { awaitingHumanReply: false, lastHumanReplyAt: new Date() }
+                : {}),
             },
           });
           if (
@@ -513,8 +515,9 @@ export class InboundMessageProcessor extends WorkerHost {
         );
         // Aviso de fora-de-horário: se a conversa já tem atendente humano e o
         // cliente escreveu fora do horário dele, manda 1x o aviso. No-op fora
-        // disso. Best-effort — nunca derruba o pipeline.
-        this.agentAvailability.onInboundReply(conversationId).catch((err) =>
+        // disso. Com a Aline de plantão ativa, ela mesma avisa: o texto fixo
+        // não sai. Best-effort — nunca derruba o pipeline.
+        this.noticeOffHoursUnlessOnCall(conversationId).catch((err) =>
           this.logger.warn(
             `agent_availability_failed conv=${conversationId}: ${(err as Error).message}`,
           ),
@@ -793,6 +796,16 @@ export class InboundMessageProcessor extends WorkerHost {
    * NÃO mexe em `assignedToId`: a Meta não diz QUEM digitou no celular, e
    * atribuir a conversa a alguém arbitrário seria inventar informação.
    */
+  private async noticeOffHoursUnlessOnCall(conversationId: string): Promise<void> {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conversation) return;
+    const decision = await this.agentRouter.shouldHandle(conversation);
+    if (decision.onCall) return;
+    await this.agentAvailability.onInboundReply(conversationId);
+  }
+
   private async disableAiAfterHumanEcho(
     organizationId: string,
     conversationId: string,
@@ -910,6 +923,7 @@ export class InboundMessageProcessor extends WorkerHost {
       await this.agentRunner.run({
         conversation: conv,
         triggerMessage: latestInbound,
+        onCall: decision.onCall,
       });
 
       // IA respondeu (ou pelo menos o run terminou sem throw) — limpa o

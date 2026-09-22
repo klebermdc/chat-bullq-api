@@ -254,6 +254,7 @@ export class MessagesService {
               // bot/IA persistem via prisma.message.create e nunca passam por
               // aqui, então o flag permanece true quando só o bot respondeu.
               awaitingHumanReply: false,
+              lastHumanReplyAt: new Date(),
               inactivityBand: null,
               reengageDismissedAt: null,
               ...(shouldAutoAssign ? { assignedToId: senderId } : {}),

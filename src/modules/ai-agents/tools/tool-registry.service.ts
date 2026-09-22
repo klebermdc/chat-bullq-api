@@ -18,6 +18,7 @@ import { LerTranscricaoReuniaoTool } from './builtin/ler-transcricao-reuniao.too
 import { AgendarReuniaoTool } from './builtin/agendar-reuniao.tool';
 import { MoveRecoveryCardTool } from './builtin/move-recovery-card.tool';
 import { SetLeadTemperatureTool } from './builtin/set-lead-temperature.tool';
+import { LeaveNoteForSellerTool } from './builtin/leave-note-for-seller.tool';
 
 /**
  * Registry of BUILT-IN skills (named "tools" in the code for legacy reasons).
@@ -56,6 +57,7 @@ export class ToolRegistry {
     agendarReuniao: AgendarReuniaoTool,
     moveRecoveryCard: MoveRecoveryCardTool,
     setLeadTemperature: SetLeadTemperatureTool,
+    leaveNoteForSeller: LeaveNoteForSellerTool,
   ) {
     this.register(reply, ['ORCHESTRATOR', 'WORKER']);
     this.register(transfer, ['ORCHESTRATOR', 'WORKER']);
@@ -79,6 +81,8 @@ export class ToolRegistry {
     // local de pedidos do HUB. Sem ela, o prompt manda chamar checkPurchase
     // e o runner responde "Unknown tool" — alerta falso a cada conversa.
     this.register(checkPurchase, ['ORCHESTRATOR', 'WORKER']);
+    // Só oferecida no modo plantão (o runner filtra fora dele).
+    this.register(leaveNoteForSeller, ['ORCHESTRATOR', 'WORKER']);
 
     // Client-ops (implementação): restritas aos agentes do env
     // CLIENT_OPS_AGENT_IDS (csv) — default Sofia. Mexem com credenciais

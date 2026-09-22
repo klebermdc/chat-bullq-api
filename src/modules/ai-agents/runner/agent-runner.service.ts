@@ -41,6 +41,11 @@ import { MediaUrlResolverService } from './media-url-resolver.service';
 import { isShadowMode } from '../shadow-learning/shadow-mode.util';
 import { ERROR_CODES } from '../../error-reporter/error-codes';
 import { ErrorReporterService } from '../../error-reporter/error-reporter.service';
+import {
+  ON_CALL_ONLY_TOOL,
+  ON_CALL_TOOLS,
+  type OnCallContext,
+} from '../on-call/on-call.service';
 
 const MAX_TOOL_ITERATIONS = 8;
 const MAX_RECENT_MESSAGES = 30;
@@ -68,6 +73,8 @@ interface RunInput {
    * forth. Set automatically on chained calls, callers shouldn't pass this.
    */
   chainDepth?: number;
+  /** Aline de plantão: o vendedor da conversa está fora do horário. */
+  onCall?: OnCallContext;
 }
 
 const MAX_CHAIN_DEPTH = 3;
@@ -102,11 +109,13 @@ export class AiAgentRunnerService {
     conversation,
     triggerMessage,
     chainDepth = 0,
+    onCall,
   }: RunInput): Promise<void> {
     // Fase 2: usa o agentRouter (com IntentClassifier) pra escolher o agent.
     // Auto-chains (chainDepth > 0) NÃO classificam de novo — já tem activeAgentId.
+    // Plantão não classifica: é sempre o agente principal do canal.
     let selection: AgentSelection | null = null;
-    if (chainDepth === 0) {
+    if (chainDepth === 0 && !onCall) {
       const triggerText = this.extractText(
         (triggerMessage.content as unknown) ?? '',
       );
@@ -120,7 +129,9 @@ export class AiAgentRunnerService {
       ? await this.prisma.aiAgent.findFirst({
           where: { id: selection.agentId, isActive: true, deletedAt: null },
         })
-      : await this.resolveAgent(conversation);
+      : await this.resolveAgent(
+          onCall ? { ...conversation, activeAgentId: null } : conversation,
+        );
     if (!agent) {
       this.logger.debug(
         `No agent resolved for conv ${conversation.id} — skipping run`,
@@ -211,8 +222,14 @@ export class AiAgentRunnerService {
     //   3. tools attached directly to the agent (agent.extraTools).
     // Custom HTTP tools live in the DB; we keep their rows here so the
     // runner can hand them to HttpToolExecutor on tool-call time.
-    const { llmTools, customSkillsByName, skillInstructions } =
-      await this.resolveToolsAndSkills(agent.id, agent.kind);
+    const resolved = await this.resolveToolsAndSkills(agent.id, agent.kind);
+    // Plantão: só responder, consultar e deixar recado. Fora dele, o recado
+    // para o vendedor não existe.
+    const llmTools = resolved.llmTools.filter((t) =>
+      onCall ? ON_CALL_TOOLS.has(t.name) : t.name !== ON_CALL_ONLY_TOOL,
+    );
+    const customSkillsByName = onCall ? new Map() : resolved.customSkillsByName;
+    const skillInstructions = onCall ? [] : resolved.skillInstructions;
 
     const startedAt = Date.now();
 
@@ -246,6 +263,7 @@ export class AiAgentRunnerService {
       triggerMessage,
       skillInstructions,
       catalog,
+      onCall,
     });
 
     // Fase 2.5: augmenta o system message com Security Layer (prepend)
@@ -312,11 +330,14 @@ export class AiAgentRunnerService {
     let replyAlreadySuccessful = false;
 
     try {
-      // Mark this agent as the active one on the conversation.
-      await this.prisma.conversation.update({
-        where: { id: conversation.id },
-        data: { activeAgentId: agent.id },
-      });
+      // Mark this agent as the active one on the conversation. No plantão,
+      // não: a conversa continua do vendedor.
+      if (!onCall) {
+        await this.prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { activeAgentId: agent.id },
+        });
+      }
 
       while (iterationCount < MAX_TOOL_ITERATIONS) {
         iterationCount++;
@@ -447,6 +468,7 @@ export class AiAgentRunnerService {
           customSkillsByName,
           replyAlreadySuccessful,
           agent.kind,
+          !!onCall,
         );
 
         for (const result of toolResults) {
@@ -675,6 +697,7 @@ export class AiAgentRunnerService {
     customSkillsByName: Map<string, AiSkill & { tool: AiTool | null }>,
     alreadyRepliedFromPriorIteration: boolean,
     agentKind: 'ORCHESTRATOR' | 'WORKER' = 'WORKER',
+    onCall = false,
   ): Promise<
     Array<{
       toolCallId: string;
@@ -730,6 +753,33 @@ export class AiAgentRunnerService {
             input: call.arguments as object,
             output: blockedOutput as object,
             error: 'duplicate-reply-blocked',
+            durationMs: 0,
+          },
+        });
+        this.emitToolCall(ctx.conversationId, ctx.runId, blockedRow);
+        continue;
+      }
+
+      // O modelo pode chamar uma ferramenta que não foi oferecida: no plantão
+      // só as do plantão executam, e o recado só existe no plantão.
+      const blockedByMode = onCall
+        ? !ON_CALL_TOOLS.has(call.name)
+        : call.name === ON_CALL_ONLY_TOOL;
+      if (blockedByMode) {
+        const blockedOutput = {
+          ok: false,
+          error: onCall
+            ? 'Ferramenta indisponível no plantão. Responda o cliente, consulte informações ou deixe um recado para o vendedor.'
+            : 'Ferramenta indisponível.',
+        };
+        results.push({ toolCallId: call.id, toolName: call.name, output: blockedOutput });
+        const blockedRow = await this.prisma.aiToolCall.create({
+          data: {
+            runId: ctx.runId,
+            toolName: call.name,
+            input: call.arguments as object,
+            output: blockedOutput as object,
+            error: 'blocked-by-mode',
             durationMs: 0,
           },
         });

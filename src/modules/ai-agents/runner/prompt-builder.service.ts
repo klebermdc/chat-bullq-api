@@ -16,6 +16,7 @@ import {
   formatHoursSummary,
   type BusinessHoursConfig,
 } from '../../routing/availability/business-hours.util';
+import type { OnCallContext } from '../on-call/on-call.service';
 
 export interface PromptContext {
   organization: Organization;
@@ -41,6 +42,8 @@ export interface PromptContext {
    *  Quando presente pra uma mensagem IMAGE, vira image block no prompt
    *  (vision). Ausente = sinaliza só com texto descritivo. */
   mediaUrls?: Map<string, { url: string; mimeType?: string }>;
+  /** Aline de plantão: o vendedor da conversa está fora do horário. */
+  onCall?: OnCallContext;
 }
 
 /** Tipos de imagem enviados ao provider com suporte a vision. */
@@ -464,7 +467,9 @@ export class PromptBuilderService {
               `\n═══ Agora ═══\n- Hora atual: ${this.formatNow(
                 ctx.organization.aiTimezone,
               )} (${ctx.organization.aiTimezone})` +
-              this.formatOffHoursBlock(ctx.organization),
+              (ctx.onCall
+                ? this.formatOnCallBlock(ctx.onCall)
+                : this.formatOffHoursBlock(ctx.organization)),
             cache: false,
           },
         ],
@@ -677,6 +682,25 @@ export class PromptBuilderService {
    * agenda (`aiBusinessHours`) e agora está fechado. Instrui a Aline a avisar
    * o horário e o próximo retorno humano. 24/7 (aiBusinessHours null) = vazio.
    */
+  /**
+   * Aline de plantão: substitui as instruções de qualificar, vender e
+   * transferir do bloco fixo. Fica na parte volátil para não mudar o prefixo
+   * cacheado das outras conversas.
+   */
+  private formatOnCallBlock({ sellerName, returnAt }: OnCallContext): string {
+    return [
+      '\n\n═══ MODO PLANTÃO (prioridade sobre tudo acima) ═══',
+      `\n- Este cliente é atendido por ${sellerName}, que está FORA DO HORÁRIO agora e volta ${returnAt}.`,
+      `\n- Você está só de plantão até ${sellerName} voltar. Não qualifique, não venda e não transfira: isso é com ${sellerName}.`,
+      `\n- Se ainda não avisou nesta conversa, diga numa frase curta que ${sellerName} está fora do horário e volta ${returnAt}.`,
+      '\n- Responda dúvidas simples e factuais (produtos, status de pedido) usando as ferramentas.',
+      `\n- NÃO negocie, NÃO passe valor fechado, NÃO faça proposta e NÃO prometa prazo ou condição. Diga que ${sellerName} cuida disso.`,
+      `\n- Descubra de forma breve o que o cliente precisa e registre com leaveNoteForSeller um resumo objetivo para ${sellerName}. Registre de novo só se surgir informação nova.`,
+      `\n- Se for urgente ou o cliente pedir outra pessoa, diga que o recado fica registrado para ${sellerName} ver assim que voltar.`,
+      '\n- Uma mensagem curta por vez.',
+    ].join('');
+  }
+
   private formatOffHoursBlock(org: Organization): string {
     const tz = org.aiTimezone || 'America/Sao_Paulo';
     const bh = (org.aiBusinessHours ?? null) as BusinessHoursConfig | null;
