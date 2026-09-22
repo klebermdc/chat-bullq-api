@@ -13,6 +13,7 @@ import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { OrgRole } from '@prisma/client';
 import { PresenceService } from './presence.service';
+import type { SocketPresence } from '../team-presence/presence.util';
 import { PrismaService } from '../../database/prisma.service';
 import { ChannelAccessService } from '../iam/channel-access/channel-access.service';
 
@@ -95,6 +96,7 @@ export class RealtimeGateway
       // channelIds (like join:conversation permission checks) MUST wait for
       // this flag — otherwise it sees undefined and rejects the join.
       client.data.authReady = true;
+      client.data.lastActiveAt = new Date();
 
       // Tell the client auth/membership is fully resolved. The client uses
       // this signal to (re)join per-conversation rooms safely. Without this,
@@ -201,6 +203,7 @@ export class RealtimeGateway
     }
     client.join(`conv:${data.conversationId}`);
     client.data.activeConversationId = data.conversationId;
+    client.data.lastActiveAt = new Date();
     this.presence.setActiveConversation(
       client.data.userId,
       client.data.organizationId,
@@ -242,11 +245,33 @@ export class RealtimeGateway
     );
   }
 
+  /**
+   * O front avisa (no máximo 1x/min) que o atendente mexeu no Chat: separa
+   * "ativo" de "aba aberta e parada" no painel Equipe agora.
+   */
+  @SubscribeMessage('presence:active')
+  handlePresenceActive(@ConnectedSocket() client: Socket) {
+    if (client.data.authReady) client.data.lastActiveAt = new Date();
+  }
+
+  /** Conexões autenticadas agora, com a última atividade de cada uma. */
+  async listSocketPresence(): Promise<SocketPresence[]> {
+    const sockets = await this.server.fetchSockets();
+    return sockets
+      .filter((s) => s.data.authReady)
+      .map((s) => ({
+        organizationId: s.data.organizationId,
+        userId: s.data.userId,
+        lastActiveAt: s.data.lastActiveAt ?? new Date(0),
+      }));
+  }
+
   @SubscribeMessage('typing')
   handleTyping(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { conversationId: string; isTyping: boolean },
   ) {
+    client.data.lastActiveAt = new Date();
     client.to(`conv:${data.conversationId}`).emit('agent:typing', {
       userId: client.data.userId,
       conversationId: data.conversationId,

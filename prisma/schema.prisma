@@ -2936,3 +2936,20 @@ model ContatoLegadoVendedor {
 
   @@map("contatos_legado_vendedores")
 }
+
+/// Tempo online por atendente e dia (fuso da org). Amostrado a cada minuto
+/// pelas conexões reais do Chat: online = Chat aberto; ativo = mexeu no Chat
+/// nos últimos minutos.
+model AgentPresenceDaily {
+  organizationId String   @map("organization_id")
+  userId         String   @map("user_id")
+  day            DateTime @db.Date
+  onlineMinutes  Int      @default(0) @map("online_minutes")
+  activeMinutes  Int      @default(0) @map("active_minutes")
+  firstSeenAt    DateTime @map("first_seen_at")
+  lastSeenAt     DateTime @map("last_seen_at")
+
+  @@id([organizationId, userId, day])
+  @@index([organizationId, day])
+  @@map("agent_presence_daily")
+}
