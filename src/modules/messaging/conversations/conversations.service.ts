@@ -750,7 +750,11 @@ export class ConversationsService {
     // (new outbound message) will arrive via realtime + the run record will
     // appear in /ai-agents stats. Frontend can refetch right after the call.
     this.agentRunner
-      .run({ conversation: conversation as Conversation, triggerMessage })
+      .run({
+        conversation: conversation as Conversation,
+        triggerMessage,
+        onCall: decision.onCall,
+      })
       .catch((err) =>
         this.logger.error(
           `engageAi run failed for conv ${id}: ${err?.message ?? err}`,

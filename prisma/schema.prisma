@@ -669,6 +669,9 @@ model Conversation {
   reengageDismissedAt DateTime?          @map("reengage_dismissed_at")
   reengagedAt         DateTime?          @map("reengaged_at")
   offHoursNoticeAt    DateTime?          @map("off_hours_notice_at")
+  /// Última resposta de um humano (painel ou app na coexistência). Mensagem
+  /// automática não conta. A Aline de plantão sai quando um humano responde.
+  lastHumanReplyAt    DateTime?          @map("last_human_reply_at")
   /// Dedup do modo MESSAGE: quando o texto fixo foi enviado nesta conversa.
   /// Coluna própria pra não colidir com `offHoursNoticeAt` (aviso por-atendente).
   aiOffHoursMessageAt DateTime?          @map("ai_off_hours_message_at")
