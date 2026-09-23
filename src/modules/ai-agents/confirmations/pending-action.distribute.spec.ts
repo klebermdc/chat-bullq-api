@@ -24,6 +24,7 @@ function make(actionOverrides: Record<string, unknown> = {}) {
         status: 'PENDING',
         firstResponseAt: null,
         organizationId: 'org1',
+        contactId: 'contact1',
       }),
       update: jest.fn().mockResolvedValue({ id: 'conv1' }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -31,6 +32,10 @@ function make(actionOverrides: Record<string, unknown> = {}) {
     user: { findUnique: jest.fn().mockResolvedValue({ name: 'Renata' }) },
     tag: { upsert: jest.fn().mockResolvedValue({ id: 'tag1' }) },
     conversationTag: {
+      upsert: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    contactTag: {
       upsert: jest.fn().mockResolvedValue({}),
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
@@ -42,8 +47,16 @@ function make(actionOverrides: Record<string, unknown> = {}) {
     pipelineStage: { findFirst: jest.fn().mockResolvedValue(null) },
   } as any;
   const attendantGreeting = { greet: jest.fn().mockResolvedValue(undefined) };
+  const legacyOwnerWriter = { moveOwner: jest.fn().mockResolvedValue('moved') };
   return {
-    svc: new PendingActionService(storage, queue, prisma, attendantGreeting as any),
+    svc: new PendingActionService(
+      storage,
+      queue,
+      prisma,
+      attendantGreeting as any,
+      legacyOwnerWriter as any,
+    ),
+    legacyOwnerWriter,
     storage,
     prisma,
     action,
@@ -127,6 +140,7 @@ describe('PendingActionService.distribute', () => {
       firstResponseAt: new Date(),
       organizationId: 'org1',
       assignedToId: 'atendente-antigo',
+      contactId: 'contact1',
     });
     prisma.user.findUnique.mockImplementation(({ where }: any) =>
       Promise.resolve(
@@ -143,6 +157,28 @@ describe('PendingActionService.distribute', () => {
     // E aplicou a do novo.
     expect(prisma.tag.upsert.mock.calls[0][0].create).toMatchObject({ name: 'Pedro' });
     expect(prisma.conversationTag.upsert).toHaveBeenCalled();
+    // A ficha do cliente também troca de vendedor (ela vem da carteira legada).
+    expect(prisma.contactTag.deleteMany).toHaveBeenCalledWith({
+      where: { contactId: 'contact1', tag: { organizationId: 'org1', name: 'Bárbara' } },
+    });
+    expect(prisma.contactTag.upsert).toHaveBeenCalled();
+  });
+
+  it('distribuir passa o cliente da carteira para o atendente escolhido', async () => {
+    const { svc, legacyOwnerWriter } = make();
+
+    await svc.distribute('pa1', 'org1', 'op1', 'atendente-novo');
+
+    expect(legacyOwnerWriter.moveOwner).toHaveBeenCalledWith('contact1', 'atendente-novo');
+  });
+
+  it('falha ao mexer na carteira não derruba a distribuição', async () => {
+    const { svc, legacyOwnerWriter, storage } = make();
+    legacyOwnerWriter.moveOwner.mockRejectedValue(new Error('db fora'));
+
+    await svc.distribute('pa1', 'org1', 'op1', 'atendente-novo');
+
+    expect(storage.save).toHaveBeenCalled();
   });
 
   it('1ª distribuição (sem atendente anterior) não remove tag nenhuma', async () => {
@@ -193,6 +229,7 @@ describe('PendingActionService.distribute', () => {
       firstResponseAt: new Date(),
       organizationId: 'org1',
       assignedToId: 'atendente-antigo',
+      contactId: 'contact1',
     });
     await svc.distribute('pa1', 'org1', 'op1', 'atendente-novo');
     const call = prisma.conversation.updateMany.mock.calls[0][0];

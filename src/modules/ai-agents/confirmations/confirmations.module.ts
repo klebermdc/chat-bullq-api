@@ -7,6 +7,7 @@ import { PendingActionService } from './pending-action.service';
 import { PendingActionController } from './pending-action.controller';
 import { PENDING_ACTION_EXECUTOR_QUEUE } from './queue-names';
 import { AttendantGreetingModule } from '../../messaging/attendant-greeting/attendant-greeting.module';
+import { CarteiraLegadoModule } from '../../carteira-legado/carteira-legado.module';
 
 /**
  * Destructive-action confirmation module — apenas CRUD + ciclo de aprovação.
@@ -23,6 +24,7 @@ import { AttendantGreetingModule } from '../../messaging/attendant-greeting/atte
     PrismaModule,
     BullModule.registerQueue({ name: PENDING_ACTION_EXECUTOR_QUEUE }),
     AttendantGreetingModule,
+    CarteiraLegadoModule,
   ],
   controllers: [PendingActionController],
   providers: [PendingActionStorage, PendingActionService],

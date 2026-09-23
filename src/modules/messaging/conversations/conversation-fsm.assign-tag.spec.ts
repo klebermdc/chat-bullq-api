@@ -44,6 +44,10 @@ function makeFsm(conversationOverrides: Record<string, unknown> = {}) {
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       upsert: jest.fn().mockResolvedValue({}),
     },
+    contactTag: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      upsert: jest.fn().mockResolvedValue({}),
+    },
     tag: {
       upsert: jest.fn().mockResolvedValue({ id: 'tag-pedro' }),
       update: jest.fn().mockResolvedValue({}),
@@ -60,7 +64,16 @@ function makeFsm(conversationOverrides: Record<string, unknown> = {}) {
   const ratings = { requestRating: jest.fn() } as any;
   const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) } as any;
 
-  return { svc: new ConversationFsmService(prisma, ratings, outbox), tx, outbox };
+  const legacyOwnerWriter = {
+    moveOwner: jest.fn().mockResolvedValue('moved'),
+  } as any;
+
+  return {
+    svc: new ConversationFsmService(prisma, ratings, outbox, legacyOwnerWriter),
+    tx,
+    outbox,
+    legacyOwnerWriter,
+  };
 }
 
 describe('ConversationFsmService.assign — sync da tag do atendente', () => {
@@ -118,6 +131,41 @@ describe('ConversationFsmService.assign — sync da tag do atendente', () => {
     expect(tx.tag.update).not.toHaveBeenCalled();
   });
 
+  // A ficha do cliente mostra a etiqueta do vendedor (veio da carteira da
+  // Umbler). Transferir sem trocar essa etiqueta deixava o cliente marcado com
+  // o vendedor antigo — foi o que aconteceu com o Rodrigo Branco (Suelen ->
+  // Pedro, mas a ficha continuou "Suelen").
+  it('troca também a etiqueta do vendedor NA FICHA DO CLIENTE', async () => {
+    const { svc, tx } = makeFsm({ assignedToId: 'u-barbara' });
+
+    await svc.assign('conv1', 'u-pedro', 'actor1');
+
+    expect(tx.contactTag.deleteMany).toHaveBeenCalledWith({
+      where: { contactId: 'contact1', tag: { organizationId: 'org1', name: 'Bárbara' } },
+    });
+    expect(tx.contactTag.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { contactId_tagId: { contactId: 'contact1', tagId: 'tag-pedro' } },
+      }),
+    );
+  });
+
+  it('transferir passa o cliente da carteira para o vendedor novo', async () => {
+    const { svc, legacyOwnerWriter } = makeFsm({ assignedToId: 'u-barbara' });
+
+    await svc.assign('conv1', 'u-pedro', 'actor1');
+
+    expect(legacyOwnerWriter.moveOwner).toHaveBeenCalledWith('contact1', 'u-pedro');
+  });
+
+  it('falha ao mexer na carteira não derruba a atribuição', async () => {
+    const { svc, legacyOwnerWriter, tx } = makeFsm({ assignedToId: 'u-barbara' });
+    legacyOwnerWriter.moveOwner.mockRejectedValue(new Error('db fora'));
+
+    await expect(svc.assign('conv1', 'u-pedro', 'actor1')).resolves.toBeUndefined();
+    expect(tx.conversation.updateMany).toHaveBeenCalled();
+  });
+
   it('não mexe em tag nenhuma quando reatribui pro MESMO atendente (no-op)', async () => {
     const { svc, tx } = makeFsm({ assignedToId: 'u-pedro' });
 
@@ -126,6 +174,7 @@ describe('ConversationFsmService.assign — sync da tag do atendente', () => {
     expect(tx.conversationTag.deleteMany).not.toHaveBeenCalled();
     expect(tx.tag.upsert).not.toHaveBeenCalled();
     expect(tx.conversationTag.upsert).not.toHaveBeenCalled();
+    expect(tx.contactTag.upsert).not.toHaveBeenCalled();
   });
 
   it('primeira atribuição (sem atendente anterior) só adiciona, não tenta remover', async () => {
