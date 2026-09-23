@@ -22,6 +22,7 @@ import { ConversationResolverService } from './pipeline/conversation-resolver.se
 import { LeadSourceTaggerService } from './pipeline/lead-source-tagger.service';
 import { LeadCardService } from './pipeline/lead-card.service';
 import { LegacyOwnerRoutingService } from './pipeline/legacy-owner-routing.service';
+import { CarteiraLegadoModule } from '../carteira-legado/carteira-legado.module';
 import { LeadOriginService } from './pipeline/lead-origin.service';
 import { HistoryImportService } from './pipeline/history-import.service';
 import { InboundMessageProcessor } from './pipeline/inbound-message.processor';
@@ -49,6 +50,7 @@ import { ContactsRepository } from './contacts/contacts.repository';
 
 @Module({
   imports: [
+    CarteiraLegadoModule,
     BullModule.registerQueue(
       { name: 'inbound-messages' },
       { name: 'outbound-messages' },

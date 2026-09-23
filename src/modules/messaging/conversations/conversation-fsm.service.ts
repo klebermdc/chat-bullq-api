@@ -7,6 +7,7 @@ import {
 import { AutomationTrigger, ConversationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { RatingsService } from '../../ratings/ratings.service';
+import { LegacyOwnerWriterService } from '../../carteira-legado/legacy-owner-writer.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
 import {
   attendantTagColor,
@@ -42,6 +43,7 @@ export class ConversationFsmService {
     private readonly prisma: PrismaService,
     private readonly ratings: RatingsService,
     private readonly outbox: OutboxService,
+    private readonly legacyOwnerWriter: LegacyOwnerWriterService,
   ) {}
 
   canTransition(from: ConversationStatus, to: ConversationStatus): boolean {
@@ -199,6 +201,7 @@ export class ConversationFsmService {
         await this.syncAttendantTag(
           tx,
           conversationId,
+          conversation.contactId,
           conversation.organizationId,
           conversation.assignedToId,
           agentId,
@@ -235,6 +238,19 @@ export class ConversationFsmService {
         );
       }
     });
+
+    if (!isNoOp) {
+      // Transferir vale como troca de dono: o cliente da carteira legada passa
+      // a ser do novo vendedor, senão a próxima conversa nova dele voltaria
+      // pro antigo. Best-effort: nunca derruba a atribuição.
+      await this.legacyOwnerWriter
+        .moveOwner(conversation.contactId, agentId)
+        .catch((err: unknown) =>
+          this.logger.warn(
+            `carteira não atualizada (conv=${conversationId}): ${err instanceof Error ? err.message : err}`,
+          ),
+        );
+    }
   }
 
   /**
@@ -246,6 +262,7 @@ export class ConversationFsmService {
   private async syncAttendantTag(
     tx: Prisma.TransactionClient,
     conversationId: string,
+    contactId: string,
     organizationId: string,
     fromAssigneeId: string | null,
     toAssigneeId: string,
@@ -264,6 +281,11 @@ export class ConversationFsmService {
             conversationId,
             tag: { organizationId, name: prevName },
           },
+        });
+        // A ficha do cliente também carrega a etiqueta do vendedor (veio da
+        // carteira legada): sem isto ela continuaria mostrando o antigo.
+        await tx.contactTag.deleteMany({
+          where: { contactId, tag: { organizationId, name: prevName } },
         });
       }
     }
@@ -292,6 +314,11 @@ export class ConversationFsmService {
     await tx.conversationTag.upsert({
       where: { conversationId_tagId: { conversationId, tagId: tag.id } },
       create: { conversationId, tagId: tag.id },
+      update: {},
+    });
+    await tx.contactTag.upsert({
+      where: { contactId_tagId: { contactId, tagId: tag.id } },
+      create: { contactId, tagId: tag.id },
       update: {},
     });
   }

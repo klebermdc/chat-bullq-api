@@ -17,6 +17,7 @@ import type {
 import { PendingActionStorage } from './pending-action.storage';
 import { PENDING_ACTION_EXECUTOR_QUEUE } from './queue-names';
 import { PrismaService } from '../../../database/prisma.service';
+import { LegacyOwnerWriterService } from '../../carteira-legado/legacy-owner-writer.service';
 import { AttendantGreetingService } from '../../messaging/attendant-greeting/attendant-greeting.service';
 import {
   attendantTagColor,
@@ -41,6 +42,7 @@ export class PendingActionService {
     private readonly executorQueue: Queue,
     private readonly prisma: PrismaService,
     private readonly attendantGreeting: AttendantGreetingService,
+    private readonly legacyOwnerWriter: LegacyOwnerWriterService,
   ) {}
 
   /** Create a new PENDING action for human review. */
@@ -287,6 +289,7 @@ export class PendingActionService {
         firstResponseAt: true,
         organizationId: true,
         assignedToId: true,
+        contactId: true,
       },
     });
     if (!conv) throw new NotFoundException('Conversation not found');
@@ -330,6 +333,7 @@ export class PendingActionService {
       attendantName =
         (await this.tagWithAttendant(
           action.conversationId,
+          conv.contactId,
           conv.organizationId,
           assignedToId,
           previousAssigneeId,
@@ -337,6 +341,16 @@ export class PendingActionService {
     } catch (e) {
       this.logger.warn(`distribute: falha ao taguear atendente (conv=${action.conversationId}): ${(e as Error)?.message}`);
     }
+
+    // Distribuir vale como troca de dono na carteira legada (mesma regra do
+    // transferir), senão a próxima conversa nova volta pro vendedor antigo.
+    await this.legacyOwnerWriter
+      .moveOwner(conv.contactId, assignedToId)
+      .catch((e: unknown) =>
+        this.logger.warn(
+          `distribute: carteira não atualizada (conv=${action.conversationId}): ${e instanceof Error ? e.message : e}`,
+        ),
+      );
 
     // NÃO resolve a pendência: ela fica VISÍVEL como "norte" pro atendente
     // escolhido até ele clicar "Iniciar atendimento". Marca como distribuída,
@@ -381,6 +395,7 @@ export class PendingActionService {
    */
   private async tagWithAttendant(
     conversationId: string,
+    contactId: string,
     organizationId: string,
     assignedToId: string,
     previousAssigneeId?: string | null,
@@ -398,6 +413,10 @@ export class PendingActionService {
             conversationId,
             tag: { organizationId, name: prevName },
           },
+        });
+        // A ficha do cliente também mostra a etiqueta do vendedor.
+        await this.prisma.contactTag.deleteMany({
+          where: { contactId, tag: { organizationId, name: prevName } },
         });
       }
     }
@@ -428,6 +447,11 @@ export class PendingActionService {
     await this.prisma.conversationTag.upsert({
       where: { conversationId_tagId: { conversationId, tagId: tag.id } },
       create: { conversationId, tagId: tag.id },
+      update: {},
+    });
+    await this.prisma.contactTag.upsert({
+      where: { contactId_tagId: { contactId, tagId: tag.id } },
+      create: { contactId, tagId: tag.id },
       update: {},
     });
     return name;

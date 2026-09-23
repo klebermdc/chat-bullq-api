@@ -27,7 +27,13 @@ function make(actionOverrides: Record<string, unknown> = {}, convo: any = {}) {
   } as any;
   const attendantGreeting = { greet: jest.fn().mockResolvedValue(undefined) };
   return {
-    svc: new PendingActionService(storage, queue, prisma, attendantGreeting as any),
+    svc: new PendingActionService(
+      storage,
+      queue,
+      prisma,
+      attendantGreeting as any,
+      { moveOwner: jest.fn().mockResolvedValue('skipped') } as any,
+    ),
     storage,
     prisma,
     action,

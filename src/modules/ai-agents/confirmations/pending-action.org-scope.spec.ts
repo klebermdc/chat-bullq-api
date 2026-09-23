@@ -176,6 +176,7 @@ describe('PendingActionService — ações de outra organização', () => {
       fila as never,
       prisma as never,
       saudacao as never,
+      { moveOwner: jest.fn().mockResolvedValue('skipped') } as never,
     );
     return { service, fila };
   }
