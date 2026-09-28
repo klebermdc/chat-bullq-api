@@ -24,6 +24,7 @@ const build = () => {
     findManyByChannel: jest.fn().mockResolvedValue([]),
     updateByMetaId: jest.fn().mockResolvedValue({ count: 1 }),
     delete: jest.fn().mockResolvedValue({ id: 't1' }),
+    setReengagement: jest.fn().mockResolvedValue({ id: 't1', isReengagement: true }),
   };
   const http = {
     createTemplate: jest
@@ -118,6 +119,43 @@ describe('MessageTemplatesService', () => {
       'META1',
       expect.objectContaining({ status: 'APPROVED' }),
     );
+  });
+
+  describe('template de retomada', () => {
+    it('marca um template aprovado como retomada do seu canal', async () => {
+      const { repo, service } = build();
+      repo.findById.mockResolvedValueOnce({ id: 't1', channelId: 'ch1', status: 'APPROVED' });
+
+      await service.setReengagement('org1', 't1');
+
+      expect(repo.setReengagement).toHaveBeenCalledWith('ch1', 't1');
+    });
+
+    it('recusa template que não está aprovado', async () => {
+      const { repo, service } = build();
+
+      await expect(service.setReengagement('org1', 't1')).rejects.toMatchObject({
+        status: 400,
+      });
+      expect(repo.setReengagement).not.toHaveBeenCalled();
+    });
+
+    it('recusa template de outra organização (404)', async () => {
+      const { repo, service } = build();
+      repo.findById.mockResolvedValueOnce(null);
+
+      await expect(service.setReengagement('org1', 'tX')).rejects.toMatchObject({
+        status: 404,
+      });
+    });
+
+    it('desmarca a retomada sem exigir status', async () => {
+      const { repo, service } = build();
+
+      await service.clearReengagement('org1', 't1');
+
+      expect(repo.update).toHaveBeenCalledWith('t1', { isReengagement: false });
+    });
   });
 });
 

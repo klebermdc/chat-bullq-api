@@ -2183,6 +2183,9 @@ model MessageTemplate {
   status           String    @default("DRAFT")
   components       Json
   variableExamples Json      @default("{}") @map("variable_examples")
+  /// Template que o atendente usa para retomar contato com a janela de 24h
+  /// fechada. No máximo um por canal (garantido em MessageTemplatesRepository).
+  isReengagement   Boolean   @default(false) @map("is_reengagement")
   metaTemplateId   String?   @unique @map("meta_template_id")
   rejectionReason  String?   @map("rejection_reason")
   createdAt        DateTime  @default(now()) @map("created_at")
