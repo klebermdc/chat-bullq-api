@@ -4,15 +4,12 @@ import {
   ConflictException,
   Logger,
 } from '@nestjs/common';
-import { AutomationTrigger, ConversationStatus, Prisma } from '@prisma/client';
+import { AutomationTrigger, ConversationStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { RatingsService } from '../../ratings/ratings.service';
 import { LegacyOwnerWriterService } from '../../carteira-legado/legacy-owner-writer.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
-import {
-  attendantTagColor,
-  DEFAULT_TAG_COLOR,
-} from '../../../common/utils/attendant-tag-color.util';
+import { syncAttendantTag } from '../../../common/utils/sync-attendant-tag';
 
 type Transition = {
   from: ConversationStatus;
@@ -193,20 +190,19 @@ export class ConversationFsmService {
         });
       }
 
-      if (!isNoOp) {
-        // A etiqueta do atendente no card é uma TAG de conversa (nome do
-        // atendente), não um derivado de assignedToId. Ao trocar de atendente
-        // precisamos sincronizar: tirar a tag do antigo e pôr a do novo —
-        // senão a tag do atendente anterior fica colada pra sempre.
-        await this.syncAttendantTag(
-          tx,
-          conversationId,
-          conversation.contactId,
-          conversation.organizationId,
-          conversation.assignedToId,
-          agentId,
-        );
+      // A etiqueta do vendedor é uma TAG (nome do atendente), não um derivado
+      // de assignedToId. Roda mesmo quando o dono não muda: se ele virou dono
+      // por um caminho que não tagueava (ex.: respondeu antes), escolher o
+      // mesmo vendedor no botão de atribuir tem que fazer a tag aparecer.
+      await syncAttendantTag(tx, {
+        conversationId,
+        contactId: conversation.contactId,
+        organizationId: conversation.organizationId,
+        fromAssigneeId: conversation.assignedToId,
+        toAssigneeId: agentId,
+      });
 
+      if (!isNoOp) {
         await this.outbox.enqueue(
           tx,
           AutomationTrigger.CONVERSATION_ASSIGNED,
@@ -251,75 +247,5 @@ export class ConversationFsmService {
           ),
         );
     }
-  }
-
-  /**
-   * Mantém a tag do atendente do card em sincronia com quem está atribuído.
-   * A tag é o NOME do atendente (mesma convenção do fluxo de distribuir):
-   * remove a do atendente anterior (match exato pelo nome) e adiciona a do
-   * novo (idempotente). Roda dentro da mesma transação do assign.
-   */
-  private async syncAttendantTag(
-    tx: Prisma.TransactionClient,
-    conversationId: string,
-    contactId: string,
-    organizationId: string,
-    fromAssigneeId: string | null,
-    toAssigneeId: string,
-  ): Promise<void> {
-    // Tira a tag do atendente anterior. Casa exatamente pelo nome dele — que é
-    // justamente a tag que o fluxo de distribuir teria criado.
-    if (fromAssigneeId && fromAssigneeId !== toAssigneeId) {
-      const prev = await tx.user.findUnique({
-        where: { id: fromAssigneeId },
-        select: { name: true },
-      });
-      const prevName = (prev?.name ?? '').trim();
-      if (prevName) {
-        await tx.conversationTag.deleteMany({
-          where: {
-            conversationId,
-            tag: { organizationId, name: prevName },
-          },
-        });
-        // A ficha do cliente também carrega a etiqueta do vendedor (veio da
-        // carteira legada): sem isto ela continuaria mostrando o antigo.
-        await tx.contactTag.deleteMany({
-          where: { contactId, tag: { organizationId, name: prevName } },
-        });
-      }
-    }
-
-    // Adiciona a tag do novo atendente (cria a Tag se não existir).
-    const next = await tx.user.findUnique({
-      where: { id: toAssigneeId },
-      select: { name: true },
-    });
-    const nextName = (next?.name ?? '').trim();
-    if (!nextName) return;
-
-    // Cor estável por atendente pra os selos ficarem distintos no inbox.
-    const color = attendantTagColor(toAssigneeId);
-    const tag = await tx.tag.upsert({
-      where: { organizationId_name: { organizationId, name: nextName } },
-      create: { organizationId, name: nextName, color },
-      update: {},
-      select: { id: true, color: true },
-    });
-    // Backfill: selos antigos ficaram no cinza padrão. Recolore só esses —
-    // nunca sobrescreve uma cor escolhida à mão.
-    if (tag.color === DEFAULT_TAG_COLOR) {
-      await tx.tag.update({ where: { id: tag.id }, data: { color } });
-    }
-    await tx.conversationTag.upsert({
-      where: { conversationId_tagId: { conversationId, tagId: tag.id } },
-      create: { conversationId, tagId: tag.id },
-      update: {},
-    });
-    await tx.contactTag.upsert({
-      where: { contactId_tagId: { contactId, tagId: tag.id } },
-      create: { contactId, tagId: tag.id },
-      update: {},
-    });
   }
 }

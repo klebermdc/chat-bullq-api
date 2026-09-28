@@ -166,15 +166,23 @@ describe('ConversationFsmService.assign — sync da tag do atendente', () => {
     expect(tx.conversation.updateMany).toHaveBeenCalled();
   });
 
-  it('não mexe em tag nenhuma quando reatribui pro MESMO atendente (no-op)', async () => {
-    const { svc, tx } = makeFsm({ assignedToId: 'u-pedro' });
+  it('reatribuir pro MESMO atendente garante a tag dele (sem remover nada nem disparar automação)', async () => {
+    // Caso real: o vendedor respondeu, virou dono sem tag, e depois alguém
+    // escolheu o mesmo vendedor no botão de atribuir — a tag tem que aparecer.
+    const { svc, tx, outbox } = makeFsm({ assignedToId: 'u-pedro' });
 
     await svc.assign('conv1', 'u-pedro', 'actor1');
 
     expect(tx.conversationTag.deleteMany).not.toHaveBeenCalled();
-    expect(tx.tag.upsert).not.toHaveBeenCalled();
-    expect(tx.conversationTag.upsert).not.toHaveBeenCalled();
-    expect(tx.contactTag.upsert).not.toHaveBeenCalled();
+    expect(tx.contactTag.deleteMany).not.toHaveBeenCalled();
+    expect(tx.tag.upsert).toHaveBeenCalled();
+    expect(tx.conversationTag.upsert).toHaveBeenCalled();
+    expect(tx.contactTag.upsert).toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'CONVERSATION_ASSIGNED',
+      expect.anything(),
+    );
   });
 
   it('primeira atribuição (sem atendente anterior) só adiciona, não tenta remover', async () => {

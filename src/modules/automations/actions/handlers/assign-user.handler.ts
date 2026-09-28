@@ -9,6 +9,7 @@ import {
   ActionExecutionResult,
   ActionHandler,
 } from '../action.types';
+import { syncAttendantTag } from '../../../../common/utils/sync-attendant-tag';
 
 interface AssignUserParams {
   userId: string;
@@ -114,6 +115,13 @@ export class AssignUserHandler implements ActionHandler {
             },
           });
         }
+        await syncAttendantTag(tx, {
+          conversationId: conversation.id,
+          contactId: conversation.contactId,
+          organizationId,
+          fromAssigneeId: conversation.assignedToId,
+          toAssigneeId: p.userId,
+        });
         await outbox.enqueue(
           tx,
           AutomationTrigger.CONVERSATION_ASSIGNED,
