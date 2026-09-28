@@ -4,6 +4,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Param,
   Body,
@@ -85,6 +86,18 @@ export class MessageTemplatesController {
     @Param('channelId') channelId: string,
   ) {
     return this.service.sync(orgId, channelId);
+  }
+
+  @Put(':id/reengagement')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  setReengagement(@CurrentOrg('id') orgId: string, @Param('id') id: string) {
+    return this.service.setReengagement(orgId, id);
+  }
+
+  @Delete(':id/reengagement')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  clearReengagement(@CurrentOrg('id') orgId: string, @Param('id') id: string) {
+    return this.service.clearReengagement(orgId, id);
   }
 
   @Delete(':id')

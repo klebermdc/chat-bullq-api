@@ -149,6 +149,25 @@ export class MessageTemplatesService {
     return this.repo.updateByMetaId(metaTemplateId, { category });
   }
 
+  /**
+   * Define o template que o ícone "Retomar contato" do chat abre. Só aprovado:
+   * é o único tipo que a Meta aceita com a janela de 24h fechada.
+   */
+  async setReengagement(orgId: string, id: string) {
+    const t = await this.mustFind(orgId, id);
+    if (t.status !== 'APPROVED') {
+      throw new BadRequestException(
+        'Só um template aprovado pela Meta pode ser o de retomada',
+      );
+    }
+    return this.repo.setReengagement(t.channelId, t.id);
+  }
+
+  async clearReengagement(orgId: string, id: string) {
+    const t = await this.mustFind(orgId, id);
+    return this.repo.update(t.id, { isReengagement: false });
+  }
+
   async remove(orgId: string, id: string) {
     const t = await this.mustFind(orgId, id);
     if (t.metaTemplateId) {
