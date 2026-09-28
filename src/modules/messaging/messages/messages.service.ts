@@ -29,6 +29,7 @@ import { ChannelAdapterRegistry } from '../../channel-hub/channel-adapter.regist
 import { resolveAssignmentScope } from '../conversations/conversation-scope';
 import { ConversationAccessService } from '../conversations/conversation-access.service';
 import { shouldAutoAssignOnReply } from './auto-assign.util';
+import { syncAttendantTag } from '../../../common/utils/sync-attendant-tag';
 import { buildSnippet, messageText } from './message-search';
 import { ContactHistoryService } from './contact-history.service';
 
@@ -269,6 +270,22 @@ export class MessagesService {
             }),
       },
     });
+
+    if (shouldAutoAssign) {
+      // Virou dono ao responder: a etiqueta do vendedor acompanha, igual ao
+      // botão de atribuir. Best-effort — nunca derruba o envio.
+      await syncAttendantTag(this.prisma, {
+        conversationId: conversation.id,
+        contactId: conversation.contactId,
+        organizationId,
+        fromAssigneeId: conversation.assignedToId,
+        toAssigneeId: senderId,
+      }).catch((err: unknown) =>
+        this.logger.warn(
+          `tag do vendedor não aplicada no auto-assign (conv=${conversation.id}): ${err instanceof Error ? err.message : err}`,
+        ),
+      );
+    }
 
     if (!automated) {
       // Humano respondeu — cancela qualquer timer de watchdog pendente e
