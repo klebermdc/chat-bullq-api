@@ -408,6 +408,12 @@ describe('ScheduledDispatchProcessor', () => {
           failedReason: expect.stringContaining('template'),
         }),
       );
+      // O motivo visível não crava mais "24h/72h" (lead de anúncio tem 7 dias).
+      const reason = repo.update.mock.calls
+        .map((call: any[]) => call[1]?.failedReason)
+        .find(Boolean);
+      expect(reason).toMatch(/^Janela de atendimento fechada/);
+      expect(reason).not.toMatch(/\d+h/);
     });
 
     it('janela fechada e passo sem template: não envia e falha com motivo claro', async () => {
@@ -430,6 +436,12 @@ describe('ScheduledDispatchProcessor', () => {
           failedReason: expect.stringContaining('template'),
         }),
       );
+      // O motivo visível não crava mais "24h/72h" (lead de anúncio tem 7 dias).
+      const reason = repo.update.mock.calls
+        .map((call: any[]) => call[1]?.failedReason)
+        .find(Boolean);
+      expect(reason).toMatch(/^Janela de atendimento fechada/);
+      expect(reason).not.toMatch(/\d+h/);
     });
 
     // Regressão 2026-08-06: lead de anúncio cuja inbound não trouxe `referral`
