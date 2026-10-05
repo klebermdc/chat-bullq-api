@@ -976,6 +976,10 @@ model Tag {
   organizationId     String  @map("organization_id")
   name               String
   color              String  @default("#6B7280")
+  /// Cor da letra da etiqueta. Nula = automática: o front deriva a letra de
+  /// `color` e usa `color` só como tinta de fundo. Preenchida = `color` vira
+  /// o fundo cheio e esta é a letra.
+  textColor          String? @map("text_color")
   /// Marca esta tag como "lead qualificado": aplicá-la dispara, além do
   /// TAG_ADDED, um evento LEAD_QUALIFIED com os dados de atribuição.
   marksQualifiedLead Boolean @default(false) @map("marks_qualified_lead")

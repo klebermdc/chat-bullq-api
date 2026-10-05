@@ -753,7 +753,7 @@ export class DashboardService {
           createdAt: { gte: range.from, lte: range.to },
         },
       },
-      select: { tag: { select: { id: true, name: true, color: true } } },
+      select: { tag: { select: { id: true, name: true, color: true, textColor: true } } },
     });
 
     const counts = new Map<string, { id: string; name: string; color: string; count: number }>();
