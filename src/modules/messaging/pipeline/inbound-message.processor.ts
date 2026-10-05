@@ -984,6 +984,25 @@ export class InboundMessageProcessor extends WorkerHost {
     }
   }
 
+  /**
+   * Registra o `pricing` do status em `whatsapp_message_billing` sem esperar
+   * (mesmo padrão do `recordWindow`). Qualquer falha — inclusive síncrona — só
+   * vira log: cobrança é relatório, o status da mensagem não pode depender dela.
+   */
+  private recordMessageBillingSafe(data: StatusJobData): void {
+    const { organizationId, channelId, status } = data;
+    if (!organizationId || !status.pricing) return;
+    Promise.resolve()
+      .then(() =>
+        this.channelUsage.recordMessageBilling(organizationId, channelId, status),
+      )
+      .catch((err) =>
+        this.logger.warn(
+          `recordMessageBilling falhou (wamid ${status.externalMessageId}): ${err?.message ?? err}`,
+        ),
+      );
+  }
+
   private async processStatus(data: StatusJobData): Promise<any> {
     const { status, channelId, webhookEventId } = data;
     if (!status?.externalMessageId) return;
@@ -1001,6 +1020,12 @@ export class InboundMessageProcessor extends WorkerHost {
     if (status.externalMessageId.startsWith('ig-read-watermark:')) {
       return this.processInstagramReadWatermark(channelId, status, webhookEventId);
     }
+
+    // Cobrança por mensagem (canal oficial): best-effort, NUNCA derruba o status.
+    // Fica ANTES da busca da mensagem de propósito: a linha é por (canal, wamid)
+    // e não depende da Message — se o `sent` chega antes de o outbound gravar o
+    // externalId, o status é descartado logo abaixo, mas a cobrança não se perde.
+    this.recordMessageBillingSafe(data);
 
     // Escopo por canal: IDs de mensagem de provedores Baileys (Zappfy/Uazapi)
     // não são globalmente únicos e podem colidir entre canais/orgs. Sem o filtro
