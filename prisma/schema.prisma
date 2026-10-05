@@ -274,6 +274,7 @@ model Organization {
   orderFichas               OrderFicha[]
   orderAcceptances          OrderAcceptance[]
   whatsappWindows           WhatsappWindow[]
+  whatsappBillings          WhatsappMessageBilling[]
   whatsappWindowPricing     WhatsappWindowPricing?
   metaCapiConfig            MetaCapiConfig?
   metaCapiEvents            MetaCapiEvent[]
@@ -372,6 +373,7 @@ model Channel {
   scheduledMessages  ScheduledMessage[]
   messageTemplates   MessageTemplate[]
   whatsappWindows    WhatsappWindow[]
+  whatsappBillings   WhatsappMessageBilling[]
   socialComments     SocialComment[]
 
   @@index([organizationId, type], name: "idx_channel_org_type")
@@ -2591,6 +2593,34 @@ model WhatsappWindow {
   @@unique([channelId, metaConversationId], name: "uq_window_channel_conv")
   @@index([organizationId, channelId, openedAt], name: "idx_window_org_channel_opened")
   @@map("whatsapp_windows")
+}
+
+/// Uma linha por MENSAGEM (wamid) com o objeto `pricing` que a Meta mandou no
+/// status. Sob PMP a Meta só envia `conversation.id` em free entry point, então
+/// `WhatsappWindow` subconta — esta tabela é a fonte do relatório de custos.
+model WhatsappMessageBilling {
+  id                String   @id @default(cuid())
+  organizationId    String   @map("organization_id")
+  channelId         String   @map("channel_id")
+  /// wamid da mensagem enviada.
+  externalMessageId String   @map("external_message_id")
+  /// service | referral_conversion | marketing | utility | authentication | unknown
+  category          String   @default("unknown")
+  /// free_customer_service | free_entry_point | regular. Null se a Meta não mandou.
+  pricingType       String?  @map("pricing_type")
+  billable          Boolean
+  /// CBP | PMP. Null se a Meta não mandou.
+  pricingModel      String?  @map("pricing_model")
+  /// Timestamp do PRIMEIRO status que trouxe `pricing` para este wamid.
+  statusAt          DateTime @map("status_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, externalMessageId], name: "uq_billing_channel_message")
+  @@index([organizationId, statusAt], name: "idx_billing_org_status_at")
+  @@map("whatsapp_message_billing")
 }
 
 /// Tarifa por categoria (por org) usada pra estimar o custo das janelas.
