@@ -28,6 +28,27 @@ describe('WhatsAppOfficialMessageMapper.normalizeStatus', () => {
     });
   });
 
+  it('preserva pricing.type (free_customer_service | free_entry_point | regular)', () => {
+    const out = mapper.normalizeStatus({
+      id: 'wamid.PMP',
+      status: 'sent',
+      timestamp: '1700000000',
+      pricing: {
+        billable: false,
+        pricing_model: 'PMP',
+        type: 'free_customer_service',
+        category: 'service',
+      },
+    });
+
+    expect(out?.pricing).toEqual({
+      billable: false,
+      category: 'service',
+      pricingModel: 'PMP',
+      type: 'free_customer_service',
+    });
+  });
+
   it('deixa conversation/pricing undefined quando ausentes (delivered repetido)', () => {
     const out = mapper.normalizeStatus({
       id: 'wamid.ABC',

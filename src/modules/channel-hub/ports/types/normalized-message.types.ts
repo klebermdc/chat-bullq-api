@@ -171,6 +171,8 @@ export interface StatusUpdate {
     category?: string;
     /** pricing.pricing_model: CBP|PMP */
     pricingModel?: string;
+    /** pricing.type: free_customer_service | free_entry_point | regular */
+    type?: string;
   };
 }
 
