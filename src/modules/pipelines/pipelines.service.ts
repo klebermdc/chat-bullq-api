@@ -162,7 +162,7 @@ export class PipelinesService {
               // Orgânico") a partir daqui; sem isso o selo de origem fica cego.
               tags: {
                 select: {
-                  tag: { select: { id: true, name: true, color: true } },
+                  tag: { select: { id: true, name: true, color: true, textColor: true } },
                 },
               },
             },

@@ -16,6 +16,18 @@ export class UpdateTagDto {
   color?: string;
 
   @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Cor da letra (hex). null = automática, derivada de `color`.',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/, {
+    message: 'textColor must be a valid hex color (e.g. #FFFFFF)',
+  })
+  textColor?: string | null;
+
+  @ApiPropertyOptional({
     description:
       'Marca esta tag como "lead qualificado": aplicá-la dispara o evento LEAD_QUALIFIED (com os dados de atribuição do anúncio) além do TAG_ADDED.',
   })

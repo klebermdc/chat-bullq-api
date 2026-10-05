@@ -29,6 +29,7 @@ export class TagsService {
     return this.repository.create({
       name: dto.name,
       color: dto.color ?? DEFAULT_TAG_COLOR,
+      textColor: dto.textColor ?? null,
       marksQualifiedLead: dto.marksQualifiedLead ?? false,
       organization: { connect: { id: orgId } },
     });
@@ -60,6 +61,8 @@ export class TagsService {
     return this.repository.update(id, {
       ...(dto.name !== undefined && { name: dto.name }),
       ...(dto.color !== undefined && { color: dto.color }),
+      // null é valor válido aqui: volta a letra para "automática".
+      ...(dto.textColor !== undefined && { textColor: dto.textColor }),
       ...(dto.marksQualifiedLead !== undefined && {
         marksQualifiedLead: dto.marksQualifiedLead,
       }),
