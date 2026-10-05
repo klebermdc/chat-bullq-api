@@ -14,7 +14,7 @@ import { QuickRepliesService } from './quick-replies.service';
 import { CreateQuickReplyDto } from './dto/create-quick-reply.dto';
 import { UpdateQuickReplyDto } from './dto/update-quick-reply.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentOrg, Roles } from '../../common/decorators';
+import { CurrentOrg, CurrentUser, CurrentUserRole, Roles } from '../../common/decorators';
 
 @ApiTags('Quick replies')
 @ApiBearerAuth()
@@ -32,14 +32,23 @@ export class QuickRepliesController {
 
   @Get()
   @ApiOperation({ summary: 'List quick replies' })
-  findAll(@CurrentOrg('id') orgId: string) {
-    return this.service.findAll(orgId);
+  findAll(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole | undefined,
+  ) {
+    return this.service.findAll(orgId, { userId, role });
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get quick reply by id' })
-  findOne(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
-    return this.service.findOne(id, orgId);
+  findOne(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole | undefined,
+  ) {
+    return this.service.findOneVisible(id, orgId, { userId, role });
   }
 
   @Patch(':id')

@@ -146,6 +146,7 @@ model User {
   deletedAt    DateTime? @map("deleted_at")
 
   organizations            UserOrganization[]
+  quickReplies             QuickReply[]            @relation("QuickReplyOwner")
   assignedConversations    Conversation[]          @relation("AssignedAgent")
   projectsResponsible      Project[]               @relation("ProjectResponsible")
   contatosLegadoVendedores ContatoLegadoVendedor[]
@@ -959,13 +960,18 @@ model QuickReply {
   title          String
   content        String
   attachments    Json      @default("[]")
+  /// Vendedor dono da mensagem. Nulo = da equipe inteira. Preenchido = só ele
+  /// (e dono/admin da organização) enxerga e usa.
+  ownerUserId    String?   @map("owner_user_id")
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
   deletedAt      DateTime? @map("deleted_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner        User?        @relation("QuickReplyOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, shortcut])
+  @@index([organizationId, ownerUserId])
   @@map("quick_replies")
 }
 
