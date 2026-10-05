@@ -2,9 +2,36 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { StatusUpdate } from '../channel-hub/ports/types';
 import { aggregateWindows, UsageAggregate } from './channel-usage.aggregator';
-import { ChannelType } from '@prisma/client';
+import { ChannelType, Prisma } from '@prisma/client';
+import {
+  buildBillingUpsertArgs,
+  toBillingRow,
+} from './message-billing.mapper';
+import {
+  aggregateBilling,
+  BillingBucketRow,
+  BillingResponse,
+} from './message-billing.aggregator';
+import {
+  aggregateDelivery,
+  DeliveryBucketRow,
+  DeliveryResponse,
+} from './delivery.aggregator';
+import { FailureCount } from './failure-reason.util';
+import { listZonedDayKeys } from './zoned-day.util';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Teto de textos distintos de falha lidos por consulta (o relatório mostra 8). */
+const MAX_FAILURE_REASON_GROUPS = 500;
+
+/**
+ * As colunas são `timestamp` (sem fuso) guardando UTC. O limite vai como texto
+ * ISO convertido para UTC no próprio SQL, pra comparação não depender do
+ * TimeZone da sessão do Postgres.
+ */
+function utcTimestamp(date: Date): Prisma.Sql {
+  return Prisma.sql`(${date.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
+}
 
 @Injectable()
 export class ChannelUsageService {
@@ -57,6 +84,115 @@ export class ChannelUsageService {
         expirationAt,
       },
       update,
+    });
+  }
+
+  /**
+   * Registra (upsert) UMA linha por mensagem (wamid) com o `pricing` que a
+   * Meta manda no status. Idempotente pela chave única (channelId, wamid).
+   * Regras do update em `buildBillingUpsertArgs`: só sobrescreve o que o
+   * payload traz de fato e nunca volta `billable: true` para false.
+   */
+  async recordMessageBilling(
+    organizationId: string,
+    channelId: string,
+    status: StatusUpdate,
+  ): Promise<void> {
+    const row = toBillingRow(status);
+    if (!row) return;
+    await this.prisma.whatsappMessageBilling.upsert(
+      buildBillingUpsertArgs(organizationId, channelId, row),
+    );
+  }
+
+  /**
+   * Custo por mensagem no range [from, to): o que a Meta marcou como cobrável
+   * × tarifa da categoria. O banco devolve contagens por hora cheia; o
+   * agrupamento por dia de São Paulo e o custo ficam em `aggregateBilling`.
+   */
+  async billing(
+    organizationId: string,
+    from: Date,
+    to: Date,
+  ): Promise<BillingResponse> {
+    const [{ rates, currency }, rows, firstBillableService] = await Promise.all([
+      this.loadRates(organizationId),
+      this.prisma.$queryRaw<BillingBucketRow[]>(Prisma.sql`
+        SELECT date_trunc('hour', status_at) AS "bucketAt",
+               category,
+               pricing_type AS "pricingType",
+               billable,
+               COUNT(*)::int AS count
+        FROM whatsapp_message_billing
+        WHERE organization_id = ${organizationId}
+          AND status_at >= ${utcTimestamp(from)}
+          AND status_at < ${utcTimestamp(to)}
+        GROUP BY 1, 2, 3, 4
+      `),
+      this.prisma.whatsappMessageBilling.findFirst({
+        where: { organizationId, category: 'service', billable: true },
+        orderBy: { statusAt: 'asc' },
+        select: { statusAt: true },
+      }),
+    ]);
+
+    return aggregateBilling({
+      rows,
+      rates,
+      currency,
+      dayKeys: listZonedDayKeys(from, to),
+      firstBillableServiceAt: firstBillableService?.statusAt ?? null,
+    });
+  }
+
+  /**
+   * Entrega das mensagens de SAÍDA dos canais oficiais da org no range
+   * [from, to), pela data de criação da mensagem. `messages` não tem
+   * organization_id: o escopo vem da conversa E do canal (os dois filtrados
+   * pela org). Mensagens SYSTEM (notas internas do painel) ficam de fora —
+   * nunca vão para o WhatsApp.
+   */
+  async delivery(
+    organizationId: string,
+    from: Date,
+    to: Date,
+  ): Promise<DeliveryResponse> {
+    const scope = Prisma.sql`
+      FROM messages m
+      JOIN conversations c ON c.id = m.conversation_id
+      JOIN channels ch ON ch.id = c.channel_id
+      WHERE c.organization_id = ${organizationId}
+        AND ch.organization_id = ${organizationId}
+        AND ch.type = 'WHATSAPP_OFFICIAL'
+        AND m.direction = 'OUTBOUND'
+        AND m.type <> 'SYSTEM'
+        AND m.created_at >= ${utcTimestamp(from)}
+        AND m.created_at < ${utcTimestamp(to)}
+    `;
+
+    const [rows, failures] = await Promise.all([
+      this.prisma.$queryRaw<DeliveryBucketRow[]>(Prisma.sql`
+        SELECT date_trunc('hour', m.created_at) AS "bucketAt",
+               m.status::text AS status,
+               (m.type = 'TEMPLATE') AS "isTemplate",
+               COUNT(*)::int AS count
+        ${scope}
+        GROUP BY 1, 2, 3
+      `),
+      this.prisma.$queryRaw<FailureCount[]>(Prisma.sql`
+        SELECT m.failed_reason AS reason, COUNT(*)::int AS count
+        ${scope}
+          AND m.status = 'FAILED'
+        GROUP BY 1
+        ORDER BY 2 DESC
+        LIMIT ${MAX_FAILURE_REASON_GROUPS}
+      `),
+    ]);
+
+    return aggregateDelivery({
+      rows,
+      dayKeys: listZonedDayKeys(from, to),
+      failures,
     });
   }
 
