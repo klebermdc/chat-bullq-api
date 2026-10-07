@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { ExtractedCart } from './proposals.types';
+import { ExtractedCart, ProposalDetails, ProposalKind } from './proposals.types';
 
 export interface CreateProposalInput {
   organizationId: string;
@@ -11,6 +11,10 @@ export interface CreateProposalInput {
   createdById: string;
   cart: ExtractedCart;
   rawText: string;
+  /** Default PARKS (o que toda proposta era antes dos prints). */
+  kind?: ProposalKind;
+  /** OTHER: título e linhas; nos dois tipos, os prints enviados. */
+  details?: ProposalDetails | null;
 }
 
 @Injectable()
@@ -34,6 +38,11 @@ export class ProposalsRepository {
         currency: cart.currency,
         rawText: input.rawText,
         createdById: input.createdById,
+        kind: input.kind ?? 'PARKS',
+        // Sem details = coluna NULL (omitir o campo), igual às propostas antigas.
+        details: input.details
+          ? (input.details as unknown as Prisma.InputJsonValue)
+          : undefined,
       },
     });
   }

@@ -2373,6 +2373,12 @@ model Proposal {
   totalValue     Decimal  @default(0) @map("total_value") @db.Decimal(12, 2)
   currency       String   @default("BRL")
   rawText        String   @map("raw_text")
+  // PARKS = ingressos (os campos acima). OTHER = qualquer outro produto
+  // (carro, hotel, transfer…): os campos de ingresso ficam zerados e o
+  // conteúdo mora em `details` ({ title, lines }). Nos dois tipos `details`
+  // guarda os prints enviados ({ images }).
+  kind           String   @default("PARKS")
+  details        Json?
   createdById    String   @map("created_by_id")
   createdAt      DateTime @default(now()) @map("created_at")
 

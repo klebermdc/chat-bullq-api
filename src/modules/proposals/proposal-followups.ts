@@ -16,3 +16,16 @@ export const PROPOSAL_NEW_FOLLOWUPS: string[] = [
     'https://www.instagram.com/orlando.fastpass/\n' +
     'https://orlandofastpass.com.br/certificados/',
 ];
+
+/**
+ * Mesma sequência para proposta que NÃO é de ingresso (carro, hotel, transfer…):
+ * a conferência não pode falar em "parques" e "datas de visitação" depois de
+ * uma cotação de carro. As referências são as mesmas.
+ */
+export const PROPOSAL_NEW_FOLLOWUPS_OTHER: string[] = [
+  '🌟 Para que tudo saia perfeito, revise com atenção os detalhes desta proposta: ' +
+    'produto, datas, quantidades e valores. Essa conferência é essencial e de sua ' +
+    'responsabilidade, pois o fechamento será feito conforme os dados informados. ' +
+    'Assim, evitamos qualquer imprevisto na sua viagem a Orlando 🎢🏰',
+  PROPOSAL_NEW_FOLLOWUPS[1],
+];

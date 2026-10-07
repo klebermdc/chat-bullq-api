@@ -1,4 +1,4 @@
-import { buildProposalMessage } from './message-builder';
+import { buildOtherProposalMessage, buildProposalMessage } from './message-builder';
 import { ExtractedCart } from './proposals.types';
 
 const base: ExtractedCart = {
@@ -90,5 +90,53 @@ describe('buildProposalMessage', () => {
 
     expect(msg).not.toContain(url);
     expect(msg).toContain('Prontinho! Ajustei sua proposta');
+  });
+});
+
+describe('buildOtherProposalMessage', () => {
+  const url = 'https://reservas.orlandofastpass.com.br/pt/checkout/abc';
+  const car = {
+    title: 'TOYOTA COROLLA OU SIMILAR',
+    lines: [
+      'Alamo · Intermediário',
+      '16 diárias · Tarifa sem proteção',
+      'Km livre e taxas locais',
+      'R$ 5.081,52 no Pix ou R$ 5.405,87 em 10x sem juros',
+    ],
+  };
+
+  it('sem link: saudação, cabeçalho, título, linha em branco e uma linha por condição', () => {
+    const msg = buildOtherProposalMessage(car, '', 'NEW', { includeLink: false });
+
+    expect(msg).toBe(
+      '🎉 Preparamos sua proposta com todo carinho para que sua experiência em Orlando ' +
+        'seja mágica e sem preocupações. Aqui estão os detalhes:\n\n' +
+        'Proposta Orlando Fast Pass\n' +
+        'TOYOTA COROLLA OU SIMILAR\n\n' +
+        'Alamo · Intermediário\n' +
+        '16 diárias · Tarifa sem proteção\n' +
+        'Km livre e taxas locais\n' +
+        'R$ 5.081,52 no Pix ou R$ 5.405,87 em 10x sem juros',
+    );
+  });
+
+  it('com link: a linha do checkout vem entre a saudação e o cabeçalho', () => {
+    const msg = buildOtherProposalMessage(car, url);
+
+    expect(msg).toContain(`detalhes:\n\n👉 ${url}\n\nProposta Orlando Fast Pass\nTOYOTA COROLLA OU SIMILAR`);
+  });
+
+  it('modo UPDATE usa a saudação curta', () => {
+    const msg = buildOtherProposalMessage(car, '', 'UPDATE', { includeLink: false });
+
+    expect(msg).toContain('Prontinho! Ajustei sua proposta com o que você pediu');
+    expect(msg).not.toContain('Preparamos sua proposta com todo carinho');
+    expect(msg).not.toContain('👉');
+  });
+
+  it('não fala de adultos, datas nem parques', () => {
+    const msg = buildOtherProposalMessage(car, '', 'NEW', { includeLink: false });
+
+    expect(msg).not.toMatch(/Adulto|entre os dias|\[\d+ dias\]/);
   });
 });
