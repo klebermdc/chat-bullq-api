@@ -49,6 +49,7 @@ function makeFsm(conversationOverrides: Record<string, unknown> = {}) {
       upsert: jest.fn().mockResolvedValue({}),
     },
     tag: {
+      findFirst: jest.fn().mockResolvedValue(null),
       upsert: jest.fn().mockResolvedValue({ id: 'tag-pedro' }),
       update: jest.fn().mockResolvedValue({}),
     },
@@ -86,7 +87,7 @@ describe('ConversationFsmService.assign — sync da tag do atendente', () => {
     expect(tx.conversationTag.deleteMany).toHaveBeenCalledWith({
       where: {
         conversationId: 'conv1',
-        tag: { organizationId: 'org1', name: 'Bárbara' },
+        tag: { organizationId: 'org1', name: { equals: 'Bárbara', mode: 'insensitive' } },
       },
     });
 
@@ -141,7 +142,7 @@ describe('ConversationFsmService.assign — sync da tag do atendente', () => {
     await svc.assign('conv1', 'u-pedro', 'actor1');
 
     expect(tx.contactTag.deleteMany).toHaveBeenCalledWith({
-      where: { contactId: 'contact1', tag: { organizationId: 'org1', name: 'Bárbara' } },
+      where: { contactId: 'contact1', tag: { organizationId: 'org1', name: { equals: 'Bárbara', mode: 'insensitive' } } },
     });
     expect(tx.contactTag.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -203,7 +204,7 @@ describe('ConversationFsmService.assign — sync da tag do atendente', () => {
     expect(tx.conversationTag.deleteMany).toHaveBeenCalledWith({
       where: {
         conversationId: 'conv1',
-        tag: { organizationId: 'org1', name: 'Bárbara' },
+        tag: { organizationId: 'org1', name: { equals: 'Bárbara', mode: 'insensitive' } },
       },
     });
     expect(tx.tag.upsert).not.toHaveBeenCalled();

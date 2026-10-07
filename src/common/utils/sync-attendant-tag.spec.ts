@@ -22,6 +22,7 @@ function makeDb(tagColor = '#DC2626') {
       upsert: jest.fn().mockResolvedValue({}),
     },
     tag: {
+      findFirst: jest.fn().mockResolvedValue(null),
       upsert: jest.fn().mockResolvedValue({ id: 'tag-renata', color: tagColor }),
       update: jest.fn().mockResolvedValue({}),
     },
@@ -72,10 +73,10 @@ describe('syncAttendantTag', () => {
     });
 
     expect(db.conversationTag.deleteMany).toHaveBeenCalledWith({
-      where: { conversationId: 'conv1', tag: { organizationId: 'org1', name: 'Bárbara' } },
+      where: { conversationId: 'conv1', tag: { organizationId: 'org1', name: { equals: 'Bárbara', mode: 'insensitive' } } },
     });
     expect(db.contactTag.deleteMany).toHaveBeenCalledWith({
-      where: { contactId: 'contact1', tag: { organizationId: 'org1', name: 'Bárbara' } },
+      where: { contactId: 'contact1', tag: { organizationId: 'org1', name: { equals: 'Bárbara', mode: 'insensitive' } } },
     });
   });
 
@@ -114,5 +115,52 @@ describe('syncAttendantTag', () => {
     });
 
     expect(db.tag.upsert).not.toHaveBeenCalled();
+  });
+
+  it('reaproveita a tag que já existe com o mesmo nome em outra caixa, sem criar outra', async () => {
+    const db = makeDb();
+    db.tag.findFirst.mockResolvedValue({ id: 'tag-RENATA', color: '#ef4444' });
+
+    await syncAttendantTag(db as any, {
+      ...base,
+      fromAssigneeId: null,
+      toAssigneeId: 'u-renata',
+    });
+
+    expect(db.tag.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          organizationId: 'org1',
+          name: { equals: 'Renata', mode: 'insensitive' },
+        },
+      }),
+    );
+    expect(db.tag.upsert).not.toHaveBeenCalled();
+    expect(db.conversationTag.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: { conversationId: 'conv1', tagId: 'tag-RENATA' },
+      }),
+    );
+  });
+
+  it('tira a tag do atendente anterior sem diferenciar maiúsculas', async () => {
+    const db = makeDb();
+
+    await syncAttendantTag(db as any, {
+      ...base,
+      fromAssigneeId: 'u-barbara',
+      toAssigneeId: 'u-renata',
+    });
+
+    const previousTag = {
+      organizationId: 'org1',
+      name: { equals: 'Bárbara', mode: 'insensitive' },
+    };
+    expect(db.conversationTag.deleteMany).toHaveBeenCalledWith({
+      where: { conversationId: 'conv1', tag: previousTag },
+    });
+    expect(db.contactTag.deleteMany).toHaveBeenCalledWith({
+      where: { contactId: 'contact1', tag: previousTag },
+    });
   });
 });

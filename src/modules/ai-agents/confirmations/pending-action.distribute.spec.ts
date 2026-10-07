@@ -30,7 +30,10 @@ function make(actionOverrides: Record<string, unknown> = {}) {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     user: { findUnique: jest.fn().mockResolvedValue({ name: 'Renata' }) },
-    tag: { upsert: jest.fn().mockResolvedValue({ id: 'tag1' }) },
+    tag: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      upsert: jest.fn().mockResolvedValue({ id: 'tag1' }),
+    },
     conversationTag: {
       upsert: jest.fn().mockResolvedValue({}),
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -152,14 +155,14 @@ describe('PendingActionService.distribute', () => {
 
     // Removeu a tag do atendente anterior (match exato pelo nome).
     expect(prisma.conversationTag.deleteMany).toHaveBeenCalledWith({
-      where: { conversationId: 'conv1', tag: { organizationId: 'org1', name: 'Bárbara' } },
+      where: { conversationId: 'conv1', tag: { organizationId: 'org1', name: { equals: 'Bárbara', mode: 'insensitive' } } },
     });
     // E aplicou a do novo.
     expect(prisma.tag.upsert.mock.calls[0][0].create).toMatchObject({ name: 'Pedro' });
     expect(prisma.conversationTag.upsert).toHaveBeenCalled();
     // A ficha do cliente também troca de vendedor (ela vem da carteira legada).
     expect(prisma.contactTag.deleteMany).toHaveBeenCalledWith({
-      where: { contactId: 'contact1', tag: { organizationId: 'org1', name: 'Bárbara' } },
+      where: { contactId: 'contact1', tag: { organizationId: 'org1', name: { equals: 'Bárbara', mode: 'insensitive' } } },
     });
     expect(prisma.contactTag.upsert).toHaveBeenCalled();
   });

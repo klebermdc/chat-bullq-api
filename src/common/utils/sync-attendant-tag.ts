@@ -17,9 +17,12 @@ export interface SyncAttendantTagParams {
 /**
  * Mantém a etiqueta do vendedor em sincronia com quem está atribuído.
  * A etiqueta é uma Tag com o NOME do atendente, na conversa E na ficha do
- * contato: remove a do atendente anterior (match exato pelo nome) e garante a
- * do novo (idempotente — chamar de novo pro mesmo atendente só "cura" a tag
- * que faltava).
+ * contato: remove a do atendente anterior e garante a do novo (idempotente —
+ * chamar de novo pro mesmo atendente só "cura" a tag que faltava).
+ *
+ * O nome casa SEM diferenciar maiúsculas: a carteira antiga tem as etiquetas
+ * em caixa alta ("BÁRBARA") e o usuário se chama "Bárbara". Casar exato criava
+ * uma segunda etiqueta por vendedor e deixava a antiga presa na conversa.
  *
  * Todo caminho que grava `assignedToId` precisa chamar isto: o assign do FSM,
  * a auto-atribuição ao responder e a automação "Atribuir a um usuário".
@@ -37,11 +40,15 @@ export async function syncAttendantTag(
   if (fromAssigneeId && fromAssigneeId !== toAssigneeId) {
     const prevName = await userName(db, fromAssigneeId);
     if (prevName) {
+      const previousTag = {
+        organizationId,
+        name: { equals: prevName, mode: 'insensitive' as const },
+      };
       await db.conversationTag.deleteMany({
-        where: { conversationId, tag: { organizationId, name: prevName } },
+        where: { conversationId, tag: previousTag },
       });
       await db.contactTag.deleteMany({
-        where: { contactId, tag: { organizationId, name: prevName } },
+        where: { contactId, tag: previousTag },
       });
     }
   }
@@ -51,12 +58,20 @@ export async function syncAttendantTag(
 
   // Cor estável por atendente pra os selos ficarem distintos no inbox.
   const color = attendantTagColor(toAssigneeId);
-  const tag = await db.tag.upsert({
-    where: { organizationId_name: { organizationId, name: nextName } },
-    create: { organizationId, name: nextName, color },
-    update: {},
-    select: { id: true, color: true },
-  });
+  const tag =
+    (await db.tag.findFirst({
+      where: {
+        organizationId,
+        name: { equals: nextName, mode: 'insensitive' },
+      },
+      select: { id: true, color: true },
+    })) ??
+    (await db.tag.upsert({
+      where: { organizationId_name: { organizationId, name: nextName } },
+      create: { organizationId, name: nextName, color },
+      update: {},
+      select: { id: true, color: true },
+    }));
   // Backfill: selos antigos ficaram no cinza padrão. Recolore só esses —
   // nunca sobrescreve uma cor escolhida à mão.
   if (tag.color === DEFAULT_TAG_COLOR) {

@@ -408,15 +408,17 @@ export class PendingActionService {
       });
       const prevName = (prev?.name ?? '').trim();
       if (prevName) {
+        // Sem diferenciar maiúsculas, igual a syncAttendantTag.
+        const previousTag = {
+          organizationId,
+          name: { equals: prevName, mode: 'insensitive' as const },
+        };
         await this.prisma.conversationTag.deleteMany({
-          where: {
-            conversationId,
-            tag: { organizationId, name: prevName },
-          },
+          where: { conversationId, tag: previousTag },
         });
         // A ficha do cliente também mostra a etiqueta do vendedor.
         await this.prisma.contactTag.deleteMany({
-          where: { contactId, tag: { organizationId, name: prevName } },
+          where: { contactId, tag: previousTag },
         });
       }
     }
@@ -430,12 +432,18 @@ export class PendingActionService {
 
     // Cor estável por atendente pra os selos ficarem distintos no inbox.
     const color = attendantTagColor(assignedToId);
-    const tag = await this.prisma.tag.upsert({
-      where: { organizationId_name: { organizationId, name } },
-      create: { organizationId, name, color },
-      update: {},
-      select: { id: true, color: true },
-    });
+    // Reaproveita a etiqueta que já existe em outra caixa ("BÁRBARA").
+    const tag =
+      (await this.prisma.tag.findFirst({
+        where: { organizationId, name: { equals: name, mode: 'insensitive' } },
+        select: { id: true, color: true },
+      })) ??
+      (await this.prisma.tag.upsert({
+        where: { organizationId_name: { organizationId, name } },
+        create: { organizationId, name, color },
+        update: {},
+        select: { id: true, color: true },
+      }));
     // Backfill: selos antigos ficaram no cinza padrão. Recolore só esses —
     // nunca sobrescreve uma cor escolhida à mão.
     if (tag.color === DEFAULT_TAG_COLOR) {
