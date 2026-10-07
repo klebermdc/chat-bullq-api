@@ -1,4 +1,4 @@
-import { ExtractedCart } from './proposals.types';
+import { ExtractedCart, ExtractedOtherProposal } from './proposals.types';
 
 function formatDateBR(iso: string): string {
   const [y, m, d] = iso.split('-');
@@ -26,6 +26,15 @@ export interface ProposalMessageOptions {
   includeLink?: boolean;
 }
 
+/** Abertura comum aos dois tipos: saudação, link (opcional) e o cabeçalho. */
+function buildHeader(mode: ProposalMode, checkoutUrl: string, includeLink: boolean): string {
+  return (
+    `${INTRO[mode]}\n\n` +
+    (includeLink ? `👉 ${checkoutUrl}\n\n` : '') +
+    'Proposta Orlando Fast Pass\n'
+  );
+}
+
 export function buildProposalMessage(
   cart: ExtractedCart,
   checkoutUrl: string,
@@ -43,11 +52,23 @@ export function buildProposalMessage(
     // linha em branco entre cada produto, para dar respiro na leitura no WhatsApp
     .join('\n\n');
 
+  return buildHeader(mode, checkoutUrl, includeLink) + `${peopleLine}\n\n` + parkLines;
+}
+
+/**
+ * Proposta do que NÃO é ingresso (aluguel de carro, hotel, transfer…): mesma
+ * abertura, depois o título e as condições, uma por linha. Aqui o valor
+ * aparece quando o print traz — ele vem dentro das próprias linhas.
+ */
+export function buildOtherProposalMessage(
+  proposal: Pick<ExtractedOtherProposal, 'title' | 'lines'>,
+  checkoutUrl: string,
+  mode: ProposalMode = 'NEW',
+  { includeLink = true }: ProposalMessageOptions = {},
+): string {
   return (
-    `${INTRO[mode]}\n\n` +
-    (includeLink ? `👉 ${checkoutUrl}\n\n` : '') +
-    'Proposta Orlando Fast Pass\n' +
-    `${peopleLine}\n\n` +
-    parkLines
+    buildHeader(mode, checkoutUrl, includeLink) +
+    `${proposal.title}\n\n` +
+    proposal.lines.join('\n')
   );
 }
