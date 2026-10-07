@@ -81,6 +81,23 @@ describe('ProposalsService', () => {
     expect(result).toEqual({ id: 'prop-1' });
   });
 
+  it('includeLink=false envia a proposta sem o link do checkout, mas guarda o link', async () => {
+    const d = deps();
+    const service = makeService(d);
+
+    await service.create(
+      { conversationId: 'conv-1', checkoutUrl: url, includeLink: false },
+      'user-1', 'org-1', 'ALL' as any,
+    );
+
+    const sent = d.messages.send.mock.calls[0][0];
+    expect(sent.content.text).not.toContain(url);
+    expect(sent.content.text).toContain('Proposta Orlando Fast Pass');
+    expect(d.repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ checkoutUrl: url }),
+    );
+  });
+
   it('liga a conversa ao pipeline em PROPOSTA ENVIADA com o valor da proposta', async () => {
     const d = deps();
     const service = makeService(d);

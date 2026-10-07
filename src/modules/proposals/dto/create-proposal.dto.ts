@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsIn } from 'class-validator';
+import { IsString, IsOptional, IsIn, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateProposalDto {
@@ -14,6 +14,15 @@ export class CreateProposalDto {
   @IsOptional()
   @IsIn(['NEW', 'UPDATE'])
   mode?: 'NEW' | 'UPDATE';
+
+  /**
+   * false = envia a proposta sem a linha do link do checkout. O link continua
+   * obrigatório no `checkoutUrl`: é dele que o carrinho é lido. Default true.
+   */
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  includeLink?: boolean;
 
   /**
    * Conteúdo colado pelo atendente. Pode ser só a URL do checkout OU o bloco

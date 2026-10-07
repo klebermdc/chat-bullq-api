@@ -18,10 +18,19 @@ const INTRO: Record<ProposalMode, string> = {
   UPDATE: 'Prontinho! Ajustei sua proposta com o que você pediu 👇',
 };
 
+export interface ProposalMessageOptions {
+  /**
+   * false = manda a proposta inteira SEM a linha do link do checkout (o
+   * atendente ainda não quer que o cliente pague/abra o carrinho). Default true.
+   */
+  includeLink?: boolean;
+}
+
 export function buildProposalMessage(
   cart: ExtractedCart,
   checkoutUrl: string,
   mode: ProposalMode = 'NEW',
+  { includeLink = true }: ProposalMessageOptions = {},
 ): string {
   let peopleLine = `Para ${pax(cart.adults, 'Adulto', 'Adultos')}`;
   if (cart.children > 0) {
@@ -36,7 +45,7 @@ export function buildProposalMessage(
 
   return (
     `${INTRO[mode]}\n\n` +
-    `👉 ${checkoutUrl}\n\n` +
+    (includeLink ? `👉 ${checkoutUrl}\n\n` : '') +
     'Proposta Orlando Fast Pass\n' +
     `${peopleLine}\n\n` +
     parkLines
