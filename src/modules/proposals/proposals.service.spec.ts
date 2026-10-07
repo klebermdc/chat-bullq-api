@@ -158,6 +158,22 @@ describe('ProposalsService', () => {
     ).rejects.toThrow('Cole o resumo');
   });
 
+  it('sem link e resumo sem dados: explica o que o resumo precisa ter', async () => {
+    const d = deps();
+    d.extraction.extract.mockRejectedValue(
+      new Error('Não foi possível ler o carrinho (campos obrigatórios ausentes).'),
+    );
+    const service = makeService(d);
+
+    await expect(
+      service.create(
+        { conversationId: 'conv-1', checkoutUrl: 'teste', includeLink: false },
+        'user-1', 'org-1', 'ALL' as any,
+      ),
+    ).rejects.toThrow('Ele precisa ter os parques (com os dias), as datas e a quantidade de pessoas.');
+    expect(d.messages.send).not.toHaveBeenCalled();
+  });
+
   it('liga a conversa ao pipeline em PROPOSTA ENVIADA com o valor da proposta', async () => {
     const d = deps();
     const service = makeService(d);
