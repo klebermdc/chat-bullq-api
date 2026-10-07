@@ -106,6 +106,13 @@ export class ProposalsService {
       this.logger.warn(
         `proposal_extract_failed url=${url}: ${(err as Error).message}`,
       );
+      // Sem link, a única fonte é o resumo colado: diz o que ele precisa ter
+      // em vez do erro técnico da extração.
+      if (!url) {
+        throw new BadRequestException(
+          'Não consegui montar a proposta com esse resumo. Ele precisa ter os parques (com os dias), as datas e a quantidade de pessoas.',
+        );
+      }
       throw new BadRequestException(
         (err as Error).message ||
           'Não foi possível ler o carrinho. Confere o link e tenta de novo.',
