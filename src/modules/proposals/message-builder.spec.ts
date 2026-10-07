@@ -74,4 +74,21 @@ describe('buildProposalMessage', () => {
     expect(msg).not.toContain('4.200');
     expect(msg).not.toMatch(/R\$/);
   });
+
+  it('sem link: mantém saudação, pessoas, datas e parques, e tira só a linha do checkout', () => {
+    const msg = buildProposalMessage(base, url, 'NEW', { includeLink: false });
+
+    expect(msg).not.toContain(url);
+    expect(msg).not.toContain('👉');
+    expect(msg).toContain('detalhes:\n\nProposta Orlando Fast Pass');
+    expect(msg).toContain('Para 3 Adultos entre os dias 02/10/2026 e 06/10/2026');
+    expect(msg).toContain('[5 dias] - 02/10/2026');
+  });
+
+  it('sem link também vale para a atualização', () => {
+    const msg = buildProposalMessage(base, url, 'UPDATE', { includeLink: false });
+
+    expect(msg).not.toContain(url);
+    expect(msg).toContain('Prontinho! Ajustei sua proposta');
+  });
 });

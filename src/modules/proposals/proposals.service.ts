@@ -105,7 +105,9 @@ export class ProposalsService {
     });
 
     const mode = dto.mode ?? 'NEW';
-    const text = buildProposalMessage(cart, url, mode);
+    const text = buildProposalMessage(cart, url, mode, {
+      includeLink: dto.includeLink ?? true,
+    });
     await this.messages.send(
       { conversationId: conversation.id, type: 'TEXT', content: { text } },
       userId,
