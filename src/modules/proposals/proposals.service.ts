@@ -108,6 +108,12 @@ export class ProposalsService {
     const images = dto.images ?? [];
     const includeLink = dto.includeLink ?? true;
     const url = this.extractCheckoutUrl(pasted);
+    // Print só entra na proposta SEM link (decisão do dono, 07/10/2026).
+    if (includeLink && (dto.images?.length ?? 0) > 0) {
+      throw new BadRequestException(
+        'Prints só podem ir na proposta sem link. Ligue "Enviar sem o link do checkout".',
+      );
+    }
     if (!url && includeLink) {
       throw new BadRequestException(
         'Não encontrei um link de checkout no que foi colado. Cole o link (pode ser junto com o resumo).',

@@ -439,6 +439,20 @@ describe('ProposalsService.create — proposta com prints', () => {
     expect(result).toEqual({ id: 'prop-1' });
   });
 
+  it('com link (padrão): recusa prints antes de ler ou enviar qualquer coisa', async () => {
+    const d = deps();
+    const service = makeService(d);
+
+    await expect(
+      service.create(
+        { conversationId: 'conv-1', checkoutUrl: 'https://reservas.orlandofastpass.com.br/pt/checkout/abc', images: [print(1)] },
+        ...args,
+      ),
+    ).rejects.toThrow('Prints só podem ir na proposta sem link');
+    expect(d.messages.send).not.toHaveBeenCalled();
+    expect(d.repo.create).not.toHaveBeenCalled();
+  });
+
   it('OTHER: manda a mensagem do produto, sem pessoas/datas/parques', async () => {
     const d = deps();
     const service = makeService(d);
@@ -590,13 +604,13 @@ describe('ProposalsService.create — proposta com prints', () => {
     expect(d.pipelines.ensureConversationAtStageByName).toHaveBeenCalled();
   });
 
-  it('link + prints: renderiza o checkout e manda render, texto e imagens para a visão', async () => {
+  it('sem link, com link colado + prints: lê o checkout junto com as imagens e não envia o link', async () => {
     const d = deps();
     d.extraction.extractFromImages.mockResolvedValue({ kind: 'PARKS', ...cart });
     const service = makeService(d);
 
     await service.create(
-      { conversationId: 'conv-1', checkoutUrl: url, images: [print(1)] },
+      { conversationId: 'conv-1', checkoutUrl: url, includeLink: false, images: [print(1)] },
       ...args,
     );
 
@@ -610,7 +624,7 @@ describe('ProposalsService.create — proposta com prints', () => {
       },
       { allowMissingTotal: false },
     );
-    expect(d.messages.send.mock.calls[0][0].content.text).toContain(`👉 ${url}`);
+    expect(d.messages.send.mock.calls[0][0].content.text).not.toContain(url);
   });
 
   it('PARKS com prints: mensagem de ingressos, cruza com a ficha e guarda as imagens em details', async () => {
@@ -650,13 +664,13 @@ describe('ProposalsService.create — proposta com prints', () => {
     expect(d.orderFicha.crossCheckOnProposal).toHaveBeenCalled();
   });
 
-  it('com link (padrão): print sem link continua pedindo o link', async () => {
+  it('com link (padrão): print sem link também é recusado, sem abrir o arquivo', async () => {
     const d = deps();
     const service = makeService(d);
 
     await expect(
       service.create({ conversationId: 'conv-1', checkoutUrl: '', images: [print(1)] }, ...args),
-    ).rejects.toThrow('Não encontrei um link de checkout');
+    ).rejects.toThrow('Prints só podem ir na proposta sem link');
     expect(d.storage.getBuffer).not.toHaveBeenCalled();
   });
 
