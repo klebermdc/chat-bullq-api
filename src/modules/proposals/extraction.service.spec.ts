@@ -153,7 +153,7 @@ describe('ExtractionService.extractFromImages', () => {
   });
   const image = { mediaType: 'image/png', data: 'QUJD' };
 
-  it('manda as imagens em base64 junto do texto colado, no mesmo modelo do leitor de voucher', async () => {
+  it('manda as imagens em base64 junto do texto colado, no modelo de conversa', async () => {
     const llm = makeLlm(OTHER_JSON);
     const service = new ExtractionService(llm);
 
@@ -164,7 +164,7 @@ describe('ExtractionService.extractFromImages', () => {
 
     const req = llm.complete.mock.calls[0][0];
     expect(req.organizationId).toBe('org-1');
-    expect(req.modelId).toBe('sakana/fugu');
+    expect(req.modelId).toBe('sakana/fugu-ultra-20260615');
     const parts = req.messages[1].content;
     expect(parts.filter((p: any) => p.type === 'image')).toEqual([
       { type: 'image', base64: { mediaType: 'image/png', data: 'QUJD' } },
@@ -332,5 +332,35 @@ describe('ExtractionService.extractFromImages', () => {
     await expect(
       service.extractFromImages('org-1', { images, pastedText: '' }),
     ).resolves.toBeDefined();
+  });
+
+  it('modelo que não viu o print (UNREADABLE) vira erro, nunca proposta', async () => {
+    const llm = makeLlm(JSON.stringify({ kind: 'UNREADABLE' }));
+
+    await expect(
+      new ExtractionService(llm).extractFromImages('org-1', { images: [image], pastedText: '' }),
+    ).rejects.toThrow('o modelo não viu o print');
+  });
+
+  it('leitura de print usa o modelo de conversa e temperatura 0 em todas as tentativas', async () => {
+    const llm = makeLlm('isto não é JSON');
+
+    await expect(
+      new ExtractionService(llm).extractFromImages('org-1', { images: [image], pastedText: '' }),
+    ).rejects.toThrow();
+
+    expect(llm.complete).toHaveBeenCalledTimes(3);
+    for (const [request] of llm.complete.mock.calls) {
+      expect(request.modelId).toBe('sakana/fugu-ultra-20260615');
+      expect(request.temperature).toBe(0);
+    }
+  });
+
+  it('validateReviewed aceita o OTHER conferido e recusa formato inválido', () => {
+    const service = new ExtractionService(makeLlm(''));
+    const reviewed = { kind: 'OTHER', title: 'CARRO', lines: ['16 diárias'], totalValue: 0, currency: 'BRL' };
+
+    expect(service.validateReviewed(reviewed)).toEqual(reviewed);
+    expect(() => service.validateReviewed({ kind: 'OTHER', title: '', lines: [] })).toThrow();
   });
 });

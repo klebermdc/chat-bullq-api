@@ -144,9 +144,20 @@ export class ProposalsService {
 
     const loaded = await this.loadImages(images, imageKeys);
 
+    // Proposta com print NUNCA vai ao cliente sem conferência: o modelo já
+    // inventou produto, datas e valores que não estavam na imagem. O front
+    // pede o preview, mostra ao atendente e devolve o que ele aprovou.
+    if (loaded.length > 0 && !dto.preview && !dto.reviewed) {
+      throw new BadRequestException(
+        'Confira a proposta lida do print antes de enviar. Atualize a página (Ctrl+Shift+R) e tente de novo.',
+      );
+    }
+
     let extracted: ExtractedProposal;
     try {
-      if (loaded.length > 0) {
+      if (loaded.length > 0 && dto.reviewed && !dto.preview) {
+        extracted = this.extraction.validateReviewed(dto.reviewed);
+      } else if (loaded.length > 0) {
         extracted = await this.extraction.extractFromImages(
           organizationId,
           {
@@ -180,6 +191,18 @@ export class ProposalsService {
     const cart = this.toCart(extracted);
     const sentImages = loaded.map((l) => l.image);
 
+    const mode = dto.mode ?? 'NEW';
+    const messageOptions = { includeLink: includeLink && !!url };
+    const text =
+      extracted.kind === 'OTHER'
+        ? buildOtherProposalMessage(extracted, url ?? '', mode, messageOptions)
+        : buildProposalMessage(cart, url ?? '', mode, messageOptions);
+
+    // Conferência: devolve o que seria enviado e para aqui.
+    if (dto.preview) {
+      return { preview: true as const, proposal: extracted, text };
+    }
+
     const proposal = await this.repo.create({
       organizationId,
       contactId: conversation.contactId,
@@ -192,12 +215,6 @@ export class ProposalsService {
       details: this.buildDetails(extracted, sentImages),
     });
 
-    const mode = dto.mode ?? 'NEW';
-    const messageOptions = { includeLink: includeLink && !!url };
-    const text =
-      extracted.kind === 'OTHER'
-        ? buildOtherProposalMessage(extracted, url ?? '', mode, messageOptions)
-        : buildProposalMessage(cart, url ?? '', mode, messageOptions);
     const sendContext: SendContext = {
       conversationId: conversation.id,
       userId,

@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsIn,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUrl,
@@ -92,4 +93,25 @@ export class CreateProposalDto {
   @ValidateNested({ each: true })
   @Type(() => ProposalImageDto)
   images?: ProposalImageDto[];
+
+  /**
+   * true = só LÊ e devolve `{ preview: true, proposal, text }`; não grava, não
+   * envia nada ao cliente e não mexe no funil. É o passo de conferência da
+   * proposta lida de print.
+   */
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  preview?: boolean;
+
+  /**
+   * Proposta já conferida (e possivelmente corrigida) pelo atendente, no formato
+   * devolvido pelo preview. OBRIGATÓRIA para enviar proposta com prints: o que
+   * vai ao cliente é o que o atendente viu, nunca uma segunda leitura do modelo.
+   * A forma é validada no service (`ExtractionService.validateReviewed`).
+   */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsObject()
+  reviewed?: Record<string, unknown>;
 }

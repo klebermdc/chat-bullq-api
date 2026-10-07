@@ -57,6 +57,8 @@ function deps(opts: { conversationsGuardFinds?: unknown } = {}) {
     extraction: {
       extract: jest.fn().mockResolvedValue(cart),
       extractFromImages: jest.fn().mockResolvedValue(carQuote),
+      // Mesma validação do serviço real, sem modelo: devolve o que recebeu.
+      validateReviewed: jest.fn((reviewed: unknown) => reviewed),
     } as any,
     repo: { create: jest.fn().mockResolvedValue({ id: 'prop-1' }), listForContact: jest.fn() } as any,
     messages: { send: jest.fn().mockResolvedValue({ id: 'msg-1' }) } as any,
@@ -400,6 +402,16 @@ describe('ProposalsService.listForContact / listForConversation — escopo por a
   });
 });
 
+/**
+ * Fluxo real do diálogo com print: primeiro o preview (lê e devolve), depois o
+ * envio com o que o atendente conferiu. Sem imagem, é o create direto.
+ */
+async function createWithPrints(service: ProposalsService, dto: any, ...rest: any[]) {
+  if (!dto.images?.length) return (service.create as any)(dto, ...rest);
+  const preview: any = await (service.create as any)({ ...dto, preview: true }, ...rest);
+  return (service.create as any)({ ...dto, reviewed: preview.proposal }, ...rest);
+}
+
 describe('ProposalsService.create — proposta com prints', () => {
   const url = 'https://reservas.orlandofastpass.com.br/pt/checkout/abc';
   const print = (n: number) => ({
@@ -415,12 +427,16 @@ describe('ProposalsService.create — proposta com prints', () => {
     const d = deps();
     const service = makeService(d);
 
-    const result = await service.create(
+    const result = await createWithPrints(service, 
       { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1), print(2)] },
       ...args,
     );
 
-    expect(d.storage.getBuffer.mock.calls).toEqual([[keyOf(1)], [keyOf(2)]]);
+    // Duas passagens: a leitura (preview) e o envio conferido.
+    expect(d.storage.getBuffer.mock.calls).toEqual([
+      [keyOf(1)], [keyOf(2)],
+      [keyOf(1)], [keyOf(2)],
+    ]);
     expect(d.render.render).not.toHaveBeenCalled();
     expect(d.extraction.extract).not.toHaveBeenCalled();
     const base64 = PNG_BYTES.toString('base64');
@@ -444,7 +460,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     const service = makeService(d);
 
     await expect(
-      service.create(
+      createWithPrints(service, 
         { conversationId: 'conv-1', checkoutUrl: 'https://reservas.orlandofastpass.com.br/pt/checkout/abc', images: [print(1)] },
         ...args,
       ),
@@ -457,7 +473,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     const d = deps();
     const service = makeService(d);
 
-    await service.create(
+    await createWithPrints(service, 
       { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)], mode: 'UPDATE' },
       ...args,
     );
@@ -473,7 +489,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     const d = deps();
     const service = makeService(d);
 
-    await service.create(
+    await createWithPrints(service, 
       { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)], mode: 'NEW' },
       ...args,
     );
@@ -494,7 +510,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     const service = makeService(d);
     const before = Date.now();
 
-    await service.create(
+    await createWithPrints(service, 
       { conversationId: 'conv-1', checkoutUrl: 'cotação do carro', includeLink: false, images: [print(1)] },
       ...args,
     );
@@ -521,7 +537,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     const d = deps();
     const service = makeService(d);
 
-    await service.create(
+    await createWithPrints(service, 
       { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)] },
       ...args,
     );
@@ -537,7 +553,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     d.extraction.extractFromImages.mockResolvedValue({ ...carQuote, totalValue: 0 });
     const service = makeService(d);
 
-    await service.create(
+    await createWithPrints(service, 
       { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)] },
       ...args,
     );
@@ -551,7 +567,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     const d = deps();
     const service = makeService(d);
 
-    await service.create(
+    await createWithPrints(service, 
       { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1), print(2)], mode: 'NEW' },
       ...args,
     );
@@ -578,7 +594,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     const d = deps();
     const service = makeService(d);
 
-    await service.create(
+    await createWithPrints(service, 
       { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)], mode: 'UPDATE' },
       ...args,
     );
@@ -594,7 +610,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     });
     const service = makeService(d);
 
-    const result = await service.create(
+    const result = await createWithPrints(service, 
       { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1), print(2)], mode: 'NEW' },
       ...args,
     );
@@ -609,7 +625,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     d.extraction.extractFromImages.mockResolvedValue({ kind: 'PARKS', ...cart });
     const service = makeService(d);
 
-    await service.create(
+    await createWithPrints(service, 
       { conversationId: 'conv-1', checkoutUrl: url, includeLink: false, images: [print(1)] },
       ...args,
     );
@@ -632,7 +648,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     d.extraction.extractFromImages.mockResolvedValue({ kind: 'PARKS', ...cart });
     const service = makeService(d);
 
-    await service.create(
+    await createWithPrints(service, 
       { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)], mode: 'UPDATE' },
       ...args,
     );
@@ -653,7 +669,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     const d = deps();
     const service = makeService(d);
 
-    await service.create({ conversationId: 'conv-1', checkoutUrl: url, mode: 'UPDATE' }, ...args);
+    await createWithPrints(service, { conversationId: 'conv-1', checkoutUrl: url, mode: 'UPDATE' }, ...args);
 
     expect(d.repo.create).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'PARKS', details: null, cart }),
@@ -669,7 +685,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     const service = makeService(d);
 
     await expect(
-      service.create({ conversationId: 'conv-1', checkoutUrl: '', images: [print(1)] }, ...args),
+      createWithPrints(service, { conversationId: 'conv-1', checkoutUrl: '', images: [print(1)] }, ...args),
     ).rejects.toThrow('Prints só podem ir na proposta sem link');
     expect(d.storage.getBuffer).not.toHaveBeenCalled();
   });
@@ -684,7 +700,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     const service = makeService(d);
 
     await expect(
-      service.create(
+      createWithPrints(service, 
         {
           conversationId: 'conv-1', checkoutUrl: '', includeLink: false,
           images: [print(1), { url: badUrl, mimeType: 'image/png' }],
@@ -704,7 +720,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     const service = makeService(d);
 
     await expect(
-      service.create(
+      createWithPrints(service, 
         { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)] },
         ...args,
       ),
@@ -719,7 +735,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     const service = makeService(d);
 
     await expect(
-      service.create(
+      createWithPrints(service, 
         { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)] },
         ...args,
       ),
@@ -733,7 +749,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     const service = makeService(d);
 
     await expect(
-      service.create(
+      createWithPrints(service, 
         { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)] },
         ...args,
       ),
@@ -746,7 +762,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     d.storage.getBuffer.mockResolvedValue(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]));
     const service = makeService(d);
 
-    await service.create(
+    await createWithPrints(service, 
       { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)], mode: 'UPDATE' },
       ...args,
     );
@@ -764,7 +780,7 @@ describe('ProposalsService.create — proposta com prints', () => {
     const service = makeService(d);
 
     await expect(
-      service.create(
+      createWithPrints(service, 
         { conversationId: 'conv-1', checkoutUrl: 'oi', includeLink: false, images: [print(1)] },
         ...args,
       ),
@@ -786,6 +802,72 @@ describe('ProposalsService.create — proposta com prints', () => {
       images: Object.freeze([Object.freeze(print(1))]) as any,
     });
 
-    await expect(service.create(dto as any, ...args)).resolves.toEqual({ id: 'prop-1' });
+    await expect(createWithPrints(service, dto as any, ...args)).resolves.toEqual({ id: 'prop-1' });
+  });
+
+  it('preview: lê o print e devolve proposta e texto, sem gravar, enviar nem mexer no funil', async () => {
+    const d = deps();
+    const service = makeService(d);
+
+    const out: any = await service.create(
+      { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)], preview: true },
+      ...args,
+    );
+
+    expect(out).toEqual({
+      preview: true,
+      proposal: carQuote,
+      text: buildOtherProposalMessage(carQuote, '', 'NEW', { includeLink: false }),
+    });
+    expect(d.repo.create).not.toHaveBeenCalled();
+    expect(d.messages.send).not.toHaveBeenCalled();
+    expect(d.pipelines.ensureConversationAtStageByName).not.toHaveBeenCalled();
+  });
+
+  it('com print e sem conferência: recusa, sem ler nem enviar', async () => {
+    const d = deps();
+    const service = makeService(d);
+
+    await expect(
+      service.create(
+        { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)] },
+        ...args,
+      ),
+    ).rejects.toThrow('Confira a proposta lida do print antes de enviar');
+    expect(d.extraction.extractFromImages).not.toHaveBeenCalled();
+    expect(d.messages.send).not.toHaveBeenCalled();
+  });
+
+  it('com conferência: envia exatamente o que o atendente aprovou, sem chamar o modelo de novo', async () => {
+    const d = deps();
+    const service = makeService(d);
+    const approved = { ...carQuote, lines: ['Alamo · Intermediário', '16 diárias'] };
+
+    await service.create(
+      { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)], reviewed: approved, mode: 'UPDATE' },
+      ...args,
+    );
+
+    expect(d.extraction.extractFromImages).not.toHaveBeenCalled();
+    expect(d.extraction.validateReviewed).toHaveBeenCalledWith(approved);
+    expect(d.messages.send.mock.calls[0][0].content.text).toBe(
+      buildOtherProposalMessage(approved, '', 'UPDATE', { includeLink: false }),
+    );
+  });
+
+  it('conferência com formato inválido vira erro, sem enviar', async () => {
+    const d = deps();
+    d.extraction.validateReviewed.mockImplementation(() => {
+      throw new Error('Não foi possível ler a proposta (título inválido).');
+    });
+    const service = makeService(d);
+
+    await expect(
+      service.create(
+        { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)], reviewed: { kind: 'OTHER' } },
+        ...args,
+      ),
+    ).rejects.toThrow();
+    expect(d.messages.send).not.toHaveBeenCalled();
   });
 });
