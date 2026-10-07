@@ -62,28 +62,46 @@ export class ProposalsService {
     // O atendente cola o link OU o bloco inteiro (link + resumo do carrinho).
     // Extraímos a URL de dentro do que foi colado; o texto completo vira
     // contexto extra pra extração.
+    //
+    // Proposta SEM link (`includeLink: false`): o link deixa de ser exigido.
+    // Sem URL no que foi colado, o carrinho é lido só do resumo — não há
+    // checkout pra abrir.
     const pasted = dto.checkoutUrl;
+    const includeLink = dto.includeLink ?? true;
     const url = this.extractCheckoutUrl(pasted);
-    if (!url) {
+    if (!url && includeLink) {
       throw new BadRequestException(
         'Não encontrei um link de checkout no que foi colado. Cole o link (pode ser junto com o resumo).',
       );
     }
-    this.assertAllowedUrl(url);
+    if (!url && !(pasted ?? '').trim()) {
+      throw new BadRequestException(
+        'Cole o resumo do carrinho (parques, datas e quantidade de pessoas).',
+      );
+    }
 
     let rawText: string;
-    try {
-      rawText = await this.render.render(url);
-    } catch (err) {
-      this.logger.warn(`proposal_render_failed url=${url}: ${(err as Error).message}`);
-      throw new BadRequestException(
-        'Não foi possível abrir o carrinho. Confere o link e tenta de novo.',
-      );
+    if (url) {
+      this.assertAllowedUrl(url);
+      try {
+        rawText = await this.render.render(url);
+      } catch (err) {
+        this.logger.warn(`proposal_render_failed url=${url}: ${(err as Error).message}`);
+        throw new BadRequestException(
+          'Não foi possível abrir o carrinho. Confere o link e tenta de novo.',
+        );
+      }
+    } else {
+      rawText = pasted;
     }
 
     let cart;
     try {
-      cart = await this.extraction.extract(organizationId, rawText, pasted);
+      cart = url
+        ? await this.extraction.extract(organizationId, rawText, pasted)
+        : await this.extraction.extract(organizationId, rawText, undefined, {
+            allowMissingTotal: true,
+          });
     } catch (err) {
       this.logger.warn(
         `proposal_extract_failed url=${url}: ${(err as Error).message}`,
@@ -98,15 +116,15 @@ export class ProposalsService {
       organizationId,
       contactId: conversation.contactId,
       conversationId: conversation.id,
-      checkoutUrl: url,
+      checkoutUrl: url ?? '',
       createdById: userId,
       cart,
       rawText,
     });
 
     const mode = dto.mode ?? 'NEW';
-    const text = buildProposalMessage(cart, url, mode, {
-      includeLink: dto.includeLink ?? true,
+    const text = buildProposalMessage(cart, url ?? '', mode, {
+      includeLink: includeLink && !!url,
     });
     await this.messages.send(
       { conversationId: conversation.id, type: 'TEXT', content: { text } },
@@ -166,7 +184,10 @@ export class ProposalsService {
         organizationId,
         conversation.id,
         PROPOSAL_SENT_STAGE_NAME,
-        { value: cart.totalValue, currency: cart.currency },
+        // Resumo sem valor (total 0) não sobrescreve o valor do negócio.
+        cart.totalValue > 0
+          ? { value: cart.totalValue, currency: cart.currency }
+          : undefined,
       );
     } catch (err) {
       this.logger.warn(
