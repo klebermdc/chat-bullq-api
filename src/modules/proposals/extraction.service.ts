@@ -33,6 +33,8 @@ export class ExtractionService {
     organizationId: string,
     renderedText: string,
     pastedHint?: string,
+    // Proposta sem link: a fonte é só o resumo colado, que pode não ter valor.
+    { allowMissingTotal = false }: { allowMissingTotal?: boolean } = {},
   ): Promise<ExtractedCart> {
     const hintBlock =
       pastedHint && pastedHint.trim()
@@ -65,7 +67,7 @@ export class ExtractionService {
       });
       const raw = this.extractText(res.message.content);
       try {
-        return this.validate(this.parseJson(raw));
+        return this.validate(this.parseJson(raw), allowMissingTotal);
       } catch (err) {
         lastErr = err as Error;
         this.logger.warn(
@@ -112,8 +114,12 @@ export class ExtractionService {
     }
   }
 
-  private validate(o: any): ExtractedCart {
+  private validate(o: any, allowMissingTotal = false): ExtractedCart {
     const isNum = (v: any) => typeof v === 'number' && !Number.isNaN(v);
+    // Sem valor no resumo: 0 = "não informado" (o funil não é atualizado com ele).
+    if (allowMissingTotal && o && !isNum(o.totalValue)) {
+      o = { ...o, totalValue: 0, currency: typeof o.currency === 'string' ? o.currency : 'BRL' };
+    }
     const isDate = (v: any) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
     if (
       !isNum(o?.adults) ||

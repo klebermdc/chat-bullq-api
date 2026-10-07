@@ -98,4 +98,24 @@ describe('ExtractionService', () => {
       /não foi possível ler o carrinho/i,
     );
   });
+
+  it('sem link: aceita resumo sem valor e assume total 0 em BRL', async () => {
+    const noTotal = JSON.stringify({ ...JSON.parse(VALID_JSON), totalValue: null, currency: null });
+    const service = new ExtractionService(makeLlm(noTotal));
+
+    const out = await service.extract('org-1', 'DISNEY 4 PARKS [4 dias]', undefined, {
+      allowMissingTotal: true,
+    });
+
+    expect(out.totalValue).toBe(0);
+    expect(out.currency).toBe('BRL');
+    expect(out.adults).toBe(3);
+  });
+
+  it('com link: resumo sem valor continua sendo erro', async () => {
+    const noTotal = JSON.stringify({ ...JSON.parse(VALID_JSON), totalValue: null });
+    const service = new ExtractionService(makeLlm(noTotal));
+
+    await expect(service.extract('org-1', 'TEXTO')).rejects.toThrow('campos obrigatórios');
+  });
 });

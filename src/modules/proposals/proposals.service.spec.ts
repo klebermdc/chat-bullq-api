@@ -98,6 +98,66 @@ describe('ProposalsService', () => {
     );
   });
 
+  it('sem link e sem URL colada: lê o resumo, não abre carrinho e envia a proposta', async () => {
+    const d = deps();
+    const service = makeService(d);
+    const resumo = 'DISNEY 4 PARKS [4 dias]\n29/07/2026\n3 Adultos\n1 Criança';
+
+    const result = await service.create(
+      { conversationId: 'conv-1', checkoutUrl: resumo, includeLink: false },
+      'user-1', 'org-1', 'ALL' as any,
+    );
+
+    expect(d.render.render).not.toHaveBeenCalled();
+    expect(d.extraction.extract).toHaveBeenCalledWith('org-1', resumo, undefined, {
+      allowMissingTotal: true,
+    });
+    expect(d.repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ checkoutUrl: '', rawText: resumo }),
+    );
+    expect(d.messages.send.mock.calls[0][0].content.text).toContain('Proposta Orlando Fast Pass');
+    expect(result).toEqual({ id: 'prop-1' });
+  });
+
+  it('sem link e sem valor no resumo: move o card sem zerar o valor do negócio', async () => {
+    const d = deps();
+    d.extraction.extract.mockResolvedValue({ ...cart, totalValue: 0 });
+    const service = makeService(d);
+
+    await service.create(
+      { conversationId: 'conv-1', checkoutUrl: 'DISNEY 4 PARKS', includeLink: false },
+      'user-1', 'org-1', 'ALL' as any,
+    );
+
+    expect(d.pipelines.ensureConversationAtStageByName).toHaveBeenCalledWith(
+      'org-1', 'conv-1', 'PROPOSTA ENVIADA', undefined,
+    );
+  });
+
+  it('com link (padrão): colar só o resumo continua pedindo o link', async () => {
+    const d = deps();
+    const service = makeService(d);
+
+    await expect(
+      service.create(
+        { conversationId: 'conv-1', checkoutUrl: 'DISNEY 4 PARKS' },
+        'user-1', 'org-1', 'ALL' as any,
+      ),
+    ).rejects.toThrow('Não encontrei um link de checkout');
+  });
+
+  it('sem link e nada colado: pede o resumo', async () => {
+    const d = deps();
+    const service = makeService(d);
+
+    await expect(
+      service.create(
+        { conversationId: 'conv-1', checkoutUrl: '   ', includeLink: false },
+        'user-1', 'org-1', 'ALL' as any,
+      ),
+    ).rejects.toThrow('Cole o resumo');
+  });
+
   it('liga a conversa ao pipeline em PROPOSTA ENVIADA com o valor da proposta', async () => {
     const d = deps();
     const service = makeService(d);
