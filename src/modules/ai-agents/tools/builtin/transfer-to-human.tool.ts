@@ -83,7 +83,10 @@ export class TransferToHumanTool implements AiTool {
     //    cards repetidos (vimos 5 na mesma conversa, todos expirando). Reusa o
     //    pendente e devolve o sinal de "saí do loop". ─────────────────────────
     const alreadyPending = (
-      await this.pendingActions.listPending(ctx.conversationId)
+      await this.pendingActions.listPending(
+        ctx.organizationId,
+        ctx.conversationId,
+      )
     ).find((a) => a.toolName === this.name);
     if (alreadyPending) {
       this.logger.log(

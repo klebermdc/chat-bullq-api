@@ -147,4 +147,14 @@ describe('TransferToHumanTool — card de distribuição (não expira / Esperand
     expect((res.output as any).pendingActionId).toBe('pa-existente');
     expect(res.finalAction).toBe('TRANSFERRED_TO_HUMAN');
   });
+
+  it('procura o handoff pendente na org E na conversa (ordem dos argumentos)', async () => {
+    // Regressão: listPending virou (organizationId, conversationId?) e a tool
+    // seguia passando só o conversationId — que caía no lugar da org. A busca
+    // nunca achava nada e o dedupe não funcionava (cards repetidos na tela).
+    const { tool, pendingActions, ctx } = make();
+    await tool.execute({ reason: 'lead qualificado' }, ctx);
+
+    expect(pendingActions.listPending).toHaveBeenCalledWith('org1', 'conv1');
+  });
 });
