@@ -9,6 +9,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 
 import type {
+  ActionPreview,
   CreatePendingActionInput,
   PendingAction,
   PendingActionStatus,
@@ -64,6 +65,37 @@ export class PendingActionService {
       expiresAt: action.expiresAt,
     });
 
+    return action;
+  }
+
+  /**
+   * Ação PENDING (não vencida) mais recente desta tool na conversa — usada
+   * pra reaproveitar o card em vez de abrir outro igual.
+   */
+  async findOpen(
+    conversationId: string,
+    toolName: string,
+  ): Promise<PendingAction | null> {
+    const pending = await this.storage.listByStatus('PENDING', conversationId);
+    return (
+      pending.find((a) => a.toolName === toolName && !this.isExpired(a)) ??
+      null
+    );
+  }
+
+  /** Atualiza o pedido de uma ação pendente (ex.: motivo mais completo). */
+  async refreshRequest(
+    id: string,
+    args: Record<string, unknown>,
+    preview: ActionPreview,
+  ): Promise<PendingAction> {
+    const action = await this.storage.updateRequest(id, args, preview);
+    this.logger.log({
+      msg: 'pending_action_refreshed',
+      id,
+      toolName: action.toolName,
+      conversationId: action.conversationId,
+    });
     return action;
   }
 

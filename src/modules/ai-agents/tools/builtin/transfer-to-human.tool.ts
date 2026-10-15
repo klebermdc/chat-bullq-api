@@ -66,14 +66,23 @@ export class TransferToHumanTool implements AiTool {
       },
     };
 
-    const action = await this.pendingActions.create({
-      agentRunId: ctx.runId,
-      conversationId: ctx.conversationId,
-      agentId: ctx.agentId,
-      toolName: this.name,
-      args: { reason, summary },
-      preview,
-    });
+    // Se já existe uma transferência esperando o operador, atualiza o motivo
+    // nesse mesmo card em vez de empilhar outro quase igual.
+    const args = { reason, summary };
+    const open = await this.pendingActions.findOpen(
+      ctx.conversationId,
+      this.name,
+    );
+    const action = open
+      ? await this.pendingActions.refreshRequest(open.id, args, preview)
+      : await this.pendingActions.create({
+          agentRunId: ctx.runId,
+          conversationId: ctx.conversationId,
+          agentId: ctx.agentId,
+          toolName: this.name,
+          args,
+          preview,
+        });
 
     // Notifica o operador imediatamente — ele revisa a fila de pendências
     // e aprova/rejeita. A pausa da IA acontece SOMENTE após aprovação,

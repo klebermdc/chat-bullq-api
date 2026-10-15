@@ -11,6 +11,7 @@ import { NotificationsService } from '../../notifications/notifications.service'
 import { AiAgentRunnerService } from '../../ai-agents/runner/agent-runner.service';
 import { AgentRouterService } from '../../ai-agents/router/agent-router.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
+import { hasOpenHandoff } from '../../ai-agents/confirmations/open-handoff';
 import { WatchdogConfigService } from './watchdog-config.service';
 import { WatchdogCronService } from './watchdog-cron.service';
 import {
@@ -109,6 +110,13 @@ export class WatchdogTimerProcessor extends WorkerHost {
       );
       await this.clearJobId(conversationId);
       return { skipped: true, reason: 'ai_disabled_by_human' };
+    }
+
+    // IA já pediu transferência e o operador ainda não decidiu — o card já
+    // está na tela dele. Reativar a IA aqui criaria outro card igual.
+    if (await hasOpenHandoff(this.prisma, conversationId)) {
+      await this.clearJobId(conversationId);
+      return { skipped: true, reason: 'handoff_pending_approval' };
     }
 
     // Última msg precisa ser do cliente (INBOUND) — se foi nossa, então

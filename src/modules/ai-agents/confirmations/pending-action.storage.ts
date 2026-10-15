@@ -58,6 +58,22 @@ export class PendingActionStorage {
     });
   }
 
+  /** Troca só o pedido (args/preview) de uma ação ainda pendente. */
+  async updateRequest(
+    id: string,
+    args: Record<string, unknown>,
+    preview: ActionPreview,
+  ): Promise<PendingAction> {
+    const row = await this.prisma.aiPendingAction.update({
+      where: { id },
+      data: {
+        args: args as Prisma.InputJsonValue,
+        preview: preview as unknown as Prisma.InputJsonValue,
+      },
+    });
+    return this.toDomain(row);
+  }
+
   async get(id: string): Promise<PendingAction | null> {
     const row = await this.prisma.aiPendingAction.findUnique({ where: { id } });
     return row ? this.toDomain(row) : null;
