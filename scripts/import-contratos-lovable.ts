@@ -143,7 +143,9 @@ async function call(apiUrl: string, headers: Headers, method: string, path: stri
     const init = makeInit();
     return { ...init, headers: { ...headers, ...(init.headers as Headers | undefined) } };
   });
-  return JSON.parse(text);
+  // A API embrulha toda resposta em { data, meta } (interceptor global).
+  const body = JSON.parse(text);
+  return body && typeof body === 'object' && 'data' in body ? body.data : body;
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
