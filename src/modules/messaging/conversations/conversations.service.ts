@@ -47,6 +47,13 @@ const SYNC_MAX_PAGES = 4;
 /** Valores de `assignedToId` que significam "sem responsável", não um id. */
 const UNASSIGNED_TOKENS = new Set(['none', 'null', 'unassigned']);
 
+/** Mídia com legenda entra no Resumo IA como `[rótulo] legenda`. */
+const SUMMARY_MEDIA_LABEL: Record<string, string> = {
+  IMAGE: 'imagem',
+  VIDEO: 'vídeo',
+  DOCUMENT: 'documento',
+};
+
 function parseDate(v?: string): Date | undefined {
   if (!v) return undefined;
   const d = new Date(v);
@@ -416,13 +423,13 @@ export class ConversationsService {
       orderBy: { createdAt: 'asc' },
       skip,
       take: MAX_TURNS,
-      select: { direction: true, type: true, content: true },
+      select: { direction: true, type: true, content: true, metadata: true },
     });
 
     const turns: SummaryTurn[] = rows
       .map((m) => ({
         direction: m.direction as 'INBOUND' | 'OUTBOUND',
-        text: m.type === 'TEXT' ? this.messageText(m.content) : '',
+        text: this.summaryTurnText(m.type, m.content, m.metadata),
       }))
       .filter((t) => t.text.length > 0);
 
@@ -487,6 +494,27 @@ export class ConversationsService {
   }
 
   /** Extrai texto do content JSON de uma mensagem (TEXT tem `content.text`). */
+  /**
+   * Texto de uma mensagem para o Resumo IA. Cliente manda muito por áudio: sem
+   * a transcrição (`metadata.transcription.text`) o resumo ignorava justamente
+   * a última fala dele. Mídia entra pela legenda; sem nada legível, fica de fora.
+   */
+  private summaryTurnText(type: string, content: unknown, metadata: unknown): string {
+    if (type === 'TEXT') return this.messageText(content);
+    if (type === 'AUDIO') {
+      const transcription = (metadata as { transcription?: { text?: unknown } } | null)
+        ?.transcription?.text;
+      return typeof transcription === 'string' && transcription.trim()
+        ? `[áudio] ${transcription.trim()}`
+        : '';
+    }
+    const caption = (content as { caption?: unknown } | null)?.caption;
+    const label = SUMMARY_MEDIA_LABEL[type];
+    return label && typeof caption === 'string' && caption.trim()
+      ? `[${label}] ${caption.trim()}`
+      : '';
+  }
+
   private messageText(content: unknown): string {
     if (content && typeof content === 'object') {
       const t = (content as Record<string, unknown>).text;

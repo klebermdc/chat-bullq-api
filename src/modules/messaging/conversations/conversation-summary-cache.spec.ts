@@ -197,6 +197,35 @@ describe('ConversationsService.getAiSummary', () => {
     expect(summarizer.summarize).not.toHaveBeenCalled();
   });
 
+  it('inclui a transcrição do áudio e a legenda da imagem no resumo', async () => {
+    const { svc, prisma, summarizer } = makeService({
+      conversation: { id: 'c1', lastMessageAt: AT },
+      messageCount: 4,
+      messages: [
+        { direction: 'OUTBOUND', type: 'TEXT', content: { text: 'Aguardo vocês!' } },
+        {
+          direction: 'INBOUND',
+          type: 'AUDIO',
+          content: {},
+          metadata: { transcription: { text: ' Tem mais uns amigos que vão. ' } },
+        },
+        { direction: 'INBOUND', type: 'IMAGE', content: { caption: 'esse hotel' } },
+        { direction: 'INBOUND', type: 'AUDIO', content: {}, metadata: {} },
+      ],
+    });
+    await svc.getAiSummary('c1', 'org1', 'ALL', 'u1', 'OWNER' as any, {});
+    expect(summarizer.summarize).toHaveBeenCalledWith('org1', [
+      { direction: 'OUTBOUND', text: 'Aguardo vocês!' },
+      { direction: 'INBOUND', text: '[áudio] Tem mais uns amigos que vão.' },
+      { direction: 'INBOUND', text: '[imagem] esse hotel' },
+    ]);
+    expect(prisma.message.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: { direction: true, type: true, content: true, metadata: true },
+      }),
+    );
+  });
+
   it('mantém o resumo antigo quando o cache está velho mas não há texto novo suficiente', async () => {
     const NEW = new Date('2026-07-07T11:00:00.000Z');
     const { svc, summarizer } = makeService({
