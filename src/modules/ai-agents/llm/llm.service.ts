@@ -17,7 +17,7 @@ import {
   LlmToolDefinition,
   LlmUsage,
 } from './llm.types';
-import { SAKANA_DEFAULT_BASE_URL } from './llm.constants';
+import { DEFAULT_VISION_MODEL, SAKANA_DEFAULT_BASE_URL } from './llm.constants';
 import { ProviderKeyResolverService } from '../../ai-provider-keys/provider-key-resolver.service';
 
 type OpenAiMessage = Record<string, unknown>;
@@ -96,20 +96,42 @@ export class LlmService {
    * `model` (ex.: MiniMax "plugado" via Configurações > Provedores IA), ele
    * manda — usado como está, sem a restrição Sakana. Sem `model` na chave,
    * cai no caminho Sakana (normaliza fugu/sakana, rejeita o resto).
+   *
+   * Com imagem no pedido (print de orçamento, voucher), o model de texto da
+   * chave (MiniMax-M1/M2) não enxerga a imagem e inventa os dados — então,
+   * na mesma chave, troca pelo modelo de visão (`LLM_VISION_MODEL`, padrão M3).
    */
   private resolveEffectiveModel(
     providerModel: string | undefined,
     agentModelId: string,
+    hasImage = false,
   ): string {
     const pm = (providerModel ?? '').trim();
+    if (pm && hasImage) {
+      return (
+        this.config.get<string>('LLM_VISION_MODEL')?.trim() || DEFAULT_VISION_MODEL
+      );
+    }
     if (pm) return pm;
     return this.normalizeModelId(agentModelId);
+  }
+
+  private hasImage(messages: LlmMessage[]): boolean {
+    return messages.some(
+      (m) =>
+        Array.isArray(m.content) &&
+        m.content.some((part) => part.type === 'image'),
+    );
   }
 
   async complete(req: LlmCompletionRequest): Promise<LlmCompletionResponse> {
     const { client, providerModel } = await this.clientFor(req.organizationId);
 
-    const modelId = this.resolveEffectiveModel(providerModel, req.modelId);
+    const modelId = this.resolveEffectiveModel(
+      providerModel,
+      req.modelId,
+      this.hasImage(req.messages),
+    );
     const messages = this.toOpenAiMessages(req.messages);
     const tools = req.tools
       ? this.toOpenAiTools(this.sanitizeTools(req.tools))
