@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { StorageService } from '../../storage/storage.service';
 import { mapLegacyBlockedDate, mapLegacyContract, storageKeyFor } from './legacy-contract.mapper';
@@ -13,9 +14,54 @@ const CONTENT_TYPES: Record<string, string> = {
   heic: 'image/heic',
 };
 
+function extensionOf(path: string): string {
+  const name = path.split('/').pop() ?? '';
+  return name.includes('.') ? (name.split('.').pop() ?? '').toLowerCase() : '';
+}
+
 function contentTypeFor(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase() ?? '';
-  return CONTENT_TYPES[ext] ?? 'application/octet-stream';
+  return CONTENT_TYPES[extensionOf(path)];
+}
+
+const UNIQUE_CONFLICT_MESSAGE = 'Conflito de chave única no lote (token de aceite ou contrato duplicado)';
+
+/** Traduz P2002 em 409 genérico (sem ecoar valores); outros erros propagam. */
+async function runBatch<T>(batch: Promise<T>): Promise<T> {
+  try {
+    return await batch;
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      throw new ConflictException(UNIQUE_CONFLICT_MESSAGE);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Evidência de aceite: nunca apagada nem trocada depois de existir no Sendtur.
+ * No update só preenche lacuna (valor atual null); o resto dos campos é
+ * operacional e segue o Lovable até a virada.
+ */
+const EVIDENCE_FIELDS = [
+  'acceptanceToken',
+  'acceptedAt',
+  'clientIp',
+  'clientUserAgent',
+  'signatureKey',
+  'signedContractKey',
+  'paymentReceiptKey',
+] as const;
+
+type EvidenceField = (typeof EVIDENCE_FIELDS)[number];
+type EvidenceSnapshot = { legacyId: string | null } & Record<EvidenceField, unknown>;
+
+function withoutFilledEvidence<T extends Record<string, unknown>>(
+  update: T,
+  current: EvidenceSnapshot | undefined,
+): Partial<T> {
+  if (!current) return update;
+  const filled = new Set(EVIDENCE_FIELDS.filter((f) => current[f] !== null && current[f] !== undefined));
+  return Object.fromEntries(Object.entries(update).filter(([k]) => !filled.has(k as EvidenceField))) as Partial<T>;
 }
 
 /**
@@ -37,15 +83,33 @@ export class ContractsImportService {
     } catch (err) {
       throw new BadRequestException((err as Error).message);
     }
-    await this.prisma.$transaction(
-      mapped.map((data) => {
-        const { organizationId: _org, legacyId, ...update } = data;
-        return this.prisma.contract.upsert({
-          where: { organizationId_legacyId: { organizationId, legacyId: legacyId as string } },
-          create: data,
-          update,
-        });
-      }),
+    const current = await this.prisma.contract.findMany({
+      where: { organizationId, legacyId: { in: mapped.map((m) => m.legacyId as string) } },
+      select: {
+        legacyId: true,
+        acceptanceToken: true,
+        acceptedAt: true,
+        clientIp: true,
+        clientUserAgent: true,
+        signatureKey: true,
+        signedContractKey: true,
+        paymentReceiptKey: true,
+      },
+    });
+    const byLegacyId = new Map<string, EvidenceSnapshot>(
+      current.map((c: EvidenceSnapshot) => [c.legacyId as string, c]),
+    );
+    await runBatch(
+      this.prisma.$transaction(
+        mapped.map((data) => {
+          const { organizationId: _org, legacyId, ...fields } = data;
+          return this.prisma.contract.upsert({
+            where: { organizationId_legacyId: { organizationId, legacyId: legacyId as string } },
+            create: data,
+            update: withoutFilledEvidence(fields, byLegacyId.get(legacyId as string)),
+          });
+        }),
+      ),
     );
     return { imported: mapped.length };
   }
@@ -57,19 +121,21 @@ export class ContractsImportService {
     } catch (err) {
       throw new BadRequestException((err as Error).message);
     }
-    await this.prisma.$transaction(
-      mapped.map((data) =>
-        this.prisma.contractBlockedDate.upsert({
-          where: {
-            organizationId_guideName_date: {
-              organizationId,
-              guideName: data.guideName,
-              date: data.date,
+    await runBatch(
+      this.prisma.$transaction(
+        mapped.map((data) =>
+          this.prisma.contractBlockedDate.upsert({
+            where: {
+              organizationId_guideName_date: {
+                organizationId,
+                guideName: data.guideName,
+                date: data.date,
+              },
             },
-          },
-          create: data,
-          update: { reason: data.reason },
-        }),
+            create: data,
+            update: { reason: data.reason },
+          }),
+        ),
       ),
     );
     return { imported: mapped.length };
@@ -86,6 +152,9 @@ export class ContractsImportService {
   }
 
   async importFile(organizationId: string, legacyPath: string, buffer: Buffer) {
+    if (!(extensionOf(legacyPath) in CONTENT_TYPES)) {
+      throw new BadRequestException('Extensão de arquivo não permitida');
+    }
     let key: string;
     try {
       key = storageKeyFor(organizationId, legacyPath);
@@ -93,8 +162,9 @@ export class ContractsImportService {
       throw new BadRequestException((err as Error).message);
     }
     const existing = await this.storage.stat(key);
-    if (existing && existing.size === buffer.byteLength) {
-      return { key, status: 'exists' as const };
+    if (existing) {
+      if (existing.size === buffer.byteLength) return { key, status: 'exists' as const };
+      throw new ConflictException('Arquivo já existe com conteúdo diferente; não foi sobrescrito');
     }
     await this.storage.put(key, buffer, contentTypeFor(legacyPath));
     return { key, status: 'stored' as const };
@@ -102,12 +172,13 @@ export class ContractsImportService {
 
   async status(organizationId: string) {
     const [contracts, blockedDates, settings, withFiles] = await Promise.all([
-      this.prisma.contract.count({ where: { organizationId } }),
+      this.prisma.contract.count({ where: { organizationId, legacyId: { not: null } } }),
       this.prisma.contractBlockedDate.count({ where: { organizationId } }),
       this.prisma.contractSettings.count({ where: { organizationId } }),
       this.prisma.contract.count({
         where: {
           organizationId,
+          legacyId: { not: null },
           OR: [
             { signatureKey: { not: null } },
             { signedContractKey: { not: null } },

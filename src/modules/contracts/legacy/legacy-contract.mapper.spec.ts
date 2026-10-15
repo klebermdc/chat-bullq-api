@@ -67,6 +67,18 @@ describe('storageKeyFor', () => {
   it('recusa caminho com ..', () => {
     expect(() => storageKeyFor('org1', '../x')).toThrow();
   });
+
+  it.each(['a/./b', 'a\\b', 'a/b\u0000.png', 'a/b\n.png', 'a/\u007f', '', 'a//b'])(
+    'recusa caminho suspeito %j',
+    (p) => {
+      expect(() => storageKeyFor('org1', p)).toThrow();
+    },
+  );
+
+  it('recusa caminho com mais de 400 caracteres', () => {
+    expect(() => storageKeyFor('org1', 'a'.repeat(401))).toThrow();
+    expect(() => storageKeyFor('org1', 'a'.repeat(400))).not.toThrow();
+  });
 });
 
 describe('mapLegacyContract', () => {
@@ -105,7 +117,85 @@ describe('mapLegacyContract', () => {
   });
 });
 
+describe('mapLegacyContract: validação de tipos', () => {
+  const bad = (o: Record<string, unknown>) => () =>
+    mapLegacyContract('org1', row(o as Partial<LegacyContractRow>));
+
+  it.each(['id', 'nome_completo', 'cpf', 'nome_guia', 'valor', 'created_at'])(
+    'obrigatório %s precisa ser string não vazia',
+    (f) => {
+      expect(bad({ [f]: 123 })).toThrow(new RegExp(f));
+      expect(bad({ [f]: '' })).toThrow(new RegExp(f));
+      expect(bad({ [f]: null })).toThrow(new RegExp(f));
+    },
+  );
+
+  it('erro cita o id da linha', () => {
+    expect(bad({ cpf: 5 })).toThrow(/77fc45d1/);
+  });
+
+  it('texto acima de 2000 caracteres é rejeitado; datas_requeridas e user agent aceitam 10000', () => {
+    expect(bad({ endereco: 'x'.repeat(2001) })).toThrow(/endereco/);
+    expect(bad({ email: 5 })).toThrow(/email/);
+    expect(bad({ vendedor: {} })).toThrow(/vendedor/);
+    expect(bad({ datas_requeridas: 'x'.repeat(10_000) })).not.toThrow();
+    expect(bad({ datas_requeridas: 'x'.repeat(10_001) })).toThrow(/datas_requeridas/);
+    expect(bad({ client_user_agent: 'x'.repeat(10_000) })).not.toThrow();
+    expect(bad({ client_user_agent: 'x'.repeat(10_001) })).toThrow(/client_user_agent/);
+  });
+
+  it('quantidades: inteiro entre 0 e 10000 (pessoas pode ser null)', () => {
+    expect(bad({ quantidade_dias: 1.5 })).toThrow(/quantidade_dias/);
+    expect(bad({ quantidade_dias: -1 })).toThrow(/quantidade_dias/);
+    expect(bad({ quantidade_dias: 10_001 })).toThrow(/quantidade_dias/);
+    expect(bad({ quantidade_dias: '2' })).toThrow(/quantidade_dias/);
+    expect(bad({ quantidade_pessoas: 2.5 })).toThrow(/quantidade_pessoas/);
+    expect(bad({ quantidade_pessoas: null })).not.toThrow();
+    expect(bad({ quantidade_dias: 0 })).not.toThrow();
+    expect(bad({ quantidade_dias: 10_000 })).not.toThrow();
+  });
+
+  it('booleanos precisam ser boolean de verdade', () => {
+    for (const f of ['hospede_disney', 'comprado', 'pago', 'nf_emitida']) {
+      expect(bad({ [f]: 'false' })).toThrow(new RegExp(f));
+      expect(bad({ [f]: 1 })).toThrow(new RegExp(f));
+      expect(bad({ [f]: null })).toThrow(new RegExp(f));
+    }
+  });
+
+  it('created_at e accepted_at precisam ser datas válidas', () => {
+    expect(bad({ created_at: 'ontem' })).toThrow(/created_at/);
+    expect(bad({ accepted_at: 'amanha' })).toThrow(/accepted_at/);
+    expect(bad({ accepted_at: 5 })).toThrow(/accepted_at/);
+    expect(bad({ accepted_at: null })).not.toThrow();
+  });
+});
+
 describe('mapLegacyBlockedDate', () => {
+  const blocked = (o: Record<string, unknown> = {}) => () =>
+    mapLegacyBlockedDate('org1', {
+      guide_name: 'Kleber',
+      blocked_date: '2026-02-16',
+      reason: 'lotado',
+      created_at: '2026-02-14T02:29:14.375671+00:00',
+      ...o,
+    } as any);
+
+  it('rejeita guia vazia ou não string', () => {
+    expect(blocked({ guide_name: '' })).toThrow(/guide_name/);
+    expect(blocked({ guide_name: 3 })).toThrow(/guide_name/);
+  });
+
+  it('rejeita data inexistente no calendário', () => {
+    expect(blocked({ blocked_date: '2026-02-31' })).toThrow(/Data bloqueada/);
+    expect(blocked({ blocked_date: '2026-02-28' })).not.toThrow();
+  });
+
+  it('rejeita created_at inválido e reason não string', () => {
+    expect(blocked({ created_at: 'x' })).toThrow(/created_at/);
+    expect(blocked({ reason: 5 })).toThrow(/reason/);
+  });
+
   it('converte a data para meia-noite UTC', () => {
     const out = mapLegacyBlockedDate('org1', {
       guide_name: 'Kleber',
