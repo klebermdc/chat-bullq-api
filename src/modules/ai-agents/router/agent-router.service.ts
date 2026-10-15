@@ -8,6 +8,7 @@ import type {
   ClassifierMessage,
 } from '../classifier/intent.types';
 import { IntentType } from '../classifier/intent.types';
+import { hasOpenHandoff } from '../confirmations/open-handoff';
 
 interface BusinessHoursDay {
   enabled: boolean;
@@ -218,6 +219,10 @@ export class AgentRouterService {
 
     if (convOverride === false) {
       return { handle: false, reason: 'conversation.aiEnabled=force-off' };
+    }
+
+    if (await hasOpenHandoff(this.prisma, conversation.id)) {
+      return { handle: false, reason: 'handoff-pending-approval' };
     }
 
     // Carrega channel + org pra cascade de checks.
