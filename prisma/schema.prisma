@@ -274,6 +274,9 @@ model Organization {
   calls                     Call[]
   orderFichas               OrderFicha[]
   orderAcceptances          OrderAcceptance[]
+  contracts                 Contract[]
+  contractBlockedDates      ContractBlockedDate[]
+  contractSettings          ContractSettings?
   whatsappWindows           WhatsappWindow[]
   whatsappWindowPricing     WhatsappWindowPricing?
   metaCapiConfig            MetaCapiConfig?
@@ -2971,4 +2974,81 @@ model AgentPresenceDaily {
   @@id([organizationId, userId, day])
   @@index([organizationId, day])
   @@map("agent_presence_daily")
+}
+
+/// Contrato de guiamento (Lightning Lane / guia nos parques). Veio do app
+/// "pix-magic-contracts" do Lovable; `legacyId` guarda o uuid de lá para a
+/// importação ser repetível (upsert) e para rastrear a origem.
+model Contract {
+  id             String  @id @default(cuid())
+  organizationId String  @map("organization_id")
+  legacyId       String? @map("legacy_id")
+
+  fullName       String  @map("full_name")
+  cpf            String
+  address        String
+  cep            String
+  email          String
+  phone          String
+  requestedDates String  @map("requested_dates") @db.Text
+  guideName      String  @map("guide_name")
+  sellerName     String? @map("seller_name")
+  days           Int
+  people         Int     @default(1)
+  /// Texto como no legado ("2190,00"). Converter para número é decisão da parte 2.
+  amount         String
+  pixKey         String? @map("pix_key")
+
+  disneyGuest   Boolean @default(false) @map("disney_guest")
+  purchased     Boolean @default(false)
+  paid          Boolean @default(false)
+  invoiceIssued Boolean @default(false) @map("invoice_issued")
+  /// Link da conversa no chat antigo (Umbler). Só histórico.
+  legacyChatUrl String? @map("legacy_chat_url")
+
+  acceptanceToken String?   @unique @map("acceptance_token")
+  acceptedAt      DateTime? @map("accepted_at")
+  clientIp        String?   @map("client_ip")
+  clientUserAgent String?   @map("client_user_agent") @db.Text
+
+  /// Chaves no MinIO (não URLs): `contracts/<orgId>/...`. Conteúdo pessoal, nunca público.
+  signatureKey      String? @map("signature_key")
+  signedContractKey String? @map("signed_contract_key")
+  paymentReceiptKey String? @map("payment_receipt_key")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, legacyId])
+  @@index([organizationId, guideName])
+  @@index([organizationId, createdAt])
+  @@map("contracts")
+}
+
+/// Dia em que o guia está lotado e o formulário não deixa vender.
+model ContractBlockedDate {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  guideName      String   @map("guide_name")
+  date           DateTime @db.Date
+  reason         String   @default("lotado")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, guideName, date])
+  @@map("contract_blocked_dates")
+}
+
+/// Termos do contrato (texto que o cliente aceita), um por organização.
+model ContractSettings {
+  organizationId String   @id @map("organization_id")
+  terms          String   @db.Text
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("contract_settings")
 }
