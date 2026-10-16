@@ -14,6 +14,8 @@ export interface ContractDate {
 /** Datas legadas sem ano mais de 30 dias antes da criação são do ano seguinte. */
 const PAST_TOLERANCE_DAYS = 30;
 const DAY_MS = 86_400_000;
+/** Brasília em UTC-3 fixo (sem horário de verão desde 2019). */
+const BRT_OFFSET_MS = -3 * 3_600_000;
 
 function labelFor(parkId: string): string {
   return PARKS.find((p) => p.id === parkId)?.label ?? parkId;
@@ -48,10 +50,11 @@ function parseLegacyLine(line: string, createdAt: Date): ContractDate | null {
   if (!match) return null;
   const d = Number(match[1]);
   const m = Number(match[2]);
-  let y = match[3] ? Number(match[3]) : createdAt.getUTCFullYear();
+  const createdBrtMs = createdAt.getTime() + BRT_OFFSET_MS;
+  let y = match[3] ? Number(match[3]) : new Date(createdBrtMs).getUTCFullYear();
   if (!match[3]) {
     const candidate = Date.UTC(y, m - 1, d);
-    if (candidate < createdAt.getTime() - PAST_TOLERANCE_DAYS * DAY_MS) y += 1;
+    if (candidate < createdBrtMs - PAST_TOLERANCE_DAYS * DAY_MS) y += 1;
   }
   if (!isRealDate(y, m, d)) return null;
   const label = match[4];

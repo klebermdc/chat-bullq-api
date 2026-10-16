@@ -55,4 +55,14 @@ describe('readContractDates', () => {
   it('data impossível é descartada', () => {
     expect(readContractDates({ parkDates: [], requestedDates: '31/02 - EPCOT', createdAt })).toEqual([]);
   });
+
+  it('ano inferido pelo horário de Brasília (criado 31/12 22h BRT = 01/01 01h UTC)', () => {
+    expect(
+      readContractDates({
+        parkDates: [],
+        requestedDates: '28/12 - EPCOT',
+        createdAt: new Date('2027-01-01T01:00:00Z'),
+      }),
+    ).toEqual([{ parkId: 'epcot', label: 'EPCOT', date: '2026-12-28' }]);
+  });
 });
