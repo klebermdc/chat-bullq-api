@@ -12,3 +12,8 @@ export class ListContractsDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(200) perPage?: number = 50;
 }
+
+/** `?guide=` das rotas de resumo; repetido (`?guide=a&guide=b`) vira array e dá 400. */
+export class GuideQueryDto {
+  @IsOptional() @IsString() @MaxLength(100) guide?: string;
+}

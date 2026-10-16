@@ -9,6 +9,7 @@ import {
   IsISO8601,
   IsOptional,
   IsString,
+  IsUrl,
   Matches,
   Max,
   MaxLength,
@@ -18,6 +19,10 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { PARK_IDS } from '../contracts.constants';
+import { present } from './validators';
+
+/** Link do chat antigo: só https, com protocolo explícito. */
+const HTTPS_URL = { protocols: ['https'], require_protocol: true };
 
 export class ParkDateDto {
   @IsIn([...PARK_IDS])
@@ -57,7 +62,7 @@ export class CreateContractDto {
   people!: number;
 
   /** Texto final como no Lovable: "2190,00" ou "$ 150.00". */
-  @IsString() @Matches(/^(\$\s?)?\d{1,3}([.,]?\d{3})*([.,]\d{1,2})?$/, { message: 'Valor inválido' })
+  @IsString() @MaxLength(20) @Matches(/^(\$\s?)?\d{1,3}([.,]?\d{3})*([.,]\d{1,2})?$/, { message: 'Valor inválido' })
   amount!: string;
 
   @IsOptional() @IsString() @MaxLength(60)
@@ -69,8 +74,9 @@ export class CreateContractDto {
   @IsBoolean()
   disneyGuest!: boolean;
 
-  @IsBoolean()
-  datesToBeDefined!: boolean;
+  /** Sem o campo e com parkDates preenchido, vale false. */
+  @IsOptional() @IsBoolean()
+  datesToBeDefined?: boolean;
 
   @IsArray() @ArrayMaxSize(30) @ValidateNested({ each: true }) @Type(() => ParkDateDto)
   parkDates!: ParkDateDto[];
@@ -78,7 +84,7 @@ export class CreateContractDto {
   @IsOptional() @IsString() @MaxLength(5000)
   notes?: string;
 
-  @IsOptional() @IsString() @MaxLength(500)
+  @IsOptional() @IsUrl(HTTPS_URL) @MaxLength(500)
   legacyChatUrl?: string;
 
   /** Cria o login do cliente no Planejador OFP (etapa 2C). */
@@ -86,26 +92,29 @@ export class CreateContractDto {
   createPlanejadorAccess?: boolean;
 }
 
-/** Todos os campos opcionais; contrato já aceito só aceita as flags (rota própria). */
+/**
+ * Todos os campos opcionais; contrato já aceito só aceita as flags (rota própria).
+ * Campos não anuláveis usam `@ValidateIf(v !== undefined)`: ausente passa, null dá 400.
+ */
 export class UpdateContractDto {
-  @IsOptional() @IsString() @MinLength(3) @MaxLength(100) fullName?: string;
-  @IsOptional() @Matches(/^(\d{3}\.\d{3}\.\d{3}-\d{2}|\d{11})$/) cpf?: string;
-  @IsOptional() @IsString() @MinLength(10) @MaxLength(200) address?: string;
-  @IsOptional() @Matches(/^\d{5}-?\d{3}$/) cep?: string;
-  @IsOptional() @IsEmail() @MaxLength(255) email?: string;
-  @IsOptional() @IsString() @MinLength(8) @MaxLength(20) phone?: string;
-  @IsOptional() @IsString() @MinLength(2) @MaxLength(100) guideName?: string;
-  @IsOptional() @ValidateIf((_, v) => v !== null) @IsString() @MaxLength(100) sellerName?: string | null;
-  @IsOptional() @IsInt() @Min(1) @Max(500) people?: number;
-  @IsOptional() @Matches(/^(\$\s?)?\d{1,3}([.,]?\d{3})*([.,]\d{1,2})?$/) amount?: string;
-  @IsOptional() @ValidateIf((_, v) => v !== null) @IsString() @MaxLength(60) paymentMethod?: string | null;
-  @IsOptional() @ValidateIf((_, v) => v !== null) @IsString() @MaxLength(120) pixKey?: string | null;
-  @IsOptional() @IsBoolean() disneyGuest?: boolean;
-  @IsOptional() @IsBoolean() datesToBeDefined?: boolean;
-  @IsOptional() @IsArray() @ArrayMaxSize(30) @ValidateNested({ each: true }) @Type(() => ParkDateDto)
+  @ValidateIf(present) @IsString() @MinLength(3) @MaxLength(100) fullName?: string;
+  @ValidateIf(present) @Matches(/^(\d{3}\.\d{3}\.\d{3}-\d{2}|\d{11})$/) cpf?: string;
+  @ValidateIf(present) @IsString() @MinLength(10) @MaxLength(200) address?: string;
+  @ValidateIf(present) @Matches(/^\d{5}-?\d{3}$/) cep?: string;
+  @ValidateIf(present) @IsEmail() @MaxLength(255) email?: string;
+  @ValidateIf(present) @IsString() @MinLength(8) @MaxLength(20) phone?: string;
+  @ValidateIf(present) @IsString() @MinLength(2) @MaxLength(100) guideName?: string;
+  @IsOptional() @IsString() @MaxLength(100) sellerName?: string | null;
+  @ValidateIf(present) @IsInt() @Min(1) @Max(500) people?: number;
+  @ValidateIf(present) @IsString() @MaxLength(20) @Matches(/^(\$\s?)?\d{1,3}([.,]?\d{3})*([.,]\d{1,2})?$/) amount?: string;
+  @IsOptional() @IsString() @MaxLength(60) paymentMethod?: string | null;
+  @IsOptional() @IsString() @MaxLength(120) pixKey?: string | null;
+  @ValidateIf(present) @IsBoolean() disneyGuest?: boolean;
+  @ValidateIf(present) @IsBoolean() datesToBeDefined?: boolean;
+  @ValidateIf(present) @IsArray() @ArrayMaxSize(30) @ValidateNested({ each: true }) @Type(() => ParkDateDto)
   parkDates?: ParkDateDto[];
-  @IsOptional() @ValidateIf((_, v) => v !== null) @IsString() @MaxLength(5000) notes?: string | null;
-  @IsOptional() @ValidateIf((_, v) => v !== null) @IsString() @MaxLength(500) legacyChatUrl?: string | null;
+  @IsOptional() @IsString() @MaxLength(5000) notes?: string | null;
+  @IsOptional() @IsUrl(HTTPS_URL) @MaxLength(500) legacyChatUrl?: string | null;
 }
 
 export class UpdateFlagsDto {
@@ -114,8 +123,9 @@ export class UpdateFlagsDto {
   @IsOptional() @IsBoolean() invoiceIssued?: boolean;
 }
 
-/** Arrastar no calendário: troca uma data por outra. */
+/** Arrastar no calendário: troca uma data por outra (parkId desempata dois parques no mesmo dia). */
 export class MoveDateDto {
   @IsISO8601({ strict: true }) @Matches(/^\d{4}-\d{2}-\d{2}$/) from!: string;
   @IsISO8601({ strict: true }) @Matches(/^\d{4}-\d{2}-\d{2}$/) to!: string;
+  @IsOptional() @IsIn([...PARK_IDS]) parkId?: string;
 }

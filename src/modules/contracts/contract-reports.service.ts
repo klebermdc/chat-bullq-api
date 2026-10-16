@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { actorScope, type ContractActor } from './contract-actor';
 import { ContractsRepository } from './contracts.repository';
 import { monthRange } from './contracts.service';
 import { parseAmount } from './domain/amount';
@@ -14,6 +15,7 @@ const guideFilter = (guide?: string): Prisma.ContractWhereInput =>
 export class ContractReportsService {
   constructor(private readonly repo: ContractsRepository) {}
 
+  /** Faturamento é só staff (rota com @Roles), por isso sem escopo de ator. */
   async billing(organizationId: string, f: { year: number; month?: number; guide?: string; q?: string }) {
     const rows = await this.repo.findAll({
       organizationId,
@@ -36,8 +38,13 @@ export class ContractReportsService {
     return { items, totals };
   }
 
-  async multipassReminders(organizationId: string, guide: string | undefined, today: string) {
-    const rows = await this.repo.findAll({ organizationId, purchased: false, ...guideFilter(guide) });
+  async multipassReminders(organizationId: string, actor: ContractActor, guide: string | undefined, today: string) {
+    const rows = await this.repo.findAll({
+      ...actorScope(actor),
+      organizationId,
+      purchased: false,
+      ...guideFilter(guide),
+    });
     return multipassReminders(
       rows.map((c) => ({
         id: c.id, fullName: c.fullName, phone: c.phone, guideName: c.guideName,
@@ -49,8 +56,8 @@ export class ContractReportsService {
   }
 
   /** Eventos do calendário do guia: uma linha por data de parque. */
-  async calendar(organizationId: string, guide?: string) {
-    const rows = await this.repo.findAll({ organizationId, ...guideFilter(guide) });
+  async calendar(organizationId: string, actor: ContractActor, guide?: string) {
+    const rows = await this.repo.findAll({ ...actorScope(actor), organizationId, ...guideFilter(guide) });
     return rows.flatMap((c) =>
       readContractDates(c).map((d) => ({
         contractId: c.id, fullName: c.fullName, phone: c.phone, guideName: c.guideName,

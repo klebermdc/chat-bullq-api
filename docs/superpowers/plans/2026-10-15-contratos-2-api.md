@@ -21,6 +21,11 @@
 1. **PIX na página de aceite:** mostrar a chave **escolhida no contrato** (`Contract.pixKey`). Se o contrato não tiver chave, usar a padrão da organização (`ContractSettings.defaultPixKey`). O Lovable mostrava sempre `contato@…` e ignorava a escolha; esse comportamento não é para copiar.
 2. **Google Agenda entra agora** (etapa 2D), com OAuth próprio no lugar do conector do Lovable.
 3. **Planejador OFP continua:** a criação do login do cliente no "Seu Roteiro Orlando" passa a ser feita pelo servidor, e a senha é guardada criptografada. O card mostra a mesma senha que foi enviada.
+4. **Atendente (AGENT) só vê os contratos que ele criou** (decidido em 16/10/2026, depois da revisão de segurança da 2A).
+   - O escopo é `createdById = userId`. Contratos sem criador, incluindo todo o legado, ficam só com OWNER e ADMIN.
+   - Só staff: faturamento, configurações, mexer em datas bloqueadas, apagar contrato, desvincular arquivo e marcar pago ou NF.
+   - O AGENT pode marcar "comprado" no próprio contrato.
+   - Vale para todas as etapas seguintes: rotas novas da 2C e 2D com `:id` usam o mesmo `actorScope`.
 
 ## Comportamentos do Lovable que NÃO devem ser copiados (bugs conhecidos)
 

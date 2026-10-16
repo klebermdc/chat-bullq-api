@@ -1,5 +1,10 @@
+import { OrgRole } from '@prisma/client';
+import type { ContractActor } from './contract-actor';
 import { ContractReportsService } from './contract-reports.service';
 import type { ContractsRepository } from './contracts.repository';
+
+const STAFF: ContractActor = { userId: 'admin1', role: OrgRole.ADMIN };
+const AGENT: ContractActor = { userId: 'agent1', role: OrgRole.AGENT };
 
 function make(rows: unknown[]) {
   const findAll = jest.fn().mockResolvedValue(rows);
@@ -24,7 +29,7 @@ describe('ContractReportsService.billing', () => {
     await service.billing('org1', { year: 2026, month: 2, guide: 'Rafael' });
     const where = findAll.mock.calls[0][0];
     expect(where.organizationId).toBe('org1');
-    expect(where.createdAt.gte).toEqual(new Date('2026-02-01T00:00:00Z'));
+    expect(where.createdAt).toEqual({ gte: new Date('2026-02-01T03:00:00Z'), lt: new Date('2026-03-01T03:00:00Z') });
     expect(where.guideName).toEqual({ equals: 'Rafael', mode: 'insensitive' });
   });
 });
@@ -37,7 +42,7 @@ describe('ContractReportsService.reminders', () => {
         parkDates: [{ parkId: 'epcot', date: '2026-12-10' }], requestedDates: '', createdAt: new Date('2026-10-01'),
       },
     ]);
-    const out = await service.multipassReminders('org1', undefined, '2026-12-01');
+    const out = await service.multipassReminders('org1', STAFF, undefined, '2026-12-01');
     expect(out[0]).toMatchObject({ id: 'a', buyDate: '2026-12-03', daysUntilBuy: 2 });
   });
 });
@@ -51,8 +56,24 @@ describe('ContractReportsService.calendar', () => {
         requestedDates: '', createdAt: new Date('2026-10-01'),
       },
     ]);
-    const out = await service.calendar('org1', 'Kleber');
+    const out = await service.calendar('org1', STAFF, 'Kleber');
     expect(out.map((e) => e.date)).toEqual(['2026-12-10', '2026-12-11']);
     expect(out[0]).toMatchObject({ contractId: 'a', parkId: 'epcot' });
+  });
+});
+
+describe('ContractReportsService (escopo do AGENT)', () => {
+  it('calendário e lembretes de AGENT só trazem os contratos dele', async () => {
+    const { service, findAll } = make([]);
+    await service.calendar('org1', AGENT, undefined);
+    await service.multipassReminders('org1', AGENT, 'Kleber', '2026-12-01');
+    expect(findAll.mock.calls[0][0]).toMatchObject({ organizationId: 'org1', createdById: 'agent1' });
+    expect(findAll.mock.calls[1][0]).toMatchObject({ organizationId: 'org1', createdById: 'agent1', purchased: false });
+  });
+
+  it('staff não recebe filtro de criador', async () => {
+    const { service, findAll } = make([]);
+    await service.calendar('org1', STAFF, undefined);
+    expect(findAll.mock.calls[0][0]).not.toHaveProperty('createdById');
   });
 });

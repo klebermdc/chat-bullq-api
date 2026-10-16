@@ -1,8 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import type { Response } from 'express';
 import { PrismaService } from '../../database/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { StorageService } from '../storage/storage.service';
+import { actorScope, type ContractActor } from './contract-actor';
 import { ALLOWED_FILE_MIME, MAX_FILE_BYTES, type ContractFileKind } from './contracts.constants';
 
 export type ReadableFileKind = ContractFileKind | 'signature' | 'acceptance-pdf';
@@ -16,6 +18,8 @@ const FIELD: Record<ReadableFileKind, 'signedContractKey' | 'paymentReceiptKey' 
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const HEIC_BRANDS = ['ftypheic', 'ftypheix', 'ftypmif1', 'ftypmsf1', 'ftyphevc'];
+/** `kind` vira parte da chave no MinIO: só letras minúsculas e hífen. */
+const KIND_PATTERN = /^[a-z-]{1,30}$/;
 
 export interface IncomingFile {
   buffer: Buffer;
@@ -46,6 +50,7 @@ export class ContractFilesService {
 
   /** Valida e grava; devolve a chave. Usado também pelo aceite público (2B). */
   async store(organizationId: string, contractId: string, kind: string, file: IncomingFile): Promise<string> {
+    if (!KIND_PATTERN.test(kind)) throw new BadRequestException('Tipo de arquivo inválido');
     if (!file?.buffer?.length) throw new BadRequestException('Arquivo vazio');
     // O tamanho real do buffer manda; `size` vem do cliente/multer.
     if (file.buffer.length > MAX_FILE_BYTES || file.size > MAX_FILE_BYTES) {
@@ -61,11 +66,18 @@ export class ContractFilesService {
     return key;
   }
 
-  async upload(organizationId: string, contractId: string, kind: ContractFileKind, file: IncomingFile) {
-    await this.ensureContract(organizationId, contractId);
+  async upload(
+    organizationId: string,
+    actor: ContractActor,
+    contractId: string,
+    kind: ContractFileKind,
+    file: IncomingFile,
+  ) {
+    const where = this.scopedWhere(organizationId, actor, contractId);
+    await this.ensureContract(where);
     const key = await this.store(organizationId, contractId, kind, file);
     await this.prisma.contract.updateMany({
-      where: { id: contractId, organizationId },
+      where,
       data: { [FIELD[kind]]: key },
     });
     this.realtime.emitToOrg(organizationId, 'contract:changed', { id: contractId });
@@ -73,18 +85,24 @@ export class ContractFilesService {
   }
 
   /** O arquivo antigo continua no MinIO (histórico); só o campo volta a null. */
-  async clear(organizationId: string, contractId: string, kind: ContractFileKind) {
-    await this.ensureContract(organizationId, contractId);
+  async clear(organizationId: string, actor: ContractActor, contractId: string, kind: ContractFileKind) {
+    const where = this.scopedWhere(organizationId, actor, contractId);
+    await this.ensureContract(where);
     await this.prisma.contract.updateMany({
-      where: { id: contractId, organizationId },
+      where,
       data: { [FIELD[kind]]: null },
     });
     this.realtime.emitToOrg(organizationId, 'contract:changed', { id: contractId });
     return { cleared: true };
   }
 
-  async keyFor(organizationId: string, contractId: string, kind: ReadableFileKind): Promise<string> {
-    const contract = await this.ensureContract(organizationId, contractId);
+  async keyFor(
+    organizationId: string,
+    actor: ContractActor,
+    contractId: string,
+    kind: ReadableFileKind,
+  ): Promise<string> {
+    const contract = await this.ensureContract(this.scopedWhere(organizationId, actor, contractId));
     const key = (contract as Record<string, unknown>)[FIELD[kind]];
     const isOwnKey =
       typeof key === 'string' && key.startsWith(`contracts/${organizationId}/`) && !key.split('/').includes('..');
@@ -92,19 +110,27 @@ export class ContractFilesService {
     return key;
   }
 
+  /** Pega o stream antes de qualquer header: falha no MinIO ainda vira resposta de erro normal. */
   async stream(key: string, res: Response, downloadName: string) {
     const stat = await this.storage.stat(key);
     if (!stat) throw new NotFoundException('Arquivo não encontrado');
+    const body = await this.storage.getStream(key);
     res.setHeader('Content-Type', stat.contentType);
     res.setHeader('Content-Length', String(stat.size));
     res.setHeader('Cache-Control', 'private, max-age=0, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Disposition', `inline; filename="${downloadName.replace(/[^\w.-]/g, '_')}"`);
-    (await this.storage.getStream(key)).pipe(res);
+    // Headers já foram: erro no meio só pode derrubar a conexão.
+    body.on('error', (err) => res.destroy(err));
+    body.pipe(res);
   }
 
-  private async ensureContract(organizationId: string, id: string) {
-    const contract = await this.prisma.contract.findFirst({ where: { id, organizationId } });
+  private scopedWhere(organizationId: string, actor: ContractActor, id: string): Prisma.ContractWhereInput {
+    return { AND: [actorScope(actor)], id, organizationId };
+  }
+
+  private async ensureContract(where: Prisma.ContractWhereInput) {
+    const contract = await this.prisma.contract.findFirst({ where });
     if (!contract) throw new NotFoundException('Contrato não encontrado');
     return contract;
   }

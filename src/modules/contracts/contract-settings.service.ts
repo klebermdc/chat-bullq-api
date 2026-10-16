@@ -60,16 +60,21 @@ export class ContractSettingsService {
   blockDate(organizationId: string, dto: BlockedDateDto) {
     const date = utcDate(dto.date);
     const reason = dto.reason ?? 'lotado';
+    const guideName = dto.guideName.trim();
     return this.prisma.contractBlockedDate.upsert({
-      where: { organizationId_guideName_date: { organizationId, guideName: dto.guideName, date } },
-      create: { organizationId, guideName: dto.guideName, date, reason },
+      where: { organizationId_guideName_date: { organizationId, guideName, date } },
+      create: { organizationId, guideName, date, reason },
       update: { reason },
     });
   }
 
   async unblockDate(organizationId: string, guideName: string, date: string) {
     const { count } = await this.prisma.contractBlockedDate.deleteMany({
-      where: { organizationId, guideName, date: utcDate(date) },
+      where: {
+        organizationId,
+        guideName: { equals: guideName.trim(), mode: 'insensitive' },
+        date: utcDate(date),
+      },
     });
     return { deleted: count };
   }

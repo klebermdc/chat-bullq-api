@@ -39,11 +39,23 @@ describe('ContractSettingsService', () => {
     });
   });
 
-  it('desbloquear filtra pela org', async () => {
+  it('desbloquear filtra pela org e acha o guia sem diferenciar maiúsculas nem espaços', async () => {
     const { service, prisma } = make();
-    await service.unblockDate('org1', 'Kleber', '2026-12-24');
+    await service.unblockDate('org1', '  kleber ', '2026-12-24');
     expect(prisma.contractBlockedDate.deleteMany).toHaveBeenCalledWith({
-      where: { organizationId: 'org1', guideName: 'Kleber', date: new Date('2026-12-24T00:00:00.000Z') },
+      where: {
+        organizationId: 'org1',
+        guideName: { equals: 'kleber', mode: 'insensitive' },
+        date: new Date('2026-12-24T00:00:00.000Z'),
+      },
     });
+  });
+
+  it('bloquear grava o nome do guia sem espaços nas pontas', async () => {
+    const { service, prisma } = make();
+    await service.blockDate('org1', { guideName: ' Kleber  ', date: '2026-12-24' });
+    const arg = prisma.contractBlockedDate.upsert.mock.calls[0][0];
+    expect(arg.where.organizationId_guideName_date.guideName).toBe('Kleber');
+    expect(arg.create.guideName).toBe('Kleber');
   });
 });
