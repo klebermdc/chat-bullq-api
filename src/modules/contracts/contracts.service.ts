@@ -1,7 +1,8 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, type Contract } from '@prisma/client';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { StorageService } from '../storage/storage.service';
 import { actorScope, isStaff, type ContractActor } from './contract-actor';
 import { ContractSettingsService } from './contract-settings.service';
 import { toListItem } from './contract-view';
@@ -9,6 +10,7 @@ import { DATES_TO_BE_DEFINED_TEXT } from './contracts.constants';
 import { ContractsRepository } from './contracts.repository';
 import { formatParkDates, readContractDates, type ParkDate } from './domain/park-dates';
 import { statusWhere } from './domain/contract-status';
+import { assertSafePng } from './domain/png-guard';
 import type { CreateContractDto, MoveDateDto, UpdateContractDto, UpdateFlagsDto } from './dto/contract.dto';
 import type { ListContractsDto } from './dto/list-contracts.dto';
 import { ContractPdfService, type ContractPdfInput } from './pdf/contract-pdf.service';
@@ -61,11 +63,14 @@ const NOT_FOUND_MESSAGE = 'Contrato não encontrado';
 
 @Injectable()
 export class ContractsService {
+  private readonly logger = new Logger(ContractsService.name);
+
   constructor(
     private readonly repo: ContractsRepository,
     private readonly realtime: RealtimeGateway,
     private readonly settings: ContractSettingsService,
     private readonly pdf: ContractPdfService,
+    private readonly storage: StorageService,
   ) {}
 
   private changed(organizationId: string, id: string) {
@@ -229,11 +234,62 @@ export class ContractsService {
     };
   }
 
-  /** PDF guardado no aceite; senão um PDF gerado agora (sem evidência). */
+  /** PDF do painel: carrega com o escopo do ator e delega. */
   async pdfFor(organizationId: string, actor: ContractActor, id: string): Promise<{ key: string } | { buffer: Buffer }> {
     const c = await this.get(organizationId, actor, id);
+    return this.pdfForContract(organizationId, c);
+  }
+
+  /**
+   * PDF guardado no aceite; senão um PDF gerado agora. Contrato aceito sem PDF
+   * guardado (o do aceite falhou ou ainda não saiu) leva a evidência montada
+   * das colunas e, best-effort, fica guardado para as próximas vezes.
+   * Sem escopo: quem chama já carregou o contrato com a checagem certa
+   * (ator no painel, token na rota pública).
+   */
+  async pdfForContract(organizationId: string, c: Contract): Promise<{ key: string } | { buffer: Buffer }> {
     if (c.acceptancePdfKey?.startsWith(`contracts/${organizationId}/`)) return { key: c.acceptancePdfKey };
-    return { buffer: await this.pdf.render(await this.buildPdfInput(organizationId, c)) };
+    if (!c.acceptedAt) return { buffer: await this.pdf.render(await this.buildPdfInput(organizationId, c)) };
+
+    const base = await this.buildPdfInput(organizationId, c);
+    const buffer = await this.pdf.render({
+      ...base,
+      acceptance: {
+        acceptedAt: c.acceptedAt,
+        ip: c.clientIp,
+        userAgent: c.clientUserAgent,
+        signaturePngBase64: await this.readSignatureBase64(organizationId, c),
+        // `base.terms` já é `acceptedTermsText ?? termos atuais`.
+        acceptedTerms: base.terms ?? '',
+      },
+    });
+    await this.storeAcceptancePdf(organizationId, c.id, buffer);
+    return { buffer };
+  }
+
+  /** PNG da assinatura em base64; sem chave, chave alheia, erro ou PNG inválido → null (PDF sai sem imagem). */
+  private async readSignatureBase64(organizationId: string, c: Contract): Promise<string | null> {
+    const key = c.signatureKey;
+    if (!key?.startsWith(`contracts/${organizationId}/`) || key.split('/').includes('..')) return null;
+    try {
+      const buf = await this.storage.getBuffer(key);
+      assertSafePng(buf);
+      return buf.toString('base64');
+    } catch (err) {
+      this.logger.warn(`contract_signature_read_failed contract=${c.id} reason=${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  /** Só grava a chave se ainda estiver vazia: não troca o PDF que o aceite guardou no meio tempo. */
+  private async storeAcceptancePdf(organizationId: string, id: string, buffer: Buffer): Promise<void> {
+    try {
+      const key = `contracts/${organizationId}/${id}/acceptance-${randomUUID()}.pdf`;
+      await this.storage.put(key, buffer, 'application/pdf');
+      await this.repo.updateInOrg(organizationId, id, { acceptancePdfKey: key }, { acceptancePdfKey: null });
+    } catch (err) {
+      this.logger.warn(`contract_acceptance_pdf_store_failed contract=${id} reason=${(err as Error).message}`);
+    }
   }
 
   /** Os arquivos do contrato ficam no MinIO de propósito (histórico e prova do aceite); não apagar. */

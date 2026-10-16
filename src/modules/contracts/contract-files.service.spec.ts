@@ -47,7 +47,7 @@ describe('ContractFilesService', () => {
   it('grava comprovante com chave da org e atualiza o campo', async () => {
     const { service, storage, prisma, realtime } = make();
     const key = await service.upload('org1', STAFF, 'c1', 'payment-receipt', { buffer: PDF, mimetype: 'application/pdf', size: PDF.length });
-    expect(key).toMatch(/^contracts\/org1\/c1\/payment-receipt-\d+\.pdf$/);
+    expect(key).toMatch(/^contracts\/org1\/c1\/payment-receipt-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/);
     expect(storage.put).toHaveBeenCalledWith(key, PDF, 'application/pdf');
     expect(prisma.contract.updateMany).toHaveBeenCalledWith({
       where: { AND: [{}], id: 'c1', organizationId: 'org1' },

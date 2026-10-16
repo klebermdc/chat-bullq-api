@@ -74,3 +74,28 @@ describe('ResendClient', () => {
     await expect(new ResendClient(cfg, sdk as any).send(payload)).rejects.toThrow(/sem id/);
   });
 });
+
+describe('ResendClient.sendTransactional', () => {
+  const config = { apiKey: 'k', from: 'Sendtur <no-reply@x.com>' } as any;
+  const tx = { to: 'a@b.com', subject: 'S', html: '<p>x</p>', text: 'x' };
+
+  it('envia sem cabeçalhos de descadastro', async () => {
+    const sdk = { emails: { send: jest.fn().mockResolvedValue({ data: { id: 'e1' } }) } };
+    const client = new ResendClient(config, sdk);
+    await expect(client.sendTransactional(tx)).resolves.toEqual({ providerId: 'e1' });
+    const arg = sdk.emails.send.mock.calls[0][0];
+    expect(arg.headers).toBeUndefined();
+    expect(arg.from).toBe('Sendtur <no-reply@x.com>');
+  });
+
+  it('usa fromName quando informado', async () => {
+    const sdk = { emails: { send: jest.fn().mockResolvedValue({ data: { id: 'e1' } }) } };
+    await new ResendClient(config, sdk).sendTransactional({ ...tx, fromName: 'Ops' });
+    expect(sdk.emails.send.mock.calls[0][0].from).toBe('Ops <Sendtur <no-reply@x.com>>');
+  });
+
+  it('erro do provedor vira exceção com o motivo', async () => {
+    const sdk = { emails: { send: jest.fn().mockResolvedValue({ error: { name: 'x', message: 'bad' } }) } };
+    await expect(new ResendClient(config, sdk).sendTransactional(tx)).rejects.toThrow(/bad/);
+  });
+});

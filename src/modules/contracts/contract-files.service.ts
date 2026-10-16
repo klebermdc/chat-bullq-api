@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import type { Response } from 'express';
 import { PrismaService } from '../../database/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -61,7 +62,7 @@ export class ContractFilesService {
     if (!ext || sniffMime(file.buffer) !== declared) {
       throw new BadRequestException('Envie PDF, PNG, JPG, WEBP ou HEIC.');
     }
-    const key = `contracts/${organizationId}/${contractId}/${kind}-${Date.now()}.${ext}`;
+    const key = `contracts/${organizationId}/${contractId}/${kind}-${randomUUID()}.${ext}`;
     await this.storage.put(key, file.buffer, declared);
     return key;
   }

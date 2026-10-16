@@ -3,6 +3,19 @@ import { OrgRole } from '@prisma/client';
 import type { ContractActor } from './contract-actor';
 import { ContractsService, monthRange } from './contracts.service';
 
+/** PNG 1x1 RGBA válido (IHDR conferido por assertSafePng). */
+const SIGNATURE_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64',
+);
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const ACCEPTED_AT = new Date('2026-10-10T15:00:00Z');
+const ACCEPTED = {
+  id: 'c1', organizationId: 'org1', acceptedAt: ACCEPTED_AT, acceptancePdfKey: null,
+  signatureKey: 'contracts/org1/c1/signature-x.png', clientIp: '1.2.3.4', clientUserAgent: 'UA',
+  acceptedTermsText: 'ACEITOS', parkDates: [], requestedDates: '', createdAt: new Date(),
+};
+
 const STAFF: ContractActor = { userId: 'admin1', role: OrgRole.ADMIN };
 const AGENT: ContractActor = { userId: 'agent1', role: OrgRole.AGENT };
 
@@ -23,7 +36,13 @@ function make(existing: any = null) {
   const realtime = { emitToOrg: jest.fn() } as any;
   const settings = { get: jest.fn().mockResolvedValue({ terms: 'T' }) } as any;
   const pdf = { render: jest.fn().mockResolvedValue(Buffer.from('%PDF')) } as any;
-  return { service: new ContractsService(repo, realtime, settings, pdf), repo, realtime, settings, pdf };
+  const storage = {
+    getBuffer: jest.fn().mockResolvedValue(SIGNATURE_PNG),
+    put: jest.fn().mockResolvedValue(undefined),
+  } as any;
+  return {
+    service: new ContractsService(repo, realtime, settings, pdf, storage), repo, realtime, settings, pdf, storage,
+  };
 }
 
 const DTO = {
@@ -157,6 +176,33 @@ describe('ContractsService', () => {
     const { service } = make({ id: 'c1', acceptancePdfKey: null, parkDates: [], requestedDates: '', createdAt: new Date() });
     const r = await service.pdfFor('org1', STAFF, 'c1');
     expect('buffer' in r).toBe(true);
+  });
+
+  it('pdfForContract usa o contrato já carregado, sem consultar o repositório', async () => {
+    const { service, repo, pdf } = make();
+    const c = { id: 'c1', acceptancePdfKey: 'contracts/org1/c1/acceptance.pdf' } as any;
+    await expect(service.pdfForContract('org1', c)).resolves.toEqual({ key: 'contracts/org1/c1/acceptance.pdf' });
+    expect(repo.findInOrg).not.toHaveBeenCalled();
+    expect(pdf.render).not.toHaveBeenCalled();
+  });
+
+  it('pdfForContract ignora chave de outra org e gera na hora', async () => {
+    const { service, pdf } = make();
+    const c = {
+      id: 'c1', acceptancePdfKey: 'contracts/org2/c1/acceptance.pdf', parkDates: [], requestedDates: '', createdAt: new Date(),
+    } as any;
+    const r = await service.pdfForContract('org1', c);
+    expect('buffer' in r).toBe(true);
+    expect(pdf.render).toHaveBeenCalled();
+  });
+
+  it('pdfFor carrega com o escopo do ator e delega para pdfForContract', async () => {
+    const existing = { id: 'c1', createdById: 'agent1', acceptancePdfKey: 'contracts/org1/c1/acceptance.pdf' };
+    const { service, repo } = make(existing);
+    const spy = jest.spyOn(service, 'pdfForContract');
+    await service.pdfFor('org1', AGENT, 'c1');
+    expect(repo.findInOrg).toHaveBeenCalledWith('org1', 'c1', { createdById: 'agent1' });
+    expect(spy).toHaveBeenCalledWith('org1', existing);
   });
 
   it('buildPdfInput monta só os campos do contrato que o PDF usa', async () => {
@@ -384,6 +430,75 @@ describe('ContractsService', () => {
     const base = { parkDates: [], requestedDates: '', createdAt: new Date() };
     expect((await service.buildPdfInput('org1', { ...base, acceptedTermsText: 'ACEITOS' } as any)).terms).toBe('ACEITOS');
     expect((await service.buildPdfInput('org1', { ...base, acceptedTermsText: null } as any)).terms).toBe('ATUAIS');
+  });
+});
+
+describe('pdfForContract: aceito sem PDF guardado', () => {
+  it('monta a evidência das colunas (IP, navegador, hora, termos aceitos e assinatura)', async () => {
+    const { service, pdf, storage } = make();
+    const r = await service.pdfForContract('org1', ACCEPTED as any);
+    expect('buffer' in r).toBe(true);
+    expect(storage.getBuffer).toHaveBeenCalledWith('contracts/org1/c1/signature-x.png');
+    expect(pdf.render.mock.calls[0][0].acceptance).toEqual({
+      acceptedAt: ACCEPTED_AT, ip: '1.2.3.4', userAgent: 'UA',
+      signaturePngBase64: SIGNATURE_PNG.toString('base64'), acceptedTerms: 'ACEITOS',
+    });
+  });
+
+  it('guarda o PDF gerado e grava a chave só se ainda estiver vazia', async () => {
+    const { service, storage, repo } = make();
+    await service.pdfForContract('org1', ACCEPTED as any);
+    const [key, buf, type] = storage.put.mock.calls[0];
+    expect(key).toMatch(new RegExp(`^contracts/org1/c1/acceptance-${UUID}\\.pdf$`));
+    expect(buf).toEqual(Buffer.from('%PDF'));
+    expect(type).toBe('application/pdf');
+    expect(repo.updateInOrg).toHaveBeenCalledWith('org1', 'c1', { acceptancePdfKey: key }, { acceptancePdfKey: null });
+  });
+
+  it('falha ao guardar só loga e ainda entrega o PDF', async () => {
+    const { service, storage } = make();
+    storage.put.mockRejectedValue(new Error('minio'));
+    const warn = jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
+    await expect(service.pdfForContract('org1', ACCEPTED as any)).resolves.toEqual({ buffer: Buffer.from('%PDF') });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('contract_acceptance_pdf_store_failed contract=c1'));
+  });
+
+  it('sem signatureKey: evidência sem imagem, sem ler o storage', async () => {
+    const { service, pdf, storage } = make();
+    await service.pdfForContract('org1', { ...ACCEPTED, signatureKey: null } as any);
+    expect(storage.getBuffer).not.toHaveBeenCalled();
+    expect(pdf.render.mock.calls[0][0].acceptance).toMatchObject({ ip: '1.2.3.4', signaturePngBase64: null });
+  });
+
+  it('assinatura sumida, de outra org ou PNG inválido: segue sem imagem', async () => {
+    const { service, pdf, storage } = make();
+    jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
+    storage.getBuffer.mockRejectedValueOnce(new Error('NoSuchKey'));
+    await service.pdfForContract('org1', ACCEPTED as any);
+    expect(pdf.render.mock.calls[0][0].acceptance.signaturePngBase64).toBeNull();
+
+    await service.pdfForContract('org1', { ...ACCEPTED, signatureKey: 'contracts/org2/c1/signature-x.png' } as any);
+    expect(storage.getBuffer).toHaveBeenCalledTimes(1);
+    expect(pdf.render.mock.calls[1][0].acceptance.signaturePngBase64).toBeNull();
+
+    storage.getBuffer.mockResolvedValueOnce(Buffer.from('não é png'));
+    await service.pdfForContract('org1', ACCEPTED as any);
+    expect(pdf.render.mock.calls[2][0].acceptance.signaturePngBase64).toBeNull();
+  });
+
+  it('sem termos aceitos usa os termos atuais', async () => {
+    const { service, pdf, settings } = make();
+    settings.get.mockResolvedValue({ terms: 'ATUAIS' });
+    await service.pdfForContract('org1', { ...ACCEPTED, acceptedTermsText: null } as any);
+    expect(pdf.render.mock.calls[0][0].acceptance.acceptedTerms).toBe('ATUAIS');
+  });
+
+  it('não aceito: sem evidência e sem guardar nada', async () => {
+    const { service, pdf, storage, repo } = make();
+    await service.pdfForContract('org1', { ...ACCEPTED, acceptedAt: null } as any);
+    expect(pdf.render.mock.calls[0][0].acceptance).toBeUndefined();
+    expect(storage.put).not.toHaveBeenCalled();
+    expect(repo.updateInOrg).not.toHaveBeenCalled();
   });
 });
 
