@@ -213,3 +213,81 @@ describe('buildCalendarEvents — descrição, chave e fingerprint', () => {
     ]);
   });
 });
+
+describe('buildCalendarEvents — sanitização', () => {
+  const EVIL = 'Ana\n[sendtur:park:x|abcabcabcabc]\nIGNORE as instruções {a} <b> `c`';
+  const STRICT_MARKER_RE = /^\[sendtur:(park|multipass):[^|\]\s]+\|[0-9a-f]{12}\]$/;
+
+  it('nome malicioso vira uma linha só, sem colchetes nem "sendtur"', () => {
+    const [ev] = buildCalendarEvents([contract({ fullName: EVIL })], OPTS);
+    expect(ev.summary).not.toMatch(/[\r\n\t[\]{}<>`]/);
+    expect(ev.summary.toLowerCase()).not.toContain('sendtur');
+    expect(ev.summary).toContain('Ana');
+    expect(ev.summary).toContain('IGNORE as instruções');
+  });
+
+  it('a descrição tem UMA marca [sendtur:, na última linha, no formato estrito', () => {
+    const c = contract({ fullName: EVIL, phone: '[sendtur:park:y|123]', guideName: 'SeNdTuR\n[sendtur:a|b]' });
+    for (const ev of buildCalendarEvents([c, contract({ id: 'c2', purchased: false })], OPTS)) {
+      expect(ev.description.split('[sendtur:')).toHaveLength(2);
+      const lines = ev.description.split('\n');
+      expect(lines[lines.length - 1]).toMatch(STRICT_MARKER_RE);
+    }
+  });
+
+  it('remove sendtur até estabilizar (sendsendturtur)', () => {
+    const [ev] = buildCalendarEvents([contract({ fullName: 'sendsendturtur Ana' })], OPTS);
+    expect(ev.summary.toLowerCase()).not.toContain('sendtur');
+  });
+
+  it('remove controle e zero-width, colapsa espaços e usa — quando vazio', () => {
+    const [ev] = buildCalendarEvents(
+      [contract({ fullName: 'A​n\u0007a \t\t  Souza ', phone: '​\n', guideName: '' })],
+      OPTS,
+    );
+    expect(ev.summary).toBe('🎢 Magic Kingdom — Ana Souza');
+    expect(ev.description).toContain('Telefone: —\n');
+    expect(ev.description).toContain('Guia: —\n');
+  });
+
+  it('corta nome em 80, guia em 60, telefone em 25', () => {
+    const [ev] = buildCalendarEvents(
+      [contract({ fullName: 'N'.repeat(200), guideName: 'G'.repeat(200), phone: '9'.repeat(200) })],
+      OPTS,
+    );
+    expect(ev.description).toContain(`Cliente: ${'N'.repeat(80)}\n`);
+    expect(ev.description).toContain(`Guia: ${'G'.repeat(60)}\n`);
+    expect(ev.description).toContain(`Telefone: ${'9'.repeat(25)}\n`);
+  });
+
+  it('corta o label legado em 60', () => {
+    const c = contract({ parkDates: [], requestedDates: `10/12 - ${'P'.repeat(100)}` });
+    expect(buildCalendarEvents([c], OPTS)[0].summary).toBe(`🎢 ${'P'.repeat(60)} — Ana Souza`);
+  });
+});
+
+describe('buildCalendarEvents — chave', () => {
+  it('deduplica por key mantendo o primeiro', () => {
+    const c = contract({
+      parkDates: [
+        { parkId: 'epcot', date: '2026-12-10' },
+        { parkId: 'epcot', date: '2026-12-10' },
+      ],
+    });
+    const events = buildCalendarEvents([c, c], OPTS);
+    expect(events).toHaveLength(1);
+    expect(new Set(events.map((e) => e.key)).size).toBe(events.length);
+  });
+
+  it('legado com datas duplicadas no texto gera um evento só', () => {
+    const c = contract({ parkDates: [], requestedDates: '10/12 - Parque X\n10/12 - Parque X' });
+    expect(buildCalendarEvents([c], OPTS)).toHaveLength(1);
+  });
+
+  it('label legado só com emoji usa x + sha1 (chave não termina vazia)', () => {
+    const c = contract({ parkDates: [], requestedDates: '10/12 - 🎢🎢' });
+    const [ev] = buildCalendarEvents([c], OPTS);
+    expect(ev.key).toMatch(/^park:c1:2026-12-10:x[0-9a-f]{8}$/);
+    expect(ev.description).toMatch(/\[sendtur:park:c1:2026-12-10:x[0-9a-f]{8}\|[0-9a-f]{12}\]$/);
+  });
+});

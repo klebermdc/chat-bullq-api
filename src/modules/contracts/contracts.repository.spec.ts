@@ -6,11 +6,15 @@ function make() {
 }
 
 describe('ContractsRepository.findForCalendar', () => {
-  it('filtra pela org e pelo escopo do ator, só com os campos da agenda', async () => {
+  it('filtra pela org, pelo escopo do ator e por criados até 400 dias antes de from', async () => {
     const { repo, prisma } = make();
-    await repo.findForCalendar('org1', { createdById: 'u1' });
+    await repo.findForCalendar('org1', { createdById: 'u1' }, '2026-11-01');
     expect(prisma.contract.findMany).toHaveBeenCalledWith({
-      where: { AND: [{ createdById: 'u1' }], organizationId: 'org1' },
+      where: {
+        AND: [{ createdById: 'u1' }],
+        organizationId: 'org1',
+        createdAt: { gte: new Date('2025-09-27T00:00:00.000Z') },
+      },
       orderBy: { createdAt: 'asc' },
       select: CONTRACT_CALENDAR_SELECT,
     });
@@ -18,10 +22,11 @@ describe('ContractsRepository.findForCalendar', () => {
 
   it('com guia, compara sem diferenciar maiúsculas', async () => {
     const { repo, prisma } = make();
-    await repo.findForCalendar('org1', {}, 'kleber');
+    await repo.findForCalendar('org1', {}, '2026-11-01', 'kleber');
     expect(prisma.contract.findMany.mock.calls[0][0].where).toEqual({
       AND: [{}],
       organizationId: 'org1',
+      createdAt: { gte: new Date('2025-09-27T00:00:00.000Z') },
       guideName: { equals: 'kleber', mode: 'insensitive' },
     });
   });

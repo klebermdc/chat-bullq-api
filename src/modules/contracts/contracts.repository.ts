@@ -44,6 +44,9 @@ export const CONTRACT_LIST_SELECT = {
 } as const satisfies Prisma.ContractSelect;
 
 /** Só o que a agenda usa (`buildCalendarEvents`): sem CPF, e-mail, endereço nem valor. */
+/** Contratos são criados até ~13 meses antes da viagem. */
+const CALENDAR_LOOKBACK_DAYS = 400;
+
 export const CONTRACT_CALENDAR_SELECT = {
   id: true,
   fullName: true,
@@ -77,11 +80,17 @@ export class ContractsRepository {
   }
 
   /** Contratos da org visíveis ao ator, para montar os eventos da agenda. */
-  findForCalendar(organizationId: string, scope: Prisma.ContractWhereInput, guide?: string) {
+  /**
+   * Contratos são criados antes da viagem; limitar a `createdAt >= from - 400 dias`
+   * evita trazer o histórico antigo inteiro a cada consulta da agenda.
+   */
+  findForCalendar(organizationId: string, scope: Prisma.ContractWhereInput, from: string, guide?: string) {
+    const createdSince = new Date(Date.parse(`${from}T00:00:00Z`) - CALENDAR_LOOKBACK_DAYS * 86_400_000);
     return this.prisma.contract.findMany({
       where: {
         AND: [scope],
         organizationId,
+        createdAt: { gte: createdSince },
         ...(guide ? { guideName: { equals: guide, mode: 'insensitive' as const } } : {}),
       },
       orderBy: { createdAt: 'asc' },

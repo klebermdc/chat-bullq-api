@@ -13,6 +13,9 @@ export interface ContractCalendarResponse {
   timezone: typeof CALENDAR_TIME_ZONE;
   from: string;
   to: string;
+  /** false quando o filtro de guia deixou a lista parcial: não dá para apagar eventos com base nela. */
+  complete: boolean;
+  count: number;
   events: CalendarEvent[];
 }
 
@@ -33,8 +36,15 @@ export class ContractCalendarService {
     window: CalendarWindow,
     guide?: string,
   ): Promise<ContractCalendarResponse> {
-    const rows = await this.repo.findForCalendar(organizationId, actorScope(actor), guide);
+    const rows = await this.repo.findForCalendar(organizationId, actorScope(actor), window.from, guide);
     const events = buildCalendarEvents(rows, { ...window, panelBaseUrl: panelBaseUrl() });
-    return { timezone: CALENDAR_TIME_ZONE, from: window.from, to: window.to, events };
+    return {
+      timezone: CALENDAR_TIME_ZONE,
+      from: window.from,
+      to: window.to,
+      complete: !guide,
+      count: events.length,
+      events,
+    };
   }
 }

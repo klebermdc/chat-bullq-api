@@ -102,6 +102,21 @@ describe('PublicContractCalendarController.list', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('devolve o corpo do serviço sem alterar (complete/count)', async () => {
+    const { controller, calendar } = make();
+    const body = { timezone: 'America/New_York', from: 'a', to: 'b', complete: true, count: 0, events: [] };
+    calendar.events.mockResolvedValue(body);
+    await expect(controller.list('org1', 'u1', OrgRole.ADMIN, {})).resolves.toBe(body);
+  });
+
+  it('400 (não 500) se from é inválido e to foi omitido', async () => {
+    const { controller, calendar } = make();
+    await expect(controller.list('org1', 'u1', OrgRole.ADMIN, { from: '2026-13-45' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(calendar.events).not.toHaveBeenCalled();
+  });
+
   it('400 se a data não existe no calendário', async () => {
     const { controller } = make();
     await expect(controller.list('org1', 'u1', OrgRole.ADMIN, { from: '2026-02-30' })).rejects.toBeInstanceOf(

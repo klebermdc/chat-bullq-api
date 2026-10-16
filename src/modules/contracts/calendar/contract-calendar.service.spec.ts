@@ -29,22 +29,35 @@ describe('ContractCalendarService', () => {
   it('AGENT busca só os contratos que criou', async () => {
     const { service, repo } = make([]);
     await service.events('org1', { userId: 'u1', role: OrgRole.AGENT }, WINDOW);
-    expect(repo.findForCalendar).toHaveBeenCalledWith('org1', { createdById: 'u1' }, undefined);
+    expect(repo.findForCalendar).toHaveBeenCalledWith('org1', { createdById: 'u1' }, '2026-11-01', undefined);
   });
 
   it('staff vê a org toda e repassa o guia', async () => {
     const { service, repo } = make([]);
     await service.events('org1', { userId: 'u1', role: OrgRole.OWNER }, WINDOW, 'Kleber');
-    expect(repo.findForCalendar).toHaveBeenCalledWith('org1', {}, 'Kleber');
+    expect(repo.findForCalendar).toHaveBeenCalledWith('org1', {}, '2026-11-01', 'Kleber');
   });
 
   it('devolve fuso, janela e eventos, com link do painel sem barra final', async () => {
     process.env.APP_PUBLIC_URL = 'https://painel.teste/';
     const { service } = make();
     const out = await service.events('org1', { userId: 'u1', role: OrgRole.ADMIN }, WINDOW);
-    expect(out).toMatchObject({ timezone: 'America/New_York', from: '2026-11-01', to: '2026-12-31' });
+    expect(out).toMatchObject({
+      timezone: 'America/New_York',
+      from: '2026-11-01',
+      to: '2026-12-31',
+      complete: true,
+      count: 1,
+    });
     expect(out.events).toHaveLength(1);
     expect(out.events[0].description).toContain('Contrato: https://painel.teste/contratos/c1\n');
+  });
+
+  it('com filtro de guia a lista é parcial: complete false', async () => {
+    const { service } = make();
+    const out = await service.events('org1', { userId: 'u1', role: OrgRole.ADMIN }, WINDOW, 'Kleber');
+    expect(out.complete).toBe(false);
+    expect(out.count).toBe(out.events.length);
   });
 
   it('sem APP_PUBLIC_URL usa só o id do contrato', async () => {

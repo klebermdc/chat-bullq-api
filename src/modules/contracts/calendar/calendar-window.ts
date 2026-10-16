@@ -20,8 +20,8 @@ function assertRealDate(name: string, value: string): void {
 /** Padrões: from = hoje em Orlando; to = from + 90 dias. Janela máxima de 180 dias. */
 export function resolveCalendarWindow(q: { from?: string; to?: string }, today: string): CalendarWindow {
   const from = q.from ?? today;
-  const to = q.to ?? addDays(from, DEFAULT_WINDOW_DAYS);
   assertRealDate('from', from);
+  const to = q.to ?? addDays(from, DEFAULT_WINDOW_DAYS);
   assertRealDate('to', to);
   if (to < from) throw new BadRequestException('to deve ser igual ou depois de from');
   const days = (Date.parse(to) - Date.parse(from)) / DAY_MS;
