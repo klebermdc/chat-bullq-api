@@ -1,6 +1,7 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import type { BrowserType } from 'playwright';
 import {
+  termsToHtml,
   buildContractHtml,
   ContractPdfService,
   paymentLabel,
@@ -356,5 +357,23 @@ describe('ContractPdfService.render', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+describe('termsToHtml', () => {
+  it('converte **negrito** em <b> e linha "---" em separador', () => {
+    expect(termsToHtml('**IMPORTANTE** – leia\n---\nfim')).toBe('<b>IMPORTANTE</b> – leia\n<hr class="terms-sep"/>\nfim');
+  });
+
+  it('escapa antes de formatar (sem injeção via asteriscos)', () => {
+    expect(termsToHtml('**<script>x</script>**')).toBe('<b>&lt;script&gt;x&lt;/script&gt;</b>');
+  });
+
+  it('asteriscos soltos ou sem fechamento ficam como texto', () => {
+    expect(termsToHtml('2 * 3 e **aberto')).toBe('2 * 3 e **aberto');
+  });
+
+  it('negrito não atravessa linhas', () => {
+    expect(termsToHtml('**a\nb**')).toBe('**a\nb**');
   });
 });

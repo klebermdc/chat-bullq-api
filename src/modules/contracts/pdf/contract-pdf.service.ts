@@ -40,6 +40,16 @@ const renderSemaphore = new RenderSemaphore(MAX_CONCURRENT_RENDERS, { maxQueue: 
 const esc = (s: unknown) =>
   String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+/**
+ * Os termos vieram do Lovable com marcação simples: `**negrito**` e linhas `---`.
+ * Escapa primeiro e só depois formata, então nada do texto vira HTML.
+ */
+export function termsToHtml(text: string): string {
+  return esc(text)
+    .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+    .replace(/^-{3,}$/gm, '<hr class="terms-sep"/>');
+}
+
 const spFormatter = new Intl.DateTimeFormat('pt-BR', {
   timeZone: SP_TIME_ZONE, day: '2-digit', month: '2-digit', year: 'numeric',
   hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
@@ -108,6 +118,7 @@ const CONTRACT_CSS = `
   .grid{width:100%;border-collapse:collapse;table-layout:fixed;break-inside:avoid;page-break-inside:avoid}
   .grid td{border:1px solid #000;padding:5px 7px;vertical-align:top;font-size:11px;overflow-wrap:anywhere;word-break:break-word}
   .notes{border:1px solid #000;padding:8px 10px;font-style:italic;white-space:pre-wrap;line-height:1.45;overflow-wrap:anywhere;word-break:break-word}
+  .terms-sep{border:0;border-top:1px solid #bbb;margin:4px 0}
   .terms{white-space:pre-wrap;font-size:10.5px;line-height:1.5;text-align:justify;overflow-wrap:anywhere;word-break:break-word}
   .signatures{page-break-inside:avoid;break-inside:avoid;display:flex;gap:48px;margin-top:36px}
   .sig-col{flex:1;text-align:center}
@@ -198,7 +209,7 @@ function contractBody(i: ContractPdfInput): string {
     <h2>4. OBSERVAÇÕES E SOLICITAÇÕES</h2>
     <div class="notes">${esc(c.notes || 'Sem observações.')}</div>
     <h2>5. DIZERES, TERMOS E CONDIÇÕES</h2>
-    <div class="terms">${esc(a ? a.acceptedTerms : i.terms)}</div>
+    <div class="terms">${termsToHtml(a ? a.acceptedTerms : i.terms)}</div>
     ${signaturesBlock(i, a?.signaturePngBase64 ?? null)}
     ${a ? evidenceBlock(a) : ''}`;
 }
