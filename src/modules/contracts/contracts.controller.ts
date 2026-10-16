@@ -1,15 +1,16 @@
 import {
-  BadRequestException, Body, Controller, Delete, Get, Param, ParseEnumPipe, Patch, Post, Put, Query, Res,
+  BadRequestException, Body, Controller, Delete, Get, Header, Param, ParseEnumPipe, Patch, Post, Put, Query, Res,
   UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { OrgRole } from '@prisma/client';
+import { OrgRole, type Contract } from '@prisma/client';
 import type { Response } from 'express';
 import { CurrentOrg, CurrentUser, CurrentUserRole, Roles } from '../../common/decorators';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import type { ContractActor } from './contract-actor';
+import { ContractParserService } from './ai/contract-parser.service';
+import { actorScope, type ContractActor } from './contract-actor';
 import { ContractFilesService, type ReadableFileKind } from './contract-files.service';
 import { ContractReportsService } from './contract-reports.service';
 import { ContractSettingsService } from './contract-settings.service';
@@ -18,13 +19,17 @@ import { toDetailView } from './contract-view';
 import { ContractsService } from './contracts.service';
 import { CreateContractDto, MoveDateDto, UpdateContractDto, UpdateFlagsDto } from './dto/contract.dto';
 import { GuideQueryDto, ListContractsDto } from './dto/list-contracts.dto';
+import { ParseContractTextDto } from './dto/parse.dto';
 import { BlockedDateDto, UpdateContractSettingsDto } from './dto/settings.dto';
+import { PlanejadorService } from './planejador/planejador.service';
 
 const READABLE_KINDS: readonly ReadableFileKind[] = [...CONTRACT_FILE_KINDS, 'signature', 'acceptance-pdf'];
 const STAFF = [OrgRole.OWNER, OrgRole.ADMIN];
 const MAX_GUIDE_LENGTH = 100;
 /** Gerar PDF abre o Chromium: limite próprio, abaixo do geral. */
 const PDF_THROTTLE = { geral: { ttl: 60_000, limit: 20 } };
+/** Cada leitura por IA é uma chamada paga ao LLM: mesmo teto do PDF. */
+const PARSE_THROTTLE = { geral: { ttl: 60_000, limit: 20 } };
 
 const actorOf = (userId: string, role: OrgRole | undefined): ContractActor => ({ userId, role });
 
@@ -47,7 +52,17 @@ export class ContractsController {
     private readonly files: ContractFilesService,
     private readonly settings: ContractSettingsService,
     private readonly reports: ContractReportsService,
+    private readonly parser: ContractParserService,
+    private readonly planejador: PlanejadorService,
   ) {}
+
+  /**
+   * Toda resposta com um contrato passa por aqui: sem chaves de arquivo cruas,
+   * user agent e senha cifrada do Planejador, com os booleanos e o link de aceite.
+   */
+  private view(c: Contract) {
+    return { ...toDetailView(c), acceptLinkPath: c.acceptanceToken ? `/aceitar/${c.acceptanceToken}` : null };
+  }
 
   @Get()
   list(
@@ -127,9 +142,16 @@ export class ContractsController {
     return this.settings.unblockDate(org, trimmed, date);
   }
 
+  /** Preenchimento por IA: só lê o texto, não grava nada (o operador confere e salva). */
+  @Post('parse')
+  @Throttle(PARSE_THROTTLE)
+  parse(@CurrentOrg('id') org: string, @Body() dto: ParseContractTextDto) {
+    return this.parser.parse(org, dto.rawText);
+  }
+
   @Post()
-  create(@CurrentOrg('id') org: string, @CurrentUser('id') user: string, @Body() dto: CreateContractDto) {
-    return this.contracts.create(org, user, dto);
+  async create(@CurrentOrg('id') org: string, @CurrentUser('id') user: string, @Body() dto: CreateContractDto) {
+    return this.view(await this.contracts.create(org, user, dto));
   }
 
   @Get(':id')
@@ -139,52 +161,51 @@ export class ContractsController {
     @CurrentUserRole() role: OrgRole | undefined,
     @Param('id') id: string,
   ) {
-    const c = await this.contracts.get(org, actorOf(user, role), id);
-    return { ...toDetailView(c), acceptLinkPath: c.acceptanceToken ? `/aceitar/${c.acceptanceToken}` : null };
+    return this.view(await this.contracts.get(org, actorOf(user, role), id));
   }
 
   @Patch(':id')
-  update(
+  async update(
     @CurrentOrg('id') org: string,
     @CurrentUser('id') user: string,
     @CurrentUserRole() role: OrgRole | undefined,
     @Param('id') id: string,
     @Body() dto: UpdateContractDto,
   ) {
-    return this.contracts.update(org, actorOf(user, role), id, dto);
+    return this.view(await this.contracts.update(org, actorOf(user, role), id, dto));
   }
 
   /** AGENT só pode mandar `purchased`; `paid`/`invoiceIssued` dão 403 (checado no serviço). */
   @Patch(':id/flags')
-  flags(
+  async flags(
     @CurrentOrg('id') org: string,
     @CurrentUser('id') user: string,
     @CurrentUserRole() role: OrgRole | undefined,
     @Param('id') id: string,
     @Body() dto: UpdateFlagsDto,
   ) {
-    return this.contracts.updateFlags(org, actorOf(user, role), id, dto);
+    return this.view(await this.contracts.updateFlags(org, actorOf(user, role), id, dto));
   }
 
   @Patch(':id/dates')
-  moveDate(
+  async moveDate(
     @CurrentOrg('id') org: string,
     @CurrentUser('id') user: string,
     @CurrentUserRole() role: OrgRole | undefined,
     @Param('id') id: string,
     @Body() dto: MoveDateDto,
   ) {
-    return this.contracts.moveDate(org, actorOf(user, role), id, dto);
+    return this.view(await this.contracts.moveDate(org, actorOf(user, role), id, dto));
   }
 
   @Post(':id/token')
-  token(
+  async token(
     @CurrentOrg('id') org: string,
     @CurrentUser('id') user: string,
     @CurrentUserRole() role: OrgRole | undefined,
     @Param('id') id: string,
   ) {
-    return this.contracts.regenerateToken(org, actorOf(user, role), id);
+    return this.view(await this.contracts.regenerateToken(org, actorOf(user, role), id));
   }
 
   @Delete(':id')
@@ -196,6 +217,32 @@ export class ContractsController {
     @Param('id') id: string,
   ) {
     return this.contracts.remove(org, actorOf(user, role), id);
+  }
+
+  /** Tentar de novo o login no Planejador; `sync` não lança, o resultado é relido do contrato. */
+  @Post(':id/planejador')
+  async retryPlanejador(
+    @CurrentOrg('id') org: string,
+    @CurrentUser('id') user: string,
+    @CurrentUserRole() role: OrgRole | undefined,
+    @Param('id') id: string,
+  ) {
+    const actor = actorOf(user, role);
+    await this.planejador.sync(await this.contracts.get(org, actor, id));
+    const after = await this.contracts.get(org, actor, id);
+    return { syncedAt: after.planejadorSyncedAt, error: after.planejadorError };
+  }
+
+  /** Copiar login: AGENT só do próprio contrato (escopo do ator); a senha não fica em cache. */
+  @Get(':id/planejador/credentials')
+  @Header('Cache-Control', 'no-store')
+  planejadorCredentials(
+    @CurrentOrg('id') org: string,
+    @CurrentUser('id') user: string,
+    @CurrentUserRole() role: OrgRole | undefined,
+    @Param('id') id: string,
+  ) {
+    return this.planejador.revealPassword(org, id, actorScope(actorOf(user, role)));
   }
 
   @Post(':id/files/:kind')

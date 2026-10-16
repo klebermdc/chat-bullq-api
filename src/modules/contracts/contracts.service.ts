@@ -14,6 +14,7 @@ import { assertSafePng } from './domain/png-guard';
 import type { CreateContractDto, MoveDateDto, UpdateContractDto, UpdateFlagsDto } from './dto/contract.dto';
 import type { ListContractsDto } from './dto/list-contracts.dto';
 import { ContractPdfService, type ContractPdfInput } from './pdf/contract-pdf.service';
+import { PlanejadorService } from './planejador/planejador.service';
 
 export function generateContractToken(): string {
   return randomBytes(32).toString('base64url');
@@ -71,6 +72,7 @@ export class ContractsService {
     private readonly settings: ContractSettingsService,
     private readonly pdf: ContractPdfService,
     private readonly storage: StorageService,
+    private readonly planejador: PlanejadorService,
   ) {}
 
   private changed(organizationId: string, id: string) {
@@ -112,7 +114,7 @@ export class ContractsService {
   }
 
   async create(organizationId: string, userId: string, dto: CreateContractDto) {
-    const { createPlanejadorAccess: _ignored, parkDates, datesToBeDefined, ...rest } = dto;
+    const { createPlanejadorAccess, parkDates, datesToBeDefined, ...rest } = dto;
     const created = await this.repo.create({
       ...rest,
       ...datesFields(parkDates, resolveToBeDefined(parkDates, datesToBeDefined)),
@@ -121,7 +123,19 @@ export class ContractsService {
       acceptanceToken: generateContractToken(),
     });
     this.changed(organizationId, created.id);
+    if (createPlanejadorAccess !== false) this.syncPlanejadorInBackground(created);
     return created;
+  }
+
+  /**
+   * Login do cliente no Planejador sem segurar a resposta. `sync` não lança
+   * (o erro fica no contrato para "tentar de novo"); o catch é só a rede de
+   * segurança contra rejeição não tratada.
+   */
+  private syncPlanejadorInBackground(contract: Contract): void {
+    void this.planejador.sync(contract).catch((err: unknown) => {
+      this.logger.error(`contract_planejador_background_error contract=${contract.id} reason=${(err as Error)?.message}`);
+    });
   }
 
   async update(organizationId: string, actor: ContractActor, id: string, dto: UpdateContractDto) {
