@@ -20,6 +20,6 @@ import { PreviewController } from './preview.controller';
     EmailEventsService,
     ResendWebhookThrottleGuard,
   ],
-  exports: [EmailSenderService, EmailRenderService, EmailEventsService],
+  exports: [EmailSenderService, EmailRenderService, EmailEventsService, ResendClient],
 })
 export class EmailCoreModule {}

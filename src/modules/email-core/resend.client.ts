@@ -40,24 +40,39 @@ export class ResendClient {
 
   async send(payload: SendEmailPayload): Promise<SendEmailResult> {
     const from = payload.fromName ? `${payload.fromName} <${this.config.from}>` : this.config.from;
+    return this.deliver({
+      from,
+      to: payload.to,
+      subject: payload.subject,
+      html: payload.html,
+      text: payload.text,
+      headers: {
+        // Habilita o botão nativo de descadastro do Gmail/Outlook. Sem ele o
+        // usuário marca spam em vez de descadastrar, e a reputação despenca.
+        // Tem que ser a URL da API (aceita POST) — a página web só responde
+        // GET e devolveria 405 pro POST automático do provedor.
+        'List-Unsubscribe': `<${payload.unsubscribePostUrl}>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
+    });
+  }
 
+  /** E-mail operacional (não marketing): sem rodapé nem List-Unsubscribe. */
+  async sendTransactional(p: {
+    to: string;
+    subject: string;
+    html: string;
+    text: string;
+    fromName?: string;
+  }): Promise<SendEmailResult> {
+    const from = p.fromName ? `${p.fromName} <${this.config.from}>` : this.config.from;
+    return this.deliver({ from, to: p.to, subject: p.subject, html: p.html, text: p.text });
+  }
+
+  private async deliver(opts: Record<string, unknown>): Promise<SendEmailResult> {
     let result: any;
     try {
-      result = await this.sdk.emails.send({
-        from,
-        to: payload.to,
-        subject: payload.subject,
-        html: payload.html,
-        text: payload.text,
-        headers: {
-          // Habilita o botão nativo de descadastro do Gmail/Outlook. Sem ele o
-          // usuário marca spam em vez de descadastrar, e a reputação despenca.
-          // Tem que ser a URL da API (aceita POST) — a página web só responde
-          // GET e devolveria 405 pro POST automático do provedor.
-          'List-Unsubscribe': `<${payload.unsubscribePostUrl}>`,
-          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-        },
-      });
+      result = await this.sdk.emails.send(opts);
     } catch (err) {
       // Nunca engolir: o motivo real é o que torna o erro depurável.
       throw new Error(`Resend falhou: ${(err as Error).message}`);
