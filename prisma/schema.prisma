@@ -3028,6 +3028,11 @@ model Contract {
   /// PDF gerado no aceite, com assinatura e evidência. Chave MinIO privada.
   acceptancePdfKey  String? @map("acceptance_pdf_key")
   createdById       String? @map("created_by_id")
+  /// Senha do login do cliente no Planejador OFP, criptografada (CryptoService).
+  planejadorPasswordEnc String?   @map("planejador_password_enc") @db.Text
+  planejadorSyncedAt    DateTime? @map("planejador_synced_at")
+  planejadorError       String?   @map("planejador_error")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

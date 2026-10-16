@@ -22,13 +22,24 @@ function fileFlags(c: FileKeys): FileFlags {
   };
 }
 
-/** Linha da listagem: troca as chaves pelos booleanos. */
-export function toListItem<T extends FileKeys>(row: T) {
-  const { signatureKey: _s, signedContractKey: _c, paymentReceiptKey: _p, acceptancePdfKey: _a, ...rest } = row;
+/** Senha do Planejador cifrada: só sai decifrada pela rota de credenciais. */
+interface SecretFields {
+  planejadorPasswordEnc?: string | null;
+}
+
+/** Linha da listagem: troca as chaves pelos booleanos e nunca leva a senha cifrada. */
+export function toListItem<T extends FileKeys & SecretFields>(row: T) {
+  const {
+    signatureKey: _s, signedContractKey: _c, paymentReceiptKey: _p, acceptancePdfKey: _a,
+    planejadorPasswordEnc: _pw, ...rest
+  } = row;
   return { ...rest, ...fileFlags(row) };
 }
 
-/** Detalhe (já escopado): tudo menos user agent e chaves cruas, mais os booleanos. */
+/**
+ * Detalhe (já escopado): tudo menos user agent, chaves cruas e senha cifrada,
+ * mais os booleanos. Do Planejador saem só `planejadorSyncedAt` e `planejadorError`.
+ */
 export function toDetailView<T extends FileKeys & { clientUserAgent?: string | null }>(contract: T) {
   const { clientUserAgent: _ua, ...rest } = contract;
   return toListItem(rest);

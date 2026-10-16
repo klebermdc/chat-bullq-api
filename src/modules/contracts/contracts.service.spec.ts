@@ -40,8 +40,10 @@ function make(existing: any = null) {
     getBuffer: jest.fn().mockResolvedValue(SIGNATURE_PNG),
     put: jest.fn().mockResolvedValue(undefined),
   } as any;
+  const planejador = { sync: jest.fn().mockResolvedValue(undefined) } as any;
   return {
-    service: new ContractsService(repo, realtime, settings, pdf, storage), repo, realtime, settings, pdf, storage,
+    service: new ContractsService(repo, realtime, settings, pdf, storage, planejador),
+    repo, realtime, settings, pdf, storage, planejador,
   };
 }
 
@@ -61,6 +63,46 @@ const DTO = {
 };
 
 describe('ContractsService', () => {
+  describe('create → Planejador', () => {
+    it('cria o login no Planejador por padrão, com o contrato criado', async () => {
+      const { service, planejador } = make();
+      const created = await service.create('org1', 'user1', DTO as any);
+      expect(planejador.sync).toHaveBeenCalledTimes(1);
+      expect(planejador.sync).toHaveBeenCalledWith(created);
+    });
+
+    it('createPlanejadorAccess: true também sincroniza', async () => {
+      const { service, planejador } = make();
+      await service.create('org1', 'user1', { ...DTO, createPlanejadorAccess: true } as any);
+      expect(planejador.sync).toHaveBeenCalledTimes(1);
+    });
+
+    it('não chama o Planejador com createPlanejadorAccess: false', async () => {
+      const { service, planejador } = make();
+      await service.create('org1', 'user1', { ...DTO, createPlanejadorAccess: false } as any);
+      expect(planejador.sync).not.toHaveBeenCalled();
+    });
+
+    it('não grava createPlanejadorAccess no contrato', async () => {
+      const { service, repo } = make();
+      await service.create('org1', 'user1', { ...DTO, createPlanejadorAccess: true } as any);
+      expect(repo.create.mock.calls[0][0]).not.toHaveProperty('createPlanejadorAccess');
+    });
+
+    it('não espera o Planejador: a resposta sai antes do sync terminar', async () => {
+      const { service, planejador } = make();
+      planejador.sync.mockReturnValue(new Promise(() => undefined));
+      await expect(service.create('org1', 'user1', DTO as any)).resolves.toMatchObject({ id: 'c1' });
+    });
+
+    it('falha no sync não afeta a resposta', async () => {
+      const { service, planejador } = make();
+      planejador.sync.mockRejectedValue(new Error('planejador fora'));
+      await expect(service.create('org1', 'user1', DTO as any)).resolves.toMatchObject({ id: 'c1', fullName: 'Cliente Teste' });
+      await new Promise((r) => setImmediate(r));
+    });
+  });
+
   it('create gera token no servidor, texto de datas e dias', async () => {
     const { service, repo, realtime } = make();
     await service.create('org1', 'user1', DTO as any);
