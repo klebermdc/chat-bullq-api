@@ -1,4 +1,13 @@
-import { PlanejadorClient, buildPlanejadorPayload } from './planejador.client';
+import {
+  PlanejadorClient,
+  PlanejadorConfigError,
+  PlanejadorHttpError,
+  buildPlanejadorPayload,
+  formatCpf,
+} from './planejador.client';
+
+const ENV = { PLANEJADOR_CREATE_CLIENT_URL: 'https://p.example/x', PLANEJADOR_API_KEY: 'k' } as any;
+const okFetch = () => jest.fn().mockResolvedValue({ ok: true, status: 200 });
 
 describe('buildPlanejadorPayload', () => {
   it('monta o payload do Lovable com datas sem fuso', () => {
@@ -32,37 +41,78 @@ describe('buildPlanejadorPayload', () => {
     expect(p.end_date).toBeNull();
     expect(p.parks).toEqual([]);
   });
+
+  it.each([
+    ['12345678901', '123.456.789-01'],
+    ['123.456.789-01', '123.456.789-01'],
+    [' 123 456 789 01 ', '123.456.789-01'],
+  ])('CPF %p sai formatado como %p', (cpf, expected) => {
+    const p = buildPlanejadorPayload(
+      { id: 'c1', fullName: 'A', cpf, phone: '2', address: 'R', cep: '3', email: 'a@x.com', guideName: 'K', amount: '1', people: 1, disneyGuest: false },
+      [],
+      'x',
+    );
+    expect(p.cpf).toBe(expected);
+  });
+
+  it('CPF sem 11 dígitos sai como veio', () => {
+    expect(formatCpf('1234')).toBe('1234');
+  });
 });
 
-describe('PlanejadorClient', () => {
+describe('PlanejadorClient (configuração)', () => {
   it('sem URL configurada lança erro claro', async () => {
-    await expect(new PlanejadorClient({} as any, jest.fn()).createClient({} as any)).rejects.toThrow(
+    await expect(new PlanejadorClient({ PLANEJADOR_API_KEY: 'k' } as any, jest.fn()).createClient({} as any)).rejects.toThrow(
       /PLANEJADOR_CREATE_CLIENT_URL/,
     );
   });
 
-  it('erro HTTP vira exceção com status, sem ecoar o corpo inteiro', async () => {
-    const fetchFn = jest.fn().mockResolvedValue({ ok: false, status: 409, text: async () => 'x'.repeat(1000) });
-    const c = new PlanejadorClient({ PLANEJADOR_CREATE_CLIENT_URL: 'https://p/x', PLANEJADOR_API_KEY: 'k' } as any, fetchFn);
-    const err = await c.createClient({} as any).catch((e: Error) => e);
-    expect((err as Error).message).toMatch(/409/);
-    expect((err as Error).message.length).toBeLessThan(260);
-    expect(fetchFn.mock.calls[0][1].headers.Authorization).toBe('Bearer k');
+  it.each(['http://p.example/x', 'ftp://p.example/x', 'não é url'])('URL %p sem https é erro de configuração', async (url) => {
+    const fetchFn = okFetch();
+    const c = new PlanejadorClient({ ...ENV, PLANEJADOR_CREATE_CLIENT_URL: url }, fetchFn);
+    await expect(c.createClient({} as any)).rejects.toBeInstanceOf(PlanejadorConfigError);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, '', '   '])('PLANEJADOR_API_KEY %p é erro de configuração', async (key) => {
+    const fetchFn = okFetch();
+    const c = new PlanejadorClient({ PLANEJADOR_CREATE_CLIENT_URL: ENV.PLANEJADOR_CREATE_CLIENT_URL, PLANEJADOR_API_KEY: key } as any, fetchFn);
+    await expect(c.createClient({} as any)).rejects.toThrow('PLANEJADOR_API_KEY não configurada');
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+});
+
+describe('PlanejadorClient (requisição)', () => {
+  it('erro HTTP vira PlanejadorHttpError só com o status, sem ler o corpo', async () => {
+    const text = jest.fn().mockResolvedValue('e-mail a@x.com CPF 123.456.789-01');
+    const fetchFn = jest.fn().mockResolvedValue({ ok: false, status: 409, text });
+    const err = await new PlanejadorClient(ENV, fetchFn).createClient({} as any).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(PlanejadorHttpError);
+    expect((err as PlanejadorHttpError).status).toBe(409);
+    expect((err as Error).message).toBe('Planejador respondeu 409');
+    expect(text).not.toHaveBeenCalled();
   });
 
   it('a mensagem de erro nunca contém o payload enviado', async () => {
-    const fetchFn = jest.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' });
-    const c = new PlanejadorClient({ PLANEJADOR_CREATE_CLIENT_URL: 'https://p/x' } as any, fetchFn);
-    const err = await c.createClient({ password: 'Senha#123' } as any).catch((e: Error) => e);
+    const fetchFn = jest.fn().mockResolvedValue({ ok: false, status: 500 });
+    const err = await new PlanejadorClient(ENV, fetchFn).createClient({ password: 'Senha#123' } as any).catch((e: Error) => e);
     expect((err as Error).message).not.toContain('Senha#123');
+  });
+
+  it('manda a chave no Authorization e recusa redirect', async () => {
+    const fetchFn = okFetch();
+    await new PlanejadorClient(ENV, fetchFn).createClient({} as any);
+    const init = fetchFn.mock.calls[0][1];
+    expect(init.headers.Authorization).toBe('Bearer k');
+    expect(init.redirect).toBe('error');
   });
 
   it('usa timeout de 15s via AbortSignal e POST com JSON', async () => {
     const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
-    const fetchFn = jest.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '' });
-    const c = new PlanejadorClient({ PLANEJADOR_CREATE_CLIENT_URL: 'https://p/x' } as any, fetchFn);
-    await c.createClient({ a: 1 } as any);
+    const fetchFn = okFetch();
+    await new PlanejadorClient(ENV, fetchFn).createClient({ a: 1 } as any);
     expect(timeoutSpy).toHaveBeenCalledWith(15_000);
+    expect(fetchFn.mock.calls[0][0]).toBe('https://p.example/x');
     expect(fetchFn.mock.calls[0][1].method).toBe('POST');
     expect(fetchFn.mock.calls[0][1].body).toBe('{"a":1}');
     timeoutSpy.mockRestore();

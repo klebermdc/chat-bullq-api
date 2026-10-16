@@ -1,5 +1,5 @@
 import {
-  BadRequestException, Body, Controller, Delete, Get, Header, Param, ParseEnumPipe, Patch, Post, Put, Query, Res,
+  BadRequestException, Body, Controller, Delete, Get, Header, Logger, Param, ParseEnumPipe, Patch, Post, Put, Query, Res,
   UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -10,7 +10,7 @@ import type { Response } from 'express';
 import { CurrentOrg, CurrentUser, CurrentUserRole, Roles } from '../../common/decorators';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { ContractParserService } from './ai/contract-parser.service';
-import { actorScope, type ContractActor } from './contract-actor';
+import { actorScope, isStaff, type ContractActor } from './contract-actor';
 import { ContractFilesService, type ReadableFileKind } from './contract-files.service';
 import { ContractReportsService } from './contract-reports.service';
 import { ContractSettingsService } from './contract-settings.service';
@@ -22,6 +22,7 @@ import { GuideQueryDto, ListContractsDto } from './dto/list-contracts.dto';
 import { ParseContractTextDto } from './dto/parse.dto';
 import { BlockedDateDto, UpdateContractSettingsDto } from './dto/settings.dto';
 import { PlanejadorService } from './planejador/planejador.service';
+import { SyncPlanejadorDto } from './planejador/sync-planejador.dto';
 
 const READABLE_KINDS: readonly ReadableFileKind[] = [...CONTRACT_FILE_KINDS, 'signature', 'acceptance-pdf'];
 const STAFF = [OrgRole.OWNER, OrgRole.ADMIN];
@@ -30,6 +31,10 @@ const MAX_GUIDE_LENGTH = 100;
 const PDF_THROTTLE = { geral: { ttl: 60_000, limit: 20 } };
 /** Cada leitura por IA é uma chamada paga ao LLM: mesmo teto do PDF. */
 const PARSE_THROTTLE = { geral: { ttl: 60_000, limit: 20 } };
+/** Reenvio ao Planejador e revelação da senha: teto baixo contra abuso. */
+const PLANEJADOR_THROTTLE = { geral: { ttl: 60_000, limit: 10 } };
+/** Auditoria de quem revelou a senha do Planejador (sem senha nem e-mail). */
+const planejadorAudit = new Logger('ContractsController');
 
 const actorOf = (userId: string, role: OrgRole | undefined): ContractActor => ({ userId, role });
 
@@ -219,16 +224,22 @@ export class ContractsController {
     return this.contracts.remove(org, actorOf(user, role), id);
   }
 
-  /** Tentar de novo o login no Planejador; `sync` não lança, o resultado é relido do contrato. */
+  /**
+   * Tentar de novo o login no Planejador; `sync` não lança, o resultado é relido
+   * do contrato. Já sincronizado não reenvia, salvo `force` vindo de staff.
+   */
   @Post(':id/planejador')
+  @Throttle(PLANEJADOR_THROTTLE)
   async retryPlanejador(
     @CurrentOrg('id') org: string,
     @CurrentUser('id') user: string,
     @CurrentUserRole() role: OrgRole | undefined,
     @Param('id') id: string,
+    @Body() dto?: SyncPlanejadorDto,
   ) {
     const actor = actorOf(user, role);
-    await this.planejador.sync(await this.contracts.get(org, actor, id));
+    const force = isStaff(actor) && dto?.force === true;
+    await this.planejador.sync(await this.contracts.get(org, actor, id), { force });
     const after = await this.contracts.get(org, actor, id);
     return { syncedAt: after.planejadorSyncedAt, error: after.planejadorError };
   }
@@ -236,13 +247,16 @@ export class ContractsController {
   /** Copiar login: AGENT só do próprio contrato (escopo do ator); a senha não fica em cache. */
   @Get(':id/planejador/credentials')
   @Header('Cache-Control', 'no-store')
-  planejadorCredentials(
+  @Throttle(PLANEJADOR_THROTTLE)
+  async planejadorCredentials(
     @CurrentOrg('id') org: string,
     @CurrentUser('id') user: string,
     @CurrentUserRole() role: OrgRole | undefined,
     @Param('id') id: string,
   ) {
-    return this.planejador.revealPassword(org, id, actorScope(actorOf(user, role)));
+    const creds = await this.planejador.revealPassword(org, id, actorScope(actorOf(user, role)));
+    planejadorAudit.log(`contract_planejador_credentials_revealed contract=${id} user=${user} role=${role ?? '-'}`);
+    return creds;
   }
 
   @Post(':id/files/:kind')

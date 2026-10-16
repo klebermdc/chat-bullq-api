@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException, ParseEnumPipe } from '@nestjs/common';
+import { BadRequestException, Logger, NotFoundException, ParseEnumPipe } from '@nestjs/common';
 import { GUARDS_METADATA, HEADERS_METADATA, ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { OrgRole } from '@prisma/client';
@@ -76,6 +76,11 @@ describe('ContractsController (metadata)', () => {
   it('parse por IA tem limite próprio: 20 por minuto no throttler geral', () => {
     expect(Reflect.getMetadata(`${THROTTLER_LIMIT}geral`, proto.parse)).toBe(20);
     expect(Reflect.getMetadata(`${THROTTLER_TTL}geral`, proto.parse)).toBe(60_000);
+  });
+
+  it.each(['retryPlanejador', 'planejadorCredentials'])('%s tem limite próprio: 10 por minuto no throttler geral', (m) => {
+    expect(Reflect.getMetadata(`${THROTTLER_LIMIT}geral`, proto[m])).toBe(10);
+    expect(Reflect.getMetadata(`${THROTTLER_TTL}geral`, proto[m])).toBe(60_000);
   });
 
   it('credenciais do Planejador saem com Cache-Control: no-store', () => {
@@ -236,7 +241,21 @@ describe('ContractsController (IA e Planejador)', () => {
     contracts.get.mockResolvedValueOnce(before).mockResolvedValueOnce({ ...before, planejadorSyncedAt: syncedAt, planejadorError: null });
     await expect(controller.retryPlanejador('org1', 'u1', AGENT, 'c1')).resolves.toEqual({ syncedAt, error: null });
     expect(contracts.get).toHaveBeenNthCalledWith(1, 'org1', { userId: 'u1', role: AGENT }, 'c1');
-    expect(planejador.sync).toHaveBeenCalledWith(before);
+    expect(planejador.sync).toHaveBeenCalledWith(before, { force: false });
+  });
+
+  it.each([
+    [ADMIN, { force: true }, true],
+    [OrgRole.OWNER, { force: true }, true],
+    [ADMIN, {}, false],
+    [ADMIN, undefined, false],
+    [AGENT, { force: true }, false],
+    [undefined, { force: true }, false],
+  ])('papel %p com body %p: force=%p', async (role, body, force) => {
+    const { controller, contracts, planejador } = make();
+    contracts.get.mockResolvedValue({ id: 'c1', planejadorSyncedAt: new Date(), planejadorError: null });
+    await controller.retryPlanejador('org1', 'u1', role as OrgRole | undefined, 'c1', body as any);
+    expect(planejador.sync).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1' }), { force });
   });
 
   it('tentar de novo em contrato fora do escopo propaga o 404 e não sincroniza', async () => {
@@ -254,6 +273,32 @@ describe('ContractsController (IA e Planejador)', () => {
     expect(planejador.revealPassword).toHaveBeenCalledWith('org1', 'c1', { createdById: 'u1' });
     await controller.planejadorCredentials('org1', 'a1', ADMIN, 'c1');
     expect(planejador.revealPassword).toHaveBeenLastCalledWith('org1', 'c1', {});
+  });
+
+  it('revelar credenciais deixa log de auditoria sem senha nem e-mail', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    try {
+      const { controller } = make();
+      await controller.planejadorCredentials('org1', 'u1', AGENT, 'c1');
+      expect(log).toHaveBeenCalledWith('contract_planejador_credentials_revealed contract=c1 user=u1 role=AGENT');
+      const all = JSON.stringify(log.mock.calls);
+      expect(all).not.toContain('Senha!234');
+      expect(all).not.toContain('c@example.com');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('credenciais negadas (404) não registram revelação', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    try {
+      const { controller, planejador } = make();
+      planejador.revealPassword.mockRejectedValue(new NotFoundException());
+      await expect(controller.planejadorCredentials('org1', 'u1', AGENT, 'c1')).rejects.toBeInstanceOf(NotFoundException);
+      expect(log).not.toHaveBeenCalledWith(expect.stringContaining('contract_planejador_credentials_revealed'));
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('detalhe não devolve a senha cifrada, só o estado do Planejador', async () => {
