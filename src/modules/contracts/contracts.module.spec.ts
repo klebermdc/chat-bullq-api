@@ -1,0 +1,47 @@
+import { Global, Module } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { PrismaService } from '../../database/prisma.service';
+import { ChannelAccessService } from '../iam/channel-access/channel-access.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { StorageService } from '../storage/storage.service';
+import { ContractFilesService } from './contract-files.service';
+import { ContractsController } from './contracts.controller';
+import { ContractsModule } from './contracts.module';
+import { ContractsService } from './contracts.service';
+import { ContractsImportController } from './legacy/contracts-import.controller';
+import { ContractPdfService } from './pdf/contract-pdf.service';
+
+/**
+ * Prova que o Nest monta o grafo de DI do ContractsModule (pega construtor
+ * irresolvível, que teste unitário com `new` não pega).
+ *
+ * `createTestingModule` não herda os módulos `@Global()` do AppModule
+ * (PrismaModule, StorageModule, RealtimeModule, ChannelAccessModule). Os
+ * providers que o módulo usa vêm de um módulo global falso: PrismaService,
+ * StorageService e RealtimeGateway pelos services, e ChannelAccessService
+ * pelo OrgGuard dos controllers.
+ */
+@Global()
+@Module({
+  providers: [
+    { provide: PrismaService, useValue: {} },
+    { provide: StorageService, useValue: {} },
+    { provide: RealtimeGateway, useValue: { emitToOrg: jest.fn() } },
+    { provide: ChannelAccessService, useValue: {} },
+  ],
+  exports: [PrismaService, StorageService, RealtimeGateway, ChannelAccessService],
+})
+class FakeGlobalsModule {}
+
+describe('ContractsModule (compilação Nest)', () => {
+  it('resolve controllers e services', async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [FakeGlobalsModule, ContractsModule] }).compile();
+
+    expect(moduleRef.get(ContractsController)).toBeInstanceOf(ContractsController);
+    expect(moduleRef.get(ContractsImportController)).toBeInstanceOf(ContractsImportController);
+    expect(moduleRef.get(ContractsService)).toBeInstanceOf(ContractsService);
+    expect(moduleRef.get(ContractFilesService)).toBeInstanceOf(ContractFilesService);
+    expect(moduleRef.get(ContractPdfService)).toBeInstanceOf(ContractPdfService);
+    await moduleRef.close();
+  });
+});

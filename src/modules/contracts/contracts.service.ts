@@ -1,12 +1,14 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, type Contract } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { ContractSettingsService } from './contract-settings.service';
 import { ContractsRepository } from './contracts.repository';
 import { formatParkDates, readContractDates, type ParkDate } from './domain/park-dates';
 import { statusWhere } from './domain/contract-status';
 import type { CreateContractDto, MoveDateDto, UpdateContractDto, UpdateFlagsDto } from './dto/contract.dto';
 import type { ListContractsDto } from './dto/list-contracts.dto';
+import { ContractPdfService, type ContractPdfInput } from './pdf/contract-pdf.service';
 
 export function generateContractToken(): string {
   return randomBytes(32).toString('base64url');
@@ -35,6 +37,8 @@ export class ContractsService {
   constructor(
     private readonly repo: ContractsRepository,
     private readonly realtime: RealtimeGateway,
+    private readonly settings: ContractSettingsService,
+    private readonly pdf: ContractPdfService,
   ) {}
 
   private changed(organizationId: string, id: string) {
@@ -131,6 +135,57 @@ export class ContractsService {
     const updated = await this.repo.updateInOrg(organizationId, id, datesFields(next, false));
     this.changed(organizationId, id);
     return updated;
+  }
+
+  async stats(organizationId: string, guide?: string) {
+    const base: Prisma.ContractWhereInput = {
+      organizationId,
+      ...(guide ? { guideName: { equals: guide, mode: 'insensitive' } } : {}),
+    };
+    const [total, accepted, paid, purchased, pending] = await Promise.all([
+      this.repo.count(base),
+      this.repo.count({ ...base, ...statusWhere('accepted') }),
+      this.repo.count({ ...base, ...statusWhere('paid') }),
+      this.repo.count({ ...base, ...statusWhere('purchased') }),
+      this.repo.count({ ...base, ...statusWhere('pending') }),
+    ]);
+    return { total, accepted, paid, purchased, pending };
+  }
+
+  /** Monta a entrada do PDF só com os campos que ele mostra (sem token, ids etc.). */
+  async buildPdfInput(
+    organizationId: string,
+    contract: Contract,
+    acceptance?: ContractPdfInput['acceptance'],
+  ): Promise<ContractPdfInput> {
+    const s = await this.settings.get(organizationId);
+    return {
+      company: { name: s.companyName ?? '', document: s.companyDocument ?? '', address: s.companyAddress ?? '' },
+      contract: {
+        fullName: contract.fullName,
+        cpf: contract.cpf,
+        address: contract.address,
+        cep: contract.cep,
+        email: contract.email,
+        phone: contract.phone,
+        guideName: contract.guideName,
+        people: contract.people,
+        days: contract.days,
+        amount: contract.amount,
+        paymentMethod: contract.paymentMethod,
+        notes: contract.notes,
+        dates: readContractDates(contract).map((d) => ({ label: d.label, date: d.date })),
+      },
+      terms: s.terms,
+      acceptance,
+    };
+  }
+
+  /** PDF guardado no aceite; senão um PDF gerado agora (sem evidência). */
+  async pdfFor(organizationId: string, id: string): Promise<{ key: string } | { buffer: Buffer }> {
+    const c = await this.get(organizationId, id);
+    if (c.acceptancePdfKey?.startsWith(`contracts/${organizationId}/`)) return { key: c.acceptancePdfKey };
+    return { buffer: await this.pdf.render(await this.buildPdfInput(organizationId, c)) };
   }
 
   async remove(organizationId: string, id: string) {

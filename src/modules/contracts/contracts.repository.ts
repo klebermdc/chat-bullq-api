@@ -13,6 +13,10 @@ export class ContractsRepository {
     ]);
   }
 
+  count(where: Prisma.ContractWhereInput) {
+    return this.prisma.contract.count({ where });
+  }
+
   findAll(where: Prisma.ContractWhereInput, select?: Prisma.ContractSelect) {
     return this.prisma.contract.findMany({ where, orderBy: { createdAt: 'desc' }, ...(select ? { select } : {}) });
   }

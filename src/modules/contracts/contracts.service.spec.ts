@@ -10,7 +10,9 @@ function make(existing: any = null) {
     deleteInOrg: jest.fn().mockResolvedValue(true),
   } as any;
   const realtime = { emitToOrg: jest.fn() } as any;
-  return { service: new ContractsService(repo, realtime), repo, realtime };
+  const settings = { get: jest.fn().mockResolvedValue({ terms: 'T' }) } as any;
+  const pdf = { render: jest.fn().mockResolvedValue(Buffer.from('%PDF')) } as any;
+  return { service: new ContractsService(repo, realtime, settings, pdf), repo, realtime, settings, pdf };
 }
 
 const DTO = {
@@ -107,5 +109,62 @@ describe('ContractsService', () => {
     const data = repo.updateInOrg.mock.calls[0][2];
     expect(data.parkDates).toEqual([{ parkId: 'epcot', date: '2026-12-05' }]);
     expect(data.requestedDates).toBe('05/12/2026 - EPCOT');
+  });
+  it('stats conta por status com o mesmo filtro de guia', async () => {
+    const { service, repo } = make();
+    repo.count = jest.fn().mockResolvedValue(3);
+    expect(await service.stats('org1', 'Kleber')).toEqual({ total: 3, accepted: 3, paid: 3, purchased: 3, pending: 3 });
+    expect(repo.count).toHaveBeenCalledTimes(5);
+    for (const [where] of repo.count.mock.calls) {
+      expect(where).toMatchObject({ organizationId: 'org1', guideName: { equals: 'Kleber', mode: 'insensitive' } });
+    }
+  });
+
+  it('stats sem guia não filtra por guia', async () => {
+    const { service, repo } = make();
+    repo.count = jest.fn().mockResolvedValue(0);
+    await service.stats('org1');
+    expect(repo.count.mock.calls[0][0]).toEqual({ organizationId: 'org1' });
+  });
+
+  it('pdfFor devolve a chave do PDF de aceite quando existe', async () => {
+    const { service, pdf } = make({ id: 'c1', acceptancePdfKey: 'contracts/org1/c1/acceptance.pdf' });
+    await expect(service.pdfFor('org1', 'c1')).resolves.toEqual({ key: 'contracts/org1/c1/acceptance.pdf' });
+    expect(pdf.render).not.toHaveBeenCalled();
+  });
+
+  it('pdfFor ignora chave de outra org e gera na hora', async () => {
+    const { service, pdf } = make({
+      id: 'c1', acceptancePdfKey: 'contracts/org2/c1/acceptance.pdf', parkDates: [], requestedDates: '', createdAt: new Date(),
+    });
+    const r = await service.pdfFor('org1', 'c1');
+    expect('buffer' in r).toBe(true);
+    expect(pdf.render).toHaveBeenCalled();
+  });
+
+  it('pdfFor gera na hora quando não há aceite', async () => {
+    const { service } = make({ id: 'c1', acceptancePdfKey: null, parkDates: [], requestedDates: '', createdAt: new Date() });
+    const r = await service.pdfFor('org1', 'c1');
+    expect('buffer' in r).toBe(true);
+  });
+
+  it('buildPdfInput monta só os campos do contrato que o PDF usa', async () => {
+    const contract = {
+      id: 'c1', organizationId: 'org1', acceptanceToken: 'segredo', fullName: 'Cliente Teste', cpf: '000.000.000-00',
+      address: 'Rua Teste, 123', cep: '00000-000', email: 'c@example.com', phone: '(11) 90000-0000', guideName: 'Kleber',
+      people: 2, days: 1, amount: '2190,00', paymentMethod: 'pix', notes: null,
+      parkDates: [{ parkId: 'epcot', date: '2026-12-02' }], requestedDates: '', createdAt: new Date(),
+    };
+    const { service, settings } = make();
+    settings.get.mockResolvedValue({ terms: 'T', companyName: 'Empresa', companyDocument: null, companyAddress: null });
+    const input = await service.buildPdfInput('org1', contract as any);
+    expect(input.company).toEqual({ name: 'Empresa', document: '', address: '' });
+    expect(input.terms).toBe('T');
+    expect(input.acceptance).toBeUndefined();
+    expect(input.contract).toEqual({
+      fullName: 'Cliente Teste', cpf: '000.000.000-00', address: 'Rua Teste, 123', cep: '00000-000',
+      email: 'c@example.com', phone: '(11) 90000-0000', guideName: 'Kleber', people: 2, days: 1, amount: '2190,00',
+      paymentMethod: 'pix', notes: null, dates: [{ label: 'EPCOT', date: '2026-12-02' }],
+    });
   });
 });
