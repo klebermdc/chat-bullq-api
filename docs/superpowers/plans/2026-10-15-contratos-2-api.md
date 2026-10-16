@@ -3205,134 +3205,34 @@ export class PlanejadorService {
 
 ---
 
-# ETAPA 2D — Google Agenda
+# ETAPA 2D — Google Agenda via MCP + rotina do Claude (revisada em 16/10/2026)
 
-Branch `feat/contratos-2d-agenda`.
+> Substitui o desenho com OAuth próprio. Decisão do Kleber: sem OAuth no Sendtur. O Sendtur expõe os
+> eventos "desejados" pela API pública e pelo MCP; uma rotina agendada do Claude (nuvem, diária) sincroniza
+> no Google Agenda usando o conector oficial do claude.ai.
 
-**Como funciona:**
-- A organização conecta **uma conta Google** pelo OAuth (escopo `https://www.googleapis.com/auth/calendar.events`).
-- Cada guia pode ter a sua agenda: `calendarId`, com padrão `primary`.
-- A sincronização é manual, por botão (como no Lovable), e também roda ao aceitar ou editar um contrato quando a org está conectada.
-- Ids de evento determinísticos (sha1, só `0-9a-f`, aceito pelo Google) fazem o upsert por `PUT` e depois `POST`.
-- **Diferença do Lovable:** eventos de datas removidas são apagados. A sincronização guarda os ids que gerou por contrato.
+**Peças**
+1. **API** (`api-contratos`, branch `feat/contratos-2d-agenda-mcp`): `GET /api/v1/public/contract-calendar?from&to&guide`
+   (`ApiKeyAuthGuard` + `ApiKeyThrottleGuard`; `actorScope` pelo `userRole` da chave — AGENT só os próprios).
+   Função pura `buildCalendarEvents(contracts, { from, to, today, panelBaseUrl })`:
+   - parque: evento de dia inteiro por data (`date`..`date+1`), título `🎢 {parque} — {nome}`;
+   - Multipass: 07:00–07:30 `America/New_York` em `multipassBuyDate` (D-7 hóspede Disney / D-3), só se `!purchased`
+     e data de compra ≥ hoje; título `⚡ Comprar Multipass — {nome}`;
+   - descrição: cliente, telefone, hóspede Disney, guia, link do painel, e última linha `[sendtur:<key>|<fp>]`;
+   - `key` estável (`park:<contractId>:<date>:<parkId|label>` / `multipass:<contractId>`), `fp` = sha1 curto do conteúdo.
+   Rota em `public/contract-calendar` (não `public/contracts/...`, que é do aceite por token).
+2. **MCP** (`/opt/chat-ofp/chat-bullq-mcp` na VPS, sem remote; desenvolver numa cópia em `~/dev/chat-bullq-mcp`):
+   tool `chat_contracts_calendar_events({ from?, to?, guide? })` → JSON com `timezone`, `from`, `to`, `events[]`.
+3. **Caddy**: no host `{$API_DOMAIN}`, `handle /mcp* { reverse_proxy mcp:3110 }` (antes do proxy da API).
+4. **Rotina** (skill `schedule`): diária 06:07 (BRT). Para a janela hoje..+90 dias:
+   lê os eventos do Sendtur; lista eventos do Google Agenda com `[sendtur:` na descrição; cria os ausentes,
+   atualiza os de `fp` diferente, apaga os marcados que não estão mais na lista. Nunca toca em evento sem a marca.
+   Pré-requisitos do Kleber: conectar o conector Google Calendar no claude.ai; criar uma chave `pk_` (OWNER);
+   conector customizado do MCP do Sendtur com header `Authorization: Bearer pk_...` (se a seção "Request headers"
+   não existir na conta, usar `.mcp.json` num repo da rotina com `${SENDTUR_MCP_KEY}`).
 
-### Task D1: Schema da conexão e dos eventos
-
-- [ ] **Step 1:** models em `prisma/schema.prisma`, com relação em `Organization` (`googleCalendarConnections GoogleCalendarConnection[]`):
-
-```prisma
-model GoogleCalendarConnection {
-  id              String    @id @default(cuid())
-  organizationId  String    @map("organization_id")
-  /// Guia cujos contratos vão para esta agenda; "*" = todos.
-  guideName       String    @default("*") @map("guide_name")
-  calendarId      String    @default("primary") @map("calendar_id")
-  googleEmail     String?   @map("google_email")
-  refreshTokenEnc String    @map("refresh_token_enc") @db.Text
-  connectedById   String    @map("connected_by_id")
-  lastSyncAt      DateTime? @map("last_sync_at")
-  lastSyncError   String?   @map("last_sync_error")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  @@unique([organizationId, guideName])
-  @@map("google_calendar_connections")
-}
-```
-
-Adicione ao `model Contract`: `googleEventIds Json @default("[]") @map("google_event_ids")`.
-
-- [ ] **Step 2:** migration `20261018120000_google_calendar`. Escreva à mão e confira com `prisma migrate diff --from-empty`, comparando só as instruções dessas tabelas e colunas, como na parte 1. Valide e faça commit.
-
-### Task D2: OAuth
-
-**Files:** `google/google-oauth.service.ts` (+spec), `google/google.controller.ts`
-
-- [ ] **Step 1: Testes** do service:
-  - `buildAuthUrl(orgId, userId, guideName)` gera a URL `https://accounts.google.com/o/oauth2/v2/auth` com `access_type=offline`, `prompt=consent`, o escopo `calendar.events`, `redirect_uri=GOOGLE_OAUTH_REDIRECT_URI` e um `state` assinado (HMAC-SHA256 com `GOOGLE_OAUTH_STATE_SECRET`, contendo `{orgId, userId, guideName, exp}` em base64url, com validade de 10 minutos).
-  - `verifyState` recusa assinatura errada e `exp` vencido.
-  - `exchangeCode(code)` faz POST em `https://oauth2.googleapis.com/token` com `grant_type=authorization_code` (`fetch` injetado no teste) e devolve `refresh_token`. Sem `refresh_token`, lança erro pedindo para reconectar.
-  - `accessToken(conn)` faz POST com `grant_type=refresh_token` e guarda o resultado em cache em memória até `expires_in - 60s`.
-
-Implementação: use `crypto.createHmac` e `timingSafeEqual`, `CryptoService.encrypt` para o refresh token, e o `fetch` nativo injetável (mesmo padrão do `PlanejadorClient`). O e-mail da conta vem de `https://openidconnect.googleapis.com/v1/userinfo` (escopo `openid email`, somado ao `calendar.events`).
-
-- [ ] **Step 2: Rotas** em `google.controller.ts`:
-  - `GET contracts/google/connect-url?guide=`: autenticada, OWNER/ADMIN. Devolve `{ url }`.
-  - `GET public/contracts/google/callback?code&state`: `@Public()`, com throttle de 10/min.
-    - Valida o `state`, troca o code e faz upsert de `GoogleCalendarConnection` por `(orgId, guideName)`.
-    - Redireciona (302) para `${APP_PUBLIC_URL}/contratos/configuracoes?google=ok`, ou `?google=erro` sem detalhes.
-  - `GET contracts/google/connections`: lista, sem o token.
-  - `DELETE contracts/google/connections/:id`: OWNER/ADMIN, filtrado pela org.
-  - `PATCH contracts/google/connections/:id { calendarId }`: OWNER/ADMIN.
-- [ ] **Step 3:** testes de metadata (callback público e o resto com guards), typecheck e commit.
-
-### Task D3: Sincronização
-
-**Files:** `google/google-calendar.client.ts`, `google/calendar-sync.service.ts` (+spec)
-
-- [ ] **Step 1: Testes** de `buildEvents(contract, dates, today)`, uma função pura portada de `pix-magic-contracts/supabase/functions/sync-google-calendar/index.ts`:
-  - **Evento de parque:** um evento de dia inteiro por data futura (`date >= today`).
-    - `id = sha1('park-' + contractId + '-' + date + '-' + parkLabel)`.
-    - `summary` = `🎢 {park} — {nome}`.
-    - `description` com Cliente, Tel, Hóspede Disney Sim/Não e Contrato.
-    - `start.date = date`, `end.date = date + 1`.
-  - **Lembrete de Multipass:** só se `!purchased` e a data de compra for `>= today`.
-    - `id = sha1('multipass-' + contractId + '-' + buyDate)`.
-    - Das 07:00 às 07:30 em `America/New_York`.
-    - `summary` = `⚡ Comprar Multipass — {nome}`.
-    - `description` com `D-7 Hóspede Disney` ou `D-3 Não Hóspede`.
-    - `reminders` com popup aos 15 e aos 0 minutos.
-  - Os ids batem com `/^[0-9a-f]{40}$/`.
-
-- [ ] **Step 2: Testes** de `syncContract`, com o client mockado:
-  - faz upsert de cada evento (PUT; se der 404, POST);
-  - apaga os ids que estavam em `googleEventIds` e não estão mais;
-  - grava os novos `googleEventIds`;
-  - contrato apagado passa por `removeContract`, que apaga todos;
-  - erro em um evento não interrompe os outros e é contado.
-
-- [ ] **Step 3: Client** com `upsertEvent(token, calendarId, event)` e `deleteEvent(token, calendarId, id)`. Usa `fetch` contra `https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events/{id}`, timeout de 15s, e trata 404/410 no delete como sucesso.
-
-- [ ] **Step 4: Service** com:
-  - `syncGuide(orgId, guideName)`: todos os contratos do guia, devolvendo `{ created, updated, deleted, errors, contractsProcessed }`;
-  - `syncContract(orgId, contractId)`;
-  - `removeContract(orgId, contract)`.
-
-  A conexão é a do guia; se não houver, usa a `"*"`. Sem conexão, nada acontece (no-op). Grava `lastSyncAt` e `lastSyncError`.
-
-- [ ] **Step 5: Ligar no fluxo.**
-  - Rota `POST contracts/google/sync { guideName }`.
-  - Depois do aceite (2B), do `update`, do `moveDate` e do `updateFlags` com `purchased`: `void syncContract(...)`, sem bloquear a resposta. Os erros só vão para o log.
-  - Antes do `remove`, carregue o contrato e chame `void removeContract(...)`.
-- [ ] **Step 6:** testes, typecheck, suíte completa e commit.
-
-### Task D4: Configuração no Google Cloud (manual, feita pelo Kleber) e PR 2D
-
-- [ ] **Step 1:** revisões com `ecc:code-reviewer` e `ecc:security-reviewer`. Foco:
-  - `state` do OAuth (CSRF), refresh token criptografado e nunca devolvido;
-  - redirect sem open redirect, porque o destino é fixo pelo `APP_PUBLIC_URL`;
-  - isolamento por org.
-
-  Depois, abra o PR.
-- [ ] **Step 2: Passo a passo para o Kleber** (vai no PR):
-  1. No Google Cloud Console, crie um projeto e ative a **Google Calendar API**.
-  2. Configure a tela de consentimento OAuth:
-     - tipo **Externo**;
-     - em modo de teste, adicione os e-mails dos guias como testadores, ou publique o app;
-     - escopos `calendar.events`, `openid` e `email`.
-  3. Crie a credencial **ID do cliente OAuth**:
-     - tipo **Aplicativo da Web**;
-     - URI de redirecionamento: `https://api-ofpchat.explotek.pro/api/v1/public/contracts/google/callback`.
-  4. No `.env` da API na VPS, preencha:
-     - `GOOGLE_OAUTH_CLIENT_ID`
-     - `GOOGLE_OAUTH_CLIENT_SECRET`
-     - `GOOGLE_OAUTH_REDIRECT_URI` (a mesma URI do item 3)
-     - `GOOGLE_OAUTH_STATE_SECRET` (gere com `openssl rand -hex 32`)
-
-     Depois, rode o deploy.
-  5. Na tela de configurações de contratos (parte 3), clique em "Conectar Google Agenda" para o Kleber e escolha a agenda.
+**Limitações conhecidas:** frequência mínima de rotina = 1h; lembretes personalizados por evento não são garantidos
+pelo conector (vale o lembrete padrão da agenda); cada execução consome a cota da assinatura.
 
 ---
 

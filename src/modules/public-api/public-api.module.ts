@@ -5,6 +5,7 @@ import { PublicContactsController } from './controllers/public-contacts.controll
 import { PublicChannelsController } from './controllers/public-channels.controller';
 import { PublicConversationsController } from './controllers/public-conversations.controller';
 import { PublicMessagesController } from './controllers/public-messages.controller';
+import { PublicContractCalendarController } from './controllers/public-contract-calendar.controller';
 import { ApiKeyThrottleGuard } from './guards/api-key-throttle.guard';
 import { DashboardModule } from '../dashboard/dashboard.module';
 import { AuthModule } from '../auth/auth.module';
@@ -12,9 +13,10 @@ import { MessagingModule } from '../messaging/messaging.module';
 import { ChannelHubModule } from '../channel-hub/channel-hub.module';
 import { WebhooksModule } from '../webhooks/webhooks.module';
 import { PublicWebhooksController } from '../webhooks/public-webhooks.controller';
+import { ContractsModule } from '../contracts/contracts.module';
 
 @Module({
-  imports: [AuthModule, DashboardModule, MessagingModule, ChannelHubModule, WebhooksModule],
+  imports: [AuthModule, DashboardModule, MessagingModule, ChannelHubModule, WebhooksModule, ContractsModule],
   controllers: [
     PublicMeController,
     PublicDashboardController,
@@ -23,6 +25,7 @@ import { PublicWebhooksController } from '../webhooks/public-webhooks.controller
     PublicConversationsController,
     PublicMessagesController,
     PublicWebhooksController,
+    PublicContractCalendarController,
   ],
   providers: [ApiKeyThrottleGuard],
 })

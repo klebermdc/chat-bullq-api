@@ -9,6 +9,7 @@ import { ResendClient } from '../email-core/resend.client';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { StorageService } from '../storage/storage.service';
 import { ContractParserService } from './ai/contract-parser.service';
+import { ContractCalendarService } from './calendar/contract-calendar.service';
 import { ContractFilesService } from './contract-files.service';
 import { ContractsController } from './contracts.controller';
 import { ContractsModule } from './contracts.module';
@@ -74,6 +75,7 @@ describe('ContractsModule (compilação Nest)', () => {
     expect(moduleRef.get(ContractParserService)).toBeInstanceOf(ContractParserService);
     expect(moduleRef.get(PlanejadorService)).toBeInstanceOf(PlanejadorService);
     expect(moduleRef.get(PlanejadorClient)).toBeInstanceOf(PlanejadorClient);
+    expect(moduleRef.get(ContractCalendarService)).toBeInstanceOf(ContractCalendarService);
     await moduleRef.close();
   });
 });

@@ -43,6 +43,19 @@ export const CONTRACT_LIST_SELECT = {
   acceptancePdfKey: true,
 } as const satisfies Prisma.ContractSelect;
 
+/** Só o que a agenda usa (`buildCalendarEvents`): sem CPF, e-mail, endereço nem valor. */
+export const CONTRACT_CALENDAR_SELECT = {
+  id: true,
+  fullName: true,
+  phone: true,
+  guideName: true,
+  disneyGuest: true,
+  purchased: true,
+  parkDates: true,
+  requestedDates: true,
+  createdAt: true,
+} as const satisfies Prisma.ContractSelect;
+
 /** Todo acesso por id recebe o escopo do ator (`actorScope`): `{}` para staff. */
 @Injectable()
 export class ContractsRepository {
@@ -61,6 +74,19 @@ export class ContractsRepository {
 
   findAll(where: Prisma.ContractWhereInput, select?: Prisma.ContractSelect) {
     return this.prisma.contract.findMany({ where, orderBy: { createdAt: 'desc' }, ...(select ? { select } : {}) });
+  }
+
+  /** Contratos da org visíveis ao ator, para montar os eventos da agenda. */
+  findForCalendar(organizationId: string, scope: Prisma.ContractWhereInput, guide?: string) {
+    return this.prisma.contract.findMany({
+      where: {
+        AND: [scope],
+        organizationId,
+        ...(guide ? { guideName: { equals: guide, mode: 'insensitive' as const } } : {}),
+      },
+      orderBy: { createdAt: 'asc' },
+      select: CONTRACT_CALENDAR_SELECT,
+    });
   }
 
   findInOrg(organizationId: string, id: string, scope: Prisma.ContractWhereInput) {

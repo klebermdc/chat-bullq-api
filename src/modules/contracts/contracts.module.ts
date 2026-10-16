@@ -3,6 +3,7 @@ import { chromium } from 'playwright';
 import { LlmModule } from '../ai-agents/llm/llm.module';
 import { ResendClient } from '../email-core/resend.client';
 import { ContractParserService } from './ai/contract-parser.service';
+import { ContractCalendarService } from './calendar/contract-calendar.service';
 import { ContractFilesService } from './contract-files.service';
 import { ContractReportsService } from './contract-reports.service';
 import { ContractSettingsService } from './contract-settings.service';
@@ -44,7 +45,15 @@ import { PublicContractsController } from './public/public-contracts.controller'
     ContractParserService,
     PlanejadorService,
     { provide: PlanejadorClient, useFactory: () => new PlanejadorClient() },
+    ContractCalendarService,
   ],
-  exports: [ContractsService, ContractFilesService, ContractSettingsService, ContractPdfService, ContractsRepository],
+  exports: [
+    ContractsService,
+    ContractFilesService,
+    ContractSettingsService,
+    ContractPdfService,
+    ContractsRepository,
+    ContractCalendarService,
+  ],
 })
 export class ContractsModule {}
