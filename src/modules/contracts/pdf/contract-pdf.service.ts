@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { chromium, type BrowserType } from 'playwright';
-import { RenderSemaphore } from './render-semaphore';
+import { RenderQueueFullError, RenderQueueTimeoutError, RenderSemaphore } from './render-semaphore';
 
 export interface ContractPdfInput {
   company: { name: string; document: string; address: string };
@@ -29,9 +29,13 @@ const CSP_META = `<meta http-equiv="Content-Security-Policy" content="default-sr
 const SET_CONTENT_TIMEOUT_MS = 15_000;
 const PDF_TIMEOUT_MS = 20_000;
 const MAX_CONCURRENT_RENDERS = 2;
+const MAX_QUEUE = 10;
+const MAX_QUEUE_WAIT_MS = 25_000;
+const TOTAL_RENDER_TIMEOUT_MS = 45_000; // inclui a espera na fila
+const BUSY_MESSAGE = 'Gerador de PDF ocupado, tente de novo em instantes';
 
-/** Compartilhado pelo processo: no máximo 2 Chromium gerando PDF ao mesmo tempo. */
-const renderSemaphore = new RenderSemaphore(MAX_CONCURRENT_RENDERS);
+/** Compartilhado pelo processo: no máximo 2 Chromium gerando PDF ao mesmo tempo, fila de até 10. */
+const renderSemaphore = new RenderSemaphore(MAX_CONCURRENT_RENDERS, { maxQueue: MAX_QUEUE, maxWaitMs: MAX_QUEUE_WAIT_MS });
 
 const esc = (s: unknown) =>
   String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -92,7 +96,7 @@ const CONTRACT_CSS = `
   html,body{margin:0;padding:0;background:#fff}
   body{font-family:${SANS};font-size:11px;color:#1a1a1a;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .frame{position:fixed;top:7mm;right:7mm;bottom:7mm;left:7mm;border:11px solid ${GOLD}}
-  .page{width:100%;border-collapse:collapse}
+  .page{width:100%;table-layout:fixed;border-collapse:collapse}
   .page>thead td,.page>tfoot td{height:17mm;padding:0}
   .page>tbody>tr>td{padding:0 19mm}
   header{text-align:center;margin-bottom:14px}
@@ -100,18 +104,18 @@ const CONTRACT_CSS = `
   .tagline{color:#777;font-size:12px;margin-top:4px}
   .rule{width:60%;margin:10px auto 12px;border-top:2px solid #000}
   .title{font-weight:bold;font-size:15px;letter-spacing:.3px}
-  h2{color:${PURPLE};font-size:12.5px;font-weight:bold;text-transform:uppercase;margin:16px 0 6px}
-  .grid{width:100%;border-collapse:collapse;table-layout:fixed}
-  .grid td{border:1px solid #000;padding:5px 7px;vertical-align:top;font-size:11px;word-wrap:break-word}
-  .notes{border:1px solid #000;padding:8px 10px;font-style:italic;white-space:pre-wrap;line-height:1.45}
-  .terms{white-space:pre-wrap;font-size:10.5px;line-height:1.5;text-align:justify}
+  h2{color:${PURPLE};font-size:12.5px;font-weight:bold;text-transform:uppercase;margin:16px 0 6px;break-after:avoid;page-break-after:avoid}
+  .grid{width:100%;border-collapse:collapse;table-layout:fixed;break-inside:avoid;page-break-inside:avoid}
+  .grid td{border:1px solid #000;padding:5px 7px;vertical-align:top;font-size:11px;overflow-wrap:anywhere;word-break:break-word}
+  .notes{border:1px solid #000;padding:8px 10px;font-style:italic;white-space:pre-wrap;line-height:1.45;overflow-wrap:anywhere;word-break:break-word}
+  .terms{white-space:pre-wrap;font-size:10.5px;line-height:1.5;text-align:justify;overflow-wrap:anywhere;word-break:break-word}
   .signatures{page-break-inside:avoid;break-inside:avoid;display:flex;gap:48px;margin-top:36px}
   .sig-col{flex:1;text-align:center}
   .sig-mark{height:64px;display:flex;align-items:flex-end;justify-content:center}
   .sig-img{max-height:60px;max-width:100%}
-  .guide-sign{font-family:${SERIF};font-style:italic;font-size:28px;line-height:1}
+  .guide-sign{font-family:${SERIF};font-style:italic;font-size:28px;line-height:1;max-width:100%;overflow-wrap:anywhere;word-break:break-word}
   .sig-line{border-top:1px solid #000;margin:4px 0 5px}
-  .sig-name{font-size:10px;margin-top:2px}
+  .sig-name{font-size:10px;margin-top:2px;overflow-wrap:anywhere;word-break:break-word}
   .sig-role{color:${PURPLE};font-size:9px;text-transform:uppercase;letter-spacing:.4px;margin-top:2px}
   .evidence{page-break-inside:avoid;break-inside:avoid;margin-top:22px;background:#f4f4f4;border:1px solid #ccc;padding:8px 10px;font-size:9.5px;color:#444}
   .evidence h3{font-size:10px;margin:0 0 4px;color:#333}
@@ -215,7 +219,18 @@ export class ContractPdfService {
 
   async render(input: ContractPdfInput): Promise<Buffer> {
     const html = buildContractHtml(input); // valida antes de ocupar vaga e abrir navegador
-    return renderSemaphore.run(() => this.renderHtml(html));
+    const startedAt = Date.now();
+    try {
+      return await renderSemaphore.run(() => {
+        const remainingMs = Math.max(TOTAL_RENDER_TIMEOUT_MS - (Date.now() - startedAt), 1);
+        return withTimeout(this.renderHtml(html), remainingMs, 'gerar o contrato');
+      });
+    } catch (err) {
+      if (err instanceof RenderQueueFullError || err instanceof RenderQueueTimeoutError) {
+        throw new ServiceUnavailableException(BUSY_MESSAGE);
+      }
+      throw err;
+    }
   }
 
   private async renderHtml(html: string): Promise<Buffer> {

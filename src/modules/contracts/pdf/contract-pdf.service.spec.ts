@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import type { BrowserType } from 'playwright';
 import {
   buildContractHtml,
@@ -82,6 +83,22 @@ describe('buildContractHtml', () => {
       expect(html).toContain('<div class="brand">Orlando Fast Pass</div>');
       expect(html).toContain(PDF_TAGLINE);
       expect(html).toContain('CONTRATO DE PRESTAÇÃO DE SERVIÇOS');
+    });
+
+    it('layout não estoura com palavra gigante', () => {
+      const html = buildContractHtml(base);
+      expect(html).toMatch(/\.page\{[^}]*table-layout:fixed/);
+      expect(html).toMatch(/\.page\{[^}]*width:100%/);
+      for (const sel of ['.terms', '.notes', '.sig-name', '.guide-sign']) {
+        expect(html).toMatch(new RegExp(`\\${sel}\\{[^}]*overflow-wrap:anywhere;word-break:break-word`));
+      }
+      expect(html).toMatch(/\.grid td\{[^}]*overflow-wrap:anywhere;word-break:break-word/);
+    });
+
+    it('título de seção não fica órfão e quadro não parte entre páginas', () => {
+      const html = buildContractHtml(base);
+      expect(html).toMatch(/h2\{[^}]*break-after:avoid;page-break-after:avoid/);
+      expect(html).toMatch(/\.grid\{[^}]*break-inside:avoid/);
     });
 
     it('moldura dourada repetida em todas as páginas', () => {
@@ -300,5 +317,44 @@ describe('ContractPdfService.render', () => {
     gates[2]();
     await Promise.all(renders);
     expect(peak).toBe(2);
+  });
+
+  it('fila cheia vira 503 sem abrir navegador extra', async () => {
+    const gates: Array<() => void> = [];
+    const f = fakeBrowser({ pdf: () => new Promise<Buffer>((resolve) => gates.push(() => resolve(Buffer.from('%PDF')))) });
+    const svc = new ContractPdfService(f.browserType);
+    const accepted = Array.from({ length: 12 }, () => svc.render(base));
+    const flush = () => new Promise((r) => setImmediate(r));
+    await flush();
+    const rejected = svc.render(base);
+    await expect(rejected).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(rejected).rejects.toThrow('Gerador de PDF ocupado, tente de novo em instantes');
+    // esvazia a fila para não vazar estado entre testes
+    while (gates.length < 12) {
+      gates.forEach((g) => g());
+      await flush();
+    }
+    gates.forEach((g) => g());
+    await Promise.all(accepted);
+  });
+
+  it('espera na fila acima de 25s vira 503 e o render todo nunca passa de 45s', async () => {
+    jest.useFakeTimers();
+    try {
+      const f = fakeBrowser();
+      (f.browserType.launch as jest.Mock).mockImplementation(() => new Promise(() => undefined)); // navegador travado
+      const svc = new ContractPdfService(f.browserType);
+      const running = [svc.render(base), svc.render(base)];
+      const runningAssertions = running.map((p) => expect(p).rejects.toThrow(/tempo/i));
+      await jest.advanceTimersByTimeAsync(0);
+      const waiter = svc.render(base);
+      const assertion = expect(waiter).rejects.toBeInstanceOf(ServiceUnavailableException);
+      await jest.advanceTimersByTimeAsync(25_000);
+      await assertion;
+      await jest.advanceTimersByTimeAsync(20_000); // 45s: os travados estouram
+      await Promise.all(runningAssertions);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
