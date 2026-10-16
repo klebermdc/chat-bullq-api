@@ -3016,6 +3016,18 @@ model Contract {
   signedContractKey String? @map("signed_contract_key")
   paymentReceiptKey String? @map("payment_receipt_key")
 
+  /// Datas estruturadas: [{ parkId, date: "YYYY-MM-DD" }]. Contratos importados
+  /// do Lovable têm `[]` e a data só no texto `requestedDates` (sem ano).
+  parkDates         Json    @default("[]") @map("park_dates")
+  datesToBeDefined  Boolean @default(false) @map("dates_to_be_defined")
+  notes             String? @db.Text
+  /// "pix" | "cartao-Nx" | "dolar" — só registro; o valor final está em `amount`.
+  paymentMethod     String? @map("payment_method")
+  /// Termos exatamente como o cliente aceitou (snapshot).
+  acceptedTermsText String? @map("accepted_terms_text") @db.Text
+  /// PDF gerado no aceite, com assinatura e evidência. Chave MinIO privada.
+  acceptancePdfKey  String? @map("acceptance_pdf_key")
+  createdById       String? @map("created_by_id")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -3046,6 +3058,18 @@ model ContractBlockedDate {
 model ContractSettings {
   organizationId String   @id @map("organization_id")
   terms          String   @db.Text
+  /// Chaves PIX oferecidas no formulário: [{ value, label }].
+  pixKeys                Json    @default("[]") @map("pix_keys")
+  defaultPixKey          String? @map("default_pix_key")
+  /// Quem recebe o aviso de comprovante enviado pelo cliente.
+  receiptNotifyEmail     String? @map("receipt_notify_email")
+  /// Instruções de pagamento em dólar (Wise/ACH) mostradas no aceite.
+  usdPaymentInstructions String? @map("usd_payment_instructions") @db.Text
+  guides                 Json    @default("[]")
+  sellers                Json    @default("[]")
+  companyName            String? @map("company_name")
+  companyDocument        String? @map("company_document")
+  companyAddress         String? @map("company_address")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
