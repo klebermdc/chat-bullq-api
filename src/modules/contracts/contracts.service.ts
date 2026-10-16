@@ -229,9 +229,18 @@ export class ContractsService {
     };
   }
 
-  /** PDF guardado no aceite; senão um PDF gerado agora (sem evidência). */
+  /** PDF do painel: carrega com o escopo do ator e delega. */
   async pdfFor(organizationId: string, actor: ContractActor, id: string): Promise<{ key: string } | { buffer: Buffer }> {
     const c = await this.get(organizationId, actor, id);
+    return this.pdfForContract(organizationId, c);
+  }
+
+  /**
+   * PDF guardado no aceite; senão um PDF gerado agora (sem evidência).
+   * Sem escopo: quem chama já carregou o contrato com a checagem certa
+   * (ator no painel, token na rota pública).
+   */
+  async pdfForContract(organizationId: string, c: Contract): Promise<{ key: string } | { buffer: Buffer }> {
     if (c.acceptancePdfKey?.startsWith(`contracts/${organizationId}/`)) return { key: c.acceptancePdfKey };
     return { buffer: await this.pdf.render(await this.buildPdfInput(organizationId, c)) };
   }

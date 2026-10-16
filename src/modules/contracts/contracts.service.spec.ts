@@ -159,6 +159,33 @@ describe('ContractsService', () => {
     expect('buffer' in r).toBe(true);
   });
 
+  it('pdfForContract usa o contrato já carregado, sem consultar o repositório', async () => {
+    const { service, repo, pdf } = make();
+    const c = { id: 'c1', acceptancePdfKey: 'contracts/org1/c1/acceptance.pdf' } as any;
+    await expect(service.pdfForContract('org1', c)).resolves.toEqual({ key: 'contracts/org1/c1/acceptance.pdf' });
+    expect(repo.findInOrg).not.toHaveBeenCalled();
+    expect(pdf.render).not.toHaveBeenCalled();
+  });
+
+  it('pdfForContract ignora chave de outra org e gera na hora', async () => {
+    const { service, pdf } = make();
+    const c = {
+      id: 'c1', acceptancePdfKey: 'contracts/org2/c1/acceptance.pdf', parkDates: [], requestedDates: '', createdAt: new Date(),
+    } as any;
+    const r = await service.pdfForContract('org1', c);
+    expect('buffer' in r).toBe(true);
+    expect(pdf.render).toHaveBeenCalled();
+  });
+
+  it('pdfFor carrega com o escopo do ator e delega para pdfForContract', async () => {
+    const existing = { id: 'c1', createdById: 'agent1', acceptancePdfKey: 'contracts/org1/c1/acceptance.pdf' };
+    const { service, repo } = make(existing);
+    const spy = jest.spyOn(service, 'pdfForContract');
+    await service.pdfFor('org1', AGENT, 'c1');
+    expect(repo.findInOrg).toHaveBeenCalledWith('org1', 'c1', { createdById: 'agent1' });
+    expect(spy).toHaveBeenCalledWith('org1', existing);
+  });
+
   it('buildPdfInput monta só os campos do contrato que o PDF usa', async () => {
     const contract = {
       id: 'c1', organizationId: 'org1', acceptanceToken: 'segredo', fullName: 'Cliente Teste', cpf: '000.000.000-00',
