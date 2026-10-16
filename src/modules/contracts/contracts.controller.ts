@@ -10,6 +10,7 @@ import type { Response } from 'express';
 import { CurrentOrg, CurrentUser, CurrentUserRole, Roles } from '../../common/decorators';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { ContractParserService } from './ai/contract-parser.service';
+import { todayInOrlando } from './calendar/calendar-window';
 import { actorScope, isStaff, type ContractActor } from './contract-actor';
 import { ContractFilesService, type ReadableFileKind } from './contract-files.service';
 import { ContractReportsService } from './contract-reports.service';
@@ -37,10 +38,6 @@ const PLANEJADOR_THROTTLE = { geral: { ttl: 60_000, limit: 10 } };
 const planejadorAudit = new Logger('ContractsController');
 
 const actorOf = (userId: string, role: OrgRole | undefined): ContractActor => ({ userId, role });
-
-/** "Hoje" no fuso dos parques (lembrete de Multipass é às 7h de Orlando). */
-const todayInOrlando = () =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
 
 /**
  * Toda rota com contrato recebe o ator (id + papel): AGENT só enxerga os
