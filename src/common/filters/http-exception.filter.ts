@@ -11,6 +11,14 @@ import { Response, Request } from 'express';
 import { ERROR_CODES } from '../../modules/error-reporter/error-codes';
 import { ErrorReporterService } from '../../modules/error-reporter/error-reporter.service';
 
+/** O segmento depois destes prefixos é o token de aceite: único fator de acesso ao contrato. */
+const SENSITIVE_SEGMENT = /(\/public\/contracts\/|\/aceitar\/)[^/?#]+/g;
+
+/** URL sem o token do contrato público, para log, error-reporter e resposta. */
+export function maskSensitivePath(url: string): string {
+  return (url ?? '').replace(SENSITIVE_SEGMENT, '$1:token');
+}
+
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
@@ -26,6 +34,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+    const safeUrl = maskSensitivePath(request.url);
 
     const status =
       exception instanceof HttpException
@@ -44,7 +53,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     if (status >= 500) {
       this.logger.error(
-        `${request.method} ${request.url} ${status}`,
+        `${request.method} ${safeUrl} ${status}`,
         exception instanceof Error ? exception.stack : undefined,
       );
 
@@ -66,7 +75,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           stack: exception instanceof Error ? exception.stack : undefined,
           context: {
             method: request.method,
-            url: request.url,
+            url: safeUrl,
             statusCode: status,
           },
           organizationId: req.organizationId,
@@ -88,7 +97,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           ? exception.name
           : 'InternalServerError',
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: safeUrl,
     });
   }
 }

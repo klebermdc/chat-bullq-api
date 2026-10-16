@@ -1,14 +1,16 @@
 import { BadRequestException } from '@nestjs/common';
-import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { GUARDS_METADATA, INTERCEPTORS_METADATA } from '@nestjs/common/constants';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
+import { ContractTokenGuard } from './contract-token.guard';
 import { AcceptContractDto } from './dto/accept.dto';
-import { PublicContractsController } from './public-contracts.controller';
+import { PUBLIC_RECEIPT_MAX_BYTES, PublicContractsController } from './public-contracts.controller';
 
 const THROTTLER_LIMIT = 'THROTTLER:LIMIT';
 const THROTTLER_TTL = 'THROTTLER:TTL';
 const TOKEN = 'a'.repeat(43);
+const HASH = 'a'.repeat(64);
 
 function make() {
   const acceptance = {
@@ -24,9 +26,21 @@ function make() {
 describe('PublicContractsController', () => {
   const proto = PublicContractsController.prototype;
 
-  it('é público e sem guards', () => {
+  it('é público e sem guards na classe', () => {
     expect(Reflect.getMetadata(IS_PUBLIC_KEY, PublicContractsController)).toBe(true);
     expect(Reflect.getMetadata(GUARDS_METADATA, PublicContractsController)).toBeUndefined();
+  });
+
+  it('receipt valida o token com ContractTokenGuard antes do upload; as outras rotas não', () => {
+    expect(Reflect.getMetadata(GUARDS_METADATA, proto.receipt)).toEqual([ContractTokenGuard]);
+    expect(Reflect.getMetadata(INTERCEPTORS_METADATA, proto.receipt)).toHaveLength(1);
+    for (const m of [proto.view, proto.accept, proto.pdf]) {
+      expect(Reflect.getMetadata(GUARDS_METADATA, m)).toBeUndefined();
+    }
+  });
+
+  it('comprovante público vai até 8 MB', () => {
+    expect(PUBLIC_RECEIPT_MAX_BYTES).toBe(8 * 1024 * 1024);
   });
 
   it('throttle: 30/min na classe, 5/min em accept e receipt', () => {
@@ -55,13 +69,13 @@ describe('PublicContractsController', () => {
 
   it('accept usa req.ip e user-agent', async () => {
     const { ctrl, acceptance } = make();
-    await ctrl.accept(TOKEN, { signature: 's', agree: true }, { ip: '1.2.3.4', get: () => 'UA' } as any);
-    expect(acceptance.accept).toHaveBeenCalledWith(TOKEN, { signature: 's', agree: true }, { ip: '1.2.3.4', userAgent: 'UA' });
+    await ctrl.accept(TOKEN, { signature: 's', agree: true, termsHash: HASH }, { ip: '1.2.3.4', get: () => 'UA' } as any);
+    expect(acceptance.accept).toHaveBeenCalledWith(TOKEN, { signature: 's', agree: true, termsHash: HASH }, { ip: '1.2.3.4', userAgent: 'UA' });
   });
 
   it('accept sem ip nem user-agent passa null', async () => {
     const { ctrl, acceptance } = make();
-    await ctrl.accept(TOKEN, { signature: 's', agree: true }, { ip: undefined, get: () => undefined } as any);
+    await ctrl.accept(TOKEN, { signature: 's', agree: true, termsHash: HASH }, { ip: undefined, get: () => undefined } as any);
     expect(acceptance.accept).toHaveBeenCalledWith(TOKEN, expect.anything(), { ip: null, userAgent: null });
   });
 
@@ -77,6 +91,20 @@ describe('PublicContractsController', () => {
     expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, max-age=0, no-store');
     expect(res.end).toHaveBeenCalledWith(Buffer.from('%PDF'));
+  });
+
+  it('receipt sem APP_PUBLIC_URL passa string vazia', async () => {
+    const prev = process.env.APP_PUBLIC_URL;
+    delete process.env.APP_PUBLIC_URL;
+    try {
+      const { ctrl, acceptance } = make();
+      const file = { buffer: Buffer.from('%PDF-1'), mimetype: 'application/pdf', size: 6 };
+      await ctrl.receipt(TOKEN, file);
+      expect(acceptance.uploadReceipt).toHaveBeenCalledWith(TOKEN, file, '');
+    } finally {
+      if (prev === undefined) delete process.env.APP_PUBLIC_URL;
+      else process.env.APP_PUBLIC_URL = prev;
+    }
   });
 
   it('receipt sem arquivo dá 400', () => {
@@ -101,13 +129,21 @@ describe('PublicContractsController', () => {
 describe('AcceptContractDto', () => {
   const errors = (body: unknown) => validateSync(plainToInstance(AcceptContractDto, body));
 
-  it('aceita assinatura e concordância', () => {
-    expect(errors({ signature: 'data:image/png;base64,AAAA', agree: true })).toHaveLength(0);
+  it('aceita assinatura, concordância e hash dos termos', () => {
+    expect(errors({ signature: 'data:image/png;base64,AAAA', agree: true, termsHash: HASH })).toHaveLength(0);
+  });
+
+  it('termsHash é obrigatório e precisa ser sha256 hex minúsculo', () => {
+    const base = { signature: 'data:image/png;base64,AAAA', agree: true };
+    expect(errors(base)).not.toHaveLength(0);
+    for (const termsHash of ['', 'a'.repeat(63), 'a'.repeat(65), 'A'.repeat(64), 'g'.repeat(64), 1]) {
+      expect(errors({ ...base, termsHash })).not.toHaveLength(0);
+    }
   });
 
   it('recusa assinatura acima de 85.000 caracteres e agree não booleano', () => {
-    expect(errors({ signature: 'x'.repeat(85_001), agree: true })).not.toHaveLength(0);
-    expect(errors({ signature: 'x', agree: 'sim' })).not.toHaveLength(0);
-    expect(errors({ agree: true })).not.toHaveLength(0);
+    expect(errors({ signature: 'x'.repeat(85_001), agree: true, termsHash: HASH })).not.toHaveLength(0);
+    expect(errors({ signature: 'x', agree: 'sim', termsHash: HASH })).not.toHaveLength(0);
+    expect(errors({ agree: true, termsHash: HASH })).not.toHaveLength(0);
   });
 });

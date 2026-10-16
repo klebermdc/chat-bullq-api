@@ -18,8 +18,9 @@ import { PublicContractsController } from './public/public-contracts.controller'
 // StorageService e RealtimeGateway já são injetáveis sem importar os módulos.
 //
 // ResendClient é registrado aqui em vez de importar EmailCoreModule: aquele
-// módulo não o exporta e puxaria NotificationsModule e EmailAudienceModule
-// (forwardRef) só para mandar um e-mail. Ele não tem estado e se constrói
+// módulo o exporta, mas importá-lo puxaria NotificationsModule (fila BullMQ)
+// e EmailAudienceModule → TagsModule (OutboxService) só para mandar um e-mail,
+// e o teste de boot isolado deixa de compilar. Ele não tem estado e se constrói
 // a partir do env, as mesmas variáveis que o EmailCoreModule já exige no boot.
 @Module({
   controllers: [ContractsImportController, ContractsController, PublicContractsController],

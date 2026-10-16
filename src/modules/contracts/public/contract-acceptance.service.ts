@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Contract } from '@prisma/client';
+import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../../../database/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { StorageService } from '../../storage/storage.service';
@@ -7,6 +8,7 @@ import { ContractFilesService, sniffMime, type IncomingFile } from '../contract-
 import { ContractSettingsService } from '../contract-settings.service';
 import { ContractsService } from '../contracts.service';
 import { readContractDates } from '../domain/park-dates';
+import { assertSafePng } from '../domain/png-guard';
 import { ContractNotifierService } from '../notify/contract-notifier.service';
 import { ContractPdfService } from '../pdf/contract-pdf.service';
 
@@ -18,9 +20,13 @@ export const MAX_SIGNATURE_BYTES = 60 * 1024;
 const MAX_USER_AGENT = 500;
 const SIGNATURE_DATA_URL = /^data:image\/png;base64,([A-Za-z0-9+/]+={0,2})$/;
 
+const TERMS_CHANGED_MESSAGE = 'Os termos foram atualizados. Recarregue a página e leia de novo antes de aceitar.';
+
 export interface AcceptBody {
   signature: string;
   agree: boolean;
+  /** sha256 hex dos termos que a página mostrou (`view().termsHash`). */
+  termsHash: string;
 }
 
 export interface AcceptMeta {
@@ -34,14 +40,28 @@ export function maskCpf(cpf: string): string {
   return d.length === 11 ? `***.***.*${d.slice(7, 9)}-${d.slice(9)}` : '***';
 }
 
-/** Data URL de PNG → bytes conferidos. Não toca em banco nem storage. */
+/** sha256 hex do texto dos termos: prova que o cliente aceitou o que viu. */
+export function hashTerms(terms: string): string {
+  return createHash('sha256').update(terms ?? '', 'utf8').digest('hex');
+}
+
+/** Data URL de PNG → bytes conferidos (assinatura e IHDR). Não toca em banco nem storage. */
 function decodeSignature(dataUrl: string): Buffer {
   const m = SIGNATURE_DATA_URL.exec(dataUrl ?? '');
   const buf = m ? Buffer.from(m[1], 'base64') : null;
-  if (!buf || buf.length > MAX_SIGNATURE_BYTES || sniffMime(buf) !== 'image/png') {
+  if (!buf || buf.length > MAX_SIGNATURE_BYTES || sniffMime(buf) !== 'image/png' || !isSafePng(buf)) {
     throw new BadRequestException('Assinatura inválida: desenhe sua assinatura antes de aceitar.');
   }
   return buf;
+}
+
+function isSafePng(buf: Buffer): boolean {
+  try {
+    assertSafePng(buf);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 @Injectable()
@@ -70,6 +90,7 @@ export class ContractAcceptanceService {
     const c = await this.byToken(token);
     const s = await this.settings.get(c.organizationId);
     const isUsd = c.amount.trim().startsWith('$');
+    const terms = c.acceptedTermsText ?? s.terms;
     return {
       fullName: c.fullName,
       cpf: maskCpf(c.cpf),
@@ -83,7 +104,8 @@ export class ContractAcceptanceService {
       dates: readContractDates(c).map((d) => ({ label: d.label, date: d.date })),
       pixKey: isUsd ? null : (c.pixKey ?? s.defaultPixKey),
       usdInstructions: isUsd ? s.usdPaymentInstructions : null,
-      terms: c.acceptedTermsText ?? s.terms,
+      terms,
+      termsHash: hashTerms(terms ?? ''),
       accepted: !!c.acceptedAt,
       acceptedAt: c.acceptedAt,
       hasReceipt: !!c.paymentReceiptKey,
@@ -100,9 +122,10 @@ export class ContractAcceptanceService {
 
     const { terms } = await this.settings.get(c.organizationId);
     if (!terms?.trim()) throw new BadRequestException('Termos do contrato não configurados');
+    if (body.termsHash !== hashTerms(terms)) throw new ConflictException(TERMS_CHANGED_MESSAGE);
 
     const userAgent = meta.userAgent?.slice(0, MAX_USER_AGENT) ?? null;
-    const signatureKey = `contracts/${c.organizationId}/${c.id}/signature-${Date.now()}.png`;
+    const signatureKey = `contracts/${c.organizationId}/${c.id}/signature-${randomUUID()}.png`;
     // Se outra aba aceitar entre o put e o updateMany (count 0), este PNG fica
     // órfão no MinIO. É aceitável: é pequeno, privado e não é referenciado.
     await this.storage.put(signatureKey, sig, 'image/png');
@@ -113,21 +136,23 @@ export class ContractAcceptanceService {
     });
     if (count === 0) throw new GoneException('Contrato já aceito');
 
-    await this.storeAcceptancePdf(c, {
-      acceptedAt, ip: meta.ip, userAgent, signaturePngBase64: sig.toString('base64'), acceptedTerms: terms,
-    });
     this.realtime.emitToOrg(c.organizationId, 'contract:accepted', { id: c.id });
+    // O cliente não espera o Chromium: o PDF sai em segundo plano e, se falhar
+    // ou ainda não tiver saído, `pdfForContract` monta um com a evidência.
+    void this.storeAcceptancePdf(c, {
+      acceptedAt, ip: meta.ip, userAgent, signaturePngBase64: sig.toString('base64'), acceptedTerms: terms,
+    }).catch((err: Error) => this.logger.warn(`contract_acceptance_pdf_failed contract=${c.id} reason=${err.message}`));
     return { accepted: true, acceptedAt };
   }
 
-  /** O aceite já vale sem o PDF: falha só loga, e `GET pdf` gera na hora. */
+  /** O aceite já vale sem o PDF: falha só loga, e `GET pdf` gera na hora com a evidência. */
   private async storeAcceptancePdf(
     c: Contract,
     acceptance: { acceptedAt: Date; ip: string | null; userAgent: string | null; signaturePngBase64: string; acceptedTerms: string },
   ): Promise<void> {
     try {
       const input = await this.contracts.buildPdfInput(c.organizationId, c, acceptance);
-      const key = `contracts/${c.organizationId}/${c.id}/acceptance-${acceptance.acceptedAt.getTime()}.pdf`;
+      const key = `contracts/${c.organizationId}/${c.id}/acceptance-${randomUUID()}.pdf`;
       await this.storage.put(key, await this.pdf.render(input), 'application/pdf');
       await this.prisma.contract.update({ where: { id: c.id }, data: { acceptancePdfKey: key } });
     } catch (err) {
@@ -152,7 +177,13 @@ export class ContractAcceptanceService {
       data: { paymentReceiptKey: key },
     });
     if (count === 0) throw new ConflictException('Comprovante já enviado.');
-    await this.notifier.receiptUploaded(c.organizationId, c, `${appPublicUrl}/contratos/${c.id}`);
+    // O comprovante já está gravado: falha no aviso só loga.
+    const panelUrl = appPublicUrl ? `${appPublicUrl}/contratos/${c.id}` : null;
+    try {
+      await this.notifier.receiptUploaded(c.organizationId, c, panelUrl);
+    } catch (err) {
+      this.logger.warn(`contract_receipt_notify_failed contract=${c.id} reason=${(err as Error).message}`);
+    }
     this.realtime.emitToOrg(c.organizationId, 'contract:changed', { id: c.id });
     return { received: true };
   }

@@ -1,24 +1,21 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import {
+  BadRequestException, Body, Controller, Get, Param, Post, Req, Res, UploadedFile, UseGuards, UseInterceptors,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { Public } from '../../../common/decorators';
 import { ContractFilesService, type IncomingFile } from '../contract-files.service';
-import { MAX_FILE_BYTES } from '../contracts.constants';
 import { ContractAcceptanceService } from './contract-acceptance.service';
+import { checkContractToken as checkToken, ContractTokenGuard } from './contract-token.guard';
 import { AcceptContractDto } from './dto/accept.dto';
 
-/** Novos: 43 base64url. Legados do Lovable: 24 hex. */
-const TOKEN_RE = /^[A-Za-z0-9_-]{20,64}$/;
 const MINUTE_MS = 60_000;
 const READ_LIMIT_PER_MINUTE = 30;
 const WRITE_LIMIT_PER_MINUTE = 5;
-
-function checkToken(token: string): string {
-  if (!TOKEN_RE.test(token ?? '')) throw new BadRequestException('Link inválido');
-  return token;
-}
+/** Comprovante pelo link público: menor que os 10 MB do painel. */
+export const PUBLIC_RECEIPT_MAX_BYTES = 8 * 1024 * 1024;
 
 /**
  * Página de aceite do cliente (sem login). O token é o único fator de acesso
@@ -64,7 +61,9 @@ export class PublicContractsController {
 
   @Post(':token/receipt')
   @Throttle({ geral: { ttl: MINUTE_MS, limit: WRITE_LIMIT_PER_MINUTE } })
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_FILE_BYTES, files: 1 } }))
+  // O guard confere o token no banco antes de o multer ler o arquivo.
+  @UseGuards(ContractTokenGuard)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: PUBLIC_RECEIPT_MAX_BYTES, files: 1 } }))
   receipt(@Param('token') token: string, @UploadedFile() file: IncomingFile | undefined) {
     const valid = checkToken(token);
     if (!file) throw new BadRequestException('Envie o comprovante (campo "file")');
