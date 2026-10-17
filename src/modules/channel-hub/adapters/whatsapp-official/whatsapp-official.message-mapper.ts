@@ -82,6 +82,7 @@ export class WhatsAppOfficialMessageMapper {
         billable: status.pricing.billable,
         category: status.pricing.category,
         pricingModel: status.pricing.pricing_model,
+        type: status.pricing.type,
       };
     }
 

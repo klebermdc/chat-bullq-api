@@ -47,7 +47,10 @@ describe('InboundMessageProcessor — observação SHADOW independe do gate', ()
       { tagInstagramOrganicIfMatch: jest.fn().mockResolvedValue(false) } as any, // 21 leadSourceTagger
       { ensureLeadCard: jest.fn().mockResolvedValue(null) } as any, // 22 leadCard
       { add: jest.fn().mockResolvedValue(undefined) } as any, // 23 orderFichaQueue
-      { recordWindow: jest.fn().mockResolvedValue(undefined) } as any, // 24 channelUsage
+      {
+        recordWindow: jest.fn().mockResolvedValue(undefined),
+        recordMessageBilling: jest.fn().mockResolvedValue(undefined),
+      } as any, // 24 channelUsage
       { onInboundMessage: jest.fn().mockResolvedValue(undefined) } as any, // 25 inboundNotifier
       { onInboundReply: jest.fn().mockResolvedValue(undefined) } as any, // 26 orgOffHours
       { routeNewConversation: jest.fn().mockResolvedValue({ routed: false, reason: 'not_found' }) } as any, // 27 legacyOwnerRouting

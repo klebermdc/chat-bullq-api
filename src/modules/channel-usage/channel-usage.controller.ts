@@ -14,6 +14,8 @@ import { CurrentOrg, Roles } from '../../common/decorators';
 import { ChannelUsageService } from './channel-usage.service';
 import { UsageQueryDto } from './dto/usage-query.dto';
 import { SetPricingDto } from './dto/pricing.dto';
+import { RangeQueryDto } from './dto/range-query.dto';
+import { resolveUsageRange } from './usage-range.util';
 
 function monthStart(): Date {
   const now = new Date();
@@ -54,6 +56,22 @@ export class ChannelUsageController {
       to,
       q.bucket ?? 'day',
     );
+  }
+
+  /** Custo por mensagem (o que a Meta marca como cobrável), dia a dia. */
+  @Get('billing')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  billing(@CurrentOrg('id') organizationId: string, @Query() q: RangeQueryDto) {
+    const { from, to } = resolveUsageRange(q);
+    return this.service.billing(organizationId, from, to);
+  }
+
+  /** Entrega das mensagens de saída dos canais oficiais, dia a dia. */
+  @Get('delivery')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  delivery(@CurrentOrg('id') organizationId: string, @Query() q: RangeQueryDto) {
+    const { from, to } = resolveUsageRange(q);
+    return this.service.delivery(organizationId, from, to);
   }
 
   @Get('pricing')

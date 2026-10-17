@@ -5,13 +5,14 @@ import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { computeWhatsappWindow } from '../conversations/whatsapp-window.util';
 
 const BLOCK_REASON_WHATSAPP =
-  'Janela de atendimento (24h/72h) fechada — envie um template aprovado.';
+  'Janela de atendimento fechada — envie um template aprovado.';
 const BLOCK_REASON_MESSENGER =
   'Janela de atendimento do Messenger (24h) fechada — a Meta nao permite ' +
   'enviar fora dela. Aguarde o cliente responder.';
 
 // Vale nos canais da Meta que tem janela de atendimento: WhatsApp oficial
-// (24h/72h) e Messenger (24h fixas).
+// (24h, ou a janela maior que a Meta concede a lead de anuncio) e Messenger
+// (24h fixas).
 const GATED_CHANNELS = ['WHATSAPP_OFFICIAL', 'MESSENGER'];
 
 @Injectable()

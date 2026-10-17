@@ -43,6 +43,22 @@ describe('MetaWindowGate.blockIfClosed', () => {
     expect(realtime.emitToConversation).toHaveBeenCalled();
   });
 
+  // A Meta passou a informar janela de 7 dias para lead de anúncio: o motivo
+  // visível não pode mais cravar "24h/72h".
+  it('motivo do bloqueio no WhatsApp não cita número de horas', async () => {
+    const { gate, prisma } = make({ lastInboundAt: hoursAgo(30), ctwaClidAt: null });
+    await gate.blockIfClosed({
+      messageId: 'msg1',
+      channelType: 'WHATSAPP_OFFICIAL',
+      messageType: MessageContentType.TEXT,
+      now,
+    });
+    const reason = prisma.message.update.mock.calls[0][0].data.failedReason;
+    expect(reason).toBe(
+      'Janela de atendimento fechada — envie um template aprovado.',
+    );
+  });
+
   it('template → nunca bloqueia (não consulta janela)', async () => {
     const { gate, prisma } = make({ lastInboundAt: hoursAgo(30), ctwaClidAt: null });
     const blocked = await gate.blockIfClosed({
