@@ -13,7 +13,11 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { PROPOSAL_IMAGE_MIME_TYPES, PROPOSAL_MAX_IMAGES } from '../proposals.constants';
+import {
+  PROPOSAL_IMAGE_MIME_TYPES,
+  PROPOSAL_MAX_IMAGES,
+  PROPOSAL_TEXT_MAX,
+} from '../proposals.constants';
 
 const INVALID_IMAGE = 'Imagem inválida.';
 const MAX_IMAGE_FILENAME_LENGTH = 255;
@@ -114,4 +118,17 @@ export class CreateProposalDto {
   @IsOptional()
   @IsObject()
   reviewed?: Record<string, unknown>;
+
+  /**
+   * Texto final da proposta, corrigido pelo atendente na conferência. Quando
+   * vem, é exatamente o que o cliente recebe no lugar do texto montado. Só vale
+   * junto de `reviewed` (proposta lida do print).
+   */
+  @ApiPropertyOptional({ maxLength: PROPOSAL_TEXT_MAX })
+  @IsOptional()
+  @IsString()
+  @MaxLength(PROPOSAL_TEXT_MAX, {
+    message: `A mensagem da proposta pode ter até ${PROPOSAL_TEXT_MAX} caracteres.`,
+  })
+  text?: string;
 }

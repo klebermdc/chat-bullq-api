@@ -870,4 +870,54 @@ describe('ProposalsService.create — proposta com prints', () => {
     ).rejects.toThrow();
     expect(d.messages.send).not.toHaveBeenCalled();
   });
+
+  it('com conferência e texto corrigido: o cliente recebe o texto do atendente, aparado', async () => {
+    const d = deps();
+    const service = makeService(d);
+    const edited = 'Olá! Segue sua proposta:\n\nAlamo · SUV\n10 diárias';
+
+    await service.create(
+      {
+        conversationId: 'conv-1',
+        checkoutUrl: '',
+        includeLink: false,
+        images: [print(1)],
+        reviewed: carQuote as any,
+        text: `  ${edited}\n\n`,
+      },
+      ...args,
+    );
+
+    expect(d.messages.send.mock.calls[0][0].content.text).toBe(edited);
+    // O que foi lido continua sendo o que se grava (título, valor, funil).
+    expect(d.extraction.validateReviewed).toHaveBeenCalledWith(carQuote);
+    expect(d.repo.create).toHaveBeenCalled();
+  });
+
+  it('texto corrigido em branco: recusa, sem gravar nem enviar', async () => {
+    const d = deps();
+    const service = makeService(d);
+
+    await expect(
+      service.create(
+        { conversationId: 'conv-1', checkoutUrl: '', includeLink: false, images: [print(1)], reviewed: carQuote as any, text: '  \n ' },
+        ...args,
+      ),
+    ).rejects.toThrow('Escreva a mensagem da proposta');
+    expect(d.repo.create).not.toHaveBeenCalled();
+    expect(d.messages.send).not.toHaveBeenCalled();
+  });
+
+  it('texto corrigido sem conferência de print: recusa, o texto só vale para o que foi conferido', async () => {
+    const d = deps();
+    const service = makeService(d);
+
+    await expect(
+      service.create(
+        { conversationId: 'conv-1', checkoutUrl: 'resumo DISNEY', includeLink: false, text: 'qualquer coisa' },
+        ...args,
+      ),
+    ).rejects.toThrow('O texto corrigido só vale para a proposta lida do print');
+    expect(d.messages.send).not.toHaveBeenCalled();
+  });
 });
