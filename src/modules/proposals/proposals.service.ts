@@ -124,6 +124,7 @@ export class ProposalsService {
         'Cole o resumo do carrinho (parques, datas e quantidade de pessoas).',
       );
     }
+    const editedText = this.editedTextOrThrow(dto);
     // Antes de abrir checkout ou storage: barra de saída o que não é upload nosso.
     const imageKeys = images.map((image) => this.imageKeyOrThrow(image));
 
@@ -193,10 +194,13 @@ export class ProposalsService {
 
     const mode = dto.mode ?? 'NEW';
     const messageOptions = { includeLink: includeLink && !!url };
+    // Texto corrigido na conferência vale sobre o montado; o que foi lido
+    // (título, valor) continua indo para o registro e para o funil.
     const text =
-      extracted.kind === 'OTHER'
+      editedText ??
+      (extracted.kind === 'OTHER'
         ? buildOtherProposalMessage(extracted, url ?? '', mode, messageOptions)
-        : buildProposalMessage(cart, url ?? '', mode, messageOptions);
+        : buildProposalMessage(cart, url ?? '', mode, messageOptions));
 
     // Conferência: devolve o que seria enviado e para aqui.
     if (dto.preview) {
@@ -340,6 +344,23 @@ export class ProposalsService {
     });
     const ownedIds = new Set(owned.map((c) => c.id));
     return proposals.filter((p) => ownedIds.has(p.conversationId));
+  }
+
+  /**
+   * Texto da proposta corrigido pelo atendente, aparado; undefined quando não
+   * veio. Só existe na proposta de print conferida — sem conferência não há
+   * texto mostrado para corrigir.
+   */
+  private editedTextOrThrow(dto: CreateProposalDto): string | undefined {
+    if (dto.text === undefined) return undefined;
+    if (!dto.reviewed || !dto.images?.length || dto.preview) {
+      throw new BadRequestException(
+        'O texto corrigido só vale para a proposta lida do print. Atualize a página e tente de novo.',
+      );
+    }
+    const text = dto.text.trim();
+    if (!text) throw new BadRequestException('Escreva a mensagem da proposta.');
+    return text;
   }
 
   /** Toda mensagem da proposta (texto, prints, follow-ups) sai por aqui. */

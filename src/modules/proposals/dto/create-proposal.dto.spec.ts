@@ -110,4 +110,12 @@ describe('CreateProposalDto sob o ValidationPipe global', () => {
   it('checkoutUrl continua tendo que ser texto', async () => {
     expect(await messagesFor({ conversationId: 'conv-1', images: [image(1)] })).toMatch(/checkoutUrl/);
   });
+
+  it('text é opcional e tem o teto de tamanho do texto do WhatsApp', async () => {
+    const out: any = await validate({ ...base, images: [image(1)], text: 'Olá!' });
+    expect(out.text).toBe('Olá!');
+
+    expect((await validate({ ...base, text: 'x'.repeat(4096) }) as any).text).toHaveLength(4096);
+    expect(await messagesFor({ ...base, text: 'x'.repeat(4097) })).toMatch(/4096/);
+  });
 });

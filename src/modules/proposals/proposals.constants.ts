@@ -29,3 +29,7 @@ export const PROPOSAL_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 export const PROPOSAL_OTHER_TITLE_MAX = 120;
 export const PROPOSAL_OTHER_MAX_LINES = 12;
 export const PROPOSAL_OTHER_LINE_MAX = 160;
+
+// Texto da proposta corrigido pelo atendente na conferência: vai numa
+// mensagem só, então o teto é o do texto do WhatsApp.
+export const PROPOSAL_TEXT_MAX = 4096;
