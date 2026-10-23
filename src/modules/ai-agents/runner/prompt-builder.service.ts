@@ -16,7 +16,7 @@ import {
   formatHoursSummary,
   type BusinessHoursConfig,
 } from '../../routing/availability/business-hours.util';
-import type { OnCallContext } from '../on-call/on-call.service';
+import { ON_CALL_EMERGENCY_PHONE, type OnCallContext } from '../on-call/on-call.service';
 
 export interface PromptContext {
   organization: Organization;
@@ -690,14 +690,16 @@ export class PromptBuilderService {
   private formatOnCallBlock({ sellerName, returnAt }: OnCallContext): string {
     return [
       '\n\n═══ MODO PLANTÃO (prioridade sobre tudo acima) ═══',
-      `\n- Este cliente é atendido por ${sellerName}, que está FORA DO HORÁRIO agora e volta ${returnAt}.`,
-      `\n- Você está só de plantão até ${sellerName} voltar. Não qualifique, não venda e não transfira: isso é com ${sellerName}.`,
+      `\n- Este cliente é atendido por ${sellerName}, que está FORA DO HORÁRIO agora e volta ${returnAt}. A equipe não está operando neste momento.`,
+      '\n- Seu papel aqui é só avisar isso e triar se é uma emergência de viagem.',
+      `\n- NÃO tire dúvidas, NÃO consulte produtos ou pedidos, NÃO qualifique, NÃO venda, NÃO negocie, NÃO passe valores e NÃO transfira. Tudo isso é com ${sellerName}.`,
       `\n- Se ainda não avisou nesta conversa, diga numa frase curta que ${sellerName} está fora do horário e volta ${returnAt}.`,
-      '\n- Responda dúvidas simples e factuais (produtos, status de pedido) usando as ferramentas.',
-      `\n- NÃO negocie, NÃO passe valor fechado, NÃO faça proposta e NÃO prometa prazo ou condição. Diga que ${sellerName} cuida disso.`,
-      `\n- Descubra de forma breve o que o cliente precisa e registre com leaveNoteForSeller um resumo objetivo para ${sellerName}. Registre de novo só se surgir informação nova.`,
-      `\n- Se for urgente ou o cliente pedir outra pessoa, diga que o recado fica registrado para ${sellerName} ver assim que voltar.`,
-      '\n- Uma mensagem curta por vez.',
+      '\n- Triagem: se a mensagem mostra que é cotação, compra ou dúvida que pode esperar, não pergunte nada, só avise. Se houver sinal de urgência ou não der para saber, pergunte numa frase se o cliente já está em viagem e precisa de ajuda urgente agora.',
+      `\n- Só passe o telefone de emergência ${ON_CALL_EMERGENCY_PHONE} se o cliente JÁ ESTÁ em viagem (no destino ou a caminho) E tem um problema urgente, como ingresso que não passa na entrada, transfer, hotel ou documento. Quem está planejando, cotando ou com dúvida que pode esperar NÃO recebe o número.`,
+      `\n- Fora disso, diga que ${sellerName} responde assim que voltar e que o recado fica registrado.`,
+      `\n- Registre com leaveNoteForSeller um resumo objetivo para ${sellerName} (o que o cliente quer e se recebeu o telefone de emergência). Registre de novo só se surgir informação nova.`,
+      '\n- Depois de avisar, não puxe assunto nem mande mensagem extra. Responda só quando o cliente escrever, sempre com uma mensagem curta.',
+      '\n- Nunca invente horário nem outro telefone.',
     ].join('');
   }
 

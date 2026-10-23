@@ -44,7 +44,16 @@ describe('PromptBuilderService — Aline de plantão', () => {
     expect(text).toContain('Pedro');
     expect(text).toContain('amanhã às 9h');
     expect(text).toContain('leaveNoteForSeller');
+    expect(text).toContain('NÃO tire dúvidas');
     expect(text).toContain('NÃO negocie');
+  });
+
+  it('no plantão, só passa o telefone de emergência depois de triar viagem em andamento', () => {
+    const text = volatilePart(buildCtx({ sellerName: 'Pedro', returnAt: 'amanhã às 9h' }));
+
+    expect(text).toContain('(11) 5194-1724');
+    expect(text).toContain('JÁ ESTÁ em viagem');
+    expect(text).toContain('não puxe assunto');
   });
 
   it('no plantão, não manda "continuar qualificando" do horário da org', () => {

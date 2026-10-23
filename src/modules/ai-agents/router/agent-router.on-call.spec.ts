@@ -101,6 +101,32 @@ describe('AgentRouterService.shouldHandle — Aline de plantão', () => {
     });
   });
 
+  it('conversa com vendedor no horário dele: a Aline não entra, mesmo sem a IA desligada', async () => {
+    const { svc } = make({ onCall: null });
+
+    expect(await svc.shouldHandle({ ...ASSIGNED, aiEnabled: null })).toEqual({
+      handle: false,
+      reason: 'assigned-to-human',
+    });
+  });
+
+  it('conversa com vendedor fora do horário dele e IA sem override: entra só em modo plantão', async () => {
+    const { svc } = make();
+
+    expect(await svc.shouldHandle({ ...ASSIGNED, aiEnabled: null })).toEqual({
+      handle: true,
+      onCall: ON_CALL,
+      reason: 'assignee-off-hours',
+    });
+  });
+
+  it('IA ligada à mão na conversa: respeita a escolha do atendente', async () => {
+    const { svc, onCall } = make({ onCall: null, org: { aiBusinessHours: null } });
+
+    expect(await svc.shouldHandle({ ...ASSIGNED, aiEnabled: true })).toEqual({ handle: true });
+    expect(onCall.evaluate).not.toHaveBeenCalled();
+  });
+
   it('não consulta o plantão em conversa sem vendedor', async () => {
     const { svc, onCall } = make();
 

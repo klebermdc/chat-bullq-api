@@ -11,13 +11,18 @@ import {
 
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 
-/** Ferramentas da Aline de plantão: responder, consultar e deixar recado. */
+/**
+ * Ferramentas da Aline de plantão: só responder e deixar recado. Ela avisa que
+ * o vendedor está fora e faz a triagem de emergência; não consulta produto
+ * nem pedido.
+ */
 export const ON_CALL_TOOLS: ReadonlySet<string> = new Set([
   'replyToConversation',
-  'lookupOffering',
-  'checkPurchase',
   'leaveNoteForSeller',
 ]);
+
+/** Telefone de emergência para quem já está em viagem, fora do horário. */
+export const ON_CALL_EMERGENCY_PHONE = '(11) 5194-1724';
 
 /** Ferramenta que só existe no plantão (fora dele, a Aline não deixa recado). */
 export const ON_CALL_ONLY_TOOL = 'leaveNoteForSeller';
@@ -37,7 +42,8 @@ type OnCallConversation = Pick<
 /**
  * Aline de plantão: a conversa tem vendedor, ele está fora do próprio horário
  * e ninguém da equipe respondeu desde que ele saiu. Aí a Aline atende no
- * lugar dele, em modo restrito, até ele voltar ou um humano responder.
+ * lugar dele, em modo restrito (avisa e faz a triagem de emergência), até
+ * ele voltar ou um humano responder.
  *
  * Liga por vendedor com o mesmo interruptor do aviso de fora do horário
  * (`UserOrganization.offHoursNoticeEnabled`) e usa o horário dele.
