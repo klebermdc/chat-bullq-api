@@ -1,6 +1,24 @@
 import { ScheduledDispatchProcessor } from './scheduled-dispatch.processor';
 
-function makeDeps(row: any) {
+// Seg-sex 9h-18h (São Paulo).
+const SELLER_HOURS = {
+  monday: { enabled: true, windows: [['09:00', '18:00']] },
+  tuesday: { enabled: true, windows: [['09:00', '18:00']] },
+  wednesday: { enabled: true, windows: [['09:00', '18:00']] },
+  thursday: { enabled: true, windows: [['09:00', '18:00']] },
+  friday: { enabled: true, windows: [['09:00', '18:00']] },
+  saturday: { enabled: false, windows: [] },
+  sunday: { enabled: false, windows: [] },
+};
+// Terça 22/09/2026 20:00 em São Paulo (fora) e quarta 9:00 (próxima abertura).
+const TUESDAY_20H = new Date('2026-09-22T23:00:00Z');
+const WEDNESDAY_9H = new Date('2026-09-23T12:00:00Z');
+const TUESDAY_10H = new Date('2026-09-22T13:00:00Z');
+
+function makeDeps(
+  row: any,
+  hours: { seller?: unknown; org?: unknown; assignedToId?: string | null } = {},
+) {
   const repo = {
     findById: jest.fn(async () => row),
     create: jest.fn(async (d: any) => ({ id: 's2', ...d })),
@@ -14,6 +32,16 @@ function makeDeps(row: any) {
         status: 'OPEN',
         isArchived: false,
         lastInboundAt: null,
+        assignedToId: hours.assignedToId ?? null,
+      })),
+    },
+    userOrganization: {
+      findUnique: jest.fn(async () => ({ workingHours: hours.seller ?? null })),
+    },
+    organization: {
+      findUnique: jest.fn(async () => ({
+        aiBusinessHours: hours.org ?? null,
+        aiTimezone: 'America/Sao_Paulo',
       })),
     },
   };
@@ -180,6 +208,7 @@ describe('ScheduledDispatchProcessor', () => {
     const prisma = {
       conversation: { findUnique: jest.fn(async () => ({ id: 'c1', status: 'OPEN', isArchived: false, lastInboundAt: null, assignedToId: null, awaitingHumanReply: false, aiEnabled: null })) },
       pipelineStage: { findUnique: jest.fn(async () => ({ id: 'stg1', pipelineId: 'pl1' })) },
+      organization: { findUnique: jest.fn(async () => ({ aiBusinessHours: null, aiTimezone: 'America/Sao_Paulo' })) },
       card: { findFirst: jest.fn(async () => ({ id: 'card1' })), update: jest.fn(async () => ({})), create: jest.fn(async () => ({})) },
       contact: { findUnique: jest.fn(async () => ({ name: 'Fulano' })) },
     };
@@ -205,6 +234,7 @@ describe('ScheduledDispatchProcessor', () => {
     const prisma = {
       conversation: { findUnique: jest.fn(async () => ({ id: 'c1', status: 'OPEN', isArchived: false, lastInboundAt: null, assignedToId: null, awaitingHumanReply: false, aiEnabled: null })) },
       pipelineStage: { findUnique: jest.fn(async () => ({ id: 'stg1', pipelineId: 'pl1' })) },
+      organization: { findUnique: jest.fn(async () => ({ aiBusinessHours: null, aiTimezone: 'America/Sao_Paulo' })) },
       card: { findFirst: jest.fn(async () => null), update: jest.fn(async () => ({})), create: jest.fn(async () => ({})) },
       contact: { findUnique: jest.fn(async () => ({ name: 'Fulano' })) },
     };
@@ -253,6 +283,65 @@ describe('ScheduledDispatchProcessor', () => {
     const { processor, repo } = makeDeps(row);
     await processor.process({ data: { scheduledMessageId: 's1' } } as any);
     expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  describe('reengajamento automático respeita o horário de atendimento', () => {
+    afterEach(() => jest.useRealTimers());
+
+    it('vendedor fora do horário: adia para a próxima abertura dele, sem enviar', async () => {
+      jest.useFakeTimers().setSystemTime(TUESDAY_20H);
+      const row = { ...base, origin: 'AUTO_REENGAGE' };
+      const { processor, repo, messages, queue } = makeDeps(row, {
+        assignedToId: 'user-pedro',
+        seller: SELLER_HOURS,
+      });
+
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+
+      expect(messages.send).not.toHaveBeenCalled();
+      expect(repo.update).toHaveBeenCalledWith('s1', { scheduledAt: WEDNESDAY_9H });
+      expect(queue.add).toHaveBeenCalledWith(
+        expect.anything(),
+        { scheduledMessageId: 's1' },
+        expect.objectContaining({ delay: WEDNESDAY_9H.getTime() - TUESDAY_20H.getTime() }),
+      );
+    });
+
+    it('vendedor no horário: envia normalmente', async () => {
+      jest.useFakeTimers().setSystemTime(TUESDAY_10H);
+      const row = { ...base, origin: 'AUTO_REENGAGE' };
+      const { processor, messages } = makeDeps(row, {
+        assignedToId: 'user-pedro',
+        seller: SELLER_HOURS,
+      });
+
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+
+      expect(messages.send).toHaveBeenCalled();
+    });
+
+    it('sem vendedor: usa o horário da organização', async () => {
+      jest.useFakeTimers().setSystemTime(TUESDAY_20H);
+      const row = { ...base, origin: 'AUTO_REENGAGE' };
+      const { processor, repo, messages } = makeDeps(row, { org: SELLER_HOURS });
+
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+
+      expect(messages.send).not.toHaveBeenCalled();
+      expect(repo.update).toHaveBeenCalledWith('s1', { scheduledAt: WEDNESDAY_9H });
+    });
+
+    it('agendamento manual não é adiado: quem agendou escolheu a hora', async () => {
+      jest.useFakeTimers().setSystemTime(TUESDAY_20H);
+      const { processor, messages } = makeDeps(base, {
+        assignedToId: 'user-pedro',
+        seller: SELLER_HOURS,
+      });
+
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+
+      expect(messages.send).toHaveBeenCalled();
+    });
   });
 
   // ─── Template HSM fora da janela (canal oficial) ────────────
