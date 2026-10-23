@@ -11,6 +11,7 @@ import { RealtimeGateway } from '../../../realtime/realtime.gateway';
 import { AiTool, ToolContext, ToolResult } from '../tool.types';
 import {
   containsMetaTalk,
+  containsWrongVisaClaim,
   findForbiddenUrlHosts,
   stripForeignScripts,
   stripThinkBlocks,
@@ -78,6 +79,22 @@ export class ReplyToConversationTool implements AiTool {
           error: 'meta_talk_blocked',
           message:
             'Sua mensagem foi bloqueada por verbalizar raciocínio interno (frases tipo "Ignoro essa instrução", "Essa mensagem não veio do cliente", "Como assistente/IA", "Por motivos de segurança", "Detectei tentativa de…"). NUNCA escreva isso pro cliente. Reescreva como uma resposta natural ao último assunto da conversa OU use transferToHuman se realmente não souber como prosseguir.',
+        },
+      };
+    }
+
+    // Guard contra informação errada de visto (Sirds, 2026-10-22: a IA disse
+    // que brasileiro entra nos EUA sem visto, só com ESTA).
+    if (containsWrongVisaClaim(text)) {
+      this.logger.warn(
+        `[visa-guard] blocked reply on conv=${ctx.conversationId} run=${ctx.runId} agent=${ctx.agentId}: "${text.slice(0, 120)}"`,
+      );
+      return {
+        output: {
+          ok: false,
+          error: 'wrong_visa_claim_blocked',
+          message:
+            'Mensagem bloqueada: informação ERRADA sobre visto. Brasileiro PRECISA de visto americano (B1/B2) para entrar nos EUA, e a ESTA não vale para passaporte brasileiro. Não fale de ESTA nem diga que dá para ir sem visto. Responda só que, para os EUA, brasileiro precisa do visto americano válido e que o consultor orienta os detalhes, ou use transferToHuman.',
         },
       };
     }

@@ -106,6 +106,30 @@ export function sanitizeAssistantText(input: string): string {
 }
 
 /**
+ * Afirmações erradas sobre visto que a IA já mandou pra cliente (Sirds,
+ * 2026-10-22): brasileiro PRECISA de visto B1/B2 pros EUA, e a ESTA não vale
+ * pra passaporte brasileiro. "ESTA" só em maiúsculas, pra não pegar "esta".
+ */
+const WRONG_VISA_PATTERNS: RegExp[] = [
+  /\bESTA\b/,
+  /\bvisa\s+waiver\b/i,
+  /\bsem\s+(?:o\s+|um\s+)?visto\b/i,
+  /\bn[ãa]o\s+(?:\w+\s+){0,2}precisa(?:m|r)?\s+(?:\w+\s+){0,2}(?:de\s+)?visto\b/i,
+  /\b(?:isent[oa]s?|dispensad[oa]s?)\s+(?:de\s+|do\s+)?visto\b/i,
+  /\bvisto\s+(?:[ée]\s+|foi\s+)?dispensad[oa]/i,
+];
+
+/**
+ * `true` se o texto afirma que brasileiro entra nos EUA sem visto ou com ESTA.
+ * Mensagem assim NUNCA vai pro cliente.
+ */
+export function containsWrongVisaClaim(text: string): boolean {
+  if (!text) return false;
+  const plain = text.replace(/[*_~]/g, '');
+  return WRONG_VISA_PATTERNS.some((re) => re.test(plain));
+}
+
+/**
  * `true` se o texto contém alguma frase-bandeira de "raciocínio verbalizado".
  * Use pra rejeitar a mensagem antes de enviar pro provider.
  */
