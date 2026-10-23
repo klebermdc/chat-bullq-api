@@ -214,15 +214,22 @@ export class AgentRouterService {
     // Qualquer "false" mais específico bloqueia mesmo se mais genérico está ON.
     // "true" mais específico libera mesmo se mais genérico está OFF.
     const convOverride = conversation.aiEnabled;
+    // Conversa com vendedor é dele: a Aline não entra no meio. Só um humano
+    // ligando a IA à mão na conversa (aiEnabled=true) muda isso.
+    const isSellerOwned = !!conversation.assignedToId && convOverride !== true;
 
-    if (convOverride === false) {
-      // Única exceção ao "desligado na conversa": o vendedor está fora do
-      // horário e a Aline cobre o plantão dele.
+    if (convOverride === false || isSellerOwned) {
+      // Única exceção: o vendedor está fora do horário e a Aline cobre o
+      // plantão dele.
       const onCall = conversation.assignedToId
         ? await this.onCall?.evaluate(conversation)
         : null;
       if (!onCall) {
-        return { handle: false, reason: 'conversation.aiEnabled=force-off' };
+        return {
+          handle: false,
+          reason:
+            convOverride === false ? 'conversation.aiEnabled=force-off' : 'assigned-to-human',
+        };
       }
       return this.checkOnCallRun(conversation, onCall);
     }

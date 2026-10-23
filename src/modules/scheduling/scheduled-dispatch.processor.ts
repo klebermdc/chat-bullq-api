@@ -10,6 +10,13 @@ import { SCHEDULED_DISPATCH_QUEUE, SCHEDULED_DISPATCH_JOB } from './scheduling.c
 import { isAiParked } from '../../common/utils/ai-parked.util';
 import { computeWhatsappWindow } from '../messaging/conversations/whatsapp-window.util';
 import { buildHsmTemplateContent } from './hsm-template-payload';
+import {
+  isWithinHours,
+  nextOpenAt,
+  type BusinessHoursConfig,
+} from '../routing/availability/business-hours.util';
+
+const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 
 /** Conversa (parcial) que o dispatch carrega para decidir texto vs template. */
 interface DispatchConversation {
@@ -103,6 +110,16 @@ export class ScheduledDispatchProcessor extends WorkerHost {
         cancelReason: 'not_ai_parked',
       });
       return;
+    }
+
+    // Reengajamento automático não chega ao cliente fora do horário de quem
+    // atende: adia para a próxima abertura (vale também para as repetições).
+    if (row.origin === 'AUTO_REENGAGE') {
+      const reopenAt = await this.closedUntil(row.organizationId, conversation.assignedToId);
+      if (reopenAt) {
+        await this.postpone(row.id, reopenAt);
+        return;
+      }
     }
 
     // Fora da janela de 24h/72h (canal oficial) texto livre é recusado pela
@@ -226,6 +243,55 @@ export class ScheduledDispatchProcessor extends WorkerHost {
    * é entregue pela Meta. Sem template utilizável, falha com motivo legível em
    * vez de queimar um envio que já se sabe recusado.
    */
+  /**
+   * Próxima abertura se agora está fora do horário de quem atende: o do
+   * vendedor da conversa ou, sem vendedor, o da organização. null quando está
+   * aberto, sem agenda (24/7) ou sem nenhum dia aberto.
+   */
+  private async closedUntil(
+    organizationId: string,
+    assignedToId: string | null,
+  ): Promise<Date | null> {
+    const [org, membership] = await Promise.all([
+      this.prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { aiBusinessHours: true, aiTimezone: true },
+      }),
+      assignedToId
+        ? this.prisma.userOrganization.findUnique({
+            where: { userId_organizationId: { userId: assignedToId, organizationId } },
+            select: { workingHours: true },
+          })
+        : Promise.resolve(null),
+    ]);
+    const hours = (
+      assignedToId ? membership?.workingHours : org?.aiBusinessHours
+    ) as BusinessHoursConfig | null | undefined;
+    const tz = org?.aiTimezone || DEFAULT_TIMEZONE;
+    const now = new Date();
+    if (isWithinHours(hours, tz, now)) return null;
+    return nextOpenAt(hours, tz, now);
+  }
+
+  private async postpone(scheduledMessageId: string, at: Date): Promise<void> {
+    await this.repo.update(scheduledMessageId, { scheduledAt: at });
+    // jobId novo: o atual ainda existe na fila e o BullMQ ignora id repetido.
+    const job = await this.queue.add(
+      SCHEDULED_DISPATCH_JOB,
+      { scheduledMessageId },
+      {
+        delay: Math.max(0, at.getTime() - Date.now()),
+        jobId: `sched-${scheduledMessageId}-${at.getTime()}`,
+        removeOnComplete: 100,
+        removeOnFail: 100,
+      },
+    );
+    await this.repo.update(scheduledMessageId, { jobId: String(job.id) });
+    this.logger.log(
+      `scheduled_dispatch_postponed_off_hours id=${scheduledMessageId} at=${at.toISOString()}`,
+    );
+  }
+
   private async resolveOutboundPayload(
     row: {
       contentType: MessageContentType;
