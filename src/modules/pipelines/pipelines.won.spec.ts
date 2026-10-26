@@ -16,6 +16,7 @@ function make(overrides: { card?: unknown; wonStage?: unknown } = {}) {
       ),
       update: jest.fn().mockResolvedValue({ id: 'card-1' }),
     },
+    conversation: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     pipelineStage: {
       findFirst: jest.fn().mockResolvedValue(
         overrides.wonStage === undefined
@@ -54,6 +55,16 @@ describe('PipelinesService.markWonForConversation (E5.1)', () => {
       'org-1',
       expect.objectContaining({ toStageId: 'stage-won' }),
     );
+  });
+
+  it('limpa a venda perdida da conversa (lead que voltou e fechou)', async () => {
+    const { service, prisma } = make();
+    await service.markWonForConversation('org-1', 'conv-1');
+
+    expect(prisma.conversation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'conv-1', organizationId: 'org-1', lostAt: { not: null } },
+      data: { lostReason: null, lostNote: null, lostAt: null, lostById: null },
+    });
   });
 
   it('sem nº do pedido: move pra WON mesmo assim, sem gravar metadata', async () => {

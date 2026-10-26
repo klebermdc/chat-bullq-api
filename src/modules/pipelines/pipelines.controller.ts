@@ -21,8 +21,12 @@ import {
   UpsertStageDto,
 } from './dto/pipeline.dto';
 import { OrderSentDto } from '../acceptances/dto/create-acceptance.dto';
+import { MarkLostDto } from './dto/lost-sale.dto';
+import { LostSaleService } from './lost-sale.service';
+import { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import {
+  CurrentChannelAccess,
   CurrentOrg,
   CurrentUser,
   CurrentUserRole,
@@ -34,7 +38,10 @@ import {
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
 @Controller('pipelines')
 export class PipelinesController {
-  constructor(private readonly service: PipelinesService) {}
+  constructor(
+    private readonly service: PipelinesService,
+    private readonly lostSale: LostSaleService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List pipelines for current org' })
@@ -217,5 +224,44 @@ export class PipelinesController {
       role,
       userId,
     );
+  }
+
+  @Post('conversations/:conversationId/lost')
+  @ApiOperation({
+    summary:
+      'Venda perdida: grava o motivo, move o card pra etapa LOST (se houver) e encerra a conversa.',
+  })
+  markLost(
+    @Param('conversationId') conversationId: string,
+    @CurrentOrg('id') orgId: string,
+    @Body() dto: MarkLostDto,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
+  ) {
+    return this.lostSale.markLost(orgId, conversationId, dto, {
+      userId,
+      role,
+      access,
+    });
+  }
+
+  @Post('conversations/:conversationId/lost/undo')
+  @ApiOperation({
+    summary:
+      'Desfaz a venda perdida: card volta à etapa anterior e a conversa reabre se estava aberta.',
+  })
+  undoLost(
+    @Param('conversationId') conversationId: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
+  ) {
+    return this.lostSale.undoLost(orgId, conversationId, {
+      userId,
+      role,
+      access,
+    });
   }
 }

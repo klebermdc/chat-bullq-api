@@ -127,6 +127,12 @@ export class ConversationsService {
     );
   }
 
+  /** Reenvia a conversa às telas abertas depois de mudança feita fora deste service. */
+  async broadcastById(id: string): Promise<void> {
+    const conversation = await this.repository.findById(id);
+    this.broadcastUpdate(conversation as Conversation | null);
+  }
+
   async findInbox(
     organizationId: string,
     filters: {
