@@ -169,6 +169,52 @@ describe('ScheduledDispatchProcessor', () => {
     expect(messages.send).toHaveBeenCalled();
   });
 
+  describe('cadência em conversa com vendedor', () => {
+    function makeCadenceDeps(conversation: any) {
+      // requireAiParked=true: agendamentos antigos criados antes da mudança.
+      const row = { ...base, origin: 'CADENCE', requireAiParked: true, cadenceEnrollmentId: 'e1', cadenceStepOrder: 1 };
+      const repo = {
+        findById: jest.fn(async () => row),
+        update: jest.fn(async (id: string, d: any) => ({ ...row, ...d })),
+        claimForDispatch: jest.fn(async () => true),
+      };
+      const prisma = {
+        conversation: {
+          findUnique: jest.fn(async () => ({
+            id: 'c1', status: 'OPEN', isArchived: false, lastInboundAt: null,
+            ...conversation,
+          })),
+        },
+      };
+      const messages = { send: jest.fn(async () => ({ id: 'm1' })) };
+      const processor = new ScheduledDispatchProcessor(
+        repo as any, prisma as any, messages as any,
+        { add: jest.fn(async () => ({ id: 'j' })) } as any,
+        { onStepSent: jest.fn(async () => undefined) } as any,
+      );
+      return { processor, repo, messages };
+    }
+
+    it('envia quando a conversa tem vendedor responsável e a IA está desligada', async () => {
+      const { processor, messages } = makeCadenceDeps({
+        assignedToId: 'u1', awaitingHumanReply: false, aiEnabled: false,
+      });
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+      expect(messages.send).toHaveBeenCalled();
+    });
+
+    it('cancela (awaiting_human) quando o cliente está esperando resposta do atendente', async () => {
+      const { processor, repo, messages } = makeCadenceDeps({
+        assignedToId: 'u1', awaitingHumanReply: true, aiEnabled: null,
+      });
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+      expect(messages.send).not.toHaveBeenCalled();
+      expect(repo.update).toHaveBeenCalledWith('s1', expect.objectContaining({
+        status: 'CANCELED', cancelReason: 'awaiting_human',
+      }));
+    });
+  });
+
   it('AUTO_REENGAGE esgotado (último toque): move o card para exhaustedStageId (LOST)', async () => {
     const row = { ...base, origin: 'AUTO_REENGAGE', attempt: 2, maxAttempts: 2, exhaustedStageId: 'stg1', contactId: 'ct1', channelId: 'ch1' };
     const repo = {
@@ -428,6 +474,69 @@ describe('ScheduledDispatchProcessor', () => {
         expect.objectContaining({
           status: 'FAILED',
           failedReason: expect.stringContaining('template'),
+        }),
+      );
+    });
+
+    it('template escolhido em outro número: usa o de mesmo nome do número da conversa', async () => {
+      const conversation = {
+        ...OFICIAL,
+        lastInboundAt: new Date(Date.now() - 30 * 3600_000),
+      };
+      const doOutroNumero = {
+        id: 'tpl1', channelId: 'ch-A', name: 'candecia1', language: 'pt_BR',
+        status: 'APPROVED', components: { body: { text: 'Oi {{1}}' } }, variableExamples: {},
+      };
+      const doNumeroDaConversa = { ...doOutroNumero, id: 'tpl2', channelId: 'ch-B', language: 'en_US' };
+      const { processor, messages, prisma } = makeOfficialDeps(
+        { ...cadenceRow, channelId: 'ch-B' },
+        conversation,
+      );
+      prisma.messageTemplate.findFirst = jest
+        .fn()
+        .mockResolvedValueOnce(doOutroNumero)
+        .mockResolvedValueOnce(doNumeroDaConversa);
+
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+
+      expect(prisma.messageTemplate.findFirst).toHaveBeenLastCalledWith({
+        where: { organizationId: 'org1', channelId: 'ch-B', name: 'candecia1', status: 'APPROVED' },
+      });
+      expect(messages.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'TEMPLATE',
+          content: expect.objectContaining({ name: 'candecia1', language: { code: 'en_US' } }),
+        }),
+        'user1', 'org1', 'ALL', undefined, { system: true },
+      );
+    });
+
+    it('template sem equivalente aprovado no número da conversa: não envia e diz qual falta', async () => {
+      const conversation = {
+        ...OFICIAL,
+        lastInboundAt: new Date(Date.now() - 30 * 3600_000),
+      };
+      const doOutroNumero = {
+        id: 'tpl1', channelId: 'ch-A', name: 'candecia1', language: 'pt_BR',
+        status: 'APPROVED', components: { body: { text: 'Oi {{1}}' } }, variableExamples: {},
+      };
+      const { processor, repo, messages, prisma } = makeOfficialDeps(
+        { ...cadenceRow, channelId: 'ch-B' },
+        conversation,
+      );
+      prisma.messageTemplate.findFirst = jest
+        .fn()
+        .mockResolvedValueOnce(doOutroNumero)
+        .mockResolvedValueOnce(null);
+
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+
+      expect(messages.send).not.toHaveBeenCalled();
+      expect(repo.update).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({
+          status: 'FAILED',
+          failedReason: expect.stringContaining('candecia1'),
         }),
       );
     });
