@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { NOT_LOST_RECOVERY } from '../../pipelines/lost-recovery.constants';
 import { PrismaService } from '../../../database/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 
@@ -76,9 +77,10 @@ export class LeadCardService {
   }): Promise<string | null> {
     const { organizationId, conversationId, contactId } = params;
 
-    // Já está no funil (qualquer etapa, qualquer pipeline) → não mexe.
+    // Já está no funil (qualquer etapa, qualquer pipeline) → não mexe. O de
+    // recuperação não conta: lead perdido que volta precisa de card de vendas.
     const existing = await this.prisma.card.findFirst({
-      where: { organizationId, conversationId },
+      where: { organizationId, conversationId, ...NOT_LOST_RECOVERY },
       select: { id: true },
     });
     if (existing) return null;

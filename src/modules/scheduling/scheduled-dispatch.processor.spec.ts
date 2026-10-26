@@ -517,3 +517,112 @@ describe('ScheduledDispatchProcessor', () => {
     });
   });
 });
+
+describe('ScheduledDispatchProcessor — cadência do funil de recuperação', () => {
+  const row = {
+    id: 's1', status: 'PENDING', conversationId: 'c1', organizationId: 'org1',
+    createdById: 'user1', contentType: 'TEXT', content: { text: 'oi' },
+    origin: 'CADENCE', cadenceEnrollmentId: 'e1', cadenceStepOrder: 1,
+    attempt: 1, maxAttempts: 1, createdAt: new Date('2020-01-01T00:00:00.000Z'),
+  };
+
+  function make(opts: {
+    conversation?: Record<string, unknown>;
+    recoveryCard?: unknown;
+    optedOut?: boolean;
+    origin?: string;
+  } = {}) {
+    const r = { ...row, origin: opts.origin ?? 'CADENCE' };
+    const repo = {
+      findById: jest.fn(async () => r),
+      create: jest.fn(),
+      update: jest.fn(async (_id: string, d: any) => ({ ...r, ...d })),
+      claimForDispatch: jest.fn(async () => true),
+    };
+    const prisma = {
+      conversation: {
+        findUnique: jest.fn(async () => ({
+          id: 'c1',
+          status: 'CLOSED',
+          isArchived: false,
+          lastInboundAt: null,
+          lostAt: new Date('2026-10-26T00:00:00.000Z'),
+          ...opts.conversation,
+        })),
+      },
+      cadenceEnrollment: {
+        findUnique: jest.fn(async () => ({
+          cardId: 'card-rec',
+          contactId: 'ct1',
+          cadence: { optOutTagId: 'tag-optout' },
+        })),
+      },
+      card: {
+        findFirst: jest.fn(async () =>
+          opts.recoveryCard === undefined ? { id: 'card-rec' } : opts.recoveryCard,
+        ),
+      },
+      contactTag: {
+        findUnique: jest.fn(async () => (opts.optedOut ? { contactId: 'ct1' } : null)),
+      },
+    };
+    const messages = { send: jest.fn(async () => ({ id: 'm1' })) };
+    const cadenceRunner = { onStepSent: jest.fn(async () => undefined) };
+    const processor = new ScheduledDispatchProcessor(
+      repo as any,
+      prisma as any,
+      messages as any,
+      { add: jest.fn() } as any,
+      cadenceRunner as any,
+    );
+    return { processor, repo, messages, cadenceRunner, prisma };
+  }
+  const job = { data: { scheduledMessageId: 's1' } } as any;
+  const failedClosed = expect.objectContaining({
+    status: 'FAILED',
+    failedReason: 'conversation_closed_or_archived',
+  });
+
+  it('envia em conversa encerrada como venda perdida', async () => {
+    const { processor, messages, prisma } = make();
+    await processor.process(job);
+    expect(prisma.card.findFirst).toHaveBeenCalledWith({
+      where: { id: 'card-rec', pipeline: { key: 'lost_recovery' } },
+      select: { id: true },
+    });
+    expect(messages.send).toHaveBeenCalled();
+  });
+
+  it('cadência de vendas (card fora da recuperação) continua bloqueada', async () => {
+    const { processor, repo, messages, cadenceRunner } = make({ recoveryCard: null });
+    await processor.process(job);
+    expect(messages.send).not.toHaveBeenCalled();
+    expect(repo.update).toHaveBeenCalledWith('s1', failedClosed);
+    // A inscrição anda mesmo bloqueada, senão fica viva pra sempre.
+    expect(cadenceRunner.onStepSent).toHaveBeenCalledWith('e1', 1);
+  });
+
+  it('contato que se descadastrou depois do início não recebe', async () => {
+    const { processor, messages } = make({ optedOut: true });
+    await processor.process(job);
+    expect(messages.send).not.toHaveBeenCalled();
+  });
+
+  it('conversa encerrada por outro motivo (sem venda perdida) continua bloqueada', async () => {
+    const { processor, messages } = make({ conversation: { lostAt: null } });
+    await processor.process(job);
+    expect(messages.send).not.toHaveBeenCalled();
+  });
+
+  it('agendamento manual em conversa perdida continua bloqueado', async () => {
+    const { processor, messages } = make({ origin: 'MANUAL' });
+    await processor.process(job);
+    expect(messages.send).not.toHaveBeenCalled();
+  });
+
+  it('conversa arquivada continua bloqueada', async () => {
+    const { processor, messages } = make({ conversation: { isArchived: true } });
+    await processor.process(job);
+    expect(messages.send).not.toHaveBeenCalled();
+  });
+});

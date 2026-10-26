@@ -2,6 +2,10 @@ import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
 import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
 import { MessageContentType } from '@prisma/client';
+import {
+  LOST_RECOVERY_PIPELINE_KEY,
+  NOT_LOST_RECOVERY,
+} from '../pipelines/lost-recovery.constants';
 import { PrismaService } from '../../database/prisma.service';
 import { MessagesService } from '../messaging/messages/messages.service';
 import { CadenceRunner } from '../cadences/cadence-runner.service';
@@ -45,18 +49,33 @@ export class ScheduledDispatchProcessor extends WorkerHost {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: row.conversationId },
       select: {
-        id: true, status: true, isArchived: true, lastInboundAt: true,
+        id: true, status: true, isArchived: true, lastInboundAt: true, lostAt: true,
         metaWindowExpiresAt: true,
         assignedToId: true, awaitingHumanReply: true, aiEnabled: true,
         channel: { select: { type: true } },
         contact: { select: { name: true, ctwaClidAt: true } },
       },
     });
-    if (!conversation || conversation.status === 'CLOSED' || conversation.isArchived) {
+    // Exceção: cadência da coluna do funil de recuperação numa conversa
+    // encerrada como venda perdida — feita pra falar com quem não comprou. Se
+    // o cliente responder, a conversa reabre sozinha.
+    const isLostSaleCadence =
+      conversation?.status === 'CLOSED' &&
+      conversation.lostAt != null &&
+      !conversation.isArchived &&
+      (await this.isSendableRecoveryCadence(row));
+    if (
+      !conversation ||
+      conversation.isArchived ||
+      (conversation.status === 'CLOSED' && !isLostSaleCadence)
+    ) {
       await this.repo.update(row.id, {
         status: 'FAILED',
         failedReason: 'conversation_closed_or_archived',
       });
+      // Mesmo motivo do bloqueio de janela abaixo: inscrição presa em ACTIVE
+      // bloqueia qualquer cadência futura na conversa.
+      this.advanceCadence(row);
       return;
     }
 
@@ -203,6 +222,43 @@ export class ScheduledDispatchProcessor extends WorkerHost {
    * Avisa o runner que este toque terminou (enviado ou bloqueado) para ele
    * agendar o próximo passo ou encerrar a matrícula. Fire-and-forget.
    */
+  /**
+   * Só a cadência ligada a um card do funil de recuperação, e com o contato
+   * ainda fora da tag de descadastro (o start confere; aqui é na hora do envio).
+   */
+  private async isSendableRecoveryCadence(row: {
+    origin: string;
+    cadenceEnrollmentId?: string | null;
+  }): Promise<boolean> {
+    if (row.origin !== 'CADENCE' || !row.cadenceEnrollmentId) return false;
+    const enrollment = await this.prisma.cadenceEnrollment.findUnique({
+      where: { id: row.cadenceEnrollmentId },
+      select: {
+        cardId: true,
+        contactId: true,
+        cadence: { select: { optOutTagId: true } },
+      },
+    });
+    if (!enrollment?.cardId) return false;
+    const recoveryCard = await this.prisma.card.findFirst({
+      where: {
+        id: enrollment.cardId,
+        pipeline: { key: LOST_RECOVERY_PIPELINE_KEY },
+      },
+      select: { id: true },
+    });
+    if (!recoveryCard) return false;
+    const optOutTagId = enrollment.cadence.optOutTagId;
+    if (!optOutTagId) return true;
+    const optedOut = await this.prisma.contactTag.findUnique({
+      where: {
+        contactId_tagId: { contactId: enrollment.contactId, tagId: optOutTagId },
+      },
+      select: { contactId: true },
+    });
+    return !optedOut;
+  }
+
   private advanceCadence(row: {
     origin: string;
     cadenceEnrollmentId?: string | null;
@@ -293,7 +349,7 @@ export class ScheduledDispatchProcessor extends WorkerHost {
     const stage = await this.prisma.pipelineStage.findUnique({ where: { id: stageId } });
     if (!stage) return;
     const card = await this.prisma.card.findFirst({
-      where: { conversationId: row.conversationId },
+      where: { conversationId: row.conversationId, ...NOT_LOST_RECOVERY },
       orderBy: { createdAt: 'desc' },
     });
     if (card) {

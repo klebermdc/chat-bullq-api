@@ -13,6 +13,7 @@ import {
   MessageContentType,
   Prisma,
 } from '@prisma/client';
+import { NOT_LOST_RECOVERY } from '../pipelines/lost-recovery.constants';
 import { PrismaService } from '../../database/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { EnrollmentsRepository } from './enrollments.repository';
@@ -111,6 +112,7 @@ export class CadenceRunner {
     cadenceId: string,
     source: CadenceStartSource,
     orgId?: string,
+    cardId?: string | null,
   ): Promise<CadenceEnrollment | null> {
     // Idempotência: qualquer enrollment VIVO (ACTIVE ou PAUSED) na conversa →
     // não duplica (independe da cadência: uma conversa só tem uma cadência viva
@@ -166,10 +168,15 @@ export class CadenceRunner {
     const contact = await this.prisma.contact.findUnique({
       where: { id: conversation.contactId },
     });
-    const card = await this.prisma.card.findFirst({
-      where: { conversationId },
-      orderBy: { createdAt: 'desc' },
-    });
+    // O card que entrou na etapa gatilho, quando veio de um; senão o card mais
+    // recente do funil de vendas (o de recuperação tem o seu, passado acima).
+    const card = cardId
+      ? { id: cardId }
+      : await this.prisma.card.findFirst({
+          where: { conversationId, ...NOT_LOST_RECOVERY },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true },
+        });
 
     const firstStep = cadence.steps[0];
     const enrollment = await this.enrollments.create({
@@ -297,6 +304,19 @@ export class CadenceRunner {
    * toques pendentes e arma o watchdog de silêncio. Devolve o enrollment só
    * quando ESTE caminho venceu o compare-and-set; `null` caso contrário.
    */
+  /**
+   * Encerra a inscrição viva da conversa, se houver. Sem isso, encerrar a
+   * conversa só cancela os toques e a inscrição fica ACTIVE pra sempre — e
+   * inscrição viva bloqueia qualquer cadência futura na conversa.
+   */
+  async stopLiveForConversation(
+    conversationId: string,
+    reason: string,
+  ): Promise<void> {
+    const live = await this.enrollments.findLiveByConversation(conversationId);
+    if (live) await this.stop(live.id, reason);
+  }
+
   async pause(
     enrollmentId: string,
     silenceWindowMinutes: number,
@@ -407,7 +427,7 @@ export class CadenceRunner {
 
   async maybeStartForStage(
     conversationId: string,
-    _cardId: string | null,
+    cardId: string | null,
     stageId: string,
     orgId: string,
   ): Promise<CadenceEnrollment | null> {
@@ -419,7 +439,7 @@ export class CadenceRunner {
     if (cadence.trigger !== 'STAGE_ENTER' && cadence.trigger !== 'BOTH') {
       return null;
     }
-    return this.start(conversationId, cadence.id, 'STAGE_ENTER');
+    return this.start(conversationId, cadence.id, 'STAGE_ENTER', undefined, cardId);
   }
 
   /**
@@ -458,7 +478,7 @@ export class CadenceRunner {
     const watched = cadence.watchedStageIds ?? [];
     if (watched.length > 0) {
       const card = await this.prisma.card.findFirst({
-        where: { conversationId },
+        where: { conversationId, ...NOT_LOST_RECOVERY },
         orderBy: { createdAt: 'desc' },
       });
       if (!card || !card.stageId || !watched.includes(card.stageId)) {
@@ -642,6 +662,7 @@ export class CadenceRunner {
   private statusForReason(reason: string): CadenceEnrollmentStatus {
     switch (reason) {
       case 'said_no':
+      case 'lost_sale':
         return 'MOVED_LOST';
       case 'opt_out':
         return 'STOPPED_OPTOUT';

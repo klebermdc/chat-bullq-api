@@ -20,6 +20,7 @@ import {
   VoucherSendResult,
 } from '../acceptances/acceptances.types';
 import { MessagesService } from '../messaging/messages/messages.service';
+import { NOT_LOST_RECOVERY } from './lost-recovery.constants';
 import { pipelineCardScopeWhere } from './pipeline-scope';
 import { resolveAssignmentScope } from '../messaging/conversations/conversation-scope';
 import {
@@ -710,7 +711,7 @@ export class PipelinesService {
   ) {
     const scope = currentUserId ? pipelineCardScopeWhere(role, currentUserId) : {};
     const card = await this.prisma.card.findFirst({
-      where: { conversationId, organizationId, ...scope },
+      where: { conversationId, organizationId, ...scope, ...NOT_LOST_RECOVERY },
       orderBy: { createdAt: 'desc' },
     });
     if (!card) {

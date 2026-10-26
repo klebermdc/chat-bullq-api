@@ -23,6 +23,7 @@ import {
 import { OrderSentDto } from '../acceptances/dto/create-acceptance.dto';
 import { MarkLostDto } from './dto/lost-sale.dto';
 import { LostSaleService } from './lost-sale.service';
+import { LostRecoveryService } from './lost-recovery.service';
 import { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import {
@@ -41,6 +42,7 @@ export class PipelinesController {
   constructor(
     private readonly service: PipelinesService,
     private readonly lostSale: LostSaleService,
+    private readonly lostRecovery: LostRecoveryService,
   ) {}
 
   @Get()
@@ -210,20 +212,24 @@ export class PipelinesController {
     summary:
       'E5.1 — Fechamento: marca Ganho (guarda o nº do pedido) e move o card pra etapa WON.',
   })
-  markWon(
+  async markWon(
     @Param('conversationId') conversationId: string,
     @CurrentOrg('id') orgId: string,
     @Body() body: { orderNumber?: string },
     @CurrentUserRole() role: OrgRole,
     @CurrentUser('id') userId: string,
   ) {
-    return this.service.markWonForConversation(
+    await this.lostRecovery.stopRecoveryCadence(orgId, conversationId);
+    const card = await this.service.markWonForConversation(
       orgId,
       conversationId,
       body?.orderNumber,
       role,
       userId,
     );
+    // Lead que tinha sido dado como perdido: card de recuperação → Recuperado.
+    await this.lostRecovery.markRecovered(orgId, conversationId);
+    return card;
   }
 
   @Post('conversations/:conversationId/lost')

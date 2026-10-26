@@ -1,5 +1,6 @@
 import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import * as crypto from 'crypto';
+import { NOT_LOST_RECOVERY } from '../pipelines/lost-recovery.constants';
 import { PrismaService } from '../../database/prisma.service';
 import { AcceptancePdfService } from './acceptance-pdf.service';
 import { AcceptanceEffectsService } from './acceptance-effects.service';
@@ -82,7 +83,7 @@ export class AcceptancesService {
     if (!conv) throw new BadRequestException('Conversa não encontrada nesta organização.');
 
     const card = await this.prisma.card.findFirst({
-      where: { conversationId, organizationId },
+      where: { conversationId, organizationId, ...NOT_LOST_RECOVERY },
       orderBy: { createdAt: 'desc' },
       select: { id: true },
     });
