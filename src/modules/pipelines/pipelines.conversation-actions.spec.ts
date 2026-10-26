@@ -22,6 +22,7 @@ function makeService(overrides: {
       update: jest.fn().mockResolvedValue({ id: 'card-1' }),
       findMany: jest.fn().mockResolvedValue([]),
     },
+    conversation: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     pipelineStage: {
       findFirst: jest.fn().mockImplementation((args: any) => {
         // markWon busca por type: WON; markOrderSent busca por name contains.

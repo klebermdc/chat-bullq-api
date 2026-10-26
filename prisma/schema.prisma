@@ -685,6 +685,16 @@ model Conversation {
   reopenedCount       Int                @default(0) @map("reopened_count")
   deletedAt           DateTime?          @map("deleted_at")
 
+  // ─── Venda perdida ──────────────────────────────
+  // Motivo registrado pelo vendedor ao encerrar sem venda (botão no campo de
+  // mensagem). Fica na conversa, e não só no Card, porque nem todo lead tem
+  // card no funil. Códigos em pipelines/lost-sale.constants.ts. Limpo ao
+  // desfazer ou quando a venda é marcada como ganha depois.
+  lostReason          String?            @map("lost_reason")
+  lostNote            String?            @map("lost_note")
+  lostAt              DateTime?          @map("lost_at")
+  lostById            String?            @map("lost_by_id")
+
   // ─── Archive state ──────────────────────────────
   // Orthogonal to `status` — archived conversations are hidden from the
   // main inbox but their status (OPEN/PENDING/etc.) is preserved so they
@@ -768,6 +778,7 @@ model Conversation {
   @@index([organizationId, assignedToId], name: "idx_conv_org_agent")
   @@index([organizationId, channelId], name: "idx_conv_org_channel")
   @@index([organizationId, isArchived], name: "idx_conv_org_archived")
+  @@index([organizationId, lostAt], name: "idx_conv_org_lost_at")
   @@index([segmentId, contactId], name: "idx_conv_segment_contact")
   @@index([contactId], name: "idx_conv_contact")
   @@index([lastMessageAt], name: "idx_conv_last_msg")

@@ -729,6 +729,12 @@ export class PipelinesService {
       );
     }
 
+    // Venda que tinha sido dada como perdida e voltou: some do relatório de perdas.
+    await this.prisma.conversation.updateMany({
+      where: { id: conversationId, organizationId, lostAt: { not: null } },
+      data: { lostReason: null, lostNote: null, lostAt: null, lostById: null },
+    });
+
     const trimmed = orderNumber?.trim();
     if (trimmed) {
       await this.prisma.card.update({
