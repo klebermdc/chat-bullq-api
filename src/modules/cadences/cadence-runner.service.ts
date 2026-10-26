@@ -554,7 +554,9 @@ export class CadenceRunner {
       scheduledAt,
       maxAttempts: 1,
       attempt: 1,
-      requireAiParked: true,
+      // O dispatch aplica a regra própria da cadência (só segura se o cliente
+      // espera resposta do atendente); vendedor responsável não bloqueia.
+      requireAiParked: false,
     });
 
     // IMPORTANTE: jobId custom do BullMQ NÃO pode conter ':' → `sched-<id>`.

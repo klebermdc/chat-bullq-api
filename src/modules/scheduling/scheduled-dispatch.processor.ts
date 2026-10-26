@@ -105,10 +105,23 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       return;
     }
 
-    // Corte "parado na IA": se o agendamento exige lead sob a IA e um humano
-    // assumiu (ou a IA foi desligada) depois de criado, não envia. No
-    // AUTO_REENGAGE isso também impede o próximo toque (return antes do retry).
-    if (
+    // Cadência fala também em conversa com vendedor (decisão 26/10/2026: os
+    // toques eram quase todos cancelados como not_ai_parked). Só segura quando
+    // o cliente está esperando resposta do atendente. Vale também para os
+    // agendamentos antigos, criados com requireAiParked=true.
+    if (row.origin === 'CADENCE') {
+      if (conversation.awaitingHumanReply) {
+        await this.repo.update(row.id, {
+          status: 'CANCELED',
+          canceledAt: new Date(),
+          cancelReason: 'awaiting_human',
+        });
+        return;
+      }
+    } else if (
+      // Corte "parado na IA": se o agendamento exige lead sob a IA e um humano
+      // assumiu (ou a IA foi desligada) depois de criado, não envia. No
+      // AUTO_REENGAGE isso também impede o próximo toque (return antes do retry).
       row.requireAiParked &&
       !isAiParked({
         assignedToId: conversation.assignedToId,
@@ -288,6 +301,7 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       content: unknown;
       templateId?: string | null;
       organizationId: string;
+      channelId?: string;
     },
     conversation: DispatchConversation,
   ): Promise<OutboundPayload> {
@@ -314,13 +328,21 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       };
     }
 
-    const template = await this.prisma.messageTemplate.findFirst({
+    const chosen = await this.prisma.messageTemplate.findFirst({
       where: { id: row.templateId, organizationId: row.organizationId },
     });
-    if (!template || template.status !== 'APPROVED') {
+    if (!chosen || chosen.status !== 'APPROVED') {
       return {
         ok: false,
-        reason: `Janela de 24h/72h fechada e o template HSM do passo não está aprovado (status=${template?.status ?? 'inexistente'}).`,
+        reason: `Janela de 24h/72h fechada e o template HSM do passo não está aprovado (status=${chosen?.status ?? 'inexistente'}).`,
+      };
+    }
+
+    const template = await this.templateForChannel(chosen, row);
+    if (!template) {
+      return {
+        ok: false,
+        reason: `Janela de 24h/72h fechada e o template "${chosen.name}" não está aprovado no número desta conversa — nada foi enviado.`,
       };
     }
 
@@ -336,6 +358,28 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       };
     }
     return { ok: true, type: MessageContentType.TEMPLATE, content: built };
+  }
+
+  /**
+   * Template HSM é por número (WABA). O editor da cadência lista os aprovados
+   * de todos os números, então o escolhido pode ser de outro canal — a Meta
+   * recusaria. Troca pelo aprovado de mesmo nome no número da conversa.
+   */
+  private async templateForChannel<T extends { channelId?: string; name: string }>(
+    chosen: T,
+    row: { organizationId: string; channelId?: string },
+  ): Promise<T | null> {
+    if (!row.channelId || !chosen.channelId || chosen.channelId === row.channelId) {
+      return chosen;
+    }
+    return (await this.prisma.messageTemplate.findFirst({
+      where: {
+        organizationId: row.organizationId,
+        channelId: row.channelId,
+        name: chosen.name,
+        status: 'APPROVED',
+      },
+    })) as T | null;
   }
 
   /**
