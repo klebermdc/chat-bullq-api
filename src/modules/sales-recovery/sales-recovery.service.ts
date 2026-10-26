@@ -3,6 +3,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Card, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { NOT_LOST_RECOVERY } from '../pipelines/lost-recovery.constants';
 import { PipelinesService } from '../pipelines/pipelines.service';
 import {
   RecoveryCardsRepository,
@@ -261,7 +262,7 @@ export class SalesRecoveryService {
    */
   async onInboundReply(conversationId: string): Promise<void> {
     const card = await this.prisma.card.findFirst({
-      where: { conversationId, status: 'OPEN' },
+      where: { conversationId, status: 'OPEN', ...NOT_LOST_RECOVERY },
       select: { id: true, organizationId: true, stageId: true, pipelineId: true },
     });
     if (!card) return;

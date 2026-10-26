@@ -898,7 +898,9 @@ export class ConversationsService {
     await this.findOne(id, organizationId, access);
     await this.fsm.transition(id, ConversationStatus.CLOSED, actorId);
     const updated = await this.repository.findById(id);
-    this.scheduled
+    // Aguardado: sem isso o cancelamento podia chegar depois de um agendamento
+    // novo feito logo após o close (ex.: cadência do funil de recuperação).
+    await this.scheduled
       .cancelPendingForConversation(id, 'conversation_closed')
       .catch(() => undefined);
     this.broadcastUpdate(updated as Conversation | null);

@@ -12,6 +12,7 @@ import {
   ConversationsReportResult,
   ConversationRow,
 } from './crm-reports.types';
+import { NOT_LOST_RECOVERY } from '../pipelines/lost-recovery.constants';
 
 @Injectable()
 export class CrmReportsService {
@@ -20,7 +21,10 @@ export class CrmReportsService {
   // Monta o WHERE dos deals a partir dos filtros + RBAC.
   buildDealsWhere(p: DealsReportParams): Prisma.CardWhereInput {
     const where: Prisma.CardWhereInput = { organizationId: p.orgId };
+    // Sem funil escolhido, o de recuperação fica de fora: são os mesmos leads
+    // que já estão como Perdido no funil de vendas, contariam em dobro.
     if (p.pipelineId) where.pipelineId = p.pipelineId;
+    else where.pipeline = NOT_LOST_RECOVERY.pipeline;
     if (p.stageIds?.length) where.stageId = { in: p.stageIds };
     if (p.status) where.status = p.status;
     if (p.assignedToId) where.assignedToId = p.assignedToId;

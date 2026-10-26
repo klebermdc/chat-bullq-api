@@ -9,6 +9,7 @@ function makeService(opts: {
   card?: Record<string, unknown> | null;
   lostStage?: Record<string, unknown> | null;
   fromStage?: Record<string, unknown> | null;
+  placement?: Record<string, unknown> | null;
 } = {}) {
   const conversation = {
     id: 'conv-1',
@@ -54,8 +55,32 @@ function makeService(opts: {
     reopen: jest.fn().mockResolvedValue({ id: 'conv-1', status: 'OPEN' }),
     broadcastById: jest.fn().mockResolvedValue(undefined),
   } as any;
-  const svc = new LostSaleService(prisma, realtime, pipelines, conversations);
-  return { svc, prisma, pipelines, conversations };
+  const calls: string[] = [];
+  const recovery = {
+    place: jest.fn().mockImplementation(async () => {
+      calls.push('place');
+      return opts.placement === undefined
+        ? { cardId: 'rec-1', created: true, fromStageId: null }
+        : opts.placement;
+    }),
+    undo: jest.fn().mockImplementation(async () => {
+      calls.push('undo');
+    }),
+  } as any;
+  const cadenceRunner = {
+    stopLiveForConversation: jest.fn().mockImplementation(async () => {
+      calls.push('stop');
+    }),
+  } as any;
+  const svc = new LostSaleService(
+    prisma,
+    realtime,
+    pipelines,
+    conversations,
+    recovery,
+    cadenceRunner,
+  );
+  return { svc, prisma, pipelines, conversations, recovery, cadenceRunner, calls };
 }
 
 describe('LostSaleService.markLost', () => {
@@ -170,6 +195,68 @@ describe('LostSaleService.markLost', () => {
   });
 });
 
+describe('LostSaleService.markLost — funil de recuperação', () => {
+  it('para a cadência viva antes de pôr o card na coluna do motivo', async () => {
+    const { svc, recovery, cadenceRunner, calls } = makeService();
+
+    await svc.markLost('o1', 'conv-1', { reason: 'NO_REPLY' }, ACTOR);
+
+    expect(cadenceRunner.stopLiveForConversation).toHaveBeenCalledWith('conv-1', 'lost_sale');
+    expect(recovery.place).toHaveBeenCalledWith(
+      'o1',
+      expect.objectContaining({ id: 'conv-1' }),
+      'NO_REPLY',
+      null,
+    );
+    expect(calls).toEqual(['stop', 'place']);
+  });
+
+  it('guarda onde o card de recuperação estava, para o Desfazer', async () => {
+    const { svc, prisma } = makeService();
+
+    await svc.markLost('o1', 'conv-1', { reason: 'NO_REPLY' }, ACTOR);
+
+    const last = prisma.conversation.update.mock.calls.at(-1)[0];
+    expect(last.data.metadata).toEqual({
+      lostFromStatus: ConversationStatus.OPEN,
+      lostRecovery: { cardId: 'rec-1', created: true, fromStageId: null },
+    });
+  });
+
+  it('grava lostAt antes de pôr no funil (o despachante depende disso)', async () => {
+    const { svc, prisma, recovery } = makeService();
+
+    await svc.markLost('o1', 'conv-1', { reason: 'PRICE' }, ACTOR);
+
+    const lostAtWrite = prisma.conversation.update.mock.invocationCallOrder[0];
+    expect(lostAtWrite).toBeLessThan(recovery.place.mock.invocationCallOrder[0]);
+    expect(prisma.conversation.update.mock.calls[0][0].data.lostAt).toBeInstanceOf(Date);
+  });
+
+  it('na troca de motivo não sobrescreve o "antes" da primeira marcação', async () => {
+    const { svc, prisma } = makeService({
+      conversation: {
+        status: ConversationStatus.CLOSED,
+        lostAt: new Date(),
+        metadata: {
+          lostFromStatus: ConversationStatus.OPEN,
+          lostRecovery: { cardId: 'rec-1', created: true, fromStageId: null },
+        },
+      },
+      placement: { cardId: 'rec-1', created: false, fromStageId: 'stage-NO_REPLY' },
+    });
+
+    await svc.markLost('o1', 'conv-1', { reason: 'PRICE' }, ACTOR);
+
+    expect(prisma.conversation.update).toHaveBeenCalledTimes(1);
+    expect(prisma.conversation.update.mock.calls[0][0].data.metadata.lostRecovery).toEqual({
+      cardId: 'rec-1',
+      created: true,
+      fromStageId: null,
+    });
+  });
+});
+
 describe('LostSaleService.undoLost', () => {
   const lostConversation = {
     status: ConversationStatus.CLOSED,
@@ -213,6 +300,28 @@ describe('LostSaleService.undoLost', () => {
       },
     });
     expect(conversations.reopen).toHaveBeenCalledWith('conv-1', 'o1', 'u1', 'ALL', OrgRole.AGENT);
+  });
+
+  it('desfaz o card de recuperação e encerra a cadência dele', async () => {
+    const placement = { cardId: 'rec-1', created: true, fromStageId: null };
+    const { svc, recovery, cadenceRunner, prisma, calls } = makeService({
+      conversation: {
+        ...lostConversation,
+        metadata: { ...lostConversation.metadata, lostRecovery: placement },
+      },
+      card: lostCard,
+    });
+
+    await svc.undoLost('o1', 'conv-1', ACTOR);
+
+    expect(cadenceRunner.stopLiveForConversation).toHaveBeenCalledWith(
+      'conv-1',
+      'lost_sale_undone',
+    );
+    expect(recovery.undo).toHaveBeenCalledWith('o1', placement);
+    // Devolver o card pode iniciar a cadência da coluna; o stop vem depois.
+    expect(calls).toEqual(['undo', 'stop']);
+    expect(prisma.conversation.update.mock.calls[0][0].data.metadata).toEqual({ other: 1 });
   });
 
   it('não reabre conversa que já estava encerrada antes da marcação', async () => {

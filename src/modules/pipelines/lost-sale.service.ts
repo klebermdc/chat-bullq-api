@@ -18,7 +18,13 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { ConversationsService } from '../messaging/conversations/conversations.service';
 import { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { PipelinesService } from './pipelines.service';
+import { CadenceRunner } from '../cadences/cadence-runner.service';
+import {
+  LostRecoveryService,
+  type RecoveryPlacement,
+} from './lost-recovery.service';
 import { pipelineCardScopeWhere } from './pipeline-scope';
+import { NOT_LOST_RECOVERY } from './lost-recovery.constants';
 import { MoveCardDto } from './dto/pipeline.dto';
 import { MarkLostDto } from './dto/lost-sale.dto';
 import {
@@ -38,6 +44,7 @@ interface Actor {
 /** Chaves de `metadata` que guardam o estado anterior, para o desfazer. */
 const CONV_FROM_STATUS_KEY = 'lostFromStatus';
 const CARD_FROM_STAGE_KEY = 'lostFromStageId';
+const CONV_RECOVERY_KEY = 'lostRecovery';
 
 function asObject(value: unknown): JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -45,17 +52,29 @@ function asObject(value: unknown): JsonObject {
     : {};
 }
 
-function without(obj: JsonObject, key: string): JsonObject {
-  const { [key]: _omit, ...rest } = obj;
-  return rest;
+function without(obj: JsonObject, ...keys: string[]): JsonObject {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([key]) => !keys.includes(key)),
+  ) as JsonObject;
+}
+
+function readPlacement(value: unknown): RecoveryPlacement | null {
+  const v = asObject(value);
+  if (typeof v.cardId !== 'string' || typeof v.created !== 'boolean') return null;
+  return {
+    cardId: v.cardId,
+    created: v.created,
+    fromStageId: typeof v.fromStageId === 'string' ? v.fromStageId : null,
+  };
 }
 
 /**
  * Venda perdida: o vendedor escolhe o motivo e a conversa é encerrada.
  *
  * Grava o motivo na conversa (sempre) e no card do funil (quando existe),
- * movendo o card para a etapa LOST. O estado anterior fica em `metadata` para
- * o "Desfazer" do aviso voltar tudo como estava.
+ * movendo o card para a etapa LOST, e põe o lead na coluna do motivo no funil
+ * "Recuperação de perdidas". O estado anterior fica em `metadata` para o
+ * "Desfazer" do aviso voltar tudo como estava.
  */
 @Injectable()
 export class LostSaleService {
@@ -68,6 +87,9 @@ export class LostSaleService {
     // Mesmo ciclo pipelines↔messaging do MessagesService no PipelinesService.
     @Inject(forwardRef(() => ConversationsService))
     private readonly conversations: ConversationsService,
+    private readonly recovery: LostRecoveryService,
+    @Inject(forwardRef(() => CadenceRunner))
+    private readonly cadenceRunner: CadenceRunner,
   ) {}
 
   async markLost(
@@ -87,13 +109,16 @@ export class LostSaleService {
       actor,
     );
     const metadata = asObject(conversation.metadata);
-    // Remarcar (trocar o motivo) mantém o status de antes da primeira marcação.
-    const fromStatus = conversation.lostAt
+    // Remarcar (trocar o motivo) mantém o estado de antes da primeira marcação.
+    const isRemark = !!conversation.lostAt;
+    const fromStatus = isRemark
       ? metadata[CONV_FROM_STATUS_KEY]
       : conversation.status;
 
     await this.moveCardToLost(organizationId, conversationId, dto.reason, actor);
 
+    // lostAt antes da cadência de recuperação: o despachante só envia em
+    // conversa encerrada quando ela está marcada como venda perdida.
     await this.prisma.conversation.update({
       where: { id: conversationId },
       data: {
@@ -114,7 +139,7 @@ export class LostSaleService {
     );
 
     if (conversation.status !== ConversationStatus.CLOSED) {
-      return this.conversations.close(
+      await this.conversations.close(
         conversationId,
         organizationId,
         actor.userId,
@@ -122,8 +147,41 @@ export class LostSaleService {
         actor.role,
       );
     }
+
+    await this.placeInRecovery(conversation, dto.reason, note, {
+      organizationId,
+      keepPrevious: isRemark,
+      metadata: { ...metadata, [CONV_FROM_STATUS_KEY]: fromStatus },
+    });
+
     await this.conversations.broadcastById(conversationId);
     return this.conversations.findOne(conversationId, organizationId, actor.access);
+  }
+
+  /**
+   * Cadência de vendas não segue num lead perdido — e inscrição viva impediria
+   * a cadência da coluna de recuperação. Por isso o stop vem antes do place.
+   */
+  private async placeInRecovery(
+    conversation: { id: string; assignedToId?: string | null },
+    reason: LostReason,
+    note: string | null,
+    opts: { organizationId: string; keepPrevious: boolean; metadata: JsonObject },
+  ) {
+    await this.cadenceRunner.stopLiveForConversation(conversation.id, 'lost_sale');
+    const placement = await this.recovery.place(
+      opts.organizationId,
+      conversation,
+      reason,
+      note,
+    );
+    // Na troca de motivo vale o "antes" da primeira marcação (o Desfazer
+    // apaga o card que ela criou, não o devolve à coluna do motivo anterior).
+    if (!placement || opts.keepPrevious) return;
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { metadata: { ...opts.metadata, [CONV_RECOVERY_KEY]: { ...placement } } },
+    });
   }
 
   async undoLost(organizationId: string, conversationId: string, actor: Actor) {
@@ -139,8 +197,16 @@ export class LostSaleService {
     }
     const metadata = asObject(conversation.metadata);
     const fromStatus = metadata[CONV_FROM_STATUS_KEY];
+    const placement = readPlacement(metadata[CONV_RECOVERY_KEY]);
 
     await this.restoreCard(organizationId, conversationId, actor);
+    // Stop depois de mexer nos cards: devolver um card de coluna pode iniciar a
+    // cadência daquela coluna, e ela não pode seguir na conversa reaberta.
+    if (placement) await this.recovery.undo(organizationId, placement);
+    await this.cadenceRunner.stopLiveForConversation(
+      conversationId,
+      'lost_sale_undone',
+    );
 
     await this.prisma.conversation.update({
       where: { id: conversationId },
@@ -149,7 +215,7 @@ export class LostSaleService {
         lostNote: null,
         lostAt: null,
         lostById: null,
-        metadata: without(metadata, CONV_FROM_STATUS_KEY),
+        metadata: without(metadata, CONV_FROM_STATUS_KEY, CONV_RECOVERY_KEY),
       },
     });
 
@@ -194,6 +260,7 @@ export class LostSaleService {
       id: string;
       channelId: string;
       contactId: string;
+      assignedToId?: string | null;
       status: ConversationStatus;
       metadata: unknown;
       lostAt?: Date | null;
@@ -206,6 +273,7 @@ export class LostSaleService {
         conversationId,
         organizationId,
         ...pipelineCardScopeWhere(actor.role, actor.userId),
+        ...NOT_LOST_RECOVERY,
       },
       orderBy: { createdAt: 'desc' },
     });

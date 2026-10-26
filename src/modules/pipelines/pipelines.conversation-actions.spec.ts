@@ -1,5 +1,6 @@
 import { OrgRole } from '@prisma/client';
 import { PipelinesService } from './pipelines.service';
+import { NOT_LOST_RECOVERY } from './lost-recovery.constants';
 
 /**
  * O AGENT não pode marcar Ganho nem Pedido enviado numa conversa alheia
@@ -71,6 +72,7 @@ describe('PipelinesService.markWonForConversation — escopo por conversationId'
         conversationId: 'conv-1',
         organizationId: 'o1',
         OR: [{ conversation: { assignedToId: 'u1' } }, { assignedToId: 'u1' }],
+        ...NOT_LOST_RECOVERY,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -86,7 +88,7 @@ describe('PipelinesService.markWonForConversation — escopo por conversationId'
       'u1',
     );
     expect(prisma.card.findFirst).toHaveBeenCalledWith({
-      where: { conversationId: 'conv-1', organizationId: 'o1' },
+      where: { conversationId: 'conv-1', organizationId: 'o1', ...NOT_LOST_RECOVERY },
       orderBy: { createdAt: 'desc' },
     });
   });
@@ -95,7 +97,7 @@ describe('PipelinesService.markWonForConversation — escopo por conversationId'
     const { svc, prisma } = makeService();
     await svc.markWonForConversation('o1', 'conv-1', 'PED-1');
     expect(prisma.card.findFirst).toHaveBeenCalledWith({
-      where: { conversationId: 'conv-1', organizationId: 'o1' },
+      where: { conversationId: 'conv-1', organizationId: 'o1', ...NOT_LOST_RECOVERY },
       orderBy: { createdAt: 'desc' },
     });
   });

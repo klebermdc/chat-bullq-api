@@ -1,3 +1,4 @@
+import { NOT_LOST_RECOVERY } from '../../pipelines/lost-recovery.constants';
 import { LeadCardService } from './lead-card.service';
 
 const PARAMS = {
@@ -69,7 +70,7 @@ describe('LeadCardService.ensureLeadCard', () => {
     await service.ensureLeadCard(PARAMS);
     expect(prisma.card.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { organizationId: 'org-1', conversationId: 'conv-1' },
+        where: { organizationId: 'org-1', conversationId: 'conv-1', ...NOT_LOST_RECOVERY },
       }),
     );
   });
