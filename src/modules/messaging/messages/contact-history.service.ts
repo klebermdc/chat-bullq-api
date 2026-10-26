@@ -59,27 +59,15 @@ export class ContactHistoryService {
     currentUserId?: string,
     role?: OrgRole,
   ): Promise<ContactHistoryScope> {
-    const conversation = await this.prisma.conversation.findUnique({
-      where: { id: conversationId },
-      include: { contact: { select: { id: true, phone: true } } },
-    });
-    if (!conversation) throw new NotFoundException('Conversation not found');
-    if (conversation.organizationId !== organizationId) {
-      throw new ForbiddenException();
-    }
-    this.channelAccess.assertChannelAccess(access, conversation.channelId);
-    if (
-      currentUserId &&
-      resolveAssignmentScope(role, currentUserId) &&
-      conversation.assignedToId !== currentUserId
-    ) {
-      throw new ForbiddenException();
-    }
-
-    const contactIds = await this.siblingContactIds(
+    const contact = await this.resolveEntryContact(
+      conversationId,
       organizationId,
-      conversation.contact,
+      access,
+      currentUserId,
+      role,
     );
+
+    const contactIds = await this.siblingContactIds(organizationId, contact);
 
     const found = await this.prisma.conversation.findMany({
       where: {
@@ -117,6 +105,37 @@ export class ContactHistoryService {
       hiddenByChannelAccess: found.length - visible.length,
       conversations,
     };
+  }
+
+  /**
+   * A checagem completa da conversa de ENTRADA (org, canal e atribuição) e o
+   * contato dela. Todo histórico do cliente parte daqui — inclusive o da
+   * Umbler, que não tem canal próprio e por isso herda o acesso desta conversa.
+   */
+  async resolveEntryContact(
+    conversationId: string,
+    organizationId: string,
+    access: ChannelAccess,
+    currentUserId?: string,
+    role?: OrgRole,
+  ): Promise<{ id: string; phone: string | null }> {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { contact: { select: { id: true, phone: true } } },
+    });
+    if (!conversation) throw new NotFoundException('Conversation not found');
+    if (conversation.organizationId !== organizationId) {
+      throw new ForbiddenException();
+    }
+    this.channelAccess.assertChannelAccess(access, conversation.channelId);
+    if (
+      currentUserId &&
+      resolveAssignmentScope(role, currentUserId) &&
+      conversation.assignedToId !== currentUserId
+    ) {
+      throw new ForbiddenException();
+    }
+    return conversation.contact;
   }
 
   async availability(

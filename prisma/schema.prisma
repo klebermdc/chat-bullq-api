@@ -2959,6 +2959,47 @@ model ContatoLegadoVendedor {
   @@map("contatos_legado_vendedores")
 }
 
+/// Conversa (contato + canal) importada da Umbler, somente leitura.
+/// Ligada ao cliente pelo telefone; lida por UmblerHistoryService via SQL.
+model UmblerHistoricoConversa {
+  id             String    @id
+  organizationId String    @map("organization_id")
+  telefone       String
+  contatoNome    String?   @map("contato_nome")
+  canalNome      String?   @map("canal_nome")
+  setorNome      String?   @map("setor_nome")
+  etiquetas      String[]  @default([])
+  atendentes     String[]  @default([])
+  criadaEm       DateTime? @map("criada_em") @db.Timestamptz(6)
+  ultimaMsgEm    DateTime? @map("ultima_msg_em") @db.Timestamptz(6)
+  importadoEm    DateTime  @default(now()) @map("importado_em") @db.Timestamptz(6)
+
+  mensagens UmblerHistoricoMensagem[]
+
+  @@index([organizationId, telefone], map: "umbler_historico_conversas_org_telefone_idx")
+  @@map("umbler_historico_conversas")
+}
+
+/// Mensagem importada da Umbler. origem: Contact (cliente) | Member | Bot.
+model UmblerHistoricoMensagem {
+  id          String   @id
+  conversaId  String   @map("conversa_id")
+  enviadaEm   DateTime @map("enviada_em") @db.Timestamptz(6)
+  origem      String?
+  tipo        String?
+  conteudo    String?
+  autor       String?
+  arquivoUrl  String?  @map("arquivo_url")
+  arquivoNome String?  @map("arquivo_nome")
+  arquivoTipo String?  @map("arquivo_tipo")
+  privada     Boolean  @default(false)
+
+  conversa UmblerHistoricoConversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+
+  @@index([conversaId, enviadaEm(sort: Desc), id(sort: Desc)], map: "umbler_historico_mensagens_conversa_tempo_idx")
+  @@map("umbler_historico_mensagens")
+}
+
 /// Tempo online por atendente e dia (fuso da org). Amostrado a cada minuto
 /// pelas conexões reais do Chat: online = Chat aberto; ativo = mexeu no Chat
 /// nos últimos minutos.

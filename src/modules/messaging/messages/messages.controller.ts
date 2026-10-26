@@ -19,6 +19,7 @@ import { TranscriptionService } from './transcription.service';
 import { UploadsService } from './uploads.service';
 import { MediaResolverService } from './media-resolver.service';
 import { PlaybackService } from './playback.service';
+import { UmblerHistoryService } from './umbler-history.service';
 import { SendMessageDto } from './dto/send-message.dto';
 import {
   clampPageSize,
@@ -47,6 +48,7 @@ export class MessagesController {
     private readonly uploads: UploadsService,
     private readonly mediaResolver: MediaResolverService,
     private readonly playback: PlaybackService,
+    private readonly umblerHistory: UmblerHistoryService,
   ) {}
 
   @Post()
@@ -259,6 +261,62 @@ export class MessagesController {
     return this.service.contactHistoryAvailability(
       conversationId,
       orgId,
+      access,
+      userId,
+      role,
+    );
+  }
+
+  @Get('contact-history/umbler/availability')
+  @ApiOperation({
+    summary:
+      'Quanto histórico importado da Umbler existe para o telefone deste ' +
+      'cliente. O chat chama quando chega ao começo do histórico do Sendtur.',
+  })
+  @ApiQuery({ name: 'conversationId', required: true })
+  umblerHistoryAvailability(
+    @Query('conversationId') conversationId: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentChannelAccess() access: ChannelAccess,
+  ) {
+    if (!conversationId) throw new BadRequestException('conversationId is required');
+    return this.umblerHistory.availability(conversationId, orgId, access, userId, role);
+  }
+
+  @Get('contact-history/umbler')
+  @ApiOperation({
+    summary:
+      'Mensagens importadas da Umbler para o telefone deste cliente, da mais ' +
+      'recente para trás. Sem beforeAt/beforeId devolve a página mais recente.',
+  })
+  @ApiQuery({ name: 'conversationId', required: true })
+  @ApiQuery({ name: 'beforeAt', required: false })
+  @ApiQuery({ name: 'beforeId', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  findUmblerHistory(
+    @Query('conversationId') conversationId: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentChannelAccess() access: ChannelAccess,
+    @Query('beforeAt') beforeAt?: string,
+    @Query('beforeId') beforeId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (!conversationId) throw new BadRequestException('conversationId is required');
+    const before = beforeAt ? new Date(beforeAt) : undefined;
+    if (before && Number.isNaN(before.getTime())) {
+      throw new BadRequestException('beforeAt must be an ISO date');
+    }
+    if (Boolean(before) !== Boolean(beforeId)) {
+      throw new BadRequestException('beforeAt and beforeId go together');
+    }
+    return this.umblerHistory.findOlder(
+      conversationId,
+      orgId,
+      { limit: clampPageSize(limit, DEFAULT_PAGE_SIZE), beforeAt: before, beforeId },
       access,
       userId,
       role,
