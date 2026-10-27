@@ -2391,10 +2391,17 @@ model Proposal {
   // (carro, hotel, transfer…): os campos de ingresso ficam zerados e o
   // conteúdo mora em `details` ({ title, lines }). Nos dois tipos `details`
   // guarda os prints enviados ({ images }).
+  // QUOTE = cotação por link: itens estruturados em `details.quote` e página
+  // pública aberta pelo `publicToken` até `expiresAt`.
   kind           String   @default("PARKS")
   details        Json?
   createdById    String   @map("created_by_id")
   createdAt      DateTime @default(now()) @map("created_at")
+  publicToken    String?   @unique @map("public_token")
+  expiresAt      DateTime? @map("expires_at")
+  viewCount      Int       @default(0) @map("view_count")
+  firstViewedAt  DateTime? @map("first_viewed_at")
+  lastViewedAt   DateTime? @map("last_viewed_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)

@@ -118,6 +118,14 @@ describe('maskSensitivePath', () => {
     expect(maskSensitivePath('/contratos/aceitar/abc123?utm=1')).toBe('/contratos/aceitar/:token?utm=1');
   });
 
+  it('troca o token da cotação por link (/public/quotes/ e /cotacao/)', () => {
+    expect(maskSensitivePath('/api/v1/public/quotes/abc123')).toBe('/api/v1/public/quotes/:token');
+    expect(maskSensitivePath('/api/v1/public/quotes/abc123/pdf')).toBe('/api/v1/public/quotes/:token/pdf');
+    expect(maskSensitivePath('/api/v1/public/quotes/abc123/view')).toBe('/api/v1/public/quotes/:token/view');
+    expect(maskSensitivePath('/cotacao/abc123?utm=1')).toBe('/cotacao/:token?utm=1');
+    expect(maskSensitivePath('/api/v1/proposals/conversation/c1')).toBe('/api/v1/proposals/conversation/c1');
+  });
+
   it('não mexe em outras rotas', () => {
     expect(maskSensitivePath('/api/v1/contracts/c1/pdf')).toBe('/api/v1/contracts/c1/pdf');
     expect(maskSensitivePath('/api/v1/public/contracts/')).toBe('/api/v1/public/contracts/');

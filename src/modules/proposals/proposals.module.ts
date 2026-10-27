@@ -9,14 +9,27 @@ import { ProposalsService } from './proposals.service';
 import { ProposalsRepository } from './proposals.repository';
 import { RenderService } from './render.service';
 import { ExtractionService } from './extraction.service';
+import { WhatsAppOfficialModule } from '../channel-hub/adapters/whatsapp-official/whatsapp-official.module';
+import { PublicQuotesController } from './quote/public-quotes.controller';
+import { PublicQuotesService } from './quote/public-quotes.service';
+import { SellerWhatsappService } from './quote/seller-whatsapp.service';
+import { QuotePdfService } from './quote/quote-pdf';
 
 // PrismaService vem do PrismaModule, que é @Global (não precisa import aqui).
 // OrderFichaModule não importa ProposalsModule nem MessagingModule (só usa o
 // tipo ExtractedCart de proposals.types, import type-only) — sem ciclo, não
 // precisa de forwardRef.
 @Module({
-  imports: [LlmModule, MessagingModule, ConversationAccessModule, PipelinesModule, OrderFichaModule],
-  controllers: [ProposalsController],
+  imports: [
+    LlmModule,
+    MessagingModule,
+    ConversationAccessModule,
+    PipelinesModule,
+    OrderFichaModule,
+    // Número do canal (display_phone_number) para o botão de WhatsApp da cotação.
+    WhatsAppOfficialModule,
+  ],
+  controllers: [ProposalsController, PublicQuotesController],
   providers: [
     ProposalsService,
     ProposalsRepository,
@@ -24,6 +37,10 @@ import { ExtractionService } from './extraction.service';
     // RenderService tem um param defaulted (BrowserType) que o Nest não
     // consegue auto-resolver — precisa de factory explícita.
     { provide: RenderService, useFactory: () => new RenderService() },
+    // Mesmo motivo: BrowserType defaulted.
+    { provide: QuotePdfService, useFactory: () => new QuotePdfService() },
+    PublicQuotesService,
+    SellerWhatsappService,
   ],
 })
 export class ProposalsModule {}

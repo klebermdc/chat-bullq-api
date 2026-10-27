@@ -17,6 +17,8 @@ import {
   PROPOSAL_OTHER_MAX_LINES,
   PROPOSAL_OTHER_TITLE_MAX,
 } from './proposals.constants';
+import { parseQuoteFromModel, QUOTE_SYSTEM_PROMPT } from './quote/quote-extraction';
+import type { QuoteData } from './quote/quote.types';
 
 const SYSTEM_PROMPT =
   'Você extrai dados de um carrinho de compra de pacotes de viagem para Orlando. ' +
@@ -158,6 +160,33 @@ export class ExtractionService {
       (o) => this.validateProposal(o, allowMissingTotal),
       { vision: true },
     );
+  }
+
+  /**
+   * Cotação por link: lê os prints em itens estruturados com o prompt PRÓPRIO
+   * de cotação (os prompts acima não mudam). Mesmo modelo de visão, mesma
+   * temperatura 0 e as mesmas tentativas.
+   */
+  async extractQuoteFromImages(organizationId: string, input: ImageExtractionInput): Promise<QuoteData> {
+    const textBlock = this.buildVisionText(input);
+    return this.completeWithRetry(
+      organizationId,
+      QUOTE_SYSTEM_PROMPT,
+      (strict) => [
+        { type: 'text', text: textBlock },
+        ...this.toImageParts(input.images),
+        { type: 'text', text: `${strict}\n\nExtraia o JSON:`.trimStart() },
+      ],
+      parseQuoteFromModel,
+      { vision: true },
+    );
+  }
+
+  private toImageParts(images: readonly ProposalImageData[]): LlmContentPart[] {
+    return images.map((image) => ({
+      type: 'image',
+      base64: { mediaType: image.mediaType, data: image.data },
+    }));
   }
 
   private buildVisionText({ renderedText, pastedText }: ImageExtractionInput): string {
