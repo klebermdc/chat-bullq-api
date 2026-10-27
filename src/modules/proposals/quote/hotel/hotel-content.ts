@@ -130,9 +130,18 @@ export function formatHotelTime(v: unknown): string | null {
   return m[2] === '00' ? `${hour}h` : `${hour}h${m[2]}`;
 }
 
-/** "Hyatt Regency Grand Cypress Resort - Free Shuttle to Theme Parks!" → sem o slogan. */
+/** Pedaço depois do traço que é propaganda, não parte do nome. */
+const SLOGAN_RE = /!|\b(?:free|near|closest|minutes?|walk(?:ing)?|shuttle|theme parks|newly|renovated|grátis|perto)\b/i;
+
+/**
+ * "Hyatt Regency Grand Cypress Resort - Free Shuttle to Theme Parks!" → sem o
+ * slogan. "Endless Summer Resort – Dockside Inn and Suites" fica inteiro: o
+ * pedaço depois do traço é o que separa o Dockside do Surfside.
+ */
 export function cleanHotelName(name: unknown): string {
-  return str(name).split(/\s+[-–|]\s+/)[0].trim().slice(0, QUOTE_HOTEL_NAME_MAX);
+  const parts = str(name).split(/\s+[-–|]\s+/);
+  const kept = [parts[0], ...parts.slice(1).filter((p) => !SLOGAN_RE.test(p))];
+  return kept.join(' – ').trim().slice(0, QUOTE_HOTEL_NAME_MAX);
 }
 
 function photos(raw: Record<string, unknown>): string[] {
@@ -188,6 +197,26 @@ export function nameScore(printName: string, candidate: string): number {
   let hit = 0;
   for (const w of want) if (have.has(w)) hit += 1;
   return hit / want.size;
+}
+
+/** Quantas buscas por hotel, no máximo (a chave de sandbox aceita 5 por segundo). */
+export const HOTEL_MAX_QUERIES = 3;
+
+/**
+ * Buscas a tentar na LiteAPI, da mais exata para a mais solta. A busca dela não
+ * acha o nome inteiro quando o print usa ' e - e o cadastro usa ’ e –
+ * ("Universal's Endless Summer Resort - Dockside Inn and Suites"). Então
+ * tentamos também cada pedaço do nome, o maior primeiro. Quem escolhe o hotel
+ * continua sendo `pickHotelId`, comparando com o nome inteiro.
+ */
+export function hotelSearchQueries(name: string): string[] {
+  const full = name.replace(/\s+/g, ' ').trim();
+  const parts = full
+    .split(/\s+[-–|]\s+|,\s*/)
+    .map((p) => p.replace(/['’]/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter((p) => tokens(p).size > 0)
+    .sort((a, b) => b.length - a.length);
+  return [...new Set([full, ...parts])].slice(0, HOTEL_MAX_QUERIES);
 }
 
 /** O candidato de `/data/hotels` mais parecido com o nome do print, se convencer. */

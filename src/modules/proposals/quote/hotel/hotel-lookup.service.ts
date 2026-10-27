@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { QuoteData, QuoteHotel, QuoteItem } from '../quote.types';
-import { descriptionText, looksPortuguese, pickHotelId, summarizeDescription, toQuoteHotel } from './hotel-content';
+import { descriptionText, hotelSearchQueries, looksPortuguese, pickHotelId, summarizeDescription, toQuoteHotel } from './hotel-content';
 import { LiteapiClient } from './liteapi.client';
 
 /** Resume em pt-BR um texto de hotel que veio em outra língua (IA). */
@@ -32,9 +32,7 @@ export class HotelLookupService {
 
   async find(hotelName: string, summarize?: HotelSummarizer): Promise<QuoteHotel | null> {
     try {
-      const id =
-        pickHotelId(hotelName, await this.client.searchHotels(hotelName, FIRST_CITY)) ??
-        pickHotelId(hotelName, await this.client.searchHotels(hotelName, null));
+      const id = await this.findId(hotelName);
       if (!id) {
         this.logger.log(`hotel_not_found name="${hotelName}"`);
         return null;
@@ -47,6 +45,15 @@ export class HotelLookupService {
       this.logger.warn(`hotel_lookup_failed name="${hotelName}": ${(err as Error).message}`);
       return null;
     }
+  }
+
+  /** Cada busca primeiro em Orlando; no fim, a mais exata sem cidade. */
+  private async findId(hotelName: string): Promise<string | null> {
+    for (const query of hotelSearchQueries(hotelName)) {
+      const id = pickHotelId(hotelName, await this.client.searchHotels(query, FIRST_CITY));
+      if (id) return id;
+    }
+    return pickHotelId(hotelName, await this.client.searchHotels(hotelName, null));
   }
 
   /** Descrição em inglês: a IA resume em português; se falhar, uma linha neutra. */

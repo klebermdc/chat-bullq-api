@@ -1,5 +1,6 @@
 import {
   cleanHotelName,
+  hotelSearchQueries,
   looksPortuguese,
   formatHotelTime,
   HOTEL_SUMMARY_TARGET,
@@ -75,8 +76,12 @@ describe('formatHotelTime / cleanHotelName / translateAmenities', () => {
     ['', null],
   ])('%s → %s', (input, out) => expect(formatHotelTime(input)).toBe(out));
 
-  it('tira o slogan depois do traço', () => {
-    expect(cleanHotelName("Universal's Cabana Bay Beach Resort")).toBe("Universal's Cabana Bay Beach Resort");
+  it('tira o slogan depois do traço, mas não o nome do prédio', () => {
+    expect(cleanHotelName('Hyatt Regency Grand Cypress Resort - Free Shuttle to Theme Parks!')).toBe('Hyatt Regency Grand Cypress Resort');
+    expect(cleanHotelName('Universal’s Endless Summer Resort – Dockside Inn and Suites')).toBe(
+      'Universal’s Endless Summer Resort – Dockside Inn and Suites',
+    );
+    expect(cleanHotelName('Rosen Inn - Closest to Universal')).toBe('Rosen Inn');
   });
 
   it('não repete "Piscina" genérica quando há uma específica', () => {
@@ -135,5 +140,27 @@ describe('resumo sem valores e em português', () => {
   it('reconhece texto em inglês', () => {
     expect(looksPortuguese('Located in Lake Buena Vista, this family-friendly hotel is within a 15-minute drive of Epcot.')).toBe(false);
     expect(looksPortuguese('O resort fica ao lado do Volcano Bay e a 1 milha dos parques.')).toBe(true);
+  });
+});
+
+describe('hotelSearchQueries', () => {
+  it('tenta o nome inteiro e depois os pedaços, o maior primeiro', () => {
+    expect(hotelSearchQueries("Universal's Endless Summer Resort - Dockside Inn and Suites")).toEqual([
+      "Universal's Endless Summer Resort - Dockside Inn and Suites",
+      'Universal s Endless Summer Resort',
+      'Dockside Inn and Suites',
+    ]);
+  });
+
+  it('nome simples é uma busca só', () => {
+    expect(hotelSearchQueries('Rosen Inn Lake Buena Vista')).toEqual(['Rosen Inn Lake Buena Vista']);
+  });
+
+  it('escolhe o Dockside, não o Surfside', () => {
+    const list = [
+      { id: 'surf', name: "Universal's Endless Summer Resort - Surfside Inn and Suites" },
+      { id: 'dock', name: 'Universal’s Endless Summer Resort – Dockside Inn and Suites' },
+    ];
+    expect(pickHotelId("Universal's Endless Summer Resort - Dockside Inn and Suites", list)).toBe('dock');
   });
 });
