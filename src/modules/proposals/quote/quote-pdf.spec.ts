@@ -102,6 +102,12 @@ describe('buildQuotePdfHtml', () => {
     expect(html).toContain(QUOTE_COMPANY.hours);
   });
 
+  it('última linha: Desenvolvido por Sendtur, com logo embutido e o site', () => {
+    expect(html).toContain('Desenvolvido por');
+    expect(html).toContain('alt="Sendtur"');
+    expect(html.lastIndexOf('sendtur.com.br')).toBeGreaterThan(html.indexOf(QUOTE_COMPANY.hours));
+  });
+
   it('blocos sem dado somem', () => {
     const bare = normalize(
       buildQuotePdfHtml(

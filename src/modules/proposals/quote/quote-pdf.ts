@@ -3,6 +3,7 @@ import { chromium, type BrowserType } from 'playwright';
 import { escapeHtml as esc, HtmlPdfRenderer, PDF_CSP_META } from '../../contracts/pdf/html-pdf-renderer';
 import { spDateTime } from '../../contracts/pdf/contract-pdf.service';
 import { QUOTE_LOGO_WHITE_PNG_BASE64 } from './quote-logo';
+import { SENDTUR_LOGO_PNG_BASE64 } from './sendtur-logo';
 import type { PublicQuoteView, QuoteData, QuoteItem, QuoteTerms } from './quote.types';
 
 const NIGHT = '#17133F';
@@ -49,6 +50,8 @@ const QUOTE_CSS = `
   .policy li{margin-bottom:1mm}
   footer{margin:8mm 16mm 10mm;padding-top:4mm;border-top:1px solid ${LINE};color:${MUTED};font-size:9.5px;line-height:1.5;break-inside:avoid;page-break-inside:avoid}
   footer b{color:${NIGHT}}
+  .powered{display:flex;align-items:center;gap:2mm;margin-top:3mm;padding-top:3mm;border-top:1px dashed ${LINE};font-size:9px}
+  .powered img{height:5mm}
 `;
 
 export function formatMoney(value: number, currency: string): string {
@@ -140,6 +143,7 @@ function footer(view: PublicQuoteView): string {
     <b>${esc(c.name)}</b> · ${esc(c.tagline)}<br/>
     CNPJ ${esc(c.cnpj)} · Instagram @${esc(c.instagram)} · facebook.com/${esc(c.facebook)} · ${esc(c.site)}<br/>
     ${esc(c.hours)}
+    <div class="powered">Desenvolvido por <img src="data:image/png;base64,${SENDTUR_LOGO_PNG_BASE64}" alt="Sendtur"/> sendtur.com.br</div>
   </footer>`;
 }
 
