@@ -76,4 +76,17 @@ describe('HotelLookupService', () => {
     const out = await new HotelLookupService(c).enrich(quote([item({ hotelName: 'Cabana Bay' })]), jest.fn().mockRejectedValue(new Error('x')));
     expect(out.items[0].hotel?.summary).toBe("Universal's Cabana Bay Beach Resort, hotel 3.5 estrelas.");
   });
+
+  it('nome com traço e apóstrofo: acha pelo pedaço do nome', async () => {
+    const c = client();
+    c.searchHotels
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'lp332d67', name: 'Universal’s Endless Summer Resort – Dockside Inn and Suites' }]);
+    const out = await new HotelLookupService(c).enrich(
+      quote([item({ hotelName: "Universal's Endless Summer Resort - Dockside Inn and Suites" })]),
+    );
+    expect(c.searchHotels).toHaveBeenNthCalledWith(3, 'Dockside Inn and Suites', 'Orlando');
+    expect(out.items[0].hotel?.id).toBe('lp6a114');
+  });
 });
