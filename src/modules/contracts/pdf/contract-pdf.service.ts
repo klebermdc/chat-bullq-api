@@ -1,6 +1,6 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { chromium, type BrowserType } from 'playwright';
-import { RenderQueueFullError, RenderQueueTimeoutError, RenderSemaphore } from './render-semaphore';
+import { escapeHtml, HtmlPdfRenderer, PDF_CSP_META } from './html-pdf-renderer';
 
 export interface ContractPdfInput {
   company: { name: string; document: string; address: string };
@@ -25,20 +25,8 @@ const SP_TIME_ZONE = 'America/Sao_Paulo';
 const MAX_SIGNATURE_BASE64_LENGTH = 700_000;
 const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const CSP_META = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">`;
-const SET_CONTENT_TIMEOUT_MS = 15_000;
-const PDF_TIMEOUT_MS = 20_000;
-const MAX_CONCURRENT_RENDERS = 2;
-const MAX_QUEUE = 10;
-const MAX_QUEUE_WAIT_MS = 25_000;
-const TOTAL_RENDER_TIMEOUT_MS = 45_000; // inclui a espera na fila
-const BUSY_MESSAGE = 'Gerador de PDF ocupado, tente de novo em instantes';
-
-/** Compartilhado pelo processo: no máximo 2 Chromium gerando PDF ao mesmo tempo, fila de até 10. */
-const renderSemaphore = new RenderSemaphore(MAX_CONCURRENT_RENDERS, { maxQueue: MAX_QUEUE, maxWaitMs: MAX_QUEUE_WAIT_MS });
-
-const esc = (s: unknown) =>
-  String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const CSP_META = PDF_CSP_META;
+const esc = escapeHtml;
 
 /**
  * Os termos vieram do Lovable com marcação simples: `**negrito**` e linhas `---`.
@@ -79,14 +67,6 @@ export function paymentLabel(method: string | null): string {
   if (method === 'dolar') return 'Dólar (Wise/ACH)';
   const card = CARD_INSTALLMENTS_RE.exec(method);
   return card ? `Cartão em ${Number(card[1])}x` : method;
-}
-
-function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Tempo esgotado ao ${what} (${ms} ms)`)), ms);
-  });
-  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
 }
 
 const PURPLE = '#8B008B';
@@ -226,41 +206,14 @@ export function buildContractHtml(i: ContractPdfInput): string {
 
 @Injectable()
 export class ContractPdfService {
-  constructor(private readonly browserType: BrowserType = chromium) {}
+  private readonly renderer: HtmlPdfRenderer;
+
+  constructor(browserType: BrowserType = chromium) {
+    this.renderer = new HtmlPdfRenderer(browserType);
+  }
 
   async render(input: ContractPdfInput): Promise<Buffer> {
     const html = buildContractHtml(input); // valida antes de ocupar vaga e abrir navegador
-    const startedAt = Date.now();
-    try {
-      return await renderSemaphore.run(() => {
-        const remainingMs = Math.max(TOTAL_RENDER_TIMEOUT_MS - (Date.now() - startedAt), 1);
-        return withTimeout(this.renderHtml(html), remainingMs, 'gerar o contrato');
-      });
-    } catch (err) {
-      if (err instanceof RenderQueueFullError || err instanceof RenderQueueTimeoutError) {
-        throw new ServiceUnavailableException(BUSY_MESSAGE);
-      }
-      throw err;
-    }
-  }
-
-  private async renderHtml(html: string): Promise<Buffer> {
-    const browser = await this.browserType.launch({
-      headless: true,
-      executablePath: process.env.PROPOSAL_CHROMIUM_PATH || undefined,
-      args: ['--no-sandbox', '--disable-dev-shm-usage'],
-    });
-    let context: Awaited<ReturnType<typeof browser.newContext>> | undefined;
-    try {
-      context = await browser.newContext({ javaScriptEnabled: false });
-      const page = await context.newPage();
-      await page.route('**/*', (r) => (r.request().url().startsWith('data:') ? r.continue() : r.abort()));
-      await page.setContent(html, { waitUntil: 'load', timeout: SET_CONTENT_TIMEOUT_MS });
-      const pdf = await withTimeout(page.pdf({ format: 'A4', printBackground: true }), PDF_TIMEOUT_MS, 'gerar o PDF');
-      return Buffer.from(pdf);
-    } finally {
-      await context?.close().catch(() => undefined);
-      await browser.close();
-    }
+    return this.renderer.render(html, 'gerar o contrato');
   }
 }
