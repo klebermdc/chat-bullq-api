@@ -57,12 +57,13 @@ describe('CreateProposalDto sob o ValidationPipe global', () => {
     expect(Object.keys(out.images[0]).sort()).toEqual(['mimeType', 'url']);
   });
 
-  it('aceita 4 imagens e recusa 5', async () => {
-    const out: any = await validate({ ...base, images: [1, 2, 3, 4].map(image) });
-    expect(out.images).toHaveLength(4);
+  it('aceita 10 imagens e recusa 11', async () => {
+    const ten = Array.from({ length: 10 }, (_, i) => i + 1);
+    const out: any = await validate({ ...base, images: ten.map(image) });
+    expect(out.images).toHaveLength(10);
 
-    expect(await messagesFor({ ...base, images: [1, 2, 3, 4, 5].map(image) })).toBe(
-      'Envie no máximo 4 imagens.',
+    expect(await messagesFor({ ...base, images: [...ten, 11].map(image) })).toBe(
+      'Envie no máximo 10 imagens.',
     );
   });
 
