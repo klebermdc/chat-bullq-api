@@ -33,6 +33,14 @@ export interface QuoteData {
   notes: string | null;
 }
 
+export type QuoteTermsBlock = { kind: 'p'; text: string } | { kind: 'list'; items: string[] };
+
+/** Regras gerais da cotação (iguais para todas): câmbio e cancelamento. */
+export interface QuoteTerms {
+  exchangeNotice: string;
+  cancellation: { title: string; revisedAt: string; blocks: QuoteTermsBlock[] };
+}
+
 export type QuoteStatus = 'ACTIVE' | 'EXPIRED';
 
 export interface QuoteCompany {
@@ -55,4 +63,5 @@ export interface PublicQuoteView {
   expiresAt: string;
   quote: QuoteData;
   company: QuoteCompany;
+  terms: QuoteTerms;
 }

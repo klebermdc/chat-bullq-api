@@ -135,7 +135,7 @@ describe('CreateProposalDto — cotação por link', () => {
     ['pixTotal', 0, /pix/i],
     ['notes', 'x'.repeat(601), /600/],
     ['installments', { count: 0, value: 10 }, /parcelas/i],
-    ['installments', { count: 25, value: 10 }, /parcelas/i],
+    ['installments', { count: 11, value: 10 }, /parcelas/i],
     ['installments', { count: 10, value: 0 }, /parcela/i],
   ])('quote: recusa %s = %p', async (field, value, expected) => {
     expect(await messagesFor({ ...base, quote: quote({ [field]: value }) })).toMatch(expected);

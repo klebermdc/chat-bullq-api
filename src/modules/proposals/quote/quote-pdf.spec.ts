@@ -1,6 +1,7 @@
 import type { BrowserType } from 'playwright';
 import { buildQuotePdfHtml, formatMoney, QuotePdfService } from './quote-pdf';
 import { QUOTE_COMPANY } from '../quote-company';
+import { QUOTE_TERMS } from '../quote-terms';
 import type { PublicQuoteView, QuoteItem } from './quote.types';
 
 const item = (over: Partial<QuoteItem> = {}): QuoteItem => ({
@@ -34,6 +35,7 @@ const view = (over: Partial<PublicQuoteView> = {}): PublicQuoteView => ({
     notes: 'Valores sujeitos a disponibilidade',
   },
   company: QUOTE_COMPANY,
+  terms: QUOTE_TERMS,
   ...over,
 });
 
@@ -64,14 +66,22 @@ describe('buildQuotePdfHtml', () => {
     expect(html).toContain('27/10/2026 10:00');
   });
 
-  it('itens em ordem de data, com preços por pessoa só quando existem', () => {
+  it('itens em ordem de data, sem preço por pessoa nem cancelamento por item', () => {
     expect(html.indexOf('Magic Kingdom')).toBeLessThan(html.indexOf('Universal 2 Park 3 Days'));
     expect(html).toContain('10/12/2026 a 12/12/2026');
     expect(html).toContain('08/12/2026');
-    expect(html).toContain('R$ 1.500,00 por adulto');
-    expect(html).toContain('R$ 1.400,00 por criança');
-    expect(html.match(/por adulto/g)).toHaveLength(1);
-    expect(html).toContain('Não reembolsável');
+    expect(html).not.toContain('por adulto');
+    expect(html).not.toContain('por criança');
+    expect(html).not.toContain('Não reembolsável');
+  });
+
+  it('aviso de câmbio e a política geral da Orlando Fast Pass no fim', () => {
+    expect(html).toContain('cobrados em dólar');
+    expect(html).toContain('Política de Cancelamento e Alterações');
+    expect(html).toContain('contato@orlandofastpass.com.br');
+    expect(html).toContain('(11) 5194-4192');
+    expect(html.indexOf('Para fechar')).toBeLessThan(html.indexOf('Política de Cancelamento'));
+    expect(html).not.toMatch(/just ?travel/i);
   });
 
   it('total, Pix, parcelas e observação', () => {
@@ -106,8 +116,6 @@ describe('buildQuotePdfHtml', () => {
 
     expect(bare).not.toContain('no Pix');
     expect(bare).not.toMatch(/\d+x de/);
-    expect(bare).not.toContain('por adulto');
-    expect(bare).not.toContain('Cancelamento');
     expect(bare).not.toContain('Observação');
     expect(bare).not.toContain('WhatsApp');
   });
