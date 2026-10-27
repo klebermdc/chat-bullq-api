@@ -47,6 +47,7 @@ import {
   quoteExpiresAt,
   quotePublicBaseUrl,
 } from './quote/quote-proposal';
+import { mergeQuotes } from './quote/quote-merge';
 import { presentProposal } from './quote/quote-public';
 import { QUOTE_KIND } from './quote/quote.constants';
 import type { QuoteData } from './quote/quote.types';
@@ -355,21 +356,28 @@ export class ProposalsService {
     loaded: LoadedImage[],
     pastedText: string,
   ) {
-    let quote: QuoteData;
-    try {
-      quote = await this.extraction.extractQuoteFromImages(organizationId, {
-        images: loaded.map((l) => l.data),
-        pastedText,
-      });
-    } catch (err) {
-      this.logger.warn(`quote_extract_failed images=${loaded.length}: ${(err as Error).message}`);
-      throw new BadRequestException(UNREADABLE_PROPOSAL);
-    }
+    // Um print por chamada, todas ao mesmo tempo: a espera é a do print mais
+    // lento, e a resposta de cada um cabe nos tokens (juntos, cortava o JSON).
+    const reads = await Promise.allSettled(
+      loaded.map((l) => this.extraction.extractQuoteFromImages(organizationId, { images: [l.data], pastedText })),
+    );
+    const parts: QuoteData[] = [];
+    const unreadPrints: number[] = [];
+    reads.forEach((r, i) => {
+      if (r.status === 'fulfilled') {
+        parts.push(r.value);
+        return;
+      }
+      unreadPrints.push(i + 1);
+      this.logger.warn(`quote_extract_failed print=${i + 1}/${loaded.length}: ${(r.reason as Error)?.message}`);
+    });
+    if (parts.length === 0) throw new BadRequestException(UNREADABLE_PROPOSAL);
+    const quote = mergeQuotes(parts);
     const contact = await this.prisma.contact.findUnique({
       where: { id: contactId },
       select: { name: true },
     });
-    return { preview: true as const, quote, customerName: contactDisplayName(contact?.name) };
+    return { preview: true as const, quote, customerName: contactDisplayName(contact?.name), unreadPrints };
   }
 
   private async sendQuote(

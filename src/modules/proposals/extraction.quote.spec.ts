@@ -61,13 +61,14 @@ describe('ExtractionService.extractQuoteFromImages', () => {
     );
   });
 
-  it('tenta de novo quando o modelo responde ilegível e falha depois de 3', async () => {
+  it('tenta de novo quando o modelo responde ilegível e falha depois de 2 (visão é temperatura 0)', async () => {
     const unreadable = JSON.stringify({ kind: 'UNREADABLE' });
     const llm = makeLlm(unreadable, unreadable, unreadable);
 
     await expect(
       new ExtractionService(llm).extractQuoteFromImages('org-1', { images: [image] }),
     ).rejects.toThrow(/ler/);
-    expect(llm.complete).toHaveBeenCalledTimes(3);
+    expect(llm.complete).toHaveBeenCalledTimes(2);
+    expect(llm.complete).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 8000 }));
   });
 });
