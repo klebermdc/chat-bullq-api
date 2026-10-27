@@ -161,7 +161,7 @@ describe('ProposalsService — cotação por link', () => {
 
       const out = await makeService(d).create(linkBody({ preview: true, checkoutUrl: 'obs' }), 'user-1', 'org-1', 'ALL' as any);
 
-      expect(out).toEqual({ preview: true, quote, customerName: 'Ana Souza' });
+      expect(out).toEqual({ preview: true, quote, customerName: 'Ana Souza', unreadPrints: [] });
       expect(d.extraction.extractQuoteFromImages).toHaveBeenCalledWith('org-1', {
         images: [{ mediaType: 'image/png', data: PNG_BYTES.toString('base64') }],
         pastedText: 'obs',
@@ -170,6 +170,21 @@ describe('ProposalsService — cotação por link', () => {
       expect(d.repo.create).not.toHaveBeenCalled();
       expect(d.messages.send).not.toHaveBeenCalled();
       expect(d.pipelines.ensureConversationAtStageByName).not.toHaveBeenCalled();
+    });
+
+    it('vários prints: um por chamada, juntos na cotação; o que falhar volta em unreadPrints', async () => {
+      const d = deps();
+      d.extraction.extractQuoteFromImages
+        .mockResolvedValueOnce({ ...quote, items: [{ ...quote.items[0], title: 'A', total: 100 }], pixTotal: null })
+        .mockRejectedValueOnce(new Error('ilegível'))
+        .mockResolvedValueOnce({ ...quote, items: [{ ...quote.items[0], title: 'C', total: 50.5 }], pixTotal: null });
+
+      const out: any = await makeService(d).create(linkBody({ preview: true, images: [image, image, image] }), 'user-1', 'org-1', 'ALL' as any);
+
+      expect(d.extraction.extractQuoteFromImages).toHaveBeenCalledTimes(3);
+      expect(out.quote.items.map((i: any) => i.title)).toEqual(['A', 'C']);
+      expect(out.quote.total).toBe(150.5);
+      expect(out.unreadPrints).toEqual([2]);
     });
 
     it('contato sem nome (ou com telefone no nome) dá customerName null', async () => {

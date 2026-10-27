@@ -97,6 +97,10 @@ interface ExtractionOptions {
 }
 
 const MAX_ATTEMPTS = 3;
+const DEFAULT_MAX_TOKENS = 4000;
+/** Cotação: 2 tentativas (a 2ª com "só JSON") e o dobro de tokens. */
+const QUOTE_MAX_ATTEMPTS = 2;
+const QUOTE_MAX_TOKENS = 8000;
 const STRICT_SUFFIX =
   '\n\nATENÇÃO: devolva SOMENTE o objeto JSON, começando com { e terminando ' +
   'com }, sem nenhum texto, comentário ou marcação antes ou depois.';
@@ -178,7 +182,9 @@ export class ExtractionService {
         { type: 'text', text: `${strict}\n\nExtraia o JSON:`.trimStart() },
       ],
       parseQuoteFromModel,
-      { vision: true },
+      // Leitura de imagem é temperatura 0: repetir 3x a mesma pergunta só
+      // triplica a espera. A cotação tem descrições longas: mais folga de tokens.
+      { vision: true, maxAttempts: QUOTE_MAX_ATTEMPTS, maxTokens: QUOTE_MAX_TOKENS },
     );
   }
 
@@ -211,10 +217,14 @@ export class ExtractionService {
     // Visão: modelo de conversa (o simples "não via" o print e inventava) e
     // temperatura 0 em TODA tentativa — subir a temperatura numa leitura de
     // imagem é pedir invenção.
-    { vision = false }: { vision?: boolean } = {},
+    {
+      vision = false,
+      maxAttempts = MAX_ATTEMPTS,
+      maxTokens = DEFAULT_MAX_TOKENS,
+    }: { vision?: boolean; maxAttempts?: number; maxTokens?: number } = {},
   ): Promise<T> {
     let lastErr: Error | null = null;
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const res = await this.llm.complete({
         organizationId,
         modelId: vision ? SAKANA_CONVERSATION_MODEL : SAKANA_SIMPLE_MODEL,
@@ -222,7 +232,7 @@ export class ExtractionService {
         // Sakana é modelo "reasoning": gasta tokens escrevendo o raciocínio em
         // <think>...</think> ANTES do JSON. Precisa de folga pra não truncar o
         // JSON final.
-        maxTokens: 4000,
+        maxTokens,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: buildUserContent(attempt > 1 ? STRICT_SUFFIX : '') },
