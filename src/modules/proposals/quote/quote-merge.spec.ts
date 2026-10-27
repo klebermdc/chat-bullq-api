@@ -3,7 +3,7 @@ import type { QuoteData, QuoteItem } from './quote.types';
 
 const item = (total: number, title = 'X'): QuoteItem => ({
   provider: 'P', title, startDate: null, endDate: null, description: null,
-  adults: 1, children: 0, priceAdult: null, priceChild: null, total, cancellationPolicy: null,
+  adults: 1, children: 0, priceAdult: null, priceChild: null, total, cancellationPolicy: null, hotelName: null, hotel: null,
 });
 const q = (over: Partial<QuoteData>): QuoteData => ({
   items: [item(100)], currency: 'BRL', total: 100, pixTotal: null, installments: null, notes: null, ...over,

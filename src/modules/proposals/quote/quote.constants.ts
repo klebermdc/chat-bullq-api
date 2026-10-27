@@ -36,3 +36,15 @@ export const CURRENCY_RE = /^[A-Z]{3}$/;
 /** Telefone com DDI, só dígitos (E.164 sem o +). */
 export const PHONE_MIN_DIGITS = 10;
 export const PHONE_MAX_DIGITS = 15;
+
+// Ficha do hotel (LiteAPI): limites iguais no DTO, na busca e na página.
+export const QUOTE_HOTEL_ID_MAX = 40;
+export const QUOTE_HOTEL_NAME_MAX = 120;
+export const QUOTE_HOTEL_SUMMARY_MAX = 600;
+export const QUOTE_HOTEL_ADDRESS_MAX = 200;
+export const QUOTE_HOTEL_MAX_AMENITIES = 8;
+export const QUOTE_HOTEL_AMENITY_MAX = 40;
+export const QUOTE_HOTEL_MAX_PHOTOS = 8;
+/** Só foto do CDN de imagens da LiteAPI entra na página e no PDF. */
+export const QUOTE_HOTEL_PHOTO_RE = /^https:\/\/static\.cupid\.travel\/[A-Za-z0-9/_.-]{1,200}\.(?:jpe?g|png|webp)$/i;
+export const QUOTE_HOTEL_TIME_RE = /^\d{1,2}h(?:\d{2})?$/;

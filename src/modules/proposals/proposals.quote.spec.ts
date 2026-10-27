@@ -23,7 +23,7 @@ const quote: QuoteData = {
       priceAdult: null,
       priceChild: null,
       total: 9000,
-      cancellationPolicy: null,
+      cancellationPolicy: null, hotelName: null, hotel: null,
     },
   ],
   currency: 'BRL',
@@ -69,6 +69,8 @@ function deps() {
     conversationAccess: new ConversationAccessService({
       conversation: { findFirst: jest.fn().mockResolvedValue({ id: 'conv-1' }) },
     } as any),
+    // Sem chave da LiteAPI nos testes: a cotação passa sem ficha de hotel.
+    hotels: { enrich: jest.fn(async (q: unknown) => q) } as any,
     storage: {
       stat: jest.fn().mockResolvedValue({ size: PNG_BYTES.byteLength }),
       getBuffer: jest.fn().mockResolvedValue(PNG_BYTES),
@@ -79,6 +81,7 @@ function deps() {
 const makeService = (d: ReturnType<typeof deps>) =>
   new ProposalsService(
     d.prisma, d.render, d.extraction, d.repo, d.messages, d.pipelines, d.orderFicha, d.conversationAccess, d.storage,
+    d.hotels,
   );
 
 const linkBody = (over: Record<string, unknown> = {}): any => ({

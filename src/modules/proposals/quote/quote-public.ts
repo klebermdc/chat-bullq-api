@@ -1,5 +1,6 @@
 import { QUOTE_CODE_LENGTH, QUOTE_KIND } from './quote.constants';
 import { quotePublicUrl } from './quote-proposal';
+import { sanitizeHotel } from './hotel/hotel-content';
 import type { QuoteData, QuoteInstallments, QuoteItem, QuoteStatus } from './quote.types';
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -32,6 +33,8 @@ function pickItem(raw: unknown): QuoteItem {
     priceChild: numOrNull(i.priceChild),
     total: num(i.total),
     cancellationPolicy: strOrNull(i.cancellationPolicy),
+    hotelName: strOrNull(i.hotelName),
+    hotel: sanitizeHotel(i.hotel),
   };
 }
 

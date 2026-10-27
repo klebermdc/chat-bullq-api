@@ -48,7 +48,7 @@ describe('toPublicQuote', () => {
     expect(Object.keys(out).sort()).toEqual(['currency', 'installments', 'items', 'notes', 'pixTotal', 'total']);
     expect(Object.keys(out.items[0]).sort()).toEqual(
       [
-        'adults', 'cancellationPolicy', 'children', 'description', 'endDate', 'priceAdult',
+        'adults', 'cancellationPolicy', 'children', 'description', 'endDate', 'hotel', 'hotelName', 'priceAdult',
         'priceChild', 'provider', 'startDate', 'title', 'total',
       ].sort(),
     );

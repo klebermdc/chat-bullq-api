@@ -151,4 +151,28 @@ describe('CreateProposalDto — cotação por link', () => {
   it('valor acima do teto de sanidade é recusado', async () => {
     expect(await messagesFor({ ...base, quote: quote({ total: 10_000_000 }) })).toMatch(/total/i);
   });
+
+  describe('ficha do hotel', () => {
+    const hotel = (over: Record<string, unknown> = {}) => ({
+      id: 'lp19e6f', name: 'Hyatt Regency Grand Cypress', stars: 4, address: 'One Grand Cypress Blvd',
+      summary: 'Resort com lago privado.', amenities: ['Wi-Fi grátis'], checkin: '16h', checkout: '11h',
+      photos: ['https://static.cupid.travel/hotels/460875392.jpg'],
+      ...over,
+    });
+
+    it('aceita a ficha da LiteAPI no item', async () => {
+      const out = (await validate({ ...base, quote: quote({ items: [item({ hotelName: 'Hyatt', hotel: hotel() })] }) })) as CreateProposalDto;
+      expect(out.quote!.items[0].hotel).toMatchObject({ id: 'lp19e6f', checkin: '16h' });
+    });
+
+    it('recusa foto fora do CDN da LiteAPI', async () => {
+      const body = { ...base, quote: quote({ items: [item({ hotel: hotel({ photos: ['https://evil.example.com/a.jpg'] }) })] }) };
+      expect(await messagesFor(body)).toMatch(/Foto de hotel/);
+    });
+
+    it('recusa preço dentro da ficha (campo desconhecido)', async () => {
+      const body = { ...base, quote: quote({ items: [item({ hotel: hotel({ price: 120 }) })] }) };
+      expect(await messagesFor(body)).toMatch(/price/);
+    });
+  });
 });

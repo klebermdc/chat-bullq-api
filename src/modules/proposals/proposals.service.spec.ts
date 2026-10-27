@@ -67,6 +67,8 @@ function deps(opts: { conversationsGuardFinds?: unknown } = {}) {
     conversationAccess: makeConversationAccessService(
       'conversationsGuardFinds' in opts ? opts.conversationsGuardFinds : { id: 'conv-1' },
     ),
+    // Sem chave da LiteAPI nos testes: a cotação passa sem ficha de hotel.
+    hotels: { enrich: jest.fn(async (q: unknown) => q) } as any,
     storage: {
       stat: jest.fn().mockResolvedValue({ size: PNG_BYTES.byteLength, contentType: 'image/png' }),
       getBuffer: jest.fn().mockResolvedValue(PNG_BYTES),
@@ -85,6 +87,7 @@ function makeService(d: ReturnType<typeof deps>) {
     d.orderFicha,
     d.conversationAccess,
     d.storage,
+    d.hotels,
   );
 }
 

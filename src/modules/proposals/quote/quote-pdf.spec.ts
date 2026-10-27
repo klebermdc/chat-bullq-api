@@ -15,7 +15,7 @@ const item = (over: Partial<QuoteItem> = {}): QuoteItem => ({
   priceAdult: 1500,
   priceChild: 1400,
   total: 4400,
-  cancellationPolicy: 'Não reembolsável',
+  cancellationPolicy: 'Não reembolsável', hotelName: null, hotel: null,
   ...over,
 });
 
@@ -154,5 +154,32 @@ describe('QuotePdfService', () => {
     expect(out.toString()).toBe('%PDF');
     expect(page.setContent).toHaveBeenCalledWith(expect.stringContaining('Sua cotação'), expect.any(Object));
     expect(browser.newContext).toHaveBeenCalledWith({ javaScriptEnabled: false });
+  });
+});
+
+describe('buildQuotePdfHtml — hotel', () => {
+  const PHOTO = 'https://static.cupid.travel/hotels/460875392.jpg';
+  const hotel = {
+    id: 'lp19e6f', name: 'Hyatt Regency Grand Cypress', stars: 4, address: 'One Grand Cypress Blvd, Orlando',
+    summary: 'Resort com lago privado <b>e</b> spa.', amenities: ['Wi-Fi grátis', 'Piscina ao ar livre'],
+    checkin: '16h', checkout: '11h', photos: [PHOTO],
+  };
+
+  it('mostra a ficha do hotel com a foto embutida e o preço do print', () => {
+    const v = view({ quote: { ...view().quote, items: [item({ hotelName: 'Hyatt', hotel, total: 4400 })] } });
+    const html = buildQuotePdfHtml(v, null, new Map([[PHOTO, 'data:image/jpeg;base64,AAAA']]));
+
+    expect(html).toContain('Hyatt Regency Grand Cypress');
+    expect(html).toContain('★★★★');
+    expect(html).toContain('src="data:image/jpeg;base64,AAAA"');
+    expect(html).not.toContain(PHOTO);
+    expect(html).toContain('Resort com lago privado &lt;b&gt;e&lt;/b&gt; spa.');
+    expect(html).toContain('Check-in 16h · Check-out 11h');
+    expect(html).toContain(formatMoney(4400, 'BRL'));
+  });
+
+  it('sem a foto baixada, a ficha sai sem imagem', () => {
+    const v = view({ quote: { ...view().quote, items: [item({ hotel })] } });
+    expect(buildQuotePdfHtml(v, null)).not.toContain('<img src="data:image/jpeg');
   });
 });

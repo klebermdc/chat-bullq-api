@@ -12,6 +12,8 @@ const modelItem = (over: Record<string, unknown> = {}) => ({
   priceChild: null,
   total: 9000,
   cancellationPolicy: 'Não reembolsável',
+  hotelName: null,
+  hotel: null,
   ...over,
 });
 const modelQuote = (over: Record<string, unknown> = {}) => ({

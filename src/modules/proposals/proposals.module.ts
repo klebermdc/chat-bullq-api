@@ -14,6 +14,8 @@ import { PublicQuotesController } from './quote/public-quotes.controller';
 import { PublicQuotesService } from './quote/public-quotes.service';
 import { SellerWhatsappService } from './quote/seller-whatsapp.service';
 import { QuotePdfService } from './quote/quote-pdf';
+import { HotelLookupService } from './quote/hotel/hotel-lookup.service';
+import { LiteapiClient } from './quote/hotel/liteapi.client';
 
 // PrismaService vem do PrismaModule, que é @Global (não precisa import aqui).
 // OrderFichaModule não importa ProposalsModule nem MessagingModule (só usa o
@@ -34,6 +36,9 @@ import { QuotePdfService } from './quote/quote-pdf';
     ProposalsService,
     ProposalsRepository,
     ExtractionService,
+    HotelLookupService,
+    // Param defaulted (env): factory explícita, como o RenderService.
+    { provide: LiteapiClient, useFactory: () => new LiteapiClient() },
     // RenderService tem um param defaulted (BrowserType) que o Nest não
     // consegue auto-resolver — precisa de factory explícita.
     { provide: RenderService, useFactory: () => new RenderService() },

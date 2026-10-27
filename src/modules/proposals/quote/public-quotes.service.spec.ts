@@ -10,7 +10,7 @@ const quote = {
     {
       provider: 'Universal', title: 'Ingresso', startDate: '2026-12-10', endDate: '2026-12-10',
       description: null, adults: 2, children: 0, priceAdult: null, priceChild: null, total: 900,
-      cancellationPolicy: null,
+      cancellationPolicy: null, hotelName: null, hotel: null,
     },
   ],
   currency: 'BRL', total: 900, pixTotal: null, installments: null, notes: null,

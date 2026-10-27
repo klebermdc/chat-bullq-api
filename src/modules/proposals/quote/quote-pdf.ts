@@ -4,7 +4,8 @@ import { escapeHtml as esc, HtmlPdfRenderer, PDF_CSP_META } from '../../contract
 import { spDateTime } from '../../contracts/pdf/contract-pdf.service';
 import { QUOTE_LOGO_WHITE_PNG_BASE64 } from './quote-logo';
 import { SENDTUR_LOGO_PNG_BASE64 } from './sendtur-logo';
-import type { PublicQuoteView, QuoteData, QuoteItem, QuoteTerms } from './quote.types';
+import type { PublicQuoteView, QuoteData, QuoteHotel, QuoteItem, QuoteTerms } from './quote.types';
+import { fetchPdfPhotos, PDF_PHOTOS_PER_HOTEL } from './hotel/hotel-photos';
 
 const NIGHT = '#17133F';
 const MUTED = '#514C78';
@@ -36,6 +37,13 @@ const QUOTE_CSS = `
   .row{display:flex;justify-content:space-between;gap:4mm;color:${MUTED};margin-top:1mm}
   .row b{color:${NIGHT}}
   .desc{color:${MUTED};margin-top:1.5mm;white-space:pre-wrap;overflow-wrap:anywhere}
+  .hotel{margin-top:2.5mm;padding-top:2.5mm;border-top:1px dashed ${LINE}}
+  .hotel .hname{font-weight:bold;font-size:11.5px}
+  .hotel .stars{color:${GOLD};letter-spacing:1px}
+  .hotel .pics{display:flex;gap:2mm;margin:2mm 0}
+  .hotel .pics img{width:50%;height:34mm;object-fit:cover;border-radius:4px}
+  .hotel p{margin:1.5mm 0;color:${MUTED};line-height:1.45}
+  .hotel .facts{color:${MUTED};font-size:10px}
   .totals{background:${NIGHT};color:#fff;border-radius:8px;padding:5mm;margin-top:5mm;break-inside:avoid;page-break-inside:avoid}
   .totals .big{font-size:22px;font-weight:bold;color:${GOLD}}
   .totals div{margin-top:1mm}
@@ -84,7 +92,29 @@ function people(item: QuoteItem): string {
   return parts.filter(Boolean).join(' e ');
 }
 
-function itemBlock(item: QuoteItem, index: number, currency: string): string {
+type Photos = ReadonlyMap<string, string>;
+
+const starsText = (n: number | null) => (n ? '★'.repeat(Math.floor(n)) + (n % 1 ? '½' : '') : '');
+
+/** Ficha do hotel no item: nome, estrelas, fotos embutidas, resumo e horários. Sem preço. */
+function hotelBlock(hotel: QuoteHotel, photos: Photos): string {
+  const pics = hotel.photos
+    .slice(0, PDF_PHOTOS_PER_HOTEL)
+    .map((url) => photos.get(url))
+    .filter((src): src is string => !!src)
+    .map((src) => `<img src="${esc(src)}" alt=""/>`)
+    .join('');
+  const times = [hotel.checkin ? `Check-in ${hotel.checkin}` : '', hotel.checkout ? `Check-out ${hotel.checkout}` : ''].filter(Boolean);
+  const facts = [hotel.address ?? '', times.join(' · '), hotel.amenities.join(' · ')].filter(Boolean);
+  return `<div class="hotel">
+    <div class="hname">${esc(hotel.name)} <span class="stars">${esc(starsText(hotel.stars))}</span></div>
+    ${pics ? `<div class="pics">${pics}</div>` : ''}
+    <p>${esc(hotel.summary)}</p>
+    ${facts.map((f) => `<div class="facts">${esc(f)}</div>`).join('')}
+  </div>`;
+}
+
+function itemBlock(item: QuoteItem, index: number, currency: string, photos: Photos): string {
   const accent = ACCENTS[index % ACCENTS.length];
   const when = dateRange(item.startDate, item.endDate);
   return `<section class="item" style="border-left-color:${accent}">
@@ -92,6 +122,7 @@ function itemBlock(item: QuoteItem, index: number, currency: string): string {
     <h3>${esc(item.title)}</h3>
     <div class="row"><span>${esc([when, people(item)].filter(Boolean).join(' · '))}</span><b>${esc(formatMoney(item.total, currency))}</b></div>
     ${item.description ? `<div class="desc">${esc(item.description)}</div>` : ''}
+    ${item.hotel ? hotelBlock(item.hotel, photos) : ''}
   </section>`;
 }
 
@@ -161,9 +192,9 @@ function header(view: PublicQuoteView): string {
 }
 
 /** HTML A4 da cotação. Tudo o que vem do banco passa por `esc`. */
-export function buildQuotePdfHtml(view: PublicQuoteView, quoteUrl: string | null): string {
+export function buildQuotePdfHtml(view: PublicQuoteView, quoteUrl: string | null, photos: Photos = new Map()): string {
   const { quote } = view;
-  const items = [...quote.items].sort(byDate).map((item, i) => itemBlock(item, i, quote.currency)).join('');
+  const items = [...quote.items].sort(byDate).map((item, i) => itemBlock(item, i, quote.currency, photos)).join('');
   return `<!doctype html><html lang="pt-BR"><head>${PDF_CSP_META}<meta charset="utf-8"/><style>${QUOTE_CSS}</style></head><body>
     ${header(view)}
     <main>${summary(quote)}<h2>Itens</h2>${items}${totalsBlock(quote, view.terms)}${closeBlock(view, quoteUrl)}${policyBlock(view.terms)}</main>
@@ -180,6 +211,7 @@ export class QuotePdfService {
   }
 
   async render(view: PublicQuoteView, quoteUrl: string | null): Promise<Buffer> {
-    return this.renderer.render(buildQuotePdfHtml(view, quoteUrl), 'gerar a cotação');
+    const photos = await fetchPdfPhotos(view.quote);
+    return this.renderer.render(buildQuotePdfHtml(view, quoteUrl, photos), 'gerar a cotação');
   }
 }

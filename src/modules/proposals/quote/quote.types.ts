@@ -17,6 +17,28 @@ export interface QuoteItem {
   priceChild: number | null;
   total: number;
   cancellationPolicy: string | null;
+  /** Nome do hotel como está no print, quando o item é hospedagem. */
+  hotelName: string | null;
+  /** Ficha do hotel (LiteAPI, só conteúdo — nunca preço). */
+  hotel: QuoteHotel | null;
+}
+
+/**
+ * Ficha resumida do hotel, em português, vinda do cadastro da LiteAPI. Não
+ * tem campo de preço de propósito: o valor é sempre o do print.
+ */
+export interface QuoteHotel {
+  id: string;
+  name: string;
+  stars: number | null;
+  address: string | null;
+  summary: string;
+  amenities: string[];
+  /** "16h" */
+  checkin: string | null;
+  checkout: string | null;
+  /** https://static.cupid.travel/... */
+  photos: string[];
 }
 
 export interface QuoteInstallments {

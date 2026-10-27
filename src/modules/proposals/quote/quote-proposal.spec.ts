@@ -23,7 +23,7 @@ const item = (over: Partial<QuoteItem> = {}): QuoteItem => ({
   priceAdult: null,
   priceChild: null,
   total: 5000,
-  cancellationPolicy: null,
+  cancellationPolicy: null, hotelName: null, hotel: null,
   ...over,
 });
 const quote = (over: Partial<QuoteData> = {}): QuoteData => ({
@@ -137,6 +137,8 @@ describe('normalizeQuote', () => {
           priceChild: null,
           total: 100,
           cancellationPolicy: null,
+          hotelName: null,
+          hotel: null,
         },
       ],
       currency: 'BRL',
