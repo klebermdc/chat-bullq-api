@@ -20,6 +20,15 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CURRENCY_RE,
   ISO_DATE_RE,
+  QUOTE_HOTEL_ADDRESS_MAX,
+  QUOTE_HOTEL_AMENITY_MAX,
+  QUOTE_HOTEL_ID_MAX,
+  QUOTE_HOTEL_MAX_AMENITIES,
+  QUOTE_HOTEL_MAX_PHOTOS,
+  QUOTE_HOTEL_NAME_MAX,
+  QUOTE_HOTEL_PHOTO_RE,
+  QUOTE_HOTEL_SUMMARY_MAX,
+  QUOTE_HOTEL_TIME_RE,
   QUOTE_MAX_AMOUNT,
   QUOTE_MAX_INSTALLMENTS,
   QUOTE_MAX_ITEMS,
@@ -73,6 +82,60 @@ function OptionalText(max: number, label: string): PropertyDecorator {
   };
 }
 
+/** Ficha do hotel (LiteAPI). Sem preço; fotos só do CDN da LiteAPI. */
+export class QuoteHotelDto {
+  @ApiProperty({ maxLength: QUOTE_HOTEL_ID_MAX })
+  @IsString()
+  @MaxLength(QUOTE_HOTEL_ID_MAX)
+  id!: string;
+
+  @ApiProperty({ maxLength: QUOTE_HOTEL_NAME_MAX })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(QUOTE_HOTEL_NAME_MAX, { message: `O nome do hotel pode ter até ${QUOTE_HOTEL_NAME_MAX} caracteres.` })
+  name!: string;
+
+  @ApiPropertyOptional({ nullable: true, minimum: 1, maximum: 5 })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(5)
+  stars?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, maxLength: QUOTE_HOTEL_ADDRESS_MAX })
+  @OptionalText(QUOTE_HOTEL_ADDRESS_MAX, 'O endereço do hotel')
+  address?: string | null;
+
+  @ApiProperty({ maxLength: QUOTE_HOTEL_SUMMARY_MAX })
+  @IsString()
+  @MinLength(1, { message: 'O resumo do hotel não pode ficar vazio (ou tire a ficha do hotel).' })
+  @MaxLength(QUOTE_HOTEL_SUMMARY_MAX, { message: `O resumo do hotel pode ter até ${QUOTE_HOTEL_SUMMARY_MAX} caracteres.` })
+  summary!: string;
+
+  @ApiProperty({ type: [String], maxItems: QUOTE_HOTEL_MAX_AMENITIES })
+  @IsArray()
+  @ArrayMaxSize(QUOTE_HOTEL_MAX_AMENITIES)
+  @IsString({ each: true })
+  @MaxLength(QUOTE_HOTEL_AMENITY_MAX, { each: true })
+  amenities!: string[];
+
+  @ApiPropertyOptional({ nullable: true, example: '16h' })
+  @IsOptional()
+  @Matches(QUOTE_HOTEL_TIME_RE)
+  checkin?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '11h' })
+  @IsOptional()
+  @Matches(QUOTE_HOTEL_TIME_RE)
+  checkout?: string | null;
+
+  @ApiProperty({ type: [String], maxItems: QUOTE_HOTEL_MAX_PHOTOS })
+  @IsArray()
+  @ArrayMaxSize(QUOTE_HOTEL_MAX_PHOTOS)
+  @Matches(QUOTE_HOTEL_PHOTO_RE, { each: true, message: 'Foto de hotel com endereço não permitido.' })
+  photos!: string[];
+}
+
 /** Um produto/reserva da cotação. Sem campo para CPF ou nome de viajante. */
 export class QuoteItemDto {
   @ApiProperty({ maxLength: QUOTE_PROVIDER_MAX, example: 'Universal Orlando Resort' })
@@ -121,6 +184,16 @@ export class QuoteItemDto {
   @ApiPropertyOptional({ nullable: true, maxLength: QUOTE_TEXT_MAX })
   @OptionalText(QUOTE_TEXT_MAX, 'A política de cancelamento')
   cancellationPolicy?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, maxLength: QUOTE_HOTEL_NAME_MAX })
+  @OptionalText(QUOTE_HOTEL_NAME_MAX, 'O nome do hotel')
+  hotelName?: string | null;
+
+  @ApiPropertyOptional({ type: QuoteHotelDto, nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => QuoteHotelDto)
+  hotel?: QuoteHotelDto | null;
 }
 
 export class QuoteInstallmentsDto {

@@ -2,6 +2,7 @@ import {
   CURRENCY_RE,
   ISO_DATE_RE,
   QUOTE_DEFAULT_CURRENCY,
+  QUOTE_HOTEL_NAME_MAX,
   QUOTE_MAX_INSTALLMENTS,
   QUOTE_MAX_ITEMS,
   QUOTE_MAX_PEOPLE,
@@ -23,7 +24,7 @@ export const QUOTE_SYSTEM_PROMPT =
   'formato exato:\n' +
   '{"items":[{"provider":string,"title":string,"startDate":"YYYY-MM-DD"|null,"endDate":"YYYY-MM-DD"|null,' +
   '"description":string|null,"adults":int,"children":int,"priceAdult":number|null,"priceChild":number|null,' +
-  '"total":number,"cancellationPolicy":string|null}],"currency":string,"total":number,' +
+  '"total":number,"cancellationPolicy":string|null,"hotelName":string|null}],"currency":string,"total":number,' +
   '"pixTotal":number|null,"installments":{"count":int,"value":number}|null}\n' +
   `Regras: um item por produto ou reserva (no máximo ${QUOTE_MAX_ITEMS}). provider é o fornecedor ` +
   `como aparece (ex.: "Universal Orlando Resort"), até ${QUOTE_PROVIDER_MAX} caracteres. title é o ` +
@@ -34,7 +35,9 @@ export const QUOTE_SYSTEM_PROMPT =
   'preço UNITÁRIO por adulto/criança SOMENTE se estiver escrito no print; NUNCA calcule dividindo o ' +
   'total pelo número de pessoas; se não estiver escrito, null. total é o valor do item. ' +
   'cancellationPolicy é a política de cancelamento como aparece (até ' +
-  `${QUOTE_TEXT_MAX} caracteres) ou null. No nível de cima: total é o valor total da reserva; ` +
+  `${QUOTE_TEXT_MAX} caracteres) ou null. hotelName: SOMENTE quando o item é hospedagem (hotel, resort, ` +
+  'casa de temporada), o nome do hotel exatamente como no print, sem a cidade; nos outros itens, null. ' +
+  'No nível de cima: total é o valor total da reserva; ' +
   'pixTotal é o valor à vista no Pix se aparecer, senão null; installments é o parcelamento se ' +
   'aparecer (ex.: "10x de R$ 1.797,16" -> {"count":10,"value":1797.16}), senão null. Converta o ' +
   'formato brasileiro para número (ex.: "R$ 10.000,38" -> 10000.38); currency é o código da moeda ' +
@@ -89,6 +92,9 @@ function parseItem(raw: unknown): QuoteItem | null {
     priceChild: positive(raw.priceChild),
     total: positive(raw.total) ?? 0,
     cancellationPolicy: textOrNull(raw.cancellationPolicy, QUOTE_TEXT_MAX),
+    hotelName: textOrNull(raw.hotelName, QUOTE_HOTEL_NAME_MAX),
+    // A ficha vem depois, da LiteAPI (HotelLookupService), nunca do modelo.
+    hotel: null,
   };
 }
 

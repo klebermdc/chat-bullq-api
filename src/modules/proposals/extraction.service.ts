@@ -18,6 +18,7 @@ import {
   PROPOSAL_OTHER_TITLE_MAX,
 } from './proposals.constants';
 import { parseQuoteFromModel, QUOTE_SYSTEM_PROMPT } from './quote/quote-extraction';
+import { HOTEL_SUMMARY_PROMPT, parseHotelSummary } from './quote/hotel/hotel-content';
 import type { QuoteData } from './quote/quote.types';
 
 const SYSTEM_PROMPT =
@@ -101,6 +102,9 @@ const DEFAULT_MAX_TOKENS = 4000;
 /** Cotação: 2 tentativas (a 2ª com "só JSON") e o dobro de tokens. */
 const QUOTE_MAX_ATTEMPTS = 2;
 const QUOTE_MAX_TOKENS = 8000;
+// Resumo de hotel: texto curto, mas o modelo raciocina antes do JSON.
+const HOTEL_SUMMARY_ATTEMPTS = 2;
+const HOTEL_SUMMARY_MAX_TOKENS = 3000;
 const STRICT_SUFFIX =
   '\n\nATENÇÃO: devolva SOMENTE o objeto JSON, começando com { e terminando ' +
   'com }, sem nenhum texto, comentário ou marcação antes ou depois.';
@@ -185,6 +189,17 @@ export class ExtractionService {
       // Leitura de imagem é temperatura 0: repetir 3x a mesma pergunta só
       // triplica a espera. A cotação tem descrições longas: mais folga de tokens.
       { vision: true, maxAttempts: QUOTE_MAX_ATTEMPTS, maxTokens: QUOTE_MAX_TOKENS },
+    );
+  }
+
+  /** Resumo em pt-BR da descrição de hotel que a LiteAPI mandou em outra língua. */
+  async summarizeHotel(organizationId: string, hotelName: string, description: string): Promise<string> {
+    return this.completeWithRetry(
+      organizationId,
+      HOTEL_SUMMARY_PROMPT,
+      () => `<<<HOTEL>>>\n${hotelName}\n\n${description}\n<<<END HOTEL>>>\n\nResuma em JSON:`,
+      parseHotelSummary,
+      { maxAttempts: HOTEL_SUMMARY_ATTEMPTS, maxTokens: HOTEL_SUMMARY_MAX_TOKENS },
     );
   }
 

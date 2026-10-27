@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import type { ExtractedCart } from '../proposals.types';
+import { sanitizeHotel } from './hotel/hotel-content';
 import {
   HOUR_MS,
   QUOTE_CUSTOMER_NAME_MAX,
@@ -13,8 +14,9 @@ import type { QuoteData, QuoteInstallments, QuoteItem } from './quote.types';
 type Env = Readonly<Record<string, string | undefined>>;
 
 /** Entrada já validada pelo DTO; campos anuláveis podem vir ausentes. */
-type QuoteItemInput = Omit<QuoteItem, 'startDate' | 'endDate' | 'description' | 'priceAdult' | 'priceChild' | 'cancellationPolicy'> &
-  Partial<Pick<QuoteItem, 'startDate' | 'endDate' | 'description' | 'priceAdult' | 'priceChild' | 'cancellationPolicy'>>;
+type NullableItemKey = 'startDate' | 'endDate' | 'description' | 'priceAdult' | 'priceChild' | 'cancellationPolicy' | 'hotelName';
+/** A ficha do hotel passa por `sanitizeHotel`, que confere campo a campo. */
+type QuoteItemInput = Omit<QuoteItem, NullableItemKey | 'hotel'> & Partial<Pick<QuoteItem, NullableItemKey>> & { hotel?: unknown };
 export interface QuoteInput {
   items: readonly QuoteItemInput[];
   currency: string;
@@ -96,6 +98,8 @@ function normalizeItem(item: QuoteItemInput, index: number): QuoteItem {
     priceChild: item.priceChild ?? null,
     total: item.total,
     cancellationPolicy: textOrNull(item.cancellationPolicy),
+    hotelName: textOrNull(item.hotelName),
+    hotel: sanitizeHotel(item.hotel),
   };
 }
 

@@ -48,6 +48,7 @@ import {
   quotePublicBaseUrl,
 } from './quote/quote-proposal';
 import { mergeQuotes } from './quote/quote-merge';
+import { HotelLookupService } from './quote/hotel/hotel-lookup.service';
 import { presentProposal } from './quote/quote-public';
 import { QUOTE_KIND } from './quote/quote.constants';
 import type { QuoteData } from './quote/quote.types';
@@ -92,6 +93,7 @@ export class ProposalsService {
     private readonly orderFicha: OrderFichaService,
     private readonly conversationAccess: ConversationAccessService,
     private readonly storage: StorageService,
+    private readonly hotels: HotelLookupService,
   ) {}
 
   async create(
@@ -372,7 +374,10 @@ export class ProposalsService {
       this.logger.warn(`quote_extract_failed print=${i + 1}/${loaded.length}: ${(r.reason as Error)?.message}`);
     });
     if (parts.length === 0) throw new BadRequestException(UNREADABLE_PROPOSAL);
-    const quote = mergeQuotes(parts);
+    // Hotel do print ganha a ficha da LiteAPI (só conteúdo; o preço continua o do print).
+    const quote = await this.hotels.enrich(mergeQuotes(parts), (name, text) =>
+      this.extraction.summarizeHotel(organizationId, name, text),
+    );
     const contact = await this.prisma.contact.findUnique({
       where: { id: contactId },
       select: { name: true },
