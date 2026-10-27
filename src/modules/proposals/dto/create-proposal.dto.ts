@@ -3,12 +3,15 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsInt,
   IsNumber,
   IsObject,
   IsOptional,
   IsString,
   IsUrl,
+  Max,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -18,9 +21,16 @@ import {
   PROPOSAL_MAX_IMAGES,
   PROPOSAL_TEXT_MAX,
 } from '../proposals.constants';
+import {
+  QUOTE_CUSTOMER_NAME_MAX,
+  QUOTE_MAX_VALIDITY_HOURS,
+  QUOTE_MIN_VALIDITY_HOURS,
+} from '../quote/quote.constants';
+import { QuoteDto } from './quote.dto';
 
 const INVALID_IMAGE = 'Imagem inválida.';
 const MAX_IMAGE_FILENAME_LENGTH = 255;
+const VALIDITY_MESSAGE = `A validade precisa ser de ${QUOTE_MIN_VALIDITY_HOURS} a ${QUOTE_MAX_VALIDITY_HOURS} horas.`;
 
 /**
  * Print anexado à proposta: o que `POST /messages/uploads/media` devolveu.
@@ -131,4 +141,38 @@ export class CreateProposalDto {
     message: `A mensagem da proposta pode ter até ${PROPOSAL_TEXT_MAX} caracteres.`,
   })
   text?: string;
+
+  /**
+   * TEXT (padrão) = a proposta de sempre, em texto. LINK = cotação por link:
+   * página pública com os itens conferidos e uma mensagem curta com o link.
+   * LINK exige `includeLink: false` e prints.
+   */
+  @ApiPropertyOptional({ enum: ['TEXT', 'LINK'], default: 'TEXT' })
+  @IsOptional()
+  @IsIn(['TEXT', 'LINK'])
+  format?: 'TEXT' | 'LINK';
+
+  /** LINK: a cotação conferida pelo atendente. Obrigatória para enviar. */
+  @ApiPropertyOptional({ type: QuoteDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => QuoteDto)
+  quote?: QuoteDto;
+
+  /** LINK: como chamar o cliente na página e na mensagem. */
+  @ApiPropertyOptional({ maxLength: QUOTE_CUSTOMER_NAME_MAX })
+  @IsOptional()
+  @IsString()
+  @MaxLength(QUOTE_CUSTOMER_NAME_MAX, {
+    message: `O nome do cliente pode ter até ${QUOTE_CUSTOMER_NAME_MAX} caracteres.`,
+  })
+  customerName?: string;
+
+  /** LINK: validade da página em horas (padrão 24, máx. 7 dias). */
+  @ApiPropertyOptional({ minimum: QUOTE_MIN_VALIDITY_HOURS, maximum: QUOTE_MAX_VALIDITY_HOURS, default: 24 })
+  @IsOptional()
+  @IsInt({ message: VALIDITY_MESSAGE })
+  @Min(QUOTE_MIN_VALIDITY_HOURS, { message: VALIDITY_MESSAGE })
+  @Max(QUOTE_MAX_VALIDITY_HOURS, { message: VALIDITY_MESSAGE })
+  validityHours?: number;
 }

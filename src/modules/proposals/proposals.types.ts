@@ -1,3 +1,5 @@
+import type { QuoteData } from './quote/quote.types';
+
 export interface ExtractedPark {
   nome: string;
   dias: number;
@@ -35,7 +37,8 @@ export interface ExtractedOtherProposal {
 
 export type ExtractedProposal = ExtractedParksProposal | ExtractedOtherProposal;
 
-export type ProposalKind = ExtractedProposal['kind'];
+/** QUOTE = cotação por link (itens em `details.quote`). */
+export type ProposalKind = ExtractedProposal['kind'] | 'QUOTE';
 
 /** Print anexado à proposta, como `POST /messages/uploads/media` devolveu. */
 export interface ProposalImage {
@@ -53,10 +56,14 @@ export interface ProposalImageData {
 
 /**
  * Coluna `details` (Json) da proposta. `title`/`lines` só existem em OTHER;
- * `images` existe nos dois tipos quando o atendente anexou prints.
+ * `images` existe em todos os tipos quando o atendente anexou prints;
+ * `quote`/`customerName` só em QUOTE.
  */
 export interface ProposalDetails {
   title?: string;
   lines?: string[];
   images?: ProposalImage[];
+  /** QUOTE: a cotação conferida e como chamar o cliente na página. */
+  quote?: QuoteData;
+  customerName?: string | null;
 }

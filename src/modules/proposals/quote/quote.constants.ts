@@ -1,0 +1,37 @@
+/** Proposta enviada como página (cotação por link). */
+export const QUOTE_KIND = 'QUOTE';
+
+// Limites da cotação: os mesmos no DTO, na leitura do modelo e na página.
+export const QUOTE_MAX_ITEMS = 10;
+export const QUOTE_PROVIDER_MAX = 80;
+export const QUOTE_TITLE_MAX = 200;
+/** Descrição, política de cancelamento e observação. */
+export const QUOTE_TEXT_MAX = 600;
+export const QUOTE_MAX_PEOPLE = 20;
+export const QUOTE_CUSTOMER_NAME_MAX = 60;
+/** Teto de sanidade de valores; a coluna é Decimal(12, 2). */
+export const QUOTE_MAX_AMOUNT = 9_999_999;
+export const QUOTE_MAX_INSTALLMENTS = 24;
+export const QUOTE_DEFAULT_CURRENCY = 'BRL';
+
+export const QUOTE_MIN_VALIDITY_HOURS = 1;
+export const QUOTE_DEFAULT_VALIDITY_HOURS = 24;
+/** 7 dias. */
+export const QUOTE_MAX_VALIDITY_HOURS = 168;
+export const HOUR_MS = 60 * 60 * 1000;
+
+/** 24 bytes em base64url = 32 caracteres. */
+export const QUOTE_TOKEN_BYTES = 24;
+/** O mesmo formato dos links públicos de contrato. */
+export const QUOTE_TOKEN_RE = /^[A-Za-z0-9_-]{20,64}$/;
+/** Código curto mostrado ao cliente: os últimos 6 do id. */
+export const QUOTE_CODE_LENGTH = 6;
+/** Caminho da página no front quando `QUOTE_PUBLIC_URL` não está definida. */
+export const QUOTE_FALLBACK_PATH = '/cotacao';
+
+export const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+export const CURRENCY_RE = /^[A-Z]{3}$/;
+
+/** Telefone com DDI, só dígitos (E.164 sem o +). */
+export const PHONE_MIN_DIGITS = 10;
+export const PHONE_MAX_DIGITS = 15;

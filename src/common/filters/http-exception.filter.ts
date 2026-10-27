@@ -11,10 +11,13 @@ import { Response, Request } from 'express';
 import { ERROR_CODES } from '../../modules/error-reporter/error-codes';
 import { ErrorReporterService } from '../../modules/error-reporter/error-reporter.service';
 
-/** O segmento depois destes prefixos é o token de aceite: único fator de acesso ao contrato. */
-const SENSITIVE_SEGMENT = /(\/public\/contracts\/|\/aceitar\/)[^/?#]+/g;
+/**
+ * O segmento depois destes prefixos é um token público: único fator de acesso
+ * ao contrato (aceite) ou à cotação por link.
+ */
+const SENSITIVE_SEGMENT = /(\/public\/contracts\/|\/aceitar\/|\/public\/quotes\/|\/cotacao\/)[^/?#]+/g;
 
-/** URL sem o token do contrato público, para log, error-reporter e resposta. */
+/** URL sem o token público (contrato ou cotação), para log, error-reporter e resposta. */
 export function maskSensitivePath(url: string): string {
   return (url ?? '').replace(SENSITIVE_SEGMENT, '$1:token');
 }

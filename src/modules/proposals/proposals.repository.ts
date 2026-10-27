@@ -15,6 +15,9 @@ export interface CreateProposalInput {
   kind?: ProposalKind;
   /** OTHER: título e linhas; nos dois tipos, os prints enviados. */
   details?: ProposalDetails | null;
+  /** QUOTE: token da página pública e validade. */
+  publicToken?: string;
+  expiresAt?: Date;
 }
 
 @Injectable()
@@ -43,6 +46,8 @@ export class ProposalsRepository {
         details: input.details
           ? (input.details as unknown as Prisma.InputJsonValue)
           : undefined,
+        publicToken: input.publicToken,
+        expiresAt: input.expiresAt,
       },
     });
   }

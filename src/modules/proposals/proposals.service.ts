@@ -27,7 +27,7 @@ import {
 } from './proposal-followups';
 import { PipelinesService } from '../pipelines/pipelines.service';
 import { OrderFichaService } from '../order-ficha/order-ficha.service';
-import type { Proposal } from '@prisma/client';
+import type { Conversation, Proposal } from '@prisma/client';
 import { StorageService } from '../storage/storage.service';
 import { storageKeyFromUploadUrl } from '../acceptances/storage-key.util';
 import { sniffImageMime } from './proposal-images';
@@ -38,8 +38,27 @@ import type {
   ProposalImage,
   ProposalImageData,
 } from './proposals.types';
+import {
+  buildQuoteMessage,
+  contactDisplayName,
+  newQuoteToken,
+  normalizeQuote,
+  quoteCart,
+  quoteExpiresAt,
+  quotePublicBaseUrl,
+} from './quote/quote-proposal';
+import { presentProposal } from './quote/quote-public';
+import { QUOTE_KIND } from './quote/quote.constants';
+import type { QuoteData } from './quote/quote.types';
 
 const INVALID_IMAGE = 'Imagem inválida.';
+const QUOTE_NEEDS_LINK_OFF =
+  'A cotação por link vai sem o link do checkout. Ligue "Enviar sem o link do checkout".';
+const QUOTE_NEEDS_IMAGES = 'Anexe os prints da cotação para enviar como página.';
+const QUOTE_NEEDS_REVIEW =
+  'Confira a cotação lida dos prints antes de enviar. Atualize a página (Ctrl+Shift+R) e tente de novo.';
+const QUOTE_URL_MISSING =
+  'QUOTE_PUBLIC_URL não configurado — não é possível gerar o link da cotação.';
 const UNREADABLE_PROPOSAL =
   'Não consegui montar a proposta com o que foi enviado. O print ou o resumo precisa mostrar ' +
   'o produto e as condições (para ingressos: parques, datas e pessoas).';
@@ -95,6 +114,12 @@ export class ProposalsService {
       role,
       userId,
     );
+
+    // Cotação por link: fluxo próprio (página pública + mensagem curta). O
+    // modo TEXT segue abaixo exatamente como sempre foi.
+    if (dto.format === 'LINK') {
+      return this.createQuote(dto, conversation, { conversationId: conversation.id, userId, organizationId, access });
+    }
 
     // O atendente cola o link OU o bloco inteiro (link + resumo do carrinho).
     // Extraímos a URL de dentro do que foi colado; o texto completo vira
@@ -255,25 +280,37 @@ export class ProposalsService {
     // falhar, a proposta principal já foi enviada e persistida.
     if (mode === 'NEW') {
       // Proposta que não é de ingresso usa a conferência sem falar em parques.
-      const followUps = isOther ? PROPOSAL_NEW_FOLLOWUPS_OTHER : PROPOSAL_NEW_FOLLOWUPS;
-      for (const followUp of followUps) {
-        try {
-          await this.sendToCustomer(sendContext, 'TEXT', { text: followUp });
-        } catch (err) {
-          this.logger.warn(
-            `proposal_followup_failed conv=${conversation.id}: ${(err as Error).message}`,
-          );
-        }
-      }
+      await this.sendFollowUps(sendContext, isOther ? PROPOSAL_NEW_FOLLOWUPS_OTHER : PROPOSAL_NEW_FOLLOWUPS);
     }
 
-    // Liga ao pipeline: garante o card em "PROPOSTA ENVIADA" (cria se não existe,
-    // avança se está antes — só avança) e atualiza o valor. Dispara a cadência de
-    // negociação. Best-effort — a proposta já foi enviada/persistida.
+    await this.linkToPipeline(sendContext, cart);
+
+    return proposal;
+  }
+
+  /** Follow-ups da primeira proposta. Best-effort, um a um. */
+  private async sendFollowUps(ctx: SendContext, followUps: readonly string[]): Promise<void> {
+    for (const followUp of followUps) {
+      try {
+        await this.sendToCustomer(ctx, 'TEXT', { text: followUp });
+      } catch (err) {
+        this.logger.warn(
+          `proposal_followup_failed conv=${ctx.conversationId}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Liga ao pipeline: garante o card em "PROPOSTA ENVIADA" (cria se não existe,
+   * avança se está antes — só avança) e atualiza o valor. Dispara a cadência de
+   * negociação. Best-effort — a proposta já foi enviada/persistida.
+   */
+  private async linkToPipeline(ctx: SendContext, cart: ExtractedCart): Promise<void> {
     try {
       await this.pipelines.ensureConversationAtStageByName(
-        organizationId,
-        conversation.id,
+        ctx.organizationId,
+        ctx.conversationId,
         PROPOSAL_SENT_STAGE_NAME,
         // Resumo sem valor (total 0) não sobrescreve o valor do negócio.
         cart.totalValue > 0
@@ -282,11 +319,94 @@ export class ProposalsService {
       );
     } catch (err) {
       this.logger.warn(
-        `proposal_pipeline_link_failed conv=${conversation.id}: ${(err as Error).message}`,
+        `proposal_pipeline_link_failed conv=${ctx.conversationId}: ${(err as Error).message}`,
       );
     }
+  }
 
-    return proposal;
+  /**
+   * Cotação por link. Preview: lê os prints com o prompt de cotação e devolve
+   * o rascunho. Envio: grava a cotação CONFERIDA (nunca uma segunda leitura do
+   * modelo), manda a mensagem curta com o link — sem os prints — e segue
+   * follow-ups e funil como a proposta sem link.
+   */
+  private async createQuote(dto: CreateProposalDto, conversation: Conversation, ctx: SendContext) {
+    const images = this.quoteImagesOrThrow(dto);
+    const keys = images.map((image) => this.imageKeyOrThrow(image));
+    if (!dto.preview && !dto.quote) throw new BadRequestException(QUOTE_NEEDS_REVIEW);
+    const loaded = await this.loadImages(images, keys);
+
+    if (dto.preview) {
+      return this.previewQuote(ctx.organizationId, conversation.contactId, loaded, dto.checkoutUrl ?? '');
+    }
+    return this.sendQuote(dto, normalizeQuote(dto.quote!), conversation, ctx, loaded);
+  }
+
+  private quoteImagesOrThrow(dto: CreateProposalDto): ProposalImageDto[] {
+    if (dto.includeLink !== false) throw new BadRequestException(QUOTE_NEEDS_LINK_OFF);
+    const images = dto.images ?? [];
+    if (images.length === 0) throw new BadRequestException(QUOTE_NEEDS_IMAGES);
+    return images;
+  }
+
+  private async previewQuote(
+    organizationId: string,
+    contactId: string,
+    loaded: LoadedImage[],
+    pastedText: string,
+  ) {
+    let quote: QuoteData;
+    try {
+      quote = await this.extraction.extractQuoteFromImages(organizationId, {
+        images: loaded.map((l) => l.data),
+        pastedText,
+      });
+    } catch (err) {
+      this.logger.warn(`quote_extract_failed images=${loaded.length}: ${(err as Error).message}`);
+      throw new BadRequestException(UNREADABLE_PROPOSAL);
+    }
+    const contact = await this.prisma.contact.findUnique({
+      where: { id: contactId },
+      select: { name: true },
+    });
+    return { preview: true as const, quote, customerName: contactDisplayName(contact?.name) };
+  }
+
+  private async sendQuote(
+    dto: CreateProposalDto,
+    quote: QuoteData,
+    conversation: Conversation,
+    ctx: SendContext,
+    loaded: LoadedImage[],
+  ) {
+    // Sem base de URL não há o que mandar: falha antes de gravar qualquer coisa.
+    const baseUrl = quotePublicBaseUrl();
+    if (!baseUrl) throw new BadRequestException(QUOTE_URL_MISSING);
+    const now = new Date();
+    const customerName = dto.customerName?.trim() || null;
+    const publicToken = newQuoteToken();
+    const cart = quoteCart(quote, now);
+
+    const proposal = await this.repo.create({
+      organizationId: ctx.organizationId,
+      contactId: conversation.contactId,
+      conversationId: conversation.id,
+      checkoutUrl: '',
+      createdById: ctx.userId,
+      cart,
+      rawText: dto.checkoutUrl ?? '',
+      kind: QUOTE_KIND,
+      details: { images: loaded.map((l) => l.image), quote, customerName },
+      publicToken,
+      expiresAt: quoteExpiresAt(now, dto.validityHours),
+    });
+
+    const quoteUrl = `${baseUrl}/${publicToken}`;
+    await this.sendToCustomer(ctx, 'TEXT', { text: buildQuoteMessage(customerName, quoteUrl) });
+    if ((dto.mode ?? 'NEW') === 'NEW') await this.sendFollowUps(ctx, PROPOSAL_NEW_FOLLOWUPS_OTHER);
+    await this.linkToPipeline(ctx, cart);
+
+    return { ...presentProposal(proposal), quoteUrl };
   }
 
   async listForContact(
@@ -296,7 +416,8 @@ export class ProposalsService {
     currentUserId?: string,
   ) {
     const proposals = await this.repo.listForContact(organizationId, contactId);
-    return this.scopeToAssignedConversation(proposals, role, currentUserId);
+    const scoped = await this.scopeToAssignedConversation(proposals, role, currentUserId);
+    return scoped.map((p) => presentProposal(p));
   }
 
   /**
@@ -317,7 +438,8 @@ export class ProposalsService {
       return [];
     }
     const proposals = await this.repo.listForContact(organizationId, conversation.contactId);
-    return this.scopeToAssignedConversation(proposals, role, currentUserId);
+    const scoped = await this.scopeToAssignedConversation(proposals, role, currentUserId);
+    return scoped.map((p) => presentProposal(p));
   }
 
   /**
