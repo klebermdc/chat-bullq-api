@@ -1,6 +1,7 @@
 import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { QUOTE_COMPANY } from '../quote-company';
+import { QUOTE_TERMS } from '../quote-terms';
 import { QuotePdfService } from './quote-pdf';
 import { quotePublicUrl } from './quote-proposal';
 import { quoteCode, quoteStatus, toPublicQuote } from './quote-public';
@@ -98,6 +99,7 @@ export class PublicQuotesService {
       expiresAt: (q.expiresAt ?? q.createdAt).toISOString(),
       quote: q.quote,
       company: { ...QUOTE_COMPANY },
+      terms: QUOTE_TERMS,
     };
   }
 

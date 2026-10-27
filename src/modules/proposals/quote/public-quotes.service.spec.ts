@@ -1,6 +1,7 @@
 import { GoneException, NotFoundException } from '@nestjs/common';
 import { PublicQuotesService } from './public-quotes.service';
 import { QUOTE_COMPANY } from '../quote-company';
+import { QUOTE_TERMS } from '../quote-terms';
 
 const TOKEN = 'T'.repeat(32);
 const NOW = new Date('2026-10-26T12:00:00.000Z');
@@ -72,6 +73,7 @@ describe('PublicQuotesService', () => {
         expiresAt: '2026-10-27T10:00:00.000Z',
         quote,
         company: QUOTE_COMPANY,
+        terms: QUOTE_TERMS,
       });
       expect(prisma.proposal.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { publicToken: TOKEN } }),
@@ -85,7 +87,7 @@ describe('PublicQuotesService', () => {
       const out = await svc.view(TOKEN);
 
       expect(Object.keys(out).sort()).toEqual(
-        ['code', 'company', 'createdAt', 'customerName', 'expiresAt', 'quote', 'seller', 'status'].sort(),
+        ['code', 'company', 'createdAt', 'customerName', 'expiresAt', 'quote', 'seller', 'status', 'terms'].sort(),
       );
       expect(Object.keys(out.seller).sort()).toEqual(['name', 'whatsapp']);
       const json = JSON.stringify(out);
