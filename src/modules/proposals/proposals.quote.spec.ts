@@ -446,6 +446,15 @@ describe('ProposalsService — cotação por link', () => {
       expect(d.messages.send).not.toHaveBeenCalled();
     });
 
+    it('o atendente abriu a versão 1 e alguém já salvou a 2: 409 sem gravar', async () => {
+      const d = deps();
+      d.prisma.proposal.findUnique.mockResolvedValue(savedQuote({ quoteVersion: 2 }));
+
+      await expect(update(d, { version: 1 })).rejects.toBeInstanceOf(ConflictException);
+      expect(d.repo.updateQuote).not.toHaveBeenCalled();
+      expect(d.messages.send).not.toHaveBeenCalled();
+    });
+
     it('datas invertidas são 400 antes de gravar', async () => {
       const d = deps();
       const bad = { ...newer, items: [{ ...newer.items[0], startDate: '2026-12-12', endDate: '2026-12-10' }] };

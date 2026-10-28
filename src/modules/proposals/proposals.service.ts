@@ -446,6 +446,9 @@ export class ProposalsService {
       throw new NotFoundException(QUOTE_NOT_FOUND);
     }
     await this.conversationAccess.assertConversationAccess(current.conversationId, organizationId, role, userId);
+    if (dto.version !== undefined && dto.version !== current.quoteVersion) {
+      throw new ConflictException(QUOTE_UPDATED_BY_SOMEONE);
+    }
     const baseUrl = quotePublicBaseUrl();
     if (!baseUrl) throw new BadRequestException(QUOTE_URL_MISSING);
 
