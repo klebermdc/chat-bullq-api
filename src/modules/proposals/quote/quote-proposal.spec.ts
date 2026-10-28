@@ -1,6 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   buildQuoteMessage,
+  buildQuoteUpdatedMessage,
+  formatQuoteNumber,
   contactDisplayName,
   firstName,
   newQuoteToken,
@@ -90,6 +92,25 @@ describe('firstName / buildQuoteMessage', () => {
     expect(buildQuoteMessage('Ana Souza', url)).toBe(
       'Oi, Ana! Sua cotação ficou pronta. Toque no link para ver tudo com calma, e qualquer dúvida é só me chamar aqui.\n\nhttps://c.x/tok',
     );
+  });
+
+  it('com número, a mensagem diz o nº da cotação', () => {
+    expect(buildQuoteMessage('Ana Souza', url, 152)).toBe(
+      'Oi, Ana! Sua cotação nº 0152 ficou pronta. Toque no link para ver tudo com calma, e qualquer dúvida é só me chamar aqui.\n\nhttps://c.x/tok',
+    );
+  });
+
+  it('cotação atualizada: mesmo link, validade nova e o aviso de câmbio', () => {
+    expect(buildQuoteUpdatedMessage('Ana Souza', url, 152)).toBe(
+      'Oi, Ana! Atualizei sua cotação nº 0152. É o mesmo link de antes, já com as informações novas, e ela vale por mais 24 horas. ' +
+        'Lembrando que os valores em reais seguem o câmbio do dólar do dia e podem mudar até a confirmação do pagamento.\n\nhttps://c.x/tok',
+    );
+    expect(buildQuoteUpdatedMessage(null, url, null)).toMatch(/^Oi! Atualizei sua cotação\. É o mesmo link/);
+  });
+
+  it('número com 4 dígitos (mais quando passar de 9999)', () => {
+    expect(formatQuoteNumber(7)).toBe('0007');
+    expect(formatQuoteNumber(12345)).toBe('12345');
   });
 
   it('mensagem exata sem nome', () => {

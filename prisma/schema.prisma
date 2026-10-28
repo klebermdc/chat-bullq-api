@@ -2402,13 +2402,38 @@ model Proposal {
   viewCount      Int       @default(0) @map("view_count")
   firstViewedAt  DateTime? @map("first_viewed_at")
   lastViewedAt   DateTime? @map("last_viewed_at")
+  // QUOTE: número da cotação na organização (1, 2, 3…), versão atual e quando
+  // o atendente a atualizou pela última vez (mesmo link, validade renovada).
+  quoteNumber    Int?      @map("quote_number")
+  quoteVersion   Int       @default(1) @map("quote_version")
+  quoteUpdatedAt DateTime? @map("quote_updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  versions     ProposalVersion[]
 
+  @@unique([organizationId, quoteNumber], map: "proposals_org_quote_number_key")
   @@index([organizationId, contactId], name: "idx_proposal_org_contact")
   @@index([organizationId, createdAt], name: "idx_proposal_org_created")
   @@map("proposals")
+}
+
+/// Versão anterior de uma cotação, guardada no momento em que alguém a
+/// atualizou: o que o cliente via antes, quem trocou e quando.
+model ProposalVersion {
+  id           String    @id @default(cuid())
+  proposalId   String    @map("proposal_id")
+  version      Int
+  details      Json
+  totalValue   Decimal   @map("total_value") @db.Decimal(12, 2)
+  expiresAt    DateTime? @map("expires_at")
+  replacedById String    @map("replaced_by_id")
+  replacedAt   DateTime  @default(now()) @map("replaced_at")
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, version])
+  @@map("proposal_versions")
 }
 
 enum OrderFichaStatus {

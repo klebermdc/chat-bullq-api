@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -16,6 +17,7 @@ import { resolveAssignmentScope } from '../messaging/conversations/conversation-
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { buildOtherProposalMessage, buildProposalMessage } from './message-builder';
 import { CreateProposalDto, ProposalImageDto } from './dto/create-proposal.dto';
+import { UpdateQuoteDto } from './dto/update-quote.dto';
 import {
   PROPOSAL_ALLOWED_HOSTS,
   PROPOSAL_IMAGE_MAX_BYTES,
@@ -40,6 +42,7 @@ import type {
 } from './proposals.types';
 import {
   buildQuoteMessage,
+  buildQuoteUpdatedMessage,
   contactDisplayName,
   newQuoteToken,
   normalizeQuote,
@@ -59,6 +62,9 @@ const QUOTE_NEEDS_LINK_OFF =
 const QUOTE_NEEDS_IMAGES = 'Anexe os prints da cotação para enviar como página.';
 const QUOTE_NEEDS_REVIEW =
   'Confira a cotação lida dos prints antes de enviar. Atualize a página (Ctrl+Shift+R) e tente de novo.';
+const QUOTE_NOT_FOUND = 'Cotação não encontrada.';
+const QUOTE_UPDATED_BY_SOMEONE =
+  'Esta cotação acabou de ser atualizada por outra pessoa. Feche e abra de novo para conferir a versão nova.';
 const QUOTE_URL_MISSING =
   'QUOTE_PUBLIC_URL não configurado — não é possível gerar o link da cotação.';
 const UNREADABLE_PROPOSAL =
@@ -415,11 +421,55 @@ export class ProposalsService {
     });
 
     const quoteUrl = `${baseUrl}/${publicToken}`;
-    await this.sendToCustomer(ctx, 'TEXT', { text: buildQuoteMessage(customerName, quoteUrl) });
+    await this.sendToCustomer(ctx, 'TEXT', { text: buildQuoteMessage(customerName, quoteUrl, proposal.quoteNumber) });
     if ((dto.mode ?? 'NEW') === 'NEW') await this.sendFollowUps(ctx, PROPOSAL_NEW_FOLLOWUPS_OTHER);
     await this.linkToPipeline(ctx, cart);
 
     return { ...presentProposal(proposal), quoteUrl };
+  }
+
+  /**
+   * Atualiza uma cotação por link já enviada, sem ler print de novo: grava a
+   * versão conferida no lugar da anterior (que fica no histórico), mantém o
+   * link e renova a validade a partir de agora — vencida também volta a valer.
+   */
+  async updateQuote(
+    id: string,
+    dto: UpdateQuoteDto,
+    userId: string,
+    organizationId: string,
+    access: ChannelAccess,
+    role?: OrgRole,
+  ) {
+    const current = await this.prisma.proposal.findUnique({ where: { id } });
+    if (!current || current.organizationId !== organizationId || current.kind !== QUOTE_KIND || !current.publicToken) {
+      throw new NotFoundException(QUOTE_NOT_FOUND);
+    }
+    await this.conversationAccess.assertConversationAccess(current.conversationId, organizationId, role, userId);
+    const baseUrl = quotePublicBaseUrl();
+    if (!baseUrl) throw new BadRequestException(QUOTE_URL_MISSING);
+
+    const quote = normalizeQuote(dto.quote);
+    const now = new Date();
+    const customerName = dto.customerName?.trim() || null;
+    const cart = quoteCart(quote, now);
+    const updated = await this.repo.updateQuote(current, {
+      quote,
+      customerName,
+      cart,
+      expiresAt: quoteExpiresAt(now),
+      editedById: userId,
+      now,
+    });
+    if (!updated) throw new ConflictException(QUOTE_UPDATED_BY_SOMEONE);
+
+    const ctx: SendContext = { conversationId: current.conversationId, userId, organizationId, access };
+    const quoteUrl = `${baseUrl}/${current.publicToken}`;
+    if (dto.notify !== false) {
+      await this.sendToCustomer(ctx, 'TEXT', { text: buildQuoteUpdatedMessage(customerName, quoteUrl, updated.quoteNumber) });
+    }
+    await this.linkToPipeline(ctx, cart);
+    return { ...presentProposal(updated), quoteUrl };
   }
 
   async listForContact(

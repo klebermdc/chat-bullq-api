@@ -71,6 +71,7 @@ describe('PublicQuotesService', () => {
         seller: { name: 'Mariana Lima', whatsapp: '551151984190' },
         createdAt: '2026-10-26T10:00:00.000Z',
         expiresAt: '2026-10-27T10:00:00.000Z',
+        updatedAt: null,
         quote,
         company: QUOTE_COMPANY,
         terms: QUOTE_TERMS,
@@ -87,13 +88,22 @@ describe('PublicQuotesService', () => {
       const out = await svc.view(TOKEN);
 
       expect(Object.keys(out).sort()).toEqual(
-        ['code', 'company', 'createdAt', 'customerName', 'expiresAt', 'quote', 'seller', 'status', 'terms'].sort(),
+        ['code', 'company', 'createdAt', 'customerName', 'expiresAt', 'quote', 'seller', 'status', 'terms', 'updatedAt'].sort(),
       );
       expect(Object.keys(out.seller).sort()).toEqual(['name', 'whatsapp']);
       const json = JSON.stringify(out);
       for (const internal of ['cm9prop8k2q1z', 'user-1', 'conv-1', 'chan-1', 'images', 'organizationId', 'contactId', TOKEN]) {
         expect(json).not.toContain(internal);
       }
+    });
+
+    it('com número, o código é o nº da cotação; atualizada mostra a data', async () => {
+      const { svc } = make(row({ quoteNumber: 152, quoteUpdatedAt: new Date('2026-10-26T11:00:00.000Z') }));
+
+      const out = await svc.view(TOKEN);
+
+      expect(out.code).toBe('0152');
+      expect(out.updatedAt).toBe('2026-10-26T11:00:00.000Z');
     });
 
     it('EXPIRED quando a validade passou', async () => {

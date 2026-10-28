@@ -26,6 +26,7 @@ const view = (over: Partial<PublicQuoteView> = {}): PublicQuoteView => ({
   seller: { name: 'Mariana Lima', whatsapp: '551151984190' },
   createdAt: '2026-10-26T13:00:00.000Z',
   expiresAt: '2026-10-27T13:00:00.000Z',
+  updatedAt: null,
   quote: {
     items: [item(), item({ provider: 'Disney', title: 'Magic Kingdom', startDate: '2026-12-08', endDate: '2026-12-08', priceAdult: null, priceChild: null, cancellationPolicy: null, description: null })],
     currency: 'BRL',
@@ -181,5 +182,11 @@ describe('buildQuotePdfHtml — hotel', () => {
   it('sem a foto baixada, a ficha sai sem imagem', () => {
     const v = view({ quote: { ...view().quote, items: [item({ hotel })] } });
     expect(buildQuotePdfHtml(v, null)).not.toContain('<img src="data:image/jpeg');
+  });
+
+  it('cotação atualizada mostra a data da atualização; a original não', () => {
+    expect(buildQuotePdfHtml(view(), 'https://c.x/t')).not.toContain('Atualizada em');
+    const html = buildQuotePdfHtml(view({ updatedAt: '2026-10-28T12:30:00.000Z' }), 'https://c.x/t');
+    expect(html).toMatch(/Atualizada em<b>28\/10\/2026/);
   });
 });
