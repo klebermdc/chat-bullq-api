@@ -13,6 +13,7 @@ const modelItem = (over: Record<string, unknown> = {}) => ({
   total: 9000,
   cancellationPolicy: 'Não reembolsável',
   hotelName: null,
+  hotelCountry: null,
   hotel: null,
   ...over,
 });
@@ -45,6 +46,15 @@ describe('parseQuoteFromModel', () => {
       installments: { count: 10, value: 900 },
       notes: null,
     });
+  });
+
+  it('hotel: lê o país em código de 2 letras; fora do formato vira null', () => {
+    const read = (hotelCountry: unknown) =>
+      parseQuoteFromModel(modelQuote({ items: [modelItem({ hotelName: 'Blue Tree Premium Morumbi', hotelCountry })] })).items[0].hotelCountry;
+    expect(read('BR')).toBe('BR');
+    expect(read('br')).toBe('BR');
+    expect(read('Brasil')).toBeNull();
+    expect(read(null)).toBeNull();
   });
 
   it('UNREADABLE ou sem itens é erro (vira nova tentativa)', () => {
