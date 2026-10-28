@@ -19,6 +19,11 @@ export interface QuoteItem {
   cancellationPolicy: string | null;
   /** Nome do hotel como está no print, quando o item é hospedagem. */
   hotelName: string | null;
+  /**
+   * País do hotel (ISO, 2 letras) lido do print. Só serve para a busca da
+   * ficha: sai do item antes de a cotação ir para o editor.
+   */
+  hotelCountry?: string | null;
   /** Ficha do hotel (LiteAPI, só conteúdo — nunca preço). */
   hotel: QuoteHotel | null;
 }

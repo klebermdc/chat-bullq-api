@@ -37,7 +37,7 @@ describe('HotelLookupService', () => {
     expect(out.items[0].total).toBe(4200);
     expect(out.total).toBe(4200);
     expect(out.items[1].hotel).toBeNull();
-    expect(c.searchHotels).toHaveBeenCalledWith('Cabana Bay Beach Resort', 'Orlando');
+    expect(c.searchHotels).toHaveBeenCalledWith('Cabana Bay Beach Resort', 'US', 'Orlando');
   });
 
   it('tenta sem cidade quando não acha em Orlando', async () => {
@@ -45,7 +45,7 @@ describe('HotelLookupService', () => {
     c.searchHotels.mockResolvedValueOnce([]);
     const out = await new HotelLookupService(c).enrich(quote([item({ hotelName: 'Cabana Bay' })]));
 
-    expect(c.searchHotels).toHaveBeenLastCalledWith('Cabana Bay', null);
+    expect(c.searchHotels).toHaveBeenLastCalledWith('Cabana Bay', 'US', null);
     expect(out.items[0].hotel?.id).toBe('lp6a114');
   });
 
@@ -86,7 +86,18 @@ describe('HotelLookupService', () => {
     const out = await new HotelLookupService(c).enrich(
       quote([item({ hotelName: "Universal's Endless Summer Resort - Dockside Inn and Suites" })]),
     );
-    expect(c.searchHotels).toHaveBeenNthCalledWith(3, 'Dockside Inn and Suites', 'Orlando');
+    expect(c.searchHotels).toHaveBeenNthCalledWith(3, 'Dockside Inn and Suites', 'US', 'Orlando');
     expect(out.items[0].hotel?.id).toBe('lp6a114');
+  });
+
+  it('hotel fora dos EUA: busca no país do print, sem Orlando, e o país não vai para a cotação', async () => {
+    const c = client();
+    c.searchHotels.mockResolvedValue([{ id: 'lp3083d', name: 'Blue Tree Premium Morumbi' }]);
+    const out = await new HotelLookupService(c).enrich(quote([item({ hotelName: 'Blue Tree Premium Morumbi', hotelCountry: 'BR' })]));
+
+    expect(c.searchHotels).toHaveBeenCalledWith('Blue Tree Premium Morumbi', 'BR', null);
+    expect(c.searchHotels).not.toHaveBeenCalledWith(expect.anything(), 'US', expect.anything());
+    expect(out.items[0].hotel).not.toBeNull();
+    expect(out.items[0]).not.toHaveProperty('hotelCountry');
   });
 });

@@ -28,8 +28,8 @@ export class LiteapiClient {
   }
 
   /** `data` de `/data/hotels` (lista de candidatos). */
-  async searchHotels(hotelName: string, cityName: string | null): Promise<unknown[]> {
-    const params: Record<string, string> = { countryCode: 'US', hotelName, limit: SEARCH_LIMIT };
+  async searchHotels(hotelName: string, countryCode: string, cityName: string | null): Promise<unknown[]> {
+    const params: Record<string, string> = { countryCode, hotelName, limit: SEARCH_LIMIT };
     if (cityName) params.cityName = cityName;
     const body = await this.get('/data/hotels', params);
     return Array.isArray(body?.data) ? body.data : [];

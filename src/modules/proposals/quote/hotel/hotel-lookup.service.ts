@@ -6,7 +6,9 @@ import { LiteapiClient } from './liteapi.client';
 /** Resume em pt-BR um texto de hotel que veio em outra língua (IA). */
 export type HotelSummarizer = (hotelName: string, text: string) => Promise<string>;
 
-/** Primeiro procura em Orlando; os resorts Disney às vezes estão em "Lake Buena Vista". */
+/** A LiteAPI exige o país. Sem país no print, é Orlando (o caso comum da agência). */
+const DEFAULT_COUNTRY = 'US';
+/** Nos EUA, primeiro procura em Orlando; os resorts Disney às vezes estão em "Lake Buena Vista". */
 const FIRST_CITY = 'Orlando';
 
 /**
@@ -24,17 +26,18 @@ export class HotelLookupService {
     if (!this.client.enabled || !quote.items.some((i) => i.hotelName)) return quote;
     // Em sequência: a chave de sandbox aceita só 5 chamadas por segundo.
     const items: QuoteItem[] = [];
-    for (const item of quote.items) {
-      items.push(item.hotelName && !item.hotel ? { ...item, hotel: await this.find(item.hotelName, summarize) } : item);
+    for (const { hotelCountry, ...item } of quote.items) {
+      const country = hotelCountry ?? DEFAULT_COUNTRY;
+      items.push(item.hotelName && !item.hotel ? { ...item, hotel: await this.find(item.hotelName, country, summarize) } : item);
     }
     return { ...quote, items };
   }
 
-  async find(hotelName: string, summarize?: HotelSummarizer): Promise<QuoteHotel | null> {
+  async find(hotelName: string, country: string, summarize?: HotelSummarizer): Promise<QuoteHotel | null> {
     try {
-      const id = await this.findId(hotelName);
+      const id = await this.findId(hotelName, country);
       if (!id) {
-        this.logger.log(`hotel_not_found name="${hotelName}"`);
+        this.logger.log(`hotel_not_found name="${hotelName}" country=${country}`);
         return null;
       }
       const raw = await this.client.getHotel(id);
@@ -47,13 +50,15 @@ export class HotelLookupService {
     }
   }
 
-  /** Cada busca primeiro em Orlando; no fim, a mais exata sem cidade. */
-  private async findId(hotelName: string): Promise<string | null> {
+  /** Nos EUA, cada busca primeiro em Orlando e, no fim, a mais exata sem cidade. Fora, só pelo país. */
+  private async findId(hotelName: string, country: string): Promise<string | null> {
+    const city = country === DEFAULT_COUNTRY ? FIRST_CITY : null;
     for (const query of hotelSearchQueries(hotelName)) {
-      const id = pickHotelId(hotelName, await this.client.searchHotels(query, FIRST_CITY));
+      const id = pickHotelId(hotelName, await this.client.searchHotels(query, country, city));
       if (id) return id;
     }
-    return pickHotelId(hotelName, await this.client.searchHotels(hotelName, null));
+    if (!city) return null;
+    return pickHotelId(hotelName, await this.client.searchHotels(hotelName, country, null));
   }
 
   /** Descrição em inglês: a IA resume em português; se falhar, uma linha neutra. */

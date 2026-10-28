@@ -24,7 +24,7 @@ export const QUOTE_SYSTEM_PROMPT =
   'formato exato:\n' +
   '{"items":[{"provider":string,"title":string,"startDate":"YYYY-MM-DD"|null,"endDate":"YYYY-MM-DD"|null,' +
   '"description":string|null,"adults":int,"children":int,"priceAdult":number|null,"priceChild":number|null,' +
-  '"total":number,"cancellationPolicy":string|null,"hotelName":string|null}],"currency":string,"total":number,' +
+  '"total":number,"cancellationPolicy":string|null,"hotelName":string|null,"hotelCountry":string|null}],"currency":string,"total":number,' +
   '"pixTotal":number|null,"installments":{"count":int,"value":number}|null}\n' +
   `Regras: um item por produto ou reserva (no máximo ${QUOTE_MAX_ITEMS}). provider é o fornecedor ` +
   `como aparece (ex.: "Universal Orlando Resort"), até ${QUOTE_PROVIDER_MAX} caracteres. title é o ` +
@@ -37,6 +37,8 @@ export const QUOTE_SYSTEM_PROMPT =
   'cancellationPolicy é a política de cancelamento como aparece (até ' +
   `${QUOTE_TEXT_MAX} caracteres) ou null. hotelName: SOMENTE quando o item é hospedagem (hotel, resort, ` +
   'casa de temporada), o nome do hotel exatamente como no print, sem a cidade; nos outros itens, null. ' +
+  'hotelCountry: no item de hospedagem, o código ISO de 2 letras do país onde fica o hotel (ex.: ' +
+  '"US", "BR", "PT"), pela cidade ou país escrito no print; nos outros itens ou se não aparecer, null. ' +
   'No nível de cima: total é o valor total da reserva; ' +
   'pixTotal é o valor à vista no Pix se aparecer, senão null; installments é o parcelamento se ' +
   'aparecer (ex.: "10x de R$ 1.797,16" -> {"count":10,"value":1797.16}), senão null. Converta o ' +
@@ -93,9 +95,17 @@ function parseItem(raw: unknown): QuoteItem | null {
     total: positive(raw.total) ?? 0,
     cancellationPolicy: textOrNull(raw.cancellationPolicy, QUOTE_TEXT_MAX),
     hotelName: textOrNull(raw.hotelName, QUOTE_HOTEL_NAME_MAX),
+    hotelCountry: countryOrNull(raw.hotelCountry),
     // A ficha vem depois, da LiteAPI (HotelLookupService), nunca do modelo.
     hotel: null,
   };
+}
+
+const COUNTRY_CODE = /^[A-Z]{2}$/;
+
+function countryOrNull(raw: unknown): string | null {
+  const code = typeof raw === 'string' ? raw.trim().toUpperCase() : '';
+  return COUNTRY_CODE.test(code) ? code : null;
 }
 
 function parseInstallments(raw: unknown): QuoteInstallments | null {
