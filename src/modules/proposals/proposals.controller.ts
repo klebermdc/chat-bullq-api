@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
@@ -11,6 +11,7 @@ import {
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { ProposalsService } from './proposals.service';
 import { CreateProposalDto } from './dto/create-proposal.dto';
+import { UpdateQuoteDto } from './dto/update-quote.dto';
 
 @ApiTags('Proposals')
 @ApiBearerAuth()
@@ -28,6 +29,19 @@ export class ProposalsController {
     @CurrentUserRole() role: OrgRole,
   ) {
     return this.service.create(dto, userId, orgId, access, role);
+  }
+
+  /** Cotação por link já enviada: nova versão, mesmo link, validade renovada. */
+  @Patch(':id/quote')
+  updateQuote(
+    @Param('id') id: string,
+    @Body() dto: UpdateQuoteDto,
+    @CurrentUser('id') userId: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
+  ) {
+    return this.service.updateQuote(id, dto, userId, orgId, access, role);
   }
 
   @Get('contact/:contactId')

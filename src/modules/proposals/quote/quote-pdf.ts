@@ -186,6 +186,7 @@ function header(view: PublicQuoteView): string {
     <div class="meta">
       <div>Código<b>#${esc(view.code)}</b></div>
       <div>Emitida em<b>${esc(spDateTime(new Date(view.createdAt)))}</b></div>
+      ${view.updatedAt ? `<div>Atualizada em<b>${esc(spDateTime(new Date(view.updatedAt)))}</b></div>` : ''}
       <div>Válida até<b>${esc(spDateTime(new Date(view.expiresAt)))}</b></div>
     </div>
   </header>`;

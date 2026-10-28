@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ProposalsService } from './proposals.service';
 import { ConversationAccessService } from '../messaging/conversations/conversation-access.service';
 import { PROPOSAL_NEW_FOLLOWUPS_OTHER } from './proposal-followups';
@@ -33,6 +33,27 @@ const quote: QuoteData = {
   notes: null,
 };
 
+/** Cotação já enviada, vencida: o atendente pode atualizar mesmo assim. */
+function savedQuote(over: Record<string, unknown> = {}) {
+  return {
+    id: 'prop-1',
+    organizationId: 'org-1',
+    conversationId: 'conv-1',
+    kind: 'QUOTE',
+    publicToken: 'tok_abcdefghijklmnopqrstuvwx',
+    expiresAt: new Date('2026-10-20T12:00:00.000Z'),
+    totalValue: 9000,
+    details: { images: [], quote, customerName: 'Ana Souza' },
+    quoteNumber: 152,
+    quoteVersion: 1,
+    quoteUpdatedAt: null,
+    viewCount: 3,
+    firstViewedAt: null,
+    lastViewedAt: null,
+    ...over,
+  };
+}
+
 const image = { url: 'https://api.x/api/v1/uploads/media/2026-10-26/1.png', mimeType: 'image/png' };
 const NOW = new Date('2026-10-26T12:00:00.000Z');
 
@@ -41,6 +62,7 @@ function deps() {
   return {
     prisma: {
       conversation: { findUnique: jest.fn().mockResolvedValue(conversation) },
+      proposal: { findUnique: jest.fn().mockResolvedValue(savedQuote()) },
       contact: { findUnique: jest.fn().mockResolvedValue({ name: 'Ana Souza' }) },
     } as any,
     render: { render: jest.fn().mockResolvedValue('TEXTO RENDER') } as any,
@@ -62,6 +84,13 @@ function deps() {
         lastViewedAt: null,
       })),
       listForContact: jest.fn(),
+      updateQuote: jest.fn(async (current: any, change: any) => ({
+        ...current,
+        details: { ...current.details, quote: change.quote, customerName: change.customerName },
+        expiresAt: change.expiresAt,
+        quoteVersion: current.quoteVersion + 1,
+        quoteUpdatedAt: change.now,
+      })),
     } as any,
     messages: { send: jest.fn().mockResolvedValue({ id: 'msg-1' }) } as any,
     pipelines: { ensureConversationAtStageByName: jest.fn().mockResolvedValue(undefined) } as any,
@@ -353,6 +382,85 @@ describe('ProposalsService — cotação por link', () => {
         expiresAt: NOW, viewCount: 2, firstViewedAt: opened, lastViewedAt: opened,
       });
       expect(out[1]).toEqual({ id: 'p1', kind: 'PARKS', conversationId: 'conv-1' });
+    });
+  });
+
+  describe('updateQuote', () => {
+    const newer: QuoteData = { ...quote, items: [{ ...quote.items[0], total: 9500 }], total: 9500, pixTotal: 9000 };
+    const update = (d: ReturnType<typeof deps>, body: Record<string, unknown> = {}) =>
+      makeService(d).updateQuote('prop-1', { quote: newer, customerName: ' Ana Souza ', ...body } as any, 'user-2', 'org-1', 'ALL' as any);
+
+    it('grava a versão nova, renova 24h a partir de agora e manda o mesmo link com o aviso de câmbio', async () => {
+      const d = deps();
+
+      const out: any = await update(d);
+
+      const [current, change] = d.repo.updateQuote.mock.calls[0];
+      expect(current.id).toBe('prop-1');
+      expect(change).toMatchObject({
+        quote: newer,
+        customerName: 'Ana Souza',
+        editedById: 'user-2',
+        cart: { totalValue: 9500, currency: 'BRL', startDate: '2026-12-10', endDate: '2026-12-12' },
+      });
+      expect(change.expiresAt.toISOString()).toBe('2026-10-27T12:00:00.000Z');
+
+      const url = 'https://cotacao.orlandofastpass.com.br/tok_abcdefghijklmnopqrstuvwx';
+      const text = d.messages.send.mock.calls[0][0].content.text;
+      expect(text).toMatch(/^Oi, Ana! Atualizei sua cotação nº 0152\./);
+      expect(text).toMatch(/câmbio do dólar/);
+      expect(text.endsWith(url)).toBe(true);
+      expect(d.messages.send).toHaveBeenCalledTimes(1);
+      expect(d.pipelines.ensureConversationAtStageByName).toHaveBeenCalledWith(
+        'org-1', 'conv-1', expect.any(String), { value: 9500, currency: 'BRL' },
+      );
+      expect(out).toMatchObject({ quoteUrl: url, quoteVersion: 2, quoteNumber: 152 });
+      expect(out.publicToken).toBeUndefined();
+    });
+
+    it('notify: false grava sem mandar mensagem', async () => {
+      const d = deps();
+      await update(d, { notify: false });
+      expect(d.repo.updateQuote).toHaveBeenCalled();
+      expect(d.messages.send).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['não existe', null],
+      ['de outra organização', savedQuote({ organizationId: 'org-2' })],
+      ['não é cotação por link', savedQuote({ kind: 'PARKS' })],
+    ])('cotação que %s é 404 e nada muda', async (_label, found) => {
+      const d = deps();
+      d.prisma.proposal.findUnique.mockResolvedValue(found);
+
+      await expect(update(d)).rejects.toBeInstanceOf(NotFoundException);
+      expect(d.repo.updateQuote).not.toHaveBeenCalled();
+      expect(d.messages.send).not.toHaveBeenCalled();
+    });
+
+    it('outra pessoa atualizou antes: 409 e nada é enviado', async () => {
+      const d = deps();
+      d.repo.updateQuote.mockResolvedValue(null);
+
+      await expect(update(d)).rejects.toBeInstanceOf(ConflictException);
+      expect(d.messages.send).not.toHaveBeenCalled();
+    });
+
+    it('o atendente abriu a versão 1 e alguém já salvou a 2: 409 sem gravar', async () => {
+      const d = deps();
+      d.prisma.proposal.findUnique.mockResolvedValue(savedQuote({ quoteVersion: 2 }));
+
+      await expect(update(d, { version: 1 })).rejects.toBeInstanceOf(ConflictException);
+      expect(d.repo.updateQuote).not.toHaveBeenCalled();
+      expect(d.messages.send).not.toHaveBeenCalled();
+    });
+
+    it('datas invertidas são 400 antes de gravar', async () => {
+      const d = deps();
+      const bad = { ...newer, items: [{ ...newer.items[0], startDate: '2026-12-12', endDate: '2026-12-10' }] };
+
+      await expect(update(d, { quote: bad })).rejects.toBeInstanceOf(BadRequestException);
+      expect(d.repo.updateQuote).not.toHaveBeenCalled();
     });
   });
 });
