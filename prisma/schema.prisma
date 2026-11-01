@@ -3035,6 +3035,36 @@ model AgentPresenceDaily {
   @@map("agent_presence_daily")
 }
 
+/// Diário do atendente: métricas e mini treinamento de um dia de trabalho.
+/// `status`: READY (avaliado), EMPTY (sem atendimentos) ou FAILED (a IA falhou,
+/// as métricas continuam salvas e o dia pode ser gerado de novo).
+model AttendantDiary {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  userId         String   @map("user_id")
+  day            DateTime @db.Date
+  status         String
+  metrics        Json     @default("{}")
+  summary        String?  @db.Text
+  strengths      Json     @default("[]")
+  improvements   Json     @default("[]")
+
+  conversationsAnalyzed Int     @default(0) @map("conversations_analyzed")
+  discardedPoints       Int     @default(0) @map("discarded_points")
+  criteriaVersions      Json    @default("{}") @map("criteria_versions")
+  modelId               String? @map("model_id")
+  costUsd               Float   @default(0) @map("cost_usd")
+  errorMessage          String? @map("error_message")
+
+  viewedAt  DateTime? @map("viewed_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@unique([organizationId, userId, day], name: "uq_diary_org_user_day")
+  @@index([organizationId, day], name: "idx_diary_org_day")
+  @@map("attendant_diaries")
+}
+
 /// Contrato de guiamento (Lightning Lane / guia nos parques). Veio do app
 /// "pix-magic-contracts" do Lovable; `legacyId` guarda o uuid de lá para a
 /// importação ser repetível (upsert) e para rastrear a origem.
