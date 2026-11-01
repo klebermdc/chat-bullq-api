@@ -22,6 +22,7 @@ import { ChatbotModule } from './modules/chatbot/chatbot.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { TeamPresenceModule } from './modules/team-presence/team-presence.module';
 import { RatingsModule } from './modules/ratings/ratings.module';
+import { AttendantDiaryModule } from './modules/attendant-diary/attendant-diary.module';
 import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { AiProviderKeysModule } from './modules/ai-provider-keys/ai-provider-keys.module';
 import { PublicApiModule } from './modules/public-api/public-api.module';
@@ -102,6 +103,7 @@ import redisConfig from './config/redis.config';
     DashboardModule,
     TeamPresenceModule,
     RatingsModule,
+    AttendantDiaryModule,
     ApiKeysModule,
     AiProviderKeysModule,
     PublicApiModule,
