@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, Proposal } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { ExtractedCart, ProposalDetails, ProposalKind } from './proposals.types';
+import { quoteSearchOrder, quoteSearchWhere, type QuoteSearchFilter } from './quote/quote-search';
 import { QUOTE_KIND, QUOTE_NUMBER_ATTEMPTS } from './quote/quote.constants';
 import type { QuoteData } from './quote/quote.types';
 
@@ -126,6 +127,25 @@ export class ProposalsRepository {
       });
       return tx.proposal.findUnique({ where: { id: current.id } });
     });
+  }
+
+  /** Uma página da busca: o filtro roda em SQL (o hotel fica dentro do JSON da cotação). */
+  async searchQuotes(filter: QuoteSearchFilter, skip: number, take: number) {
+    const from = Prisma.sql`FROM proposals p JOIN contacts c ON c.id = p.contact_id WHERE ${quoteSearchWhere(filter)}`;
+    const [page, counted] = await Promise.all([
+      this.prisma.$queryRaw<{ id: string }[]>(
+        Prisma.sql`SELECT p.id ${from} ORDER BY ${quoteSearchOrder(filter.search)} LIMIT ${take} OFFSET ${skip}`,
+      ),
+      this.prisma.$queryRaw<{ total: number }[]>(Prisma.sql`SELECT COUNT(*)::int AS total ${from}`),
+    ]);
+    const ids = page.map((row) => row.id);
+    const found = await this.prisma.proposal.findMany({
+      where: { id: { in: ids } },
+      include: { contact: { select: { name: true, phone: true } } },
+    });
+    const byId = new Map(found.map((row) => [row.id, row]));
+    const rows = ids.flatMap((id) => byId.get(id) ?? []);
+    return { rows, total: counted[0]?.total ?? 0 };
   }
 
   listForContact(organizationId: string, contactId: string) {
