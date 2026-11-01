@@ -25,6 +25,8 @@ const QUOTE_SELECT = {
   expiresAt: true,
   createdById: true,
   conversationId: true,
+  quoteNumber: true,
+  quoteUpdatedAt: true,
 } as const;
 
 interface LoadedQuote {
@@ -33,6 +35,8 @@ interface LoadedQuote {
   expiresAt: Date | null;
   createdById: string;
   conversationId: string;
+  quoteNumber: number | null;
+  quoteUpdatedAt: Date | null;
   quote: QuoteData;
   customerName: string | null;
 }
@@ -92,11 +96,12 @@ export class PublicQuotesService {
     const [sellerName, whatsapp] = await Promise.all([this.sellerName(q.createdById), this.sellerWhatsapp(q.conversationId)]);
     return {
       status: quoteStatus(q.expiresAt, now),
-      code: quoteCode(q.id),
+      code: quoteCode(q.id, q.quoteNumber),
       customerName: q.customerName,
       seller: { name: sellerName, whatsapp },
       createdAt: q.createdAt.toISOString(),
       expiresAt: (q.expiresAt ?? q.createdAt).toISOString(),
+      updatedAt: q.quoteUpdatedAt?.toISOString() ?? null,
       quote: q.quote,
       company: { ...QUOTE_COMPANY },
       terms: QUOTE_TERMS,

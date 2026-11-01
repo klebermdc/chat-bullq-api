@@ -27,6 +27,10 @@ export const QUOTE_TOKEN_BYTES = 24;
 export const QUOTE_TOKEN_RE = /^[A-Za-z0-9_-]{20,64}$/;
 /** Código curto mostrado ao cliente: os últimos 6 do id. */
 export const QUOTE_CODE_LENGTH = 6;
+/** Número da cotação para o cliente: 152 → "0152". */
+export const QUOTE_NUMBER_DIGITS = 4;
+/** Duas cotações gravadas no mesmo instante disputam o número: tenta de novo. */
+export const QUOTE_NUMBER_ATTEMPTS = 3;
 /** Caminho da página no front quando `QUOTE_PUBLIC_URL` não está definida. */
 export const QUOTE_FALLBACK_PATH = '/cotacao';
 

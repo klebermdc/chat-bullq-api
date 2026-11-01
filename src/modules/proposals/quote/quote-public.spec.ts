@@ -73,7 +73,14 @@ describe('presentProposal', () => {
     viewCount: 2,
     firstViewedAt: null,
     lastViewedAt: null,
+    quoteNumber: 152,
+    quoteVersion: 2,
+    quoteUpdatedAt: new Date('2026-10-28T09:00:00.000Z'),
   };
+
+  it('QUOTE sai com número, versão e data da última atualização', () => {
+    expect(presentProposal(row, env)).toMatchObject({ quoteNumber: 152, quoteVersion: 2, quoteUpdatedAt: row.quoteUpdatedAt });
+  });
 
   it('QUOTE ganha quoteUrl e os campos de abertura, sem o token cru', () => {
     const out: any = presentProposal(row, env);
@@ -85,7 +92,10 @@ describe('presentProposal', () => {
 
   it('outras propostas ficam como eram (sem os campos novos)', () => {
     const out: any = presentProposal(
-      { id: 'p2', kind: 'PARKS', publicToken: null, expiresAt: null, viewCount: 0, firstViewedAt: null, lastViewedAt: null },
+      {
+        id: 'p2', kind: 'PARKS', publicToken: null, expiresAt: null, viewCount: 0, firstViewedAt: null, lastViewedAt: null,
+        quoteNumber: null, quoteVersion: 1, quoteUpdatedAt: null,
+      },
       env,
     );
 

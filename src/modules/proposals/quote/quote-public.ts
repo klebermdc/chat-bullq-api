@@ -1,12 +1,13 @@
 import { QUOTE_CODE_LENGTH, QUOTE_KIND } from './quote.constants';
-import { quotePublicUrl } from './quote-proposal';
+import { formatQuoteNumber, quotePublicUrl } from './quote-proposal';
 import { sanitizeHotel } from './hotel/hotel-content';
 import type { QuoteData, QuoteInstallments, QuoteItem, QuoteStatus } from './quote.types';
 
 type Env = Readonly<Record<string, string | undefined>>;
 
-export function quoteCode(id: string): string {
-  return id.slice(-QUOTE_CODE_LENGTH).toUpperCase();
+/** Nº da cotação; as anteriores ao número usam os últimos caracteres do id. */
+export function quoteCode(id: string, quoteNumber?: number | null): string {
+  return quoteNumber ? formatQuoteNumber(quoteNumber) : id.slice(-QUOTE_CODE_LENGTH).toUpperCase();
 }
 
 export function quoteStatus(expiresAt: Date | null, now: Date): QuoteStatus {
@@ -68,6 +69,9 @@ interface ProposalRowLike {
   viewCount?: number;
   firstViewedAt?: Date | null;
   lastViewedAt?: Date | null;
+  quoteNumber?: number | null;
+  quoteVersion?: number;
+  quoteUpdatedAt?: Date | null;
 }
 
 /**
@@ -75,7 +79,7 @@ interface ProposalRowLike {
  * abertura; as outras saem como sempre saíram. O token cru não sai: está no link.
  */
 export function presentProposal<T extends ProposalRowLike>(row: T, env: Env = process.env) {
-  const { publicToken, expiresAt, viewCount, firstViewedAt, lastViewedAt, ...rest } = row;
+  const { publicToken, expiresAt, viewCount, firstViewedAt, lastViewedAt, quoteNumber, quoteVersion, quoteUpdatedAt, ...rest } = row;
   if (row.kind !== QUOTE_KIND || !publicToken) return rest;
   return {
     ...rest,
@@ -84,5 +88,8 @@ export function presentProposal<T extends ProposalRowLike>(row: T, env: Env = pr
     viewCount,
     firstViewedAt,
     lastViewedAt,
+    quoteNumber,
+    quoteVersion,
+    quoteUpdatedAt,
   };
 }

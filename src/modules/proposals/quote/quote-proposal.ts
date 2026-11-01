@@ -7,6 +7,7 @@ import {
   QUOTE_CUSTOMER_NAME_MAX,
   QUOTE_DEFAULT_VALIDITY_HOURS,
   QUOTE_FALLBACK_PATH,
+  QUOTE_NUMBER_DIGITS,
   QUOTE_TOKEN_BYTES,
 } from './quote.constants';
 import type { QuoteData, QuoteInstallments, QuoteItem } from './quote.types';
@@ -56,13 +57,34 @@ export function firstName(name: string | null | undefined): string | null {
   return first || null;
 }
 
-/** Mensagem curta que vai no WhatsApp no lugar da proposta em texto. */
-export function buildQuoteMessage(customerName: string | null, url: string): string {
+export function formatQuoteNumber(n: number): string {
+  return String(n).padStart(QUOTE_NUMBER_DIGITS, '0');
+}
+
+const greetingFor = (customerName: string | null): string => {
   const name = firstName(customerName);
-  const greeting = name ? `Oi, ${name}!` : 'Oi!';
+  return name ? `Oi, ${name}!` : 'Oi!';
+};
+
+const quoteLabel = (n: number | null | undefined): string => (n ? `cotação nº ${formatQuoteNumber(n)}` : 'cotação');
+
+/** O preço em reais depende do dólar: toda mensagem de atualização lembra disso. */
+const EXCHANGE_REMINDER =
+  'Lembrando que os valores em reais seguem o câmbio do dólar do dia e podem mudar até a confirmação do pagamento.';
+
+/** Mensagem curta que vai no WhatsApp no lugar da proposta em texto. */
+export function buildQuoteMessage(customerName: string | null, url: string, quoteNumber?: number | null): string {
   return (
-    `${greeting} Sua cotação ficou pronta. Toque no link para ver tudo com calma, ` +
+    `${greetingFor(customerName)} Sua ${quoteLabel(quoteNumber)} ficou pronta. Toque no link para ver tudo com calma, ` +
     `e qualquer dúvida é só me chamar aqui.\n\n${url}`
+  );
+}
+
+/** Cotação atualizada pelo atendente: o link é o mesmo e a validade recomeça. */
+export function buildQuoteUpdatedMessage(customerName: string | null, url: string, quoteNumber: number | null): string {
+  return (
+    `${greetingFor(customerName)} Atualizei sua ${quoteLabel(quoteNumber)}. É o mesmo link de antes, já com as ` +
+    `informações novas, e ela vale por mais ${QUOTE_DEFAULT_VALIDITY_HOURS} horas. ${EXCHANGE_REMINDER}\n\n${url}`
   );
 }
 

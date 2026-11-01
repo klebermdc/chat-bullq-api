@@ -88,6 +88,8 @@ export interface PublicQuoteView {
   seller: { name: string; whatsapp: string | null };
   createdAt: string;
   expiresAt: string;
+  /** Última atualização feita pelo atendente (mesmo link); null se nunca mudou. */
+  updatedAt: string | null;
   quote: QuoteData;
   company: QuoteCompany;
   terms: QuoteTerms;
