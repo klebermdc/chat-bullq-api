@@ -14,6 +14,8 @@ export interface DiaryMetrics {
   /** `null` quando não houve resposta medível dentro do horário. */
   medianReplyMinutes: number | null;
   slowReplies: number;
+  /** Maior espera respondida pelo atendente, em horário de trabalho. */
+  longestReplyMinutes: number | null;
   unansweredAtEndOfDay: number;
 }
 
@@ -47,8 +49,46 @@ export interface DiaryPoint {
   suggestion: string | null;
 }
 
+export interface DiaryScore {
+  criterion: string;
+  score: number;
+  reason: string;
+}
+
+export interface DiaryConversationReview {
+  conversationId: string;
+  topic: string;
+  assessment: string;
+  nextStep: string | null;
+}
+
+export interface DiaryPractice {
+  situation: string;
+  reply: string;
+}
+
+/** Cliente que terminou o dia esperando resposta. */
+export interface DiaryPending {
+  conversationId: string;
+  contactName: string;
+  waitingSince: string;
+}
+
+/** Parte detalhada do diário, guardada em um único campo JSON. */
+export interface DiaryDetails {
+  focus: string | null;
+  scores: DiaryScore[];
+  conversations: Array<DiaryConversationReview & { contactName: string }>;
+  practice: DiaryPractice | null;
+  pending: DiaryPending[];
+}
+
 export interface DiaryEvaluation {
   summary: string;
+  focus: string | null;
+  scores: DiaryScore[];
+  conversations: DiaryConversationReview[];
+  practice: DiaryPractice | null;
   strengths: DiaryPoint[];
   improvements: DiaryPoint[];
   /** Apontamentos da IA rejeitados na conferência (debug/qualidade). */

@@ -30,7 +30,7 @@ function readConversation(
   messages: DiaryMessage[],
   userId: string,
   isWorkingTime: (at: Date) => boolean,
-): { replyMinutes: number[]; isUnanswered: boolean } {
+): { replyMinutes: number[]; unansweredSince: Date | null } {
   const replyMinutes: number[] = [];
   let waitingSince: Date | null = null;
 
@@ -49,7 +49,7 @@ function readConversation(
 
   return {
     replyMinutes,
-    isUnanswered: waitingSince !== null && isWorkingTime(waitingSince),
+    unansweredSince: waitingSince && isWorkingTime(waitingSince) ? waitingSince : null,
   };
 }
 
@@ -74,6 +74,22 @@ export function computeDiaryMetrics(
     messagesSent: sent.length,
     medianReplyMinutes: median(replyMinutes),
     slowReplies: replyMinutes.filter((m) => m > SLOW_REPLY_MINUTES).length,
-    unansweredAtEndOfDay: readings.filter((r) => r.isUnanswered).length,
+    longestReplyMinutes:
+      replyMinutes.length > 0 ? Math.round(Math.max(...replyMinutes)) : null,
+    unansweredAtEndOfDay: readings.filter((r) => r.unansweredSince).length,
   };
+}
+
+/** Conversas em que o cliente terminou o dia esperando, para retomar primeiro. */
+export function findUnanswered(
+  messages: DiaryMessage[],
+  userId: string,
+  isWorkingTime: (at: Date) => boolean,
+): Array<{ conversationId: string; since: Date }> {
+  return groupByConversation(messages).flatMap((group) => {
+    const { unansweredSince } = readConversation(group, userId, isWorkingTime);
+    return unansweredSince
+      ? [{ conversationId: group[0].conversationId, since: unansweredSince }]
+      : [];
+  });
 }

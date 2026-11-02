@@ -5,17 +5,26 @@ import type { LlmContent } from '../ai-agents/llm/llm.types';
 import { isWithinHours } from '../routing/availability/business-hours.util';
 import { dayRange } from './diary-day';
 import { DiaryCriteriaService, type LoadedCriteria } from './diary-criteria.service';
-import { buildDiaryPrompt, parseDiaryEvaluation } from './diary-evaluation';
-import { computeDiaryMetrics } from './diary-metrics';
+import { buildDiaryPrompt, hasForeignScript, parseDiaryEvaluation } from './diary-evaluation';
+import { computeDiaryMetrics, findUnanswered } from './diary-metrics';
 import { buildTranscripts, selectConversationIds } from './diary-transcripts';
-import { DIARY_MAX_TOKENS } from './diary.constants';
-import { DiaryRepository, type DiaryRecord } from './diary.repository';
-import type { DiaryGenerateJobData, DiaryStatus, DiaryTranscript } from './diary.types';
+import { DIARY_MAX_TOKENS, MAX_EVALUATION_ATTEMPTS } from './diary.constants';
+import { DiaryRepository, UNKNOWN_CONTACT, type DiaryRecord } from './diary.repository';
+import type {
+  DiaryEvaluation,
+  DiaryGenerateJobData,
+  DiaryPending,
+  DiaryStatus,
+  DiaryTranscript,
+} from './diary.types';
 
 export type DiaryOutcome = DiaryStatus | 'SKIPPED';
 
 const NO_CRITERIA_ERROR = 'Nenhum critério ativo com instruções.';
 const UNREADABLE_ERROR = 'A IA devolveu uma resposta que não pôde ser lida.';
+const FOREIGN_SCRIPT_ERROR = 'A IA misturou outro idioma no texto. Gere de novo.';
+const LANGUAGE_REMINDER =
+  'A tentativa anterior misturou outro idioma. Refaça tudo somente em português do Brasil.';
 
 function contentToText(content: LlmContent): string {
   if (typeof content === 'string') return content;
@@ -47,18 +56,28 @@ export class DiaryService {
 
     const range = dayRange(day, member.timeZone);
     const dayMessages = await this.repository.findDayMessages(organizationId, userId, range);
-    const metrics = computeDiaryMetrics(dayMessages, userId, (at) =>
-      isWithinHours(member.workingHours, member.timeZone, at),
-    );
+    const isWorkingTime = (at: Date) =>
+      isWithinHours(member.workingHours, member.timeZone, at);
+    const metrics = computeDiaryMetrics(dayMessages, userId, isWorkingTime);
+    const unanswered = findUnanswered(dayMessages, userId, isWorkingTime);
     const onlineMinutes = await this.repository.findOnlineMinutes(organizationId, userId, day);
+    const conversationIds = selectConversationIds(dayMessages, userId);
+    const names = await this.repository.findContactNames([
+      ...new Set([...conversationIds, ...unanswered.map((u) => u.conversationId)]),
+    ]);
+    const pending: DiaryPending[] = unanswered.map((u) => ({
+      conversationId: u.conversationId,
+      contactName: names.get(u.conversationId) ?? UNKNOWN_CONTACT,
+      waitingSince: u.since.toISOString(),
+    }));
     const base = {
       organizationId,
       userId,
       day,
       metrics: { ...metrics, onlineMinutes },
+      details: { pending },
     };
 
-    const conversationIds = selectConversationIds(dayMessages, userId);
     if (conversationIds.length === 0) {
       return this.save({ ...base, status: 'EMPTY', conversationsAnalyzed: 0 });
     }
@@ -75,14 +94,15 @@ export class DiaryService {
 
     const context = await this.repository.findContextMessages(conversationIds, range.from);
     const transcripts = buildTranscripts(dayMessages, context, userId);
-    return this.evaluate(base, member.name, loaded, transcripts);
+    return this.evaluate(base, member.name, loaded, transcripts, names);
   }
 
   private async evaluate(
-    base: Pick<DiaryRecord, 'organizationId' | 'userId' | 'day' | 'metrics'>,
+    base: Pick<DiaryRecord, 'organizationId' | 'userId' | 'day' | 'metrics' | 'details'>,
     attendantName: string,
     loaded: LoadedCriteria,
     transcripts: DiaryTranscript[],
+    names: Map<string, string>,
   ): Promise<DiaryOutcome> {
     const audit = {
       ...base,
@@ -94,45 +114,70 @@ export class DiaryService {
       criteria: loaded.criteria,
       transcripts,
     });
+    let costUsd = 0;
+    let modelId: string | undefined;
 
     try {
-      const response = await this.llm.complete({
-        organizationId: base.organizationId,
-        modelId: SAKANA_CONVERSATION_MODEL,
-        temperature: 0.2,
-        maxTokens: DIARY_MAX_TOKENS,
-        messages: [
-          { role: 'system', content: prompt.system },
-          { role: 'user', content: prompt.user },
-        ],
-      });
-      const paid = {
-        ...audit,
-        modelId: response.rawModelId,
-        costUsd: response.usage.costUsd,
-      };
-      const evaluation = parseDiaryEvaluation(
-        contentToText(response.message.content),
-        transcripts,
-      );
-      if (!evaluation) {
-        return this.save({ ...paid, status: 'FAILED', errorMessage: UNREADABLE_ERROR });
+      for (let attempt = 0; attempt < MAX_EVALUATION_ATTEMPTS; attempt += 1) {
+        const response = await this.llm.complete({
+          organizationId: base.organizationId,
+          modelId: SAKANA_CONVERSATION_MODEL,
+          temperature: 0.2,
+          maxTokens: DIARY_MAX_TOKENS,
+          messages: [
+            { role: 'system', content: prompt.system },
+            {
+              role: 'user',
+              content: attempt === 0 ? prompt.user : `${prompt.user}\n\n${LANGUAGE_REMINDER}`,
+            },
+          ],
+        });
+        modelId = response.rawModelId;
+        costUsd += response.usage.costUsd;
+        const evaluation = parseDiaryEvaluation(
+          contentToText(response.message.content),
+          transcripts,
+        );
+        if (!evaluation) {
+          return this.save({ ...audit, modelId, costUsd, status: 'FAILED', errorMessage: UNREADABLE_ERROR });
+        }
+        if (!hasForeignScript(evaluation)) {
+          return this.saveEvaluation({ ...audit, modelId, costUsd }, evaluation, names);
+        }
       }
-      return this.save({
-        ...paid,
-        status: 'READY',
-        summary: evaluation.summary,
-        strengths: evaluation.strengths,
-        improvements: evaluation.improvements,
-        discardedPoints: evaluation.discarded,
-      });
+      return this.save({ ...audit, modelId, costUsd, status: 'FAILED', errorMessage: FOREIGN_SCRIPT_ERROR });
     } catch (err) {
       const message = (err as Error).message;
       this.logger.warn(
         `diary_llm_failed user=${base.userId} day=${base.day}: ${message}`,
       );
-      return this.save({ ...audit, status: 'FAILED', errorMessage: message });
+      return this.save({ ...audit, modelId, costUsd, status: 'FAILED', errorMessage: message });
     }
+  }
+
+  private saveEvaluation(
+    audit: Omit<DiaryRecord, 'status'>,
+    evaluation: DiaryEvaluation,
+    names: Map<string, string>,
+  ): Promise<DiaryStatus> {
+    return this.save({
+      ...audit,
+      status: 'READY',
+      summary: evaluation.summary,
+      strengths: evaluation.strengths,
+      improvements: evaluation.improvements,
+      discardedPoints: evaluation.discarded,
+      details: {
+        ...audit.details,
+        focus: evaluation.focus,
+        scores: evaluation.scores,
+        practice: evaluation.practice,
+        conversations: evaluation.conversations.map((c) => ({
+          ...c,
+          contactName: names.get(c.conversationId) ?? UNKNOWN_CONTACT,
+        })),
+      },
+    });
   }
 
   private async save(record: DiaryRecord): Promise<DiaryStatus> {

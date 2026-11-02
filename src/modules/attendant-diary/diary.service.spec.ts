@@ -23,6 +23,7 @@ function setup(overrides: { existing?: object | null; messages?: DiaryMessage[] 
     findDayMessages: jest.fn().mockResolvedValue(overrides.messages ?? dayMessages),
     findContextMessages: jest.fn().mockResolvedValue([]),
     findOnlineMinutes: jest.fn().mockResolvedValue(300),
+    findContactNames: jest.fn().mockResolvedValue(new Map([['c1', 'Ana Souza']])),
     saveDiary: jest.fn().mockResolvedValue(undefined),
   };
   const llm = { complete: jest.fn() };
@@ -83,6 +84,58 @@ describe('DiaryService.generate', () => {
         criteriaVersions: { diarioDiagnostico: 1 },
         metrics: expect.objectContaining({ conversations: 1, medianReplyMinutes: 5, onlineMinutes: 300 }),
       }),
+    );
+  });
+
+  test('guarda foco, avaliação com nome do cliente e clientes sem resposta', async () => {
+    const waiting: DiaryMessage = {
+      conversationId: 'c1', direction: 'INBOUND', senderId: null, text: 'Alô?', at: new Date('2026-10-30T14:00:00Z'),
+    };
+    const { service, llm, repository } = setup({ messages: [...dayMessages, waiting] });
+    llm.complete.mockResolvedValue(
+      llmAnswer(JSON.stringify({
+        resumo: 'Bom dia.',
+        foco: 'Responder a Ana.',
+        conversas: [{ conversa: 'C1', assunto: 'Datas', avaliacao: 'Boa.' }],
+      })),
+    );
+
+    await service.generate(JOB);
+
+    expect(repository.saveDiary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: expect.objectContaining({
+          focus: 'Responder a Ana.',
+          conversations: [expect.objectContaining({ conversationId: 'c1', contactName: 'Ana Souza', topic: 'Datas' })],
+          pending: [{ conversationId: 'c1', contactName: 'Ana Souza', waitingSince: '2026-10-30T14:00:00.000Z' }],
+        }),
+      }),
+    );
+  });
+
+  test('refaz uma vez quando a IA mistura outro idioma e soma o custo', async () => {
+    const { service, llm, repository } = setup();
+    llm.complete
+      .mockResolvedValueOnce(llmAnswer(JSON.stringify({ resumo: 'Ajuste é 直接 responder.' })))
+      .mockResolvedValueOnce(llmAnswer(JSON.stringify({ resumo: 'Ajuste é responder direto.' })));
+
+    await expect(service.generate(JOB)).resolves.toBe('READY');
+
+    expect(llm.complete).toHaveBeenCalledTimes(2);
+    expect(repository.saveDiary).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: 'Ajuste é responder direto.', costUsd: 0.02 }),
+    );
+  });
+
+  test('falha sem publicar quando o outro idioma persiste', async () => {
+    const { service, llm, repository } = setup();
+    llm.complete.mockResolvedValue(llmAnswer(JSON.stringify({ resumo: 'Ajuste é 直接 responder.' })));
+
+    await expect(service.generate(JOB)).resolves.toBe('FAILED');
+
+    expect(llm.complete).toHaveBeenCalledTimes(2);
+    expect(repository.saveDiary).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'FAILED', errorMessage: expect.stringMatching(/idioma/) }),
     );
   });
 

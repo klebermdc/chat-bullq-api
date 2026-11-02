@@ -1,4 +1,4 @@
-import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
+import { InjectQueue, OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger, OnModuleInit } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
 import { previousDayKey } from './diary-day';
@@ -62,6 +62,12 @@ export class DiaryCron extends WorkerHost implements OnModuleInit {
       return this.service.generate(job.data as DiaryGenerateJobData);
     }
     return this.enqueueYesterday();
+  }
+
+  // O job é apagado ao falhar (ver diaryJobOptions): sem este log, o erro some.
+  @OnWorkerEvent('failed')
+  onFailed(job: Job | undefined, err: Error): void {
+    this.logger.error(`diary_job_failed job=${job?.name} data=${JSON.stringify(job?.data)}: ${err.message}`);
   }
 
   private async enqueueYesterday(): Promise<{ queued: number }> {

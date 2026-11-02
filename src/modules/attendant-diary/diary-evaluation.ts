@@ -1,8 +1,16 @@
-import { MAX_POINTS_PER_SECTION, MIN_QUOTE_CHARS } from './diary.constants';
+import {
+  MAX_POINTS_PER_SECTION,
+  MAX_SCORE,
+  MIN_QUOTE_CHARS,
+  MIN_SCORE,
+} from './diary.constants';
 import type {
+  DiaryConversationReview,
   DiaryCriterion,
   DiaryEvaluation,
   DiaryPoint,
+  DiaryPractice,
+  DiaryScore,
   DiaryTranscript,
   DiaryTranscriptLine,
 } from './diary.types';
@@ -14,7 +22,11 @@ interface DiaryPromptInput {
 }
 
 const RESPONSE_SHAPE =
-  '{"resumo":"2 frases","acertos":[PONTO],"melhorias":[PONTO]}, onde PONTO = ' +
+  '{"resumo":"3-4 frases","foco":"1 frase: a prioridade concreta de hoje",' +
+  '"notas":[{"criterio":"nome do critério","nota":1,"motivo":"1 frase citando o que aconteceu"}],' +
+  '"conversas":[{"conversa":"C1","assunto":"até 8 palavras","avaliacao":"2-3 frases","proximo":"próximo passo com o cliente"}],' +
+  '"acertos":[PONTO],"melhorias":[PONTO],' +
+  '"treino":{"situacao":"situação real do dia, 1-2 frases","resposta":"modelo de mensagem pronta para enviar"}}, onde PONTO = ' +
   '{"criterio":"nome do critério","titulo":"até 8 palavras","explicacao":"1-2 frases",' +
   '"conversa":"C1","trecho":"cópia literal de uma fala do ATENDENTE","sugestao":"o que escrever no lugar"}';
 
@@ -26,11 +38,16 @@ export function buildDiaryPrompt(input: DiaryPromptInput): { system: string; use
   const system = [
     'Você é um treinador de atendimento de uma agência de turismo para Orlando.',
     `Escreva o diário de ${input.attendantName} sobre o dia anterior: um mini treinamento, nunca uma bronca.`,
-    'Fale diretamente com a pessoa, em português simples e com respeito.',
+    'Fale diretamente com a pessoa, com respeito e em português do Brasil.',
+    'Escreva tudo somente em português do Brasil: nenhuma palavra ou caractere de outro idioma, como chinês.',
     'Avalie APENAS as falas marcadas [ATENDENTE] em "Mensagens do dia", usando só estes critérios:',
     criteria,
     'Regras:',
+    '- Seja específico: diga o que o cliente pediu, qual produto, parque ou data, e o que foi respondido. Proibido texto genérico como "atendimento cordial" ou "boas explicações" sem dizer quais.',
     `- Até ${MAX_POINTS_PER_SECTION} acertos e até ${MAX_POINTS_PER_SECTION} melhorias. Só aponte o que for evidente; menos é melhor que forçado.`,
+    `- Em "notas", dê uma nota inteira de ${MIN_SCORE} a ${MAX_SCORE} para cada critério que as conversas permitirem avaliar. Sem evidência, não dê nota.`,
+    '- Em "conversas", avalie cada conversa recebida, uma a uma. "proximo" diz o que fazer agora com aquele cliente.',
+    '- "treino" transforma a melhoria mais importante em exercício: situação real do dia e a resposta modelo.',
     '- Todo ponto precisa de "trecho" copiado literalmente de uma fala do ATENDENTE.',
     '- Todo ponto de melhoria precisa de "sugestao" pronta para usar. Em acertos, "sugestao" fica vazia.',
     '- Só aponte erro de informação de produto se a regra estiver escrita nos critérios.',
@@ -125,6 +142,57 @@ function toPoints(
   };
 }
 
+function toScores(raw: unknown): DiaryScore[] {
+  const items = Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : [];
+  return items.flatMap((item) => {
+    const criterion = asText(item?.criterio);
+    const score = item?.nota;
+    const isValid =
+      criterion && Number.isInteger(score) && Number(score) >= MIN_SCORE && Number(score) <= MAX_SCORE;
+    return isValid ? [{ criterion, score: Number(score), reason: asText(item.motivo) }] : [];
+  });
+}
+
+function toConversations(raw: unknown, transcripts: DiaryTranscript[]): DiaryConversationReview[] {
+  const items = Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : [];
+  return items.flatMap((item) => {
+    const transcript = transcripts.find((t) => t.ref === item?.conversa);
+    const assessment = asText(item?.avaliacao);
+    if (!transcript || !assessment) return [];
+    return [{
+      conversationId: transcript.conversationId,
+      topic: asText(item.assunto),
+      assessment,
+      nextStep: asText(item.proximo) || null,
+    }];
+  });
+}
+
+function toPractice(raw: unknown): DiaryPractice | null {
+  const item = (raw ?? {}) as Record<string, unknown>;
+  const situation = asText(item.situacao);
+  const reply = asText(item.resposta);
+  return situation && reply ? { situation, reply } : null;
+}
+
+// Cirílico, árabe, japonês, chinês e coreano: nada disso cabe no diário.
+const FOREIGN_SCRIPT = /[\u0400-\u04FF\u0600-\u06FF\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/;
+
+/** Confere o texto da IA; o trecho fica de fora porque é fala real do atendente. */
+export function hasForeignScript(evaluation: DiaryEvaluation): boolean {
+  const points = [...evaluation.strengths, ...evaluation.improvements];
+  const texts = [
+    evaluation.summary,
+    evaluation.focus,
+    evaluation.practice?.situation,
+    evaluation.practice?.reply,
+    ...evaluation.scores.map((s) => s.reason),
+    ...evaluation.conversations.flatMap((c) => [c.topic, c.assessment, c.nextStep]),
+    ...points.flatMap((p) => [p.title, p.explanation, p.suggestion]),
+  ];
+  return texts.some((text) => text && FOREIGN_SCRIPT.test(text));
+}
+
 /**
  * Valida a resposta da IA. Apontamento sem fala real do atendente é descartado:
  * ninguém pode ser cobrado por algo que não escreveu.
@@ -142,6 +210,10 @@ export function parseDiaryEvaluation(
 
   return {
     summary,
+    focus: asText(parsed.foco) || null,
+    scores: toScores(parsed.notas),
+    conversations: toConversations(parsed.conversas, transcripts),
+    practice: toPractice(parsed.treino),
     strengths: strengths.points,
     improvements: improvements.points,
     discarded: strengths.discarded + improvements.discarded,

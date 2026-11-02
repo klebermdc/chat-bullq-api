@@ -3073,6 +3073,7 @@ model AttendantDiary {
   summary        String?  @db.Text
   strengths      Json     @default("[]")
   improvements   Json     @default("[]")
+  details        Json     @default("{}")
 
   conversationsAnalyzed Int     @default(0) @map("conversations_analyzed")
   discardedPoints       Int     @default(0) @map("discarded_points")
