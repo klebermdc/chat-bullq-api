@@ -139,6 +139,56 @@ describe('DiaryService.generate', () => {
     );
   });
 
+  test('avalia todas as conversas do dia em blocos e junta no final', async () => {
+    const messages: DiaryMessage[] = Array.from({ length: 11 }, (_, i) => ({
+      conversationId: `c${i + 1}`,
+      direction: 'OUTBOUND' as const,
+      senderId: 'u1',
+      text: `Mensagem da conversa número ${i + 1}`,
+      at: new Date('2026-10-30T13:00:00Z'),
+    }));
+    const { service, llm, repository } = setup({ messages });
+    const batch = (refs: number[]) =>
+      llmAnswer(JSON.stringify({
+        resumo: 'Parcial.',
+        conversas: refs.map((ref) => ({ conversa: `C${ref}`, assunto: 'A', avaliacao: 'Boa.' })),
+      }));
+    llm.complete
+      .mockResolvedValueOnce(batch([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))
+      .mockResolvedValueOnce(batch([11]))
+      .mockResolvedValueOnce(llmAnswer(JSON.stringify({ resumo: 'Dia inteiro.', foco: 'Foco final.' })));
+
+    await expect(service.generate(JOB)).resolves.toBe('READY');
+
+    expect(llm.complete).toHaveBeenCalledTimes(3);
+    const saved = repository.saveDiary.mock.calls[0][0];
+    expect(saved.summary).toBe('Dia inteiro.');
+    expect(saved.conversationsAnalyzed).toBe(11);
+    expect(saved.details.conversations).toHaveLength(11);
+    expect(saved.details.focus).toBe('Foco final.');
+    expect(saved.costUsd).toBeCloseTo(0.03);
+  });
+
+  test('uma falha em qualquer bloco não publica diário pela metade', async () => {
+    const messages: DiaryMessage[] = Array.from({ length: 11 }, (_, i) => ({
+      conversationId: `c${i + 1}`,
+      direction: 'OUTBOUND' as const,
+      senderId: 'u1',
+      text: 'Mensagem do atendente',
+      at: new Date('2026-10-30T13:00:00Z'),
+    }));
+    const { service, llm, repository } = setup({ messages });
+    llm.complete
+      .mockResolvedValueOnce(llmAnswer(JSON.stringify({ resumo: 'Parcial.' })))
+      .mockRejectedValueOnce(new Error('timeout'));
+
+    await expect(service.generate(JOB)).resolves.toBe('FAILED');
+
+    expect(repository.saveDiary).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'FAILED', errorMessage: 'timeout', costUsd: 0.01 }),
+    );
+  });
+
   test('falha da IA salva FAILED e preserva as métricas', async () => {
     const { service, llm, repository } = setup();
     llm.complete.mockRejectedValue(new Error('timeout'));

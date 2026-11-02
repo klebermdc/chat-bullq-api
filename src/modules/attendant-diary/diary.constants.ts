@@ -16,11 +16,13 @@ export const DEFAULT_DIARY_TIMEZONE = 'America/Sao_Paulo';
 /** Resposta acima disso (em horário de trabalho) conta como demorada. */
 export const SLOW_REPLY_MINUTES = 30;
 
-/** Limites por diário: mantêm o custo previsível e a leitura curta. */
-export const MAX_CONVERSATIONS_PER_DIARY = 12;
-export const MAX_LINES_PER_CONVERSATION = 40;
+/** O dia inteiro é avaliado; estes tetos só protegem contra um dia anormal. */
+export const MAX_CONVERSATIONS_PER_DIARY = 100;
+export const MAX_LINES_PER_CONVERSATION = 200;
+/** Conversas por chamada à IA: dias maiores são avaliados em blocos. */
+export const DIARY_BATCH_SIZE = 10;
 export const MAX_CONTEXT_MESSAGES = 10;
-export const MAX_LINE_CHARS = 600;
+export const MAX_LINE_CHARS = 1000;
 export const MAX_POINTS_PER_SECTION = 4;
 export const MIN_QUOTE_CHARS = 15;
 export const DIARY_MAX_TOKENS = 4000;
