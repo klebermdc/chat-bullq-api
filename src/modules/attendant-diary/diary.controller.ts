@@ -14,9 +14,10 @@ import { OrgRole } from '@prisma/client';
 import { Queue } from 'bullmq';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentOrg, CurrentUser, Roles } from '../../common/decorators';
-import { isValidDay, previousDayKey } from './diary-day';
+import { dayKey, dayRange, isValidDay, previousDayKey } from './diary-day';
 import { DiaryConfigService } from './diary-config.service';
 import { DiaryRepository } from './diary.repository';
+import { FlightPlanRepository } from './flight-plan.repository';
 import { DIARY_GENERATE_JOB, DIARY_QUEUE, diaryJobOptions } from './diary.constants';
 import { DiaryDayQueryDto, DiaryListQueryDto } from './dto/diary-query.dto';
 import { GenerateDiaryDto } from './dto/generate-diary.dto';
@@ -29,6 +30,7 @@ export class DiaryController {
   constructor(
     private readonly repository: DiaryRepository,
     private readonly config: DiaryConfigService,
+    private readonly plans: FlightPlanRepository,
     @InjectQueue(DIARY_QUEUE) private readonly queue: Queue,
   ) {}
 
@@ -43,6 +45,16 @@ export class DiaryController {
       throw new BadRequestException('Dia inválido.');
     }
     return this.repository.findForUser(orgId, userId, query.day);
+  }
+
+  @Get('me/plan')
+  @ApiOperation({ summary: 'Plano de voo do dia: quem responder, retomar e o CRM parado' })
+  async getMyPlan(@CurrentOrg('id') orgId: string, @CurrentUser('id') userId: string) {
+    const participant = await this.findParticipant(orgId, userId);
+    if (!participant) return null;
+    const now = new Date();
+    const today = dayRange(dayKey(now, participant.timeZone), participant.timeZone);
+    return this.plans.build(orgId, userId, now, today);
   }
 
   @Post(':id/viewed')
@@ -76,10 +88,7 @@ export class DiaryController {
   @Roles(OrgRole.OWNER, OrgRole.ADMIN)
   @ApiOperation({ summary: 'Gera de novo o diário de um participante' })
   async generate(@CurrentOrg('id') orgId: string, @Body() dto: GenerateDiaryDto) {
-    const participants = await this.repository.findParticipants(this.config.participantEmails);
-    const participant = participants.find(
-      (p) => p.userId === dto.userId && p.organizationId === orgId,
-    );
+    const participant = await this.findParticipant(orgId, dto.userId);
     if (!participant) {
       throw new BadRequestException('Este atendente não participa do diário.');
     }
@@ -94,5 +103,10 @@ export class DiaryController {
       diaryJobOptions(orgId, dto.userId, day),
     );
     return { queued: true, day };
+  }
+
+  private async findParticipant(orgId: string, userId: string) {
+    const participants = await this.repository.findParticipants(this.config.participantEmails);
+    return participants.find((p) => p.userId === userId && p.organizationId === orgId);
   }
 }

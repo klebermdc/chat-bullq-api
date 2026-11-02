@@ -105,6 +105,7 @@ export class DiaryService {
       return this.save({ ...base, status: 'EMPTY', conversationsAnalyzed: 0 });
     }
 
+    const keepsReady = existing?.status === 'READY';
     const loaded = await this.criteria.loadCriteria(organizationId);
     if (loaded.criteria.length === 0) {
       return this.save({
@@ -117,7 +118,7 @@ export class DiaryService {
 
     const context = await this.repository.findContextMessages(conversationIds, range.from);
     const transcripts = buildTranscripts(dayMessages, context, userId);
-    return this.evaluate(base, member.name, loaded, transcripts, names);
+    return this.evaluate(base, member.name, loaded, transcripts, names, keepsReady);
   }
 
   private async evaluate(
@@ -126,6 +127,7 @@ export class DiaryService {
     loaded: LoadedCriteria,
     transcripts: DiaryTranscript[],
     names: Map<string, string>,
+    keepsReady: boolean,
   ): Promise<DiaryOutcome> {
     const audit = {
       ...base,
@@ -158,6 +160,10 @@ export class DiaryService {
       this.logger.warn(
         `diary_llm_failed user=${base.userId} day=${base.day}: ${message}`,
       );
+      if (keepsReady) {
+        await this.repository.recordFailure({ ...base, errorMessage: message, costUsd: spent.costUsd });
+        return 'FAILED';
+      }
       return this.save({ ...audit, ...spent, status: 'FAILED', errorMessage: message });
     }
   }

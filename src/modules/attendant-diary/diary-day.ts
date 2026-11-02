@@ -1,6 +1,7 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const dayKey = (date: Date, timeZone: string): string =>
+/** `YYYY-MM-DD` de um instante no calendário do fuso. */
+export const dayKey = (date: Date, timeZone: string): string =>
   new Intl.DateTimeFormat('en-CA', { timeZone }).format(date);
 
 /** Diferença, em ms, entre o relógio local do fuso e o UTC naquele instante. */

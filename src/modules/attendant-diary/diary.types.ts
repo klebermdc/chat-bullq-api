@@ -104,3 +104,43 @@ export interface DiaryGenerateJobData {
   day: string;
   force?: boolean;
 }
+
+/** Uma lista do plano de voo: o total real e os primeiros itens. */
+export interface FlightPlanSection<T> {
+  total: number;
+  items: T[];
+}
+
+export interface FlightPlanConversation {
+  conversationId: string;
+  contactName: string;
+  since: string;
+}
+
+export interface FlightPlanCard {
+  cardId: string;
+  pipelineId: string;
+  conversationId: string | null;
+  title: string;
+  contactName: string;
+  pipelineName: string;
+  stageName: string;
+  value: number | null;
+  since: string;
+}
+
+export interface FlightPlanScheduled {
+  conversationId: string;
+  contactName: string;
+  at: string;
+  origin: 'MANUAL' | 'AUTO_REENGAGE' | 'CADENCE';
+}
+
+/** O que o atendente faz primeiro ao entrar, calculado na hora, sem IA. */
+export interface FlightPlan {
+  generatedAt: string;
+  replyNow: FlightPlanSection<FlightPlanConversation>;
+  followUp: FlightPlanSection<FlightPlanConversation>;
+  stalledCards: FlightPlanSection<FlightPlanCard>;
+  scheduledToday: FlightPlanSection<FlightPlanScheduled>;
+}
