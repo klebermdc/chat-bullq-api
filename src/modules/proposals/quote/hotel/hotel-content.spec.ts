@@ -100,6 +100,36 @@ describe('pickHotelId', () => {
     expect(pickHotelId('Rosen Inn Lake Buena Vista', list)).toBe('b');
   });
 
+  it('aceita o nome com palavras a mais, se o print não pediu outra coisa', () => {
+    expect(pickHotelId('Rosen Plaza Hotel', [{ id: 'a', name: 'Rosen Plaza Hotel Orlando Convention Center' }])).toBe('a');
+    expect(pickHotelId("Disney's All-Star Sports Resort", [{ id: 'a', name: "Disney's All Star Sports Resort" }])).toBe('a');
+    expect(pickHotelId('Disneys Pop Century', [{ id: 'a', name: "Disney's Pop Century Resort" }])).toBe('a');
+  });
+
+  it('hotel irmão é outro hotel, mesmo com a maioria das palavras iguais', () => {
+    expect(pickHotelId("Disney's All-Star Sports Resort", [{ id: 'a', name: "Disney's All-Star Movies Resort" }])).toBeNull();
+    expect(pickHotelId("Disney's Port Orleans Resort - French Quarter", [{ id: 'a', name: "Disney's Port Orleans Resort - Riverside" }])).toBeNull();
+    expect(pickHotelId('Sonesta ES Suites Lake Buena Vista', [{ id: 'a', name: 'Sonesta ES Suites Orlando International Drive' }])).toBeNull();
+  });
+
+  it('marca do print tem de estar no cadastro', () => {
+    expect(pickHotelId("Disney's Wilderness Lodge", [{ id: 'a', name: 'Wilderness Lodge' }])).toBeNull();
+    expect(pickHotelId('Universal Terra Luna Resort', [{ id: 'a', name: 'Terra Luna Resort' }])).toBeNull();
+  });
+
+  it('prédio "X at Y" não vale pelo hotel Y', () => {
+    const towers = [
+      { id: 'a', name: "Bay Lake Tower at Disney's Contemporary Resort" },
+      { id: 'b', name: "The Villas At Disney'S Grand Floridian Resort & Spa" },
+      { id: 'c', name: "Boulder Ridge Villas at Disney's Wilderness Lodge" },
+    ];
+    expect(pickHotelId("Disney's Contemporary Resort", towers)).toBeNull();
+    expect(pickHotelId("Disney's Grand Floridian Resort & Spa", towers)).toBeNull();
+    expect(pickHotelId("Disney's Wilderness Lodge", towers)).toBeNull();
+    expect(pickHotelId("Bay Lake Tower at Disney's Contemporary Resort", towers)).toBe('a');
+    expect(pickHotelId('Rosen Inn at Pointe Orlando', [{ id: 'r', name: 'Rosen Inn at Pointe Orlando' }])).toBe('r');
+  });
+
   it('não escolhe nada quando o nome não confere', () => {
     expect(pickHotelId('Hilton Garden Inn', list)).toBeNull();
     expect(nameScore('Pop Century', "Disney's Pop Century Resort")).toBe(1);
@@ -145,15 +175,33 @@ describe('resumo sem valores e em português', () => {
 
 describe('hotelSearchQueries', () => {
   it('tenta o nome inteiro e depois os pedaços, o maior primeiro', () => {
-    expect(hotelSearchQueries("Universal's Endless Summer Resort - Dockside Inn and Suites")).toEqual([
-      "Universal's Endless Summer Resort - Dockside Inn and Suites",
-      'Universal s Endless Summer Resort',
-      'Dockside Inn and Suites',
-    ]);
+    const queries = hotelSearchQueries("Universal's Endless Summer Resort - Dockside Inn and Suites");
+    expect(queries[0]).toBe("Universal's Endless Summer Resort - Dockside Inn and Suites");
+    expect(queries).toContain("Universal's Endless Summer Resort");
+    expect(queries).toContain('Dockside Inn and Suites');
   });
 
-  it('nome simples é uma busca só', () => {
-    expect(hotelSearchQueries('Rosen Inn Lake Buena Vista')).toEqual(['Rosen Inn Lake Buena Vista']);
+  // A LiteAPI busca por frase seguida: o hífen e o complemento derrubam o nome.
+  it.each([
+    ["Disney's All-Star Sports Resort", "Disney's All Star Sports Resort"],
+    ["Disney's Port Orleans Resort - French Quarter", "Disney's Port Orleans Resort French Quarter"],
+    ['Loews Royal Pacific Resort at Universal Orlando', 'Loews Royal Pacific Resort'],
+    ['Universal Stella Nova Resort', 'Stella Nova Resort'],
+    ['Sonesta ES Suites Lake Buena Vista', 'Sonesta ES Suites'],
+    ['DoubleTree by Hilton Orlando at SeaWorld', 'DoubleTree'],
+    ['Fairfield Inn & Suites by Marriott Orlando at SeaWorld', 'Fairfield Inn & Suites'],
+  ])('%s também busca "%s"', (name, query) => {
+    expect(hotelSearchQueries(name)).toContain(query);
+  });
+
+  it('nunca troca o apóstrofo por espaço: a LiteAPI não acha', () => {
+    expect(hotelSearchQueries("Disney's All-Star Sports Resort").join()).not.toContain('Disney s');
+  });
+
+  it('começa pelo nome como veio, sem repetir busca', () => {
+    const queries = hotelSearchQueries('Rosen Inn Lake Buena Vista');
+    expect(queries[0]).toBe('Rosen Inn Lake Buena Vista');
+    expect(new Set(queries).size).toBe(queries.length);
   });
 
   it('escolhe o Dockside, não o Surfside', () => {

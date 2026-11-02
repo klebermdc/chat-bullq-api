@@ -185,6 +185,7 @@ const tokens = (s: string) =>
       .replace(/[̀-ͯ]/g, '')
       .toLowerCase()
       .replace(/['’]s\b/g, '')
+      .replace(/\b(disney|universal|marriott)s\b/g, '$1')
       .split(/[^a-z0-9]+/)
       .filter((w) => w.length >= 2 && !STOP.has(w)),
   );
@@ -200,7 +201,14 @@ export function nameScore(printName: string, candidate: string): number {
 }
 
 /** Quantas buscas por hotel, no máximo (a chave de sandbox aceita 5 por segundo). */
-export const HOTEL_MAX_QUERIES = 3;
+export const HOTEL_MAX_QUERIES = 6;
+const HOTEL_LEADING_WORDS = 3;
+const HOTEL_BRANDS = ['disney', 'universal'];
+/** "Disney's ", "Universal ": o cadastro nem sempre traz a marca igual ao print. */
+const BRAND_PREFIX = /^(?:\p{L}+['’]s|universal|disney)\s+/iu;
+/** " at Universal Orlando", " by Marriott…": o complemento varia de um site para outro. */
+const AFTER_CONNECTOR = /\s+(?:at|by|near)\s.*$/i;
+const squeeze = (s: string) => s.replace(/\s+/g, ' ').trim();
 
 /**
  * Buscas a tentar na LiteAPI, da mais exata para a mais solta. A busca dela não
@@ -210,21 +218,44 @@ export const HOTEL_MAX_QUERIES = 3;
  * continua sendo `pickHotelId`, comparando com o nome inteiro.
  */
 export function hotelSearchQueries(name: string): string[] {
-  const full = name.replace(/\s+/g, ' ').trim();
+  const full = squeeze(name);
+  const plain = squeeze(full.replace(/\s+[-–|]\s+/g, ' ').replace(/(?<=\p{L})-(?=\p{L})/gu, ' '));
   const parts = full
     .split(/\s+[-–|]\s+|,\s*/)
-    .map((p) => p.replace(/['’]/g, ' ').replace(/\s+/g, ' ').trim())
-    .filter((p) => tokens(p).size > 0)
+    .map(squeeze)
     .sort((a, b) => b.length - a.length);
-  return [...new Set([full, ...parts])].slice(0, HOTEL_MAX_QUERIES);
+  const core = plain.replace(AFTER_CONNECTOR, '').replace(BRAND_PREFIX, '').trim();
+  const leading = core
+    .split(' ')
+    .filter((word) => /[\p{L}\d]/u.test(word))
+    .slice(0, HOTEL_LEADING_WORDS)
+    .join(' ');
+  return [...new Set([full, plain, ...parts, core, leading])].filter((q) => tokens(q).size > 0).slice(0, HOTEL_MAX_QUERIES);
 }
 
 /** O candidato de `/data/hotels` mais parecido com o nome do print, se convencer. */
+/**
+ * Foto do hotel errado é pior que cotação sem foto. Outro hotel é o irmão
+ * (cada nome tem uma palavra que falta no outro: All-Star Sports × Movies), o
+ * homônimo sem a marca ("Wilderness Lodge" × "Disney's Wilderness Lodge") ou
+ * o prédio vizinho ("Bay Lake Tower at Disney's Contemporary Resort").
+ */
+function isOtherProperty(printName: string, candidate: string): boolean {
+  const want = tokens(printName);
+  const have = tokens(candidate);
+  const isMissingWord = [...want].some((w) => !have.has(w));
+  const hasOtherWord = [...have].some((w) => !want.has(w));
+  if (isMissingWord && hasOtherWord) return true;
+  if (HOTEL_BRANDS.some((brand) => want.has(brand) && !have.has(brand))) return true;
+  const building = /^(.+?)\s+at\s/i.exec(candidate)?.[1] ?? '';
+  return [...tokens(building)].some((w) => !want.has(w));
+}
+
 export function pickHotelId(printName: string, list: unknown): string | null {
   const candidates = (Array.isArray(list) ? list : []).filter(isObject);
   const ranked = candidates
-    .map((c) => ({ id: str(c.id), score: nameScore(printName, str(c.name)), extra: tokens(str(c.name)).size }))
-    .filter((c) => c.id && c.score >= HOTEL_MIN_NAME_SCORE)
+    .map((c) => ({ id: str(c.id), name: str(c.name), score: nameScore(printName, str(c.name)), extra: tokens(str(c.name)).size }))
+    .filter((c) => c.id && c.score >= HOTEL_MIN_NAME_SCORE && !isOtherProperty(printName, c.name))
     // Empate: o nome com menos palavras sobrando é o mais exato.
     .sort((a, b) => b.score - a.score || a.extra - b.extra);
   return ranked[0]?.id ?? null;

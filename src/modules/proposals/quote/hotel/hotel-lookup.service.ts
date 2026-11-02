@@ -50,15 +50,17 @@ export class HotelLookupService {
     }
   }
 
-  /** Nos EUA, cada busca primeiro em Orlando e, no fim, a mais exata sem cidade. Fora, só pelo país. */
+  /** Nos EUA, todas as buscas primeiro em Orlando e depois sem cidade. Fora, só pelo país. */
   private async findId(hotelName: string, country: string): Promise<string | null> {
-    const city = country === DEFAULT_COUNTRY ? FIRST_CITY : null;
-    for (const query of hotelSearchQueries(hotelName)) {
-      const id = pickHotelId(hotelName, await this.client.searchHotels(query, country, city));
-      if (id) return id;
+    const cities = country === DEFAULT_COUNTRY ? [FIRST_CITY, null] : [null];
+    const queries = hotelSearchQueries(hotelName);
+    for (const city of cities) {
+      for (const query of queries) {
+        const id = pickHotelId(hotelName, await this.client.searchHotels(query, country, city));
+        if (id) return id;
+      }
     }
-    if (!city) return null;
-    return pickHotelId(hotelName, await this.client.searchHotels(hotelName, country, null));
+    return null;
   }
 
   /** Descrição em inglês: a IA resume em português; se falhar, uma linha neutra. */
