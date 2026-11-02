@@ -1,4 +1,4 @@
-import { buildDiaryPrompt, parseDiaryEvaluation } from './diary-evaluation';
+import { buildDiaryPrompt, hasForeignScript, parseDiaryEvaluation } from './diary-evaluation';
 import type { DiaryTranscript } from './diary.types';
 
 const transcripts: DiaryTranscript[] = [
@@ -92,14 +92,50 @@ describe('parseDiaryEvaluation', () => {
     expect(result?.improvements).toHaveLength(0);
   });
 
-  test('limita a dois acertos e dois pontos a melhorar', () => {
+  test('limita a quatro acertos e quatro pontos a melhorar', () => {
+    const five = [point(), point(), point(), point(), point()];
+    const result = parseDiaryEvaluation(raw({ acertos: five, melhorias: five }), transcripts);
+
+    expect(result?.strengths).toHaveLength(4);
+    expect(result?.improvements).toHaveLength(4);
+  });
+
+  test('lê foco, notas, avaliação por conversa e treino', () => {
     const result = parseDiaryEvaluation(
-      raw({ acertos: [point(), point(), point()], melhorias: [point(), point(), point()] }),
+      raw({
+        foco: 'Pergunte as datas antes do preço.',
+        notas: [{ criterio: 'diarioDiagnostico', nota: 4, motivo: 'Perguntou datas na C1.' }],
+        conversas: [{ conversa: 'C1', assunto: 'Preço do ingresso', avaliacao: 'Boa abertura.', proximo: 'Enviar valores.' }],
+        treino: { situacao: 'Cliente pediu preço sem datas.', resposta: 'Para quais datas?' },
+      }),
       transcripts,
     );
 
-    expect(result?.strengths).toHaveLength(2);
-    expect(result?.improvements).toHaveLength(2);
+    expect(result?.focus).toBe('Pergunte as datas antes do preço.');
+    expect(result?.scores).toEqual([{ criterion: 'diarioDiagnostico', score: 4, reason: 'Perguntou datas na C1.' }]);
+    expect(result?.conversations).toEqual([
+      { conversationId: 'conv-1', topic: 'Preço do ingresso', assessment: 'Boa abertura.', nextStep: 'Enviar valores.' },
+    ]);
+    expect(result?.practice).toEqual({ situation: 'Cliente pediu preço sem datas.', reply: 'Para quais datas?' });
+  });
+
+  test('descarta nota fora de 1 a 5 e conversa que não existe', () => {
+    const result = parseDiaryEvaluation(
+      raw({
+        notas: [{ criterio: 'a', nota: 9, motivo: 'x' }, { criterio: 'b', nota: 'alta', motivo: 'y' }],
+        conversas: [{ conversa: 'C9', assunto: 'x', avaliacao: 'y' }],
+      }),
+      transcripts,
+    );
+
+    expect(result?.scores).toEqual([]);
+    expect(result?.conversations).toEqual([]);
+  });
+
+  test('sem os campos novos, devolve vazio em vez de falhar', () => {
+    const result = parseDiaryEvaluation(raw(), transcripts);
+
+    expect(result).toMatchObject({ focus: null, scores: [], conversations: [], practice: null });
   });
 
   test('entende JSON embrulhado em cerca markdown', () => {
@@ -114,7 +150,30 @@ describe('parseDiaryEvaluation', () => {
   });
 });
 
+describe('hasForeignScript', () => {
+  const evaluation = (over: Record<string, unknown> = {}) =>
+    parseDiaryEvaluation(raw(over), transcripts)!;
+
+  test('acusa chinês misturado no texto da IA', () => {
+    expect(hasForeignScript(evaluation({ resumo: 'O principal ajuste é 直接 responder.' }))).toBe(true);
+    expect(hasForeignScript(evaluation({ foco: 'Responda 直接.' }))).toBe(true);
+    expect(hasForeignScript(evaluation({ treino: { situacao: 'Cliente', resposta: '你好' } }))).toBe(true);
+  });
+
+  test('aceita português com acentos', () => {
+    expect(hasForeignScript(evaluation({ resumo: 'Atenção à explicação: ótimo início, Bárbara.' }))).toBe(false);
+  });
+});
+
 describe('buildDiaryPrompt', () => {
+  test('exige português do Brasil e proíbe texto genérico', () => {
+    const prompt = buildDiaryPrompt({ attendantName: 'Pedro', criteria: [], transcripts });
+
+    expect(prompt.system).toMatch(/português do Brasil/);
+    expect(prompt.system).toMatch(/genéric/i);
+    expect(prompt.system).toContain('"treino"');
+  });
+
   test('inclui critérios e marca a conversa como dado, não instrução', () => {
     const prompt = buildDiaryPrompt({
       attendantName: 'Bárbara',

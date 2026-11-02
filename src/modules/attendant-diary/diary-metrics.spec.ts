@@ -1,4 +1,4 @@
-import { computeDiaryMetrics } from './diary-metrics';
+import { computeDiaryMetrics, findUnanswered } from './diary-metrics';
 import type { DiaryMessage } from './diary.types';
 
 const USER = 'u1';
@@ -97,7 +97,38 @@ describe('computeDiaryMetrics', () => {
       messagesSent: 0,
       medianReplyMinutes: null,
       slowReplies: 0,
+      longestReplyMinutes: null,
       unansweredAtEndOfDay: 0,
     });
+  });
+});
+
+describe('findUnanswered', () => {
+  const inbound = (conversationId: string, at: string) => ({
+    conversationId, direction: 'INBOUND' as const, senderId: null, text: 'Oi', at: new Date(at),
+  });
+  const reply = (conversationId: string, at: string) => ({
+    conversationId, direction: 'OUTBOUND' as const, senderId: 'u1', text: 'Olá', at: new Date(at),
+  });
+
+  test('lista quem ficou sem resposta, desde a primeira mensagem sem retorno', () => {
+    const result = findUnanswered(
+      [
+        inbound('c1', '2026-10-30T13:00:00Z'),
+        reply('c1', '2026-10-30T13:05:00Z'),
+        inbound('c2', '2026-10-30T14:00:00Z'),
+        inbound('c2', '2026-10-30T14:10:00Z'),
+      ],
+      'u1',
+      () => true,
+    );
+
+    expect(result).toEqual([{ conversationId: 'c2', since: new Date('2026-10-30T14:00:00Z') }]);
+  });
+
+  test('ignora espera que começou fora do horário', () => {
+    const result = findUnanswered([inbound('c1', '2026-10-30T02:00:00Z')], 'u1', () => false);
+
+    expect(result).toEqual([]);
   });
 });

@@ -7,9 +7,16 @@ import {
   MAX_CONTEXT_MESSAGES,
   NON_CONVERSATIONAL_TYPES,
 } from './diary.constants';
-import type { DiaryMessage, DiaryMetrics, DiaryPoint, DiaryStatus } from './diary.types';
+import type {
+  DiaryDetails,
+  DiaryMessage,
+  DiaryMetrics,
+  DiaryPoint,
+  DiaryStatus,
+} from './diary.types';
 
 const LIST_LIMIT = 60;
+export const UNKNOWN_CONTACT = 'Cliente';
 
 const MESSAGE_SELECT = {
   conversationId: true,
@@ -29,6 +36,7 @@ const PUBLIC_SELECT = {
   summary: true,
   strengths: true,
   improvements: true,
+  details: true,
   viewedAt: true,
 } satisfies Prisma.AttendantDiarySelect;
 
@@ -59,6 +67,7 @@ export interface DiaryRecord {
   summary?: string;
   strengths?: DiaryPoint[];
   improvements?: DiaryPoint[];
+  details?: Partial<DiaryDetails>;
   conversationsAnalyzed: number;
   discardedPoints?: number;
   criteriaVersions?: Record<string, number>;
@@ -190,6 +199,18 @@ export class DiaryRepository {
     return groups.flatMap((rows) => [...rows].reverse().map(toDiaryMessage));
   }
 
+  /** Nome do cliente de cada conversa, para o diário não mostrar só um código. */
+  async findContactNames(conversationIds: string[]): Promise<Map<string, string>> {
+    if (conversationIds.length === 0) return new Map();
+    const conversations = await this.prisma.conversation.findMany({
+      where: { id: { in: conversationIds } },
+      select: { id: true, contact: { select: { name: true } } },
+    });
+    return new Map(
+      conversations.map((c) => [c.id, c.contact?.name?.trim() || UNKNOWN_CONTACT]),
+    );
+  }
+
   async findOnlineMinutes(organizationId: string, userId: string, day: string): Promise<number> {
     const presence = await this.prisma.agentPresenceDaily.findUnique({
       where: {
@@ -208,6 +229,7 @@ export class DiaryRepository {
       summary: fields.summary ?? null,
       strengths: (fields.strengths ?? []) as unknown as Prisma.InputJsonValue,
       improvements: (fields.improvements ?? []) as unknown as Prisma.InputJsonValue,
+      details: (fields.details ?? {}) as unknown as Prisma.InputJsonValue,
       conversationsAnalyzed: fields.conversationsAnalyzed,
       discardedPoints: fields.discardedPoints ?? 0,
       criteriaVersions: fields.criteriaVersions ?? {},

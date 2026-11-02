@@ -21,9 +21,13 @@ export const MAX_CONVERSATIONS_PER_DIARY = 12;
 export const MAX_LINES_PER_CONVERSATION = 40;
 export const MAX_CONTEXT_MESSAGES = 10;
 export const MAX_LINE_CHARS = 600;
-export const MAX_POINTS_PER_SECTION = 2;
+export const MAX_POINTS_PER_SECTION = 4;
 export const MIN_QUOTE_CHARS = 15;
-export const DIARY_MAX_TOKENS = 2000;
+export const DIARY_MAX_TOKENS = 4000;
+export const MIN_SCORE = 1;
+export const MAX_SCORE = 5;
+/** Primeira tentativa e uma nova, se a IA misturar outro idioma. */
+export const MAX_EVALUATION_ATTEMPTS = 2;
 
 /**
  * Mesmo id para o mesmo dia: dois cliques não pagam a IA duas vezes. O job é
