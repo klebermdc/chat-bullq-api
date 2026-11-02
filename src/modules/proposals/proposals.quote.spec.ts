@@ -463,4 +463,55 @@ describe('ProposalsService — cotação por link', () => {
       expect(d.repo.updateQuote).not.toHaveBeenCalled();
     });
   });
+
+  describe('searchQuotes', () => {
+    const found = (over: Record<string, unknown> = {}) => ({
+      ...savedQuote(), createdById: 'user-1', contact: { name: 'Ana Souza', phone: '5511999990000' }, ...over,
+    });
+    const dto = (over: Record<string, unknown> = {}): any => ({ page: 2, limit: 20, skip: 20, ...over });
+
+    function withRows(rows: unknown[], total = rows.length) {
+      const d = deps();
+      d.repo.searchQuotes = jest.fn().mockResolvedValue({ rows, total });
+      d.prisma.user = { findMany: jest.fn().mockResolvedValue([{ id: 'user-1', name: 'Mariana Lima' }]) };
+      return d;
+    }
+
+    it('devolve a página com contato, vendedor e link, sem o token cru', async () => {
+      const d = withRows([found()], 41);
+
+      const out: any = await makeService(d).searchQuotes('org-1', dto({ q: '#152', status: 'ACTIVE' }), 'OWNER' as any, 'user-9');
+
+      expect(d.repo.searchQuotes).toHaveBeenCalledWith(
+        expect.objectContaining({
+          organizationId: 'org-1', status: 'ACTIVE', assignedToId: undefined,
+          search: { quoteNumber: 152, phoneDigits: null, likePattern: null },
+        }),
+        20, 20,
+      );
+      expect(out).toMatchObject({ total: 41, page: 2, limit: 20 });
+      expect(out.items[0]).toMatchObject({
+        id: 'prop-1', quoteNumber: 152, sellerName: 'Mariana Lima',
+        contact: { name: 'Ana Souza', phone: '5511999990000' },
+        quoteUrl: 'https://cotacao.orlandofastpass.com.br/tok_abcdefghijklmnopqrstuvwx',
+      });
+      expect(out.items[0].publicToken).toBeUndefined();
+    });
+
+    it('AGENT só vê as cotações das próprias conversas', async () => {
+      const d = withRows([]);
+
+      await makeService(d).searchQuotes('org-1', dto(), 'AGENT' as any, 'user-9');
+
+      expect(d.repo.searchQuotes.mock.calls[0][0].assignedToId).toBe('user-9');
+    });
+
+    it('vendedor removido sai sem nome', async () => {
+      const d = withRows([found({ createdById: 'user-x' })]);
+
+      const out: any = await makeService(d).searchQuotes('org-1', dto(), 'OWNER' as any, 'user-9');
+
+      expect(out.items[0].sellerName).toBeNull();
+    });
+  });
 });

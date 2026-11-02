@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
@@ -11,6 +11,7 @@ import {
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { ProposalsService } from './proposals.service';
 import { CreateProposalDto } from './dto/create-proposal.dto';
+import { ListQuotesDto } from './dto/list-quotes.dto';
 import { UpdateQuoteDto } from './dto/update-quote.dto';
 
 @ApiTags('Proposals')
@@ -29,6 +30,17 @@ export class ProposalsController {
     @CurrentUserRole() role: OrgRole,
   ) {
     return this.service.create(dto, userId, orgId, access, role);
+  }
+
+  /** Cotações da organização, com busca. AGENT só vê as das próprias conversas. */
+  @Get('quotes')
+  searchQuotes(
+    @Query() dto: ListQuotesDto,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.searchQuotes(orgId, dto, role, userId);
   }
 
   /** Cotação por link já enviada: nova versão, mesmo link, validade renovada. */

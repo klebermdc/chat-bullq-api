@@ -17,6 +17,7 @@ import { resolveAssignmentScope } from '../messaging/conversations/conversation-
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { buildOtherProposalMessage, buildProposalMessage } from './message-builder';
 import { CreateProposalDto, ProposalImageDto } from './dto/create-proposal.dto';
+import { ListQuotesDto } from './dto/list-quotes.dto';
 import { UpdateQuoteDto } from './dto/update-quote.dto';
 import {
   PROPOSAL_ALLOWED_HOSTS,
@@ -50,6 +51,7 @@ import {
   quoteExpiresAt,
   quotePublicBaseUrl,
 } from './quote/quote-proposal';
+import { parseQuoteSearch } from './quote/quote-search';
 import { mergeQuotes } from './quote/quote-merge';
 import { HotelLookupService } from './quote/hotel/hotel-lookup.service';
 import { presentProposal } from './quote/quote-public';
@@ -473,6 +475,29 @@ export class ProposalsService {
     }
     await this.linkToPipeline(ctx, cart);
     return { ...presentProposal(updated), quoteUrl };
+  }
+
+  /** Página "Cotações": busca por número, cliente, telefone, hotel ou produto. */
+  async searchQuotes(organizationId: string, dto: ListQuotesDto, role: OrgRole | undefined, userId: string) {
+    const { rows, total } = await this.repo.searchQuotes(
+      {
+        organizationId,
+        search: parseQuoteSearch(dto.q),
+        status: dto.status,
+        sellerId: dto.sellerId,
+        assignedToId: resolveAssignmentScope(role, userId),
+        now: new Date(),
+      },
+      dto.skip,
+      dto.limit,
+    );
+    const sellers = await this.prisma.user.findMany({
+      where: { id: { in: [...new Set(rows.map((row) => row.createdById))] } },
+      select: { id: true, name: true },
+    });
+    const sellerName = new Map(sellers.map((user) => [user.id, user.name]));
+    const items = rows.map((row) => ({ ...presentProposal(row), sellerName: sellerName.get(row.createdById) ?? null }));
+    return { items, total, page: dto.page, limit: dto.limit };
   }
 
   async listForContact(
