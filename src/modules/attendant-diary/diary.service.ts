@@ -5,10 +5,20 @@ import type { LlmContent } from '../ai-agents/llm/llm.types';
 import { isWithinHours } from '../routing/availability/business-hours.util';
 import { dayRange } from './diary-day';
 import { DiaryCriteriaService, type LoadedCriteria } from './diary-criteria.service';
-import { buildDiaryPrompt, hasForeignScript, parseDiaryEvaluation } from './diary-evaluation';
+import {
+  buildConsolidationPrompt,
+  buildDiaryPrompt,
+  hasForeignScript,
+  parseConsolidation,
+  parseDiaryEvaluation,
+} from './diary-evaluation';
 import { computeDiaryMetrics, findUnanswered } from './diary-metrics';
 import { buildTranscripts, selectConversationIds } from './diary-transcripts';
-import { DIARY_MAX_TOKENS, MAX_EVALUATION_ATTEMPTS } from './diary.constants';
+import {
+  DIARY_BATCH_SIZE,
+  DIARY_MAX_TOKENS,
+  MAX_EVALUATION_ATTEMPTS,
+} from './diary.constants';
 import { DiaryRepository, UNKNOWN_CONTACT, type DiaryRecord } from './diary.repository';
 import type {
   DiaryEvaluation,
@@ -25,6 +35,19 @@ const UNREADABLE_ERROR = 'A IA devolveu uma resposta que não pôde ser lida.';
 const FOREIGN_SCRIPT_ERROR = 'A IA misturou outro idioma no texto. Gere de novo.';
 const LANGUAGE_REMINDER =
   'A tentativa anterior misturou outro idioma. Refaça tudo somente em português do Brasil.';
+
+/** Quanto as chamadas à IA já custaram, para registrar mesmo em caso de falha. */
+interface DiarySpend {
+  costUsd: number;
+  modelId?: string;
+}
+
+function toBatches(transcripts: DiaryTranscript[]): DiaryTranscript[][] {
+  const count = Math.ceil(transcripts.length / DIARY_BATCH_SIZE);
+  return Array.from({ length: count }, (_, index) =>
+    transcripts.slice(index * DIARY_BATCH_SIZE, (index + 1) * DIARY_BATCH_SIZE),
+  );
+}
 
 function contentToText(content: LlmContent): string {
   if (typeof content === 'string') return content;
@@ -109,50 +132,64 @@ export class DiaryService {
       conversationsAnalyzed: transcripts.length,
       criteriaVersions: loaded.versions,
     };
-    const prompt = buildDiaryPrompt({
-      attendantName,
-      criteria: loaded.criteria,
-      transcripts,
-    });
-    let costUsd = 0;
-    let modelId: string | undefined;
+    const spent: DiarySpend = { costUsd: 0 };
 
     try {
-      for (let attempt = 0; attempt < MAX_EVALUATION_ATTEMPTS; attempt += 1) {
-        const response = await this.llm.complete({
-          organizationId: base.organizationId,
-          modelId: SAKANA_CONVERSATION_MODEL,
-          temperature: 0.2,
-          maxTokens: DIARY_MAX_TOKENS,
-          messages: [
-            { role: 'system', content: prompt.system },
-            {
-              role: 'user',
-              content: attempt === 0 ? prompt.user : `${prompt.user}\n\n${LANGUAGE_REMINDER}`,
-            },
-          ],
-        });
-        modelId = response.rawModelId;
-        costUsd += response.usage.costUsd;
-        const evaluation = parseDiaryEvaluation(
-          contentToText(response.message.content),
-          transcripts,
+      const parts: DiaryEvaluation[] = [];
+      for (const batch of toBatches(transcripts)) {
+        const prompt = buildDiaryPrompt({ attendantName, criteria: loaded.criteria, transcripts: batch });
+        const part = await this.askEvaluation(base.organizationId, prompt, spent, (raw) =>
+          parseDiaryEvaluation(raw, batch),
         );
-        if (!evaluation) {
-          return this.save({ ...audit, modelId, costUsd, status: 'FAILED', errorMessage: UNREADABLE_ERROR });
-        }
-        if (!hasForeignScript(evaluation)) {
-          return this.saveEvaluation({ ...audit, modelId, costUsd }, evaluation, names);
-        }
+        parts.push(part);
       }
-      return this.save({ ...audit, modelId, costUsd, status: 'FAILED', errorMessage: FOREIGN_SCRIPT_ERROR });
+      const evaluation =
+        parts.length === 1
+          ? parts[0]
+          : await this.askEvaluation(
+              base.organizationId,
+              buildConsolidationPrompt(attendantName, parts),
+              spent,
+              (raw) => parseConsolidation(raw, parts),
+            );
+      return await this.saveEvaluation({ ...audit, ...spent }, evaluation, names);
     } catch (err) {
       const message = (err as Error).message;
       this.logger.warn(
         `diary_llm_failed user=${base.userId} day=${base.day}: ${message}`,
       );
-      return this.save({ ...audit, modelId, costUsd, status: 'FAILED', errorMessage: message });
+      return this.save({ ...audit, ...spent, status: 'FAILED', errorMessage: message });
     }
+  }
+
+  /** Pede à IA e refaz uma vez se o texto vier misturado com outro idioma. */
+  private async askEvaluation(
+    organizationId: string,
+    prompt: { system: string; user: string },
+    spent: DiarySpend,
+    parse: (raw: string) => DiaryEvaluation | null,
+  ): Promise<DiaryEvaluation> {
+    for (let attempt = 0; attempt < MAX_EVALUATION_ATTEMPTS; attempt += 1) {
+      const response = await this.llm.complete({
+        organizationId,
+        modelId: SAKANA_CONVERSATION_MODEL,
+        temperature: 0.2,
+        maxTokens: DIARY_MAX_TOKENS,
+        messages: [
+          { role: 'system', content: prompt.system },
+          {
+            role: 'user',
+            content: attempt === 0 ? prompt.user : `${prompt.user}\n\n${LANGUAGE_REMINDER}`,
+          },
+        ],
+      });
+      spent.modelId = response.rawModelId;
+      spent.costUsd += response.usage.costUsd;
+      const evaluation = parse(contentToText(response.message.content));
+      if (!evaluation) throw new Error(UNREADABLE_ERROR);
+      if (!hasForeignScript(evaluation)) return evaluation;
+    }
+    throw new Error(FOREIGN_SCRIPT_ERROR);
   }
 
   private saveEvaluation(

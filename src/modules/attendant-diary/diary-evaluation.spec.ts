@@ -1,4 +1,10 @@
-import { buildDiaryPrompt, hasForeignScript, parseDiaryEvaluation } from './diary-evaluation';
+import {
+  buildConsolidationPrompt,
+  buildDiaryPrompt,
+  hasForeignScript,
+  parseConsolidation,
+  parseDiaryEvaluation,
+} from './diary-evaluation';
 import type { DiaryTranscript } from './diary.types';
 
 const transcripts: DiaryTranscript[] = [
@@ -147,6 +153,49 @@ describe('parseDiaryEvaluation', () => {
   test('devolve null quando a resposta não é JSON ou não tem resumo', () => {
     expect(parseDiaryEvaluation('não sei responder', transcripts)).toBeNull();
     expect(parseDiaryEvaluation(JSON.stringify({ acertos: [] }), transcripts)).toBeNull();
+  });
+});
+
+describe('consolidação dos blocos', () => {
+  const part = (over: Record<string, unknown> = {}) =>
+    parseDiaryEvaluation(
+      raw({
+        resumo: 'Parcial.',
+        conversas: [{ conversa: 'C1', assunto: 'Preço', avaliacao: 'Boa.' }],
+        acertos: [point()],
+        melhorias: [point({ titulo: 'Faltou a idade' })],
+        ...over,
+      }),
+      transcripts,
+    )!;
+
+  test('mantém todas as conversas e usa os pontos escolhidos pelo número', () => {
+    const result = parseConsolidation(
+      JSON.stringify({ resumo: 'Dia todo.', foco: 'Foco.', acertos: [2], melhorias: [1], notas: [] }),
+      [part(), part({ acertos: [point({ titulo: 'Segundo acerto' })] })],
+    );
+
+    expect(result?.summary).toBe('Dia todo.');
+    expect(result?.conversations).toHaveLength(2);
+    expect(result?.strengths.map((p) => p.title)).toEqual(['Segundo acerto']);
+    expect(result?.improvements.map((p) => p.title)).toEqual(['Faltou a idade']);
+  });
+
+  test('ignora número de ponto que não existe', () => {
+    const result = parseConsolidation(JSON.stringify({ resumo: 'Dia.', acertos: [99, 'x'] }), [part()]);
+
+    expect(result?.strengths).toEqual([]);
+  });
+
+  test('sem resumo devolve null', () => {
+    expect(parseConsolidation('{}', [part()])).toBeNull();
+  });
+
+  test('prompt numera os pontos e exige português do Brasil', () => {
+    const prompt = buildConsolidationPrompt('Pedro', [part()]);
+
+    expect(prompt.user).toContain('1. Perguntou as datas');
+    expect(prompt.system).toMatch(/português do Brasil/);
   });
 });
 
