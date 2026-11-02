@@ -42,7 +42,9 @@ describe('HotelLookupService', () => {
 
   it('tenta sem cidade quando não acha em Orlando', async () => {
     const c = client();
-    c.searchHotels.mockResolvedValueOnce([]);
+    c.searchHotels.mockImplementation(async (_query: string, _country: string, city: string | null) =>
+      city ? [] : [{ id: 'lp6a114', name: 'Cabana Bay' }],
+    );
     const out = await new HotelLookupService(c).enrich(quote([item({ hotelName: 'Cabana Bay' })]));
 
     expect(c.searchHotels).toHaveBeenLastCalledWith('Cabana Bay', 'US', null);
@@ -79,14 +81,13 @@ describe('HotelLookupService', () => {
 
   it('nome com traço e apóstrofo: acha pelo pedaço do nome', async () => {
     const c = client();
-    c.searchHotels
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: 'lp332d67', name: 'Universal’s Endless Summer Resort – Dockside Inn and Suites' }]);
+    c.searchHotels.mockImplementation(async (query: string) =>
+      query === 'Dockside Inn and Suites' ? [{ id: 'lp332d67', name: 'Universal’s Endless Summer Resort – Dockside Inn and Suites' }] : [],
+    );
     const out = await new HotelLookupService(c).enrich(
       quote([item({ hotelName: "Universal's Endless Summer Resort - Dockside Inn and Suites" })]),
     );
-    expect(c.searchHotels).toHaveBeenNthCalledWith(3, 'Dockside Inn and Suites', 'US', 'Orlando');
+    expect(c.getHotel).toHaveBeenCalledWith('lp332d67');
     expect(out.items[0].hotel?.id).toBe('lp6a114');
   });
 
