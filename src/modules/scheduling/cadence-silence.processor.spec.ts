@@ -13,7 +13,7 @@ function make() {
     card: { findUnique: jest.fn() },
     message: { findFirst: jest.fn() },
   };
-  const runner = { resumeAtStep: jest.fn() };
+  const runner = { resumeAtStep: jest.fn(), exitNoReply: jest.fn() };
   const queue = { add: jest.fn().mockResolvedValue({ id: 'j' }) };
   const realtime = { emitToConversation: jest.fn() };
   const autoReengage = { nextAllowedTime: jest.fn((d: Date) => d) };
@@ -76,4 +76,11 @@ it('retoma quando houve silêncio suficiente', async () => {
   await proc.process({ data: { enrollmentId: 'e1' } } as any);
   expect(autoReengage.nextAllowedTime).toHaveBeenCalled();
   expect(runner.resumeAtStep).toHaveBeenCalledWith('e1', expect.any(Date));
+});
+
+it('job de saída do reengajamento: chama o runner e não olha silêncio', async () => {
+  const { proc, runner, enrollments } = make();
+  await proc.process({ name: 'cadence-no-reply-exit', data: { enrollmentId: 'e1' } });
+  expect(runner.exitNoReply).toHaveBeenCalledWith('e1');
+  expect(enrollments.findById).not.toHaveBeenCalled();
 });

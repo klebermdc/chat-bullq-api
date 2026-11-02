@@ -23,10 +23,16 @@ import { ScheduledMessagesService } from '../scheduling/scheduled-messages.servi
 import {
   SCHEDULED_DISPATCH_QUEUE,
   SCHEDULED_DISPATCH_JOB,
+  CADENCE_EXIT_JOB,
   CADENCE_SILENCE_QUEUE,
   CADENCE_SILENCE_JOB,
 } from '../scheduling/scheduling.constants';
 import { nextAllowedTime } from '../scheduling/inactivity/quiet-hours.util';
+
+/** Reengajamento: espera depois do último toque antes de ir para a lista. */
+const NO_REPLY_EXIT_DELAY_MINUTES = 1440;
+/** Folga para não confundir inscrição entre dois passos com inscrição zumbi. */
+const STALE_ENROLLMENT_MINUTES = 10;
 
 /** Quiet hours da retomada: 20h→8h no fuso padrão do Brasil (igual watchdog). */
 const RESUME_QUIET_START = 20;
@@ -124,7 +130,7 @@ export class CadenceRunner {
     // clicar em "iniciar cadência") virava erro em vez de no-op.
     const existing =
       await this.enrollments.findLiveByConversation(conversationId);
-    if (existing) return existing;
+    if (existing && !(await this.closeIfStale(existing))) return existing;
 
     const cadence = (await this.cadences.findById(
       cadenceId,
@@ -189,7 +195,7 @@ export class CadenceRunner {
       status: 'ACTIVE',
     });
 
-    await this.scheduleStep(enrollment, conversation, contact, firstStep);
+    await this.scheduleStep(enrollment, conversation, contact, firstStep, cadence.trigger);
 
     this.realtime.emitToConversation(conversationId, 'cadence:started', {
       enrollmentId: enrollment.id,
@@ -224,7 +230,7 @@ export class CadenceRunner {
         where: { id: enrollment.contactId },
       });
 
-      await this.scheduleStep(enrollment, conversation, contact, next);
+      await this.scheduleStep(enrollment, conversation, contact, next, cadence.trigger);
       await this.enrollments.update(enrollment.id, {
         currentStep: next.order,
         lastStepAt: new Date(),
@@ -237,9 +243,45 @@ export class CadenceRunner {
       return;
     }
 
-    // Sem próximo passo → esgotou sem resposta. Reivindica o encerramento de
-    // forma atômica (compare-and-set em ACTIVE): se outro caminho já finalizou
-    // (ex.: resposta do cliente em paralelo), não aplica efeitos colaterais.
+    // Reengajamento: o cliente ainda tem um dia para responder ao último toque.
+    // A inscrição segue viva, então uma resposta nesse meio-tempo a encerra e a
+    // saída vira no-op.
+    if (cadence.trigger === 'NO_REPLY') {
+      await this.enrollments.update(enrollment.id, { lastStepAt: new Date() });
+      await this.silenceQueue.add(
+        CADENCE_EXIT_JOB,
+        { enrollmentId: enrollment.id },
+        {
+          delay: NO_REPLY_EXIT_DELAY_MINUTES * 60_000,
+          jobId: `cadexit-${enrollment.id}-${Date.now()}`,
+          removeOnComplete: 100,
+          removeOnFail: 100,
+        },
+      );
+      return;
+    }
+
+    await this.finishExhausted(enrollment, cadence);
+  }
+
+  /** Saída do reengajamento: um dia depois do último toque, sem resposta. */
+  async exitNoReply(enrollmentId: string): Promise<void> {
+    const enrollment = await this.enrollments.findById(enrollmentId);
+    if (!enrollment || enrollment.status !== 'ACTIVE') return;
+    const cadence = (await this.cadences.findById(
+      enrollment.cadenceId,
+    )) as CadenceLike | null;
+    if (!cadence) return;
+    await this.finishExhausted(enrollment, cadence);
+  }
+
+  private async finishExhausted(
+    enrollment: CadenceEnrollment,
+    cadence: CadenceLike,
+  ): Promise<void> {
+    // Reivindica o encerramento de forma atômica (compare-and-set em ACTIVE):
+    // se outro caminho já finalizou (ex.: resposta do cliente em paralelo), não
+    // aplica efeitos colaterais.
     const claimed = await this.enrollments.finishIfActive(enrollment.id, {
       status: 'COMPLETED_NO_REPLY',
       endedAt: new Date(),
@@ -446,28 +488,40 @@ export class CadenceRunner {
    * Gatilho de reengajamento de entrada. Chamado (fire-and-forget) quando a
    * Aline (agente IA) envia uma mensagem. Inscreve apenas se:
    *  - existe cadência NO_REPLY habilitada na org;
-   *  - a conversa está PRÉ-HUMANA (sem responsável e sem aguardar humano);
+   *  - a mensagem da Aline é uma pergunta;
+   *  - a conversa está PRÉ-HUMANA (sem responsável e sem transferência pendente);
    *  - o card está numa etapa monitorada (ou watchedStageIds vazio = qualquer).
    * A idempotência (1 enrollment ACTIVE/conversa) e o opt-out são garantidos
    * por `start()`.
    */
   async maybeStartForNoReply(
     conversationId: string,
+    alineText?: string | null,
   ): Promise<CadenceEnrollment | null> {
+    // Só há o que cobrar se a Aline perguntou algo. Despedida e aviso de
+    // transferência não têm resposta a esperar.
+    if (!alineText?.includes('?')) return null;
+
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
     });
     if (!conversation) return null;
 
-    // Pré-humano e IA ativa (parado na fase da Aline). aiEnabled=false = IA
-    // desligada manualmente na conversa → não reengaja.
+    // Sob a IA: sem vendedor, IA ligada e conversa aberta. `awaitingHumanReply`
+    // não entra: toda mensagem do cliente liga o flag e a resposta da Aline não
+    // desliga. O sinal de que ele foi para um humano é a transferência pendente.
     if (
       conversation.assignedToId ||
-      conversation.awaitingHumanReply ||
-      conversation.aiEnabled === false
+      conversation.aiEnabled === false ||
+      conversation.status === 'CLOSED'
     ) {
       return null;
     }
+    const handoff = await this.prisma.aiPendingAction.findFirst({
+      where: { conversationId, status: 'PENDING', toolName: 'transferToHuman' },
+      select: { id: true },
+    });
+    if (handoff) return null;
 
     const cadence = (await this.cadences.findNoReply(
       conversation.organizationId,
@@ -502,9 +556,42 @@ export class CadenceRunner {
     },
     contact: { name?: string | null } | null,
     step: CadenceStepLike,
+    trigger?: string,
   ): Promise<void> {
-    const scheduledAt = new Date(Date.now() + step.delayMinutes * 60_000);
+    const due = new Date(Date.now() + step.delayMinutes * 60_000);
+    // A Aline atende fora do horário: o toque de +3h cairia de madrugada.
+    const scheduledAt =
+      trigger === 'NO_REPLY'
+        ? nextAllowedTime(due, RESUME_QUIET_START, RESUME_QUIET_END, RESUME_TZ)
+        : due;
     await this.scheduleStepAt(enrollment, conversation, contact, step, scheduledAt);
+  }
+
+  /**
+   * Toque cancelado sem avançar a cadência deixa a inscrição ACTIVE para sempre,
+   * e inscrição viva bloqueia qualquer cadência futura na conversa. Encerra a
+   * que está nesse estado; devolve se ela foi encerrada.
+   */
+  private async closeIfStale(enrollment: CadenceEnrollment): Promise<boolean> {
+    if (enrollment.status !== 'ACTIVE') return false;
+    const lastActivity = enrollment.lastStepAt ?? enrollment.startedAt;
+    const isRecent =
+      !lastActivity ||
+      Date.now() - new Date(lastActivity).getTime() <
+        STALE_ENROLLMENT_MINUTES * 60_000;
+    if (isRecent) return false;
+    const pending = await this.prisma.scheduledMessage.count({
+      where: {
+        cadenceEnrollmentId: enrollment.id,
+        status: { in: ['PENDING', 'SENDING'] },
+      },
+    });
+    if (pending > 0) return false;
+    return this.enrollments.finishIfLive(enrollment.id, {
+      status: 'HANDED_OFF',
+      endedAt: new Date(),
+      endReason: 'stale',
+    });
   }
 
   /** Como `scheduleStep`, mas em um instante explícito (usado na retomada). */
@@ -612,14 +699,11 @@ export class CadenceRunner {
     return content;
   }
 
-  private async moveCardToStage(
-    cardId: string,
-    stageId: string,
-  ): Promise<void> {
-    await this.prisma.card.update({
-      where: { id: cardId },
-      data: { stageId, status: 'LOST', closedAt: new Date() },
-    });
+  /** Etapa NORMAL é lista, não desfecho: o card fica aberto e não conta como perda. */
+  private closureFor(stage: { type?: string } | null) {
+    return stage?.type === 'NORMAL'
+      ? { status: 'OPEN' as const, closedAt: null }
+      : { status: 'LOST' as const, closedAt: new Date() };
   }
 
   /**
@@ -636,13 +720,16 @@ export class CadenceRunner {
     },
     stageId: string,
   ): Promise<void> {
-    if (enrollment.cardId) {
-      await this.moveCardToStage(enrollment.cardId, stageId);
-      return;
-    }
     const stage = await this.prisma.pipelineStage.findUnique({
       where: { id: stageId },
     });
+    if (enrollment.cardId) {
+      await this.prisma.card.update({
+        where: { id: enrollment.cardId },
+        data: { stageId, ...this.closureFor(stage) },
+      });
+      return;
+    }
     if (!stage) return;
     const contact = await this.prisma.contact.findUnique({
       where: { id: enrollment.contactId },
@@ -655,8 +742,7 @@ export class CadenceRunner {
         title: contact?.name || 'Lead sem resposta',
         contactId: enrollment.contactId,
         conversationId: enrollment.conversationId,
-        status: 'LOST',
-        closedAt: new Date(),
+        ...this.closureFor(stage),
       },
     });
   }
