@@ -13,7 +13,7 @@ import {
   isQuoteFromCustomer,
 } from "../../emergency/emergency-contact.util";
 import { loadRecentCustomerTexts } from "../customer-evidence";
-import { isTeamOnline } from "../team-availability";
+import { isSellerOnline } from "../team-availability";
 import { SupportTicketsService } from "../../../support-tickets/support-tickets.service";
 import type { SupportCategory } from "../../../support-tickets/support-tickets.constants";
 import { AiTool, ToolContext, ToolResult } from "../tool.types";
@@ -38,17 +38,17 @@ const ASK_CUSTOMER =
   "NÃO passe o número. Pergunte ao cliente, numa frase, se ele já está no destino agora e o que está acontecendo, e espere a resposta.";
 
 /**
- * Canal de urgência: passageiro JÁ em viagem, com problema urgente, e
- * ninguém da equipe online. Manda ao cliente o link do WhatsApp de
+ * Canal de urgência: passageiro JÁ em viagem, com problema urgente, e o
+ * vendedor dele não está online (colega online não conta). Manda ao cliente o link do WhatsApp de
  * emergência e deixa um alerta interno na conversa.
  *
  * Antes de mandar, confere no servidor (não no prompt):
  *  - as frases citadas pela Aline estão mesmo nas mensagens do cliente;
- *  - nenhum atendente está ativo no Chat agora;
+ *  - o vendedor da conversa não está ativo no Chat agora;
  *  - o contato não foi mandado nas últimas 24h.
  *
  * Junto com o link, abre (ou atualiza) um chamado urgente, para a urgência
- * não se perder quando a equipe voltar. Com equipe online, nem um nem outro.
+ * não se perder quando a equipe voltar. Com o vendedor online, nem um nem outro.
  */
 @Injectable()
 export class SendEmergencyContactTool implements AiTool {
@@ -61,7 +61,7 @@ export class SendEmergencyContactTool implements AiTool {
     "Manda ao cliente o link do WhatsApp de emergência. Só para quem JÁ ESTÁ em viagem " +
     "(no destino ou a caminho) com um problema urgente que não pode esperar a equipe voltar. " +
     "Cite as palavras exatas do cliente que provam as duas coisas. O sistema confere as " +
-    "citações e só envia se ninguém da equipe estiver online. A mensagem ao cliente é " +
+    "citações e só envia se o vendedor do cliente não estiver online. A mensagem ao cliente é " +
     "enviada pela própria ferramenta: não escreva o número em replyToConversation.";
   readonly parameters = {
     type: "object",
@@ -165,15 +165,16 @@ export class SendEmergencyContactTool implements AiTool {
 
     const summary = `Onde: ${location}. Problema (${category}): ${problem}. Cliente disse: "${tripQuote}" / "${urgencyQuote}".`;
 
-    // Com alguém online, a própria equipe atende: sem número e sem chamado.
-    if (await isTeamOnline(this.realtime, ctx.organizationId, now)) {
+    // Vendedor do cliente online: ele atende, sem número e sem chamado.
+    // Colega online não conta: o passageiro não é dele.
+    if (await isSellerOnline(this.prisma, this.realtime, ctx, now)) {
       await this.leaveAlert(
         ctx,
-        `🚨 Urgência em viagem, com equipe online (contato de emergência NÃO enviado). ${summary}`,
+        `🚨 Urgência em viagem, com o vendedor online (contato de emergência NÃO enviado). ${summary}`,
       );
       return refuse(
-        "team_online",
-        'Tem atendente online agora: não passe o número de emergência. Diga ao cliente que a equipe já foi avisada e responde em instantes. Se transferToHuman estiver disponível, use com o motivo "urgência em viagem".',
+        "seller_online",
+        'O vendedor deste cliente está online agora: não passe o número de emergência. Diga ao cliente que o atendente dele já foi avisado e responde em instantes. Se transferToHuman estiver disponível, use com o motivo "urgência em viagem".',
       );
     }
 
@@ -193,7 +194,7 @@ export class SendEmergencyContactTool implements AiTool {
       ticketNumber,
     );
     const text =
-      `Entendi, isso é urgente. Nossa equipe não está online agora, então fale direto com o nosso time de emergência no WhatsApp ${EMERGENCY_PHONE}. ` +
+      `Entendi, isso é urgente. Seu atendente não está online agora, então fale direto com o nosso time de emergência no WhatsApp ${EMERGENCY_PHONE}. ` +
       `É só tocar no link: ${link}`;
 
     const sent = await this.reply.deliver(text, ctx, {

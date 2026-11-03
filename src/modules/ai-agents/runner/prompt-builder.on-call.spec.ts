@@ -66,7 +66,7 @@ describe('PromptBuilderService — Aline de plantão', () => {
     expect(full).toContain('═══ Urgência em viagem ═══');
     expect(full).toContain('═══ Chamado de suporte ═══');
     expect(full).toContain('Nunca invente número de chamado');
-    expect(full).toContain('só existe quando ninguém da equipe está online');
+    expect(full).toContain('só existe quando o vendedor do cliente não está online');
     expect(full).toContain('copie as palavras exatas do cliente');
     expect(full.replace(/\D/g, '')).not.toContain('51941724');
   });

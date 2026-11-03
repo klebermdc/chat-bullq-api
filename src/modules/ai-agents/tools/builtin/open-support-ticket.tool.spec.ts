@@ -18,6 +18,7 @@ const INPUT = {
 
 function make(opts: { texts?: string[]; ticket?: any; sockets?: any[] } = {}) {
   const prisma = {
+    conversation: { findUnique: jest.fn().mockResolvedValue({ assignedToId: 'seller-pedro' }) },
     message: {
       findMany: jest.fn().mockResolvedValue(
         (opts.texts ?? ['Oi! Comprei com vocês e o QR code do ingresso não abre de jeito nenhum']).map((text) => ({
@@ -67,22 +68,23 @@ describe('OpenSupportTicketTool', () => {
     expect((result.output as any).message).toContain('atualizado');
   });
 
-  it('alguém da equipe online: não abre chamado', async () => {
+  it('vendedor do cliente online: não abre chamado', async () => {
     const { tool, tickets } = make({
-      sockets: [{ organizationId: 'org-1', userId: 'u-1', lastActiveAt: new Date() }],
+      sockets: [{ organizationId: 'org-1', userId: 'seller-pedro', lastActiveAt: new Date() }],
     });
 
     const result = await tool.execute(INPUT, CTX);
 
-    expect(result.output).toMatchObject({ ok: false, error: 'team_online' });
+    expect(result.output).toMatchObject({ ok: false, error: 'seller_online' });
     expect(tickets.open).not.toHaveBeenCalled();
   });
 
-  it('Chat aberto e parado há mais de 5 min, ou online em outra org, não conta', async () => {
+  it('vendedor parado há mais de 5 min, colega online ou online em outra org: abre chamado', async () => {
     const { tool, tickets } = make({
       sockets: [
-        { organizationId: 'org-1', userId: 'u-1', lastActiveAt: new Date(Date.now() - 30 * 60_000) },
-        { organizationId: 'org-2', userId: 'u-9', lastActiveAt: new Date() },
+        { organizationId: 'org-1', userId: 'seller-pedro', lastActiveAt: new Date(Date.now() - 30 * 60_000) },
+        { organizationId: 'org-1', userId: 'seller-ana', lastActiveAt: new Date() },
+        { organizationId: 'org-2', userId: 'seller-pedro', lastActiveAt: new Date() },
       ],
     });
 

@@ -28,7 +28,9 @@ const INPUT = {
   problem: 'ingresso não passa na catraca do Magic Kingdom',
 };
 
-function make(opts: { sockets?: any[]; alreadySent?: boolean; inbound?: any[] } = {}) {
+function make(
+  opts: { sockets?: any[]; alreadySent?: boolean; inbound?: any[]; sellerId?: string | null } = {},
+) {
   const prisma = {
     message: {
       findFirst: jest.fn().mockResolvedValue(opts.alreadySent ? { id: 'old' } : null),
@@ -36,6 +38,11 @@ function make(opts: { sockets?: any[]; alreadySent?: boolean; inbound?: any[] } 
       create: jest.fn().mockResolvedValue({ id: 'note-1' }),
     },
     contact: { findUnique: jest.fn().mockResolvedValue({ name: 'Maria Souza' }) },
+    conversation: {
+      findUnique: jest
+        .fn()
+        .mockResolvedValue({ assignedToId: opts.sellerId === undefined ? 'seller-pedro' : opts.sellerId }),
+    },
   } as any;
   const realtime = {
     listSocketPresence: jest.fn().mockResolvedValue(opts.sockets ?? []),
@@ -159,24 +166,47 @@ describe('SendEmergencyContactTool', () => {
     expect(reply.deliver).toHaveBeenCalled();
   });
 
-  it('alguém da equipe online: não passa o número, não abre chamado e deixa o alerta na conversa', async () => {
+  it('vendedor do cliente online: não passa o número, não abre chamado e deixa o alerta na conversa', async () => {
     const { tool, prisma, reply, tickets } = make({
-      sockets: [{ organizationId: 'org-1', userId: 'u-1', lastActiveAt: minutesAgo(2) }],
+      sockets: [{ organizationId: 'org-1', userId: 'seller-pedro', lastActiveAt: minutesAgo(2) }],
     });
 
     const result = await tool.execute(INPUT, CTX);
 
-    expect(result.output).toMatchObject({ ok: false, error: 'team_online' });
+    expect(result.output).toMatchObject({ ok: false, error: 'seller_online' });
     expect(reply.deliver).not.toHaveBeenCalled();
     expect(tickets.open).not.toHaveBeenCalled();
     const [note] = notes(prisma);
     expect(note.content.text).toContain('🚨');
-    expect(note.content.text).toContain('equipe online');
+    expect(note.content.text).toContain('vendedor online');
   });
 
   it('Chat aberto e parado há mais de 5 min não conta como online', async () => {
     const { tool, reply } = make({
-      sockets: [{ organizationId: 'org-1', userId: 'u-1', lastActiveAt: minutesAgo(30) }],
+      sockets: [{ organizationId: 'org-1', userId: 'seller-pedro', lastActiveAt: minutesAgo(30) }],
+    });
+
+    await tool.execute(INPUT, CTX);
+
+    expect(reply.deliver).toHaveBeenCalled();
+  });
+
+  it('colega online que não é o vendedor do cliente não conta: segue para o canal de urgência', async () => {
+    const { tool, reply, tickets } = make({
+      sockets: [{ organizationId: 'org-1', userId: 'seller-ana', lastActiveAt: minutesAgo(1) }],
+    });
+
+    const result = await tool.execute(INPUT, CTX);
+
+    expect(result.output).toEqual({ ok: true, sent: true });
+    expect(reply.deliver).toHaveBeenCalled();
+    expect(tickets.open).toHaveBeenCalled();
+  });
+
+  it('conversa sem vendedor: segue para o canal de urgência mesmo com gente online', async () => {
+    const { tool, reply } = make({
+      sellerId: null,
+      sockets: [{ organizationId: 'org-1', userId: 'seller-ana', lastActiveAt: minutesAgo(1) }],
     });
 
     await tool.execute(INPUT, CTX);
