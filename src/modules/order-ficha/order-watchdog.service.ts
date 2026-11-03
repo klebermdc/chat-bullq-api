@@ -43,7 +43,7 @@ export class OrderWatchdogService {
 
         const div: Divergence = {
           kind: 'DELAY_NO_CART',
-          message: `Cliente pediu há ${Math.floor(elapsedH)}h e ainda não recebeu carrinho`,
+          message: `Cliente pediu há ${Math.floor(elapsedH)}h e ainda não recebeu proposta`,
           detail: { requestedAt: f.requestedAt, prazoHoras: hours },
           detectedAt: now.toISOString(),
         };
