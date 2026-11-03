@@ -99,7 +99,7 @@ describe('FlightPlanRepository', () => {
       assignedToId: 'u1',
       status: 'OPEN',
       updatedAt: { lte: new Date(NOW.getTime() - 3 * 24 * HOUR) },
-      pipeline: { archived: false },
+      pipeline: { archived: false, OR: [{ key: null }, { key: { notIn: ['lost_recovery', 'support'] } }] },
       stage: { type: 'NORMAL' },
     });
     expect(plan.stalledCards.items[0]).toEqual({

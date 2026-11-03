@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { LOST_REASONS, type LostReason } from './lost-sale.constants';
+import { SUPPORT_PIPELINE_KEY } from '../support-tickets/support-tickets.constants';
 
 /**
  * Funil "Recuperação de perdidas": criado sozinho no primeiro uso, uma coluna
@@ -49,13 +50,16 @@ export const LOST_RECOVERY_STAGES: ReadonlyArray<{
 ];
 
 /**
- * Filtro de card que deixa de fora o funil de recuperação. Usado onde o código
- * procura "o card da conversa" no funil de vendas (Ganho, aceite, cadência…).
- * O OR com `key: null` é necessário: `key <> x` no SQL descarta as linhas nulas,
- * e quase todo funil tem key nula.
+ * Filtro de card que deixa de fora os quadros paralelos ao de vendas: a
+ * recuperação de perdidas e o Suporte (chamados). Usado onde o código procura
+ * "o card da conversa" no funil de vendas (Ganho, aceite, cadência…).
+ * O OR com `key: null` é necessário: `key NOT IN (...)` no SQL descarta as
+ * linhas nulas, e quase todo funil tem key nula.
  */
+export const SIDE_PIPELINE_KEYS: string[] = [LOST_RECOVERY_PIPELINE_KEY, SUPPORT_PIPELINE_KEY];
+
 export const NOT_LOST_RECOVERY: Prisma.CardWhereInput = {
   pipeline: {
-    OR: [{ key: null }, { key: { not: LOST_RECOVERY_PIPELINE_KEY } }],
+    OR: [{ key: null }, { key: { notIn: SIDE_PIPELINE_KEYS } }],
   },
 };

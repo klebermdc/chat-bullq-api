@@ -16,10 +16,15 @@ export const EMERGENCY_CONTACT_TOOL = 'sendEmergencyContact';
 /** Trecho citado menor que isso não prova nada ("orlando", "sim"). */
 const MIN_QUOTE_LENGTH = 12;
 
-export function buildEmergencyLink(contactName: string | null, problem: string): string {
+export function buildEmergencyLink(
+  contactName: string | null,
+  problem: string,
+  ticketNumber: string | null = null,
+): string {
   const name = contactName?.trim();
   const intro = name ? `Olá! Sou ${name}, cliente` : 'Olá! Sou cliente';
-  const text = `${intro} da Orlando Fast Pass. Estou em viagem e preciso de ajuda urgente: ${problem.trim()}`;
+  const ticket = ticketNumber ? ` (chamado ${ticketNumber})` : '';
+  const text = `${intro} da Orlando Fast Pass. Estou em viagem e preciso de ajuda urgente${ticket}: ${problem.trim()}`;
   return `https://wa.me/${EMERGENCY_PHONE_E164}?text=${encodeURIComponent(text)}`;
 }
 

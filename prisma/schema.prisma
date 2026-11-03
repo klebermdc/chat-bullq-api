@@ -1706,6 +1706,9 @@ model Card {
   metadata     Json      @default("{}")
   closedAt     DateTime? @map("closed_at")
   closedReason String?   @map("closed_reason")
+  // Número do chamado de suporte (#S-0042), por organização. Só cards do
+  // quadro de suporte têm.
+  ticketNumber Int?      @map("ticket_number")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1721,6 +1724,7 @@ model Card {
   @@index([organizationId, status])
   @@index([contactId])
   @@index([conversationId])
+  @@unique([organizationId, ticketNumber])
   @@map("cards")
 }
 

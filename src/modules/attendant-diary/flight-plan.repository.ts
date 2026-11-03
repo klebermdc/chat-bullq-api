@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { SIDE_PIPELINE_KEYS } from '../pipelines/lost-recovery.constants';
 import {
   FOLLOW_UP_AFTER_HOURS,
   FOLLOW_UP_UNTIL_DAYS,
@@ -126,7 +127,8 @@ export class FlightPlanRepository {
       assignedToId: userId,
       status: 'OPEN',
       updatedAt: { lte: new Date(now.getTime() - STALLED_CARD_DAYS * DAY_MS) },
-      pipeline: { archived: false },
+      // Chamado de suporte e recuperação de perdidas não são card de venda parado.
+      pipeline: { archived: false, OR: [{ key: null }, { key: { notIn: SIDE_PIPELINE_KEYS } }] },
       stage: { type: 'NORMAL' },
     } satisfies Prisma.CardWhereInput;
     const select = {

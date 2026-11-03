@@ -13,13 +13,14 @@ import { EMERGENCY_CONTACT_TOOL } from '../emergency/emergency-contact.util';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 
 /**
- * Ferramentas da Aline de plantão: responder, deixar recado e o canal de
- * urgência. Ela avisa que o vendedor está fora e faz a triagem de
- * emergência; não consulta produto nem pedido.
+ * Ferramentas da Aline de plantão: responder, deixar recado, abrir chamado e
+ * o canal de urgência. Ela avisa que o vendedor está fora e faz a triagem;
+ * não consulta produto nem pedido.
  */
 export const ON_CALL_TOOLS: ReadonlySet<string> = new Set([
   'replyToConversation',
   'leaveNoteForSeller',
+  'openSupportTicket',
   EMERGENCY_CONTACT_TOOL,
 ]);
 
