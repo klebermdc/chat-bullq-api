@@ -364,7 +364,9 @@ export class SalesRecoveryService {
     stageKey: RecoveryStageKey,
   ): Promise<{ ok: boolean; error?: string }> {
     const card = await this.prisma.card.findFirst({
-      where: { conversationId, status: 'OPEN' },
+      // Sem o filtro, um chamado de suporte aberto na conversa podia ser
+      // pego no lugar do card de recuperação.
+      where: { conversationId, status: 'OPEN', ...NOT_LOST_RECOVERY },
       select: { id: true, pipelineId: true, organizationId: true },
     });
     if (!card) return { ok: false, error: 'no_open_recovery_card' };

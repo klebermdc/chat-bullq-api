@@ -45,9 +45,12 @@ function make(opts: { sockets?: any[]; alreadySent?: boolean; inbound?: any[] } 
   const reply = {
     deliver: jest.fn().mockResolvedValue({ output: { ok: true, messageId: 'msg-1' }, finalAction: 'REPLIED' }),
   } as any;
-  const tool = new SendEmergencyContactTool(prisma, realtime, reply);
+  const tickets = {
+    open: jest.fn().mockResolvedValue({ cardId: 'card-1', ticketNumber: '#S-0042', isNew: true }),
+  } as any;
+  const tool = new SendEmergencyContactTool(prisma, realtime, reply, tickets);
   (tool as any).clock = () => NOW;
-  return { tool, prisma, realtime, reply };
+  return { tool, prisma, realtime, reply, tickets };
 }
 
 const notes = (prisma: any) =>
@@ -71,6 +74,34 @@ describe('SendEmergencyContactTool', () => {
     expect(note.content.text).toContain('🚨');
     expect(note.content.text).toContain('Orlando, na entrada do Magic Kingdom');
     expect(note.content.text).toContain('ingresso não passa na catraca do Magic Kingdom');
+  });
+
+  it('abre chamado urgente e põe o número na mensagem para a equipe de emergência', async () => {
+    const { tool, prisma, reply, tickets } = make();
+
+    await tool.execute(INPUT, CTX);
+
+    expect(tickets.open).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      conversationId: 'conv-1',
+      category: 'ingresso',
+      priority: 'urgente',
+      summary: 'ingresso não passa na catraca do Magic Kingdom (onde: Orlando, na entrada do Magic Kingdom)',
+      customerQuote: INPUT.urgencyQuote,
+      source: 'emergency',
+    });
+    expect(decodeURIComponent(reply.deliver.mock.calls[0][0])).toContain('(chamado #S-0042)');
+    expect(notes(prisma)[0].content.text).toContain('Chamado #S-0042');
+  });
+
+  it('chamado que não abre não impede o link de emergência', async () => {
+    const { tool, reply, tickets } = make();
+    tickets.open.mockRejectedValue(new Error('db fora'));
+
+    const result = await tool.execute(INPUT, CTX);
+
+    expect(result.output).toEqual({ ok: true, sent: true });
+    expect(decodeURIComponent(reply.deliver.mock.calls[0][0])).not.toContain('chamado');
   });
 
   it('procura as provas só nas mensagens do cliente das últimas 48h', async () => {
@@ -128,8 +159,8 @@ describe('SendEmergencyContactTool', () => {
     expect(reply.deliver).toHaveBeenCalled();
   });
 
-  it('alguém da equipe online: não passa o número e deixa o alerta na conversa', async () => {
-    const { tool, prisma, reply } = make({
+  it('alguém da equipe online: não passa o número, não abre chamado e deixa o alerta na conversa', async () => {
+    const { tool, prisma, reply, tickets } = make({
       sockets: [{ organizationId: 'org-1', userId: 'u-1', lastActiveAt: minutesAgo(2) }],
     });
 
@@ -137,6 +168,7 @@ describe('SendEmergencyContactTool', () => {
 
     expect(result.output).toMatchObject({ ok: false, error: 'team_online' });
     expect(reply.deliver).not.toHaveBeenCalled();
+    expect(tickets.open).not.toHaveBeenCalled();
     const [note] = notes(prisma);
     expect(note.content.text).toContain('🚨');
     expect(note.content.text).toContain('equipe online');

@@ -226,6 +226,17 @@ Existe um WhatsApp de emergência para passageiro que JÁ ESTÁ em viagem e tem 
 - Nos campos tripQuote e urgencyQuote, copie as palavras exatas do cliente. A ferramenta confere; se recusar, siga a instrução que ela devolve.
 - Ela só manda o contato quando ninguém da equipe está online. Se responder que tem gente online, diga ao cliente que a equipe já foi avisada.
 - A ferramenta já manda a mensagem ao cliente: depois dela, não chame replyToConversation.
+- Ela também abre o chamado de suporte urgente sozinha: não abra outro com openSupportTicket.
+
+═══ Chamado de suporte ═══
+Quando o cliente relata um problema que precisa de ação da equipe (ingresso, reserva, transfer, hotel, voo, documento, pagamento, reembolso, troca ou reclamação), abra um chamado com \`openSupportTicket\`.
+- O chamado só existe quando ninguém da equipe está online. Se a ferramenta responder que tem gente online, não fale em chamado nem em número: diga que a equipe vai olhar isso já.
+- Não abra chamado para cotação, conversa de venda ou dúvida que você mesma responde.
+- Se não entendeu qual é o problema, pergunte numa frase o que aconteceu antes de abrir.
+- Em customerQuote, copie as palavras exatas do cliente. A ferramenta confere.
+- Prioridade: urgente = já está em viagem e o problema é agora; alta = viagem nos próximos 7 dias ou dinheiro envolvido; normal = o resto.
+- Se a conversa já tem chamado aberto, a ferramenta anexa a novidade nele. Pode chamar de novo quando o cliente trouxer informação nova.
+- Depois, diga ao cliente o número do chamado exatamente como a ferramenta devolveu (ex.: #S-0042) e que a equipe de suporte responde por aqui. Nunca invente número de chamado nem prometa prazo.
 
 ═══ Mensagens com contexto faltando ═══
 Mensagens vindas do Instagram costumam chegar marcadas com "[respondeu a um story do Instagram]" no início do texto. Isso significa que o cliente reagiu a uma postagem que VOCÊ não viu — ele respondeu uma frase curta tipo "Hoje", "Sim", "Bora" pensando que vc sabe de qual story está falando. Quase sempre é resposta a uma campanha em andamento (live de hoje, oferta do dia, lançamento).
@@ -706,6 +717,7 @@ export class PromptBuilderService {
       `\n- Se ainda não avisou nesta conversa, diga numa frase curta que ${sellerName} está fora do horário e volta ${returnAt}.`,
       '\n- Triagem: se a mensagem mostra que é cotação, compra ou dúvida que pode esperar, não pergunte nada, só avise. Se houver sinal de urgência ou não der para saber, pergunte numa frase se o cliente já está em viagem e precisa de ajuda urgente agora.',
       `\n- Emergência confirmada (veja "Urgência em viagem" acima): use ${EMERGENCY_CONTACT_TOOL}. Quem está planejando, cotando ou com dúvida que pode esperar NÃO recebe o contato de emergência.`,
+      '\n- Problema que precisa da equipe e pode esperar: abra o chamado com openSupportTicket (veja "Chamado de suporte" acima) e passe o número ao cliente.',
       `\n- Fora disso, diga que ${sellerName} responde assim que voltar e que o recado fica registrado.`,
       `\n- Registre com leaveNoteForSeller um resumo objetivo para ${sellerName} (o que o cliente quer e se recebeu o telefone de emergência). Registre de novo só se surgir informação nova.`,
       '\n- Depois de avisar, não puxe assunto nem mande mensagem extra. Responda só quando o cliente escrever, sempre com uma mensagem curta.',

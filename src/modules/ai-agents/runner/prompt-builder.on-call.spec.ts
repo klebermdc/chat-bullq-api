@@ -52,6 +52,7 @@ describe('PromptBuilderService — Aline de plantão', () => {
     const text = volatilePart(buildCtx({ sellerName: 'Pedro', returnAt: 'amanhã às 9h' }));
 
     expect(text).toContain('sendEmergencyContact');
+    expect(text).toContain('openSupportTicket');
     expect(text).toContain('já está em viagem');
     expect(text).toContain('não puxe assunto');
   });
@@ -63,6 +64,9 @@ describe('PromptBuilderService — Aline de plantão', () => {
     const full = system.content.map((part: any) => part.text).join('');
 
     expect(full).toContain('═══ Urgência em viagem ═══');
+    expect(full).toContain('═══ Chamado de suporte ═══');
+    expect(full).toContain('Nunca invente número de chamado');
+    expect(full).toContain('só existe quando ninguém da equipe está online');
     expect(full).toContain('copie as palavras exatas do cliente');
     expect(full.replace(/\D/g, '')).not.toContain('51941724');
   });

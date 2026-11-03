@@ -107,7 +107,12 @@ describe('OnCallService.evaluate', () => {
 });
 
 describe('ON_CALL_TOOLS', () => {
-  it('no plantão a Aline só responde, deixa recado e usa o canal de urgência: sem consultar produto ou pedido', () => {
-    expect([...ON_CALL_TOOLS].sort()).toEqual(['leaveNoteForSeller', 'replyToConversation', 'sendEmergencyContact']);
+  it('no plantão a Aline só responde, deixa recado, abre chamado e usa o canal de urgência: sem consultar produto ou pedido', () => {
+    expect([...ON_CALL_TOOLS].sort()).toEqual([
+      'leaveNoteForSeller',
+      'openSupportTicket',
+      'replyToConversation',
+      'sendEmergencyContact',
+    ]);
   });
 });

@@ -17,6 +17,12 @@ describe('buildEmergencyLink', () => {
     );
   });
 
+  it('com chamado aberto, o número do chamado vai na mensagem', () => {
+    const text = decodeURIComponent(buildEmergencyLink('Maria', 'transfer não apareceu', '#S-0042').split('?text=')[1]);
+
+    expect(text).toContain('preciso de ajuda urgente (chamado #S-0042): transfer não apareceu');
+  });
+
   it('sem nome do contato, a mensagem continua de pé', () => {
     const text = decodeURIComponent(buildEmergencyLink(null, 'transfer não apareceu').split('?text=')[1]);
 
