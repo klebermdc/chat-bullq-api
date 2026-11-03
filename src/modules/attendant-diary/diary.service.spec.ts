@@ -25,6 +25,7 @@ function setup(overrides: { existing?: object | null; messages?: DiaryMessage[] 
     findOnlineMinutes: jest.fn().mockResolvedValue(300),
     findContactNames: jest.fn().mockResolvedValue(new Map([['c1', 'Ana Souza']])),
     saveDiary: jest.fn().mockResolvedValue(undefined),
+    recordFailure: jest.fn().mockResolvedValue(undefined),
   };
   const llm = { complete: jest.fn() };
   const criteriaService = { loadCriteria: jest.fn().mockResolvedValue(criteria) };
@@ -48,6 +49,19 @@ describe('DiaryService.generate', () => {
     llm.complete.mockResolvedValue(llmAnswer('{"resumo":"ok"}'));
 
     await expect(service.generate({ ...JOB, force: true })).resolves.toBe('READY');
+  });
+
+  test('falha ao gerar de novo não apaga o diário que já estava pronto', async () => {
+    const { service, llm, repository } = setup({ existing: { status: 'READY' } });
+    llm.complete.mockResolvedValue(llmAnswer('não sei'));
+
+    const result = await service.generate({ ...JOB, force: true });
+
+    expect(result).toBe('FAILED');
+    expect(repository.saveDiary).not.toHaveBeenCalled();
+    expect(repository.recordFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ day: JOB.day, errorMessage: expect.any(String), costUsd: 0.01 }),
+    );
   });
 
   test('dia sem atendimento salva EMPTY sem chamar a IA', async () => {

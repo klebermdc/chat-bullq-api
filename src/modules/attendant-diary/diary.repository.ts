@@ -245,6 +245,24 @@ export class DiaryRepository {
     });
   }
 
+  /**
+   * Gerar de novo e falhar não pode apagar um diário bom: só registra o erro e
+   * o custo da tentativa, para o gestor ver no painel.
+   */
+  async recordFailure(record: {
+    organizationId: string;
+    userId: string;
+    day: string;
+    errorMessage: string;
+    costUsd: number;
+  }): Promise<void> {
+    const { organizationId, userId, day, errorMessage, costUsd } = record;
+    await this.prisma.attendantDiary.update({
+      where: { uq_diary_org_user_day: { organizationId, userId, day: toDbDay(day) } },
+      data: { errorMessage, costUsd: { increment: costUsd } },
+    });
+  }
+
   /** Diário mais recente pronto do atendente, ou o de um dia específico. */
   findForUser(organizationId: string, userId: string, day?: string) {
     return this.prisma.attendantDiary.findFirst({

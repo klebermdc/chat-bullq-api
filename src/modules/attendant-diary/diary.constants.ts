@@ -25,11 +25,19 @@ export const MAX_CONTEXT_MESSAGES = 10;
 export const MAX_LINE_CHARS = 1000;
 export const MAX_POINTS_PER_SECTION = 4;
 export const MIN_QUOTE_CHARS = 15;
-export const DIARY_MAX_TOKENS = 4000;
+/** Folga para o dia inteiro: resposta cortada vira JSON ilegível e o diário falha. */
+export const DIARY_MAX_TOKENS = 8000;
 export const MIN_SCORE = 1;
 export const MAX_SCORE = 5;
 /** Primeira tentativa e uma nova, se a IA misturar outro idioma. */
 export const MAX_EVALUATION_ATTEMPTS = 2;
+
+/** Plano de voo: cliente calado entre 1 e 7 dias entra em "retomar". */
+export const FOLLOW_UP_AFTER_HOURS = 24;
+export const FOLLOW_UP_UNTIL_DAYS = 7;
+/** Card aberto sem mudança há esse tempo conta como parado no CRM. */
+export const STALLED_CARD_DAYS = 3;
+export const PLAN_ITEMS_PER_SECTION = 15;
 
 /**
  * Mesmo id para o mesmo dia: dois cliques não pagam a IA duas vezes. O job é

@@ -9,10 +9,11 @@ import { DiaryCron } from './diary.cron';
 import { DiaryRepository } from './diary.repository';
 import { DiaryService } from './diary.service';
 import { DIARY_QUEUE } from './diary.constants';
+import { FlightPlanRepository } from './flight-plan.repository';
 
 /**
  * Diário do atendente: todo dia de manhã, métricas e um mini treinamento do
- * dia anterior. Módulo isolado: só lê conversas e não participa do atendimento.
+ * dia anterior, mais o plano de voo do dia. Módulo isolado: só lê conversas e não participa do atendimento.
  */
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { DIARY_QUEUE } from './diary.constants';
     DiaryRepository,
     DiaryService,
     DiaryCron,
+    FlightPlanRepository,
   ],
 })
 export class AttendantDiaryModule {}
