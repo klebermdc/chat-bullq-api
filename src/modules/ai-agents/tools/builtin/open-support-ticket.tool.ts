@@ -10,7 +10,7 @@ import {
 import { SupportTicketsService } from "../../../support-tickets/support-tickets.service";
 import { isQuoteFromCustomer } from "../../emergency/emergency-contact.util";
 import { loadRecentCustomerTexts } from "../customer-evidence";
-import { isTeamOnline } from "../team-availability";
+import { isSellerOnline } from "../team-availability";
 import { AiTool, ToolContext, ToolResult } from "../tool.types";
 
 export const OPEN_SUPPORT_TICKET_TOOL = "openSupportTicket";
@@ -20,8 +20,9 @@ const MAX_QUOTE_LENGTH = 300;
 
 /**
  * Abre (ou atualiza) o chamado de suporte da conversa quando o cliente relata
- * um problema que precisa da equipe e NINGUÉM da equipe está online. Com
- * alguém online, a equipe atende na hora e não há chamado. A citação do
+ * um problema que precisa da equipe e o vendedor dele não está online
+ * (colega online não conta). Com o vendedor online, ele atende na hora e não
+ * há chamado. A citação do
  * cliente é conferida no servidor. A Aline passa o número ao cliente com
  * replyToConversation.
  */
@@ -31,7 +32,7 @@ export class OpenSupportTicketTool implements AiTool {
   readonly description =
     "Abre um chamado de suporte para a equipe quando o cliente relata um problema que precisa de ação " +
     "(ingresso, reserva, transfer, hotel, voo, documento, pagamento, reembolso, troca, reclamação). " +
-    "Só abre quando ninguém da equipe está online. Se a conversa já tem chamado aberto, a informação " +
+    "Só abre quando o vendedor do cliente não está online. Se a conversa já tem chamado aberto, a informação " +
     "nova entra nele. Devolve o número do chamado " +
     "para você passar ao cliente. Não use para cotação nem para dúvida que você mesma responde.";
   readonly parameters = {
@@ -93,10 +94,10 @@ export class OpenSupportTicketTool implements AiTool {
     }
 
     const now = new Date();
-    if (await isTeamOnline(this.realtime, ctx.organizationId, now)) {
+    if (await isSellerOnline(this.prisma, this.realtime, ctx, now)) {
       return refuse(
-        "team_online",
-        "Tem gente da equipe online agora: não abra chamado e não fale em número de chamado. Diga ao cliente que a equipe vai olhar isso já. Se transferToHuman estiver disponível, use com o resumo do problema.",
+        "seller_online",
+        "O vendedor deste cliente está online agora: não abra chamado e não fale em número de chamado. Diga ao cliente que o atendente dele vai olhar isso já. Se transferToHuman estiver disponível, use com o resumo do problema.",
       );
     }
 
