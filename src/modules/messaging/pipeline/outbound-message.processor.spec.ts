@@ -5,7 +5,7 @@ import { OutboundMessageProcessor } from './outbound-message.processor';
  * Foco: o gatilho de reengajamento de entrada (Task 9) — depois que uma
  * mensagem SAI com sucesso, se ela foi enviada pela Aline (agente IA,
  * metadata.aiAgentId presente), arma a cadência NO_REPLY via
- * `cadenceRunner.maybeStartForNoReply(conversationId)`. Toques de cadência
+ * `cadenceRunner.maybeStartForNoReply(conversationId, texto)`. Toques de cadência
  * (humano/sistema) NÃO têm aiAgentId, então não re-disparam — sem loop.
  *
  * Também cobre a correção correlata: `metadata` é campo JSON no Prisma —
@@ -21,6 +21,7 @@ describe('OutboundMessageProcessor — gatilho de reengajamento NO_REPLY', () =>
     const updatedRow = overrides?.updatedRow ?? {
       id: 'm1',
       conversationId: 'c1',
+      content: { text: 'Quais parques?' },
       metadata: existingMetadata,
     };
 
@@ -91,7 +92,7 @@ describe('OutboundMessageProcessor — gatilho de reengajamento NO_REPLY', () =>
 
     await processor.process(buildJob());
 
-    expect(cadenceRunner.maybeStartForNoReply).toHaveBeenCalledWith('c1');
+    expect(cadenceRunner.maybeStartForNoReply).toHaveBeenCalledWith('c1', 'Quais parques?');
     expect(cadenceRunner.maybeStartForNoReply).toHaveBeenCalledTimes(1);
   });
 

@@ -198,7 +198,7 @@ describe('ScheduledDispatchProcessor', () => {
   });
 
   describe('cadência em conversa com vendedor', () => {
-    function makeCadenceDeps(conversation: any) {
+    function makeCadenceDeps(conversation: any, trigger = 'BOTH') {
       // requireAiParked=true: agendamentos antigos criados antes da mudança.
       const row = { ...base, origin: 'CADENCE', requireAiParked: true, cadenceEnrollmentId: 'e1', cadenceStepOrder: 1 };
       const repo = {
@@ -213,14 +213,21 @@ describe('ScheduledDispatchProcessor', () => {
             ...conversation,
           })),
         },
+        cadenceEnrollment: {
+          findUnique: jest.fn(async () => ({ cadence: { trigger } })),
+        },
       };
       const messages = { send: jest.fn(async () => ({ id: 'm1' })) };
+      const cadenceRunner = {
+        onStepSent: jest.fn(async () => undefined),
+        stop: jest.fn(async () => null),
+      };
       const processor = new ScheduledDispatchProcessor(
         repo as any, prisma as any, messages as any,
         { add: jest.fn(async () => ({ id: 'j' })) } as any,
-        { onStepSent: jest.fn(async () => undefined) } as any,
+        cadenceRunner as any,
       );
-      return { processor, repo, messages };
+      return { processor, repo, messages, cadenceRunner };
     }
 
     it('envia quando a conversa tem vendedor responsável e a IA está desligada', async () => {
@@ -232,7 +239,7 @@ describe('ScheduledDispatchProcessor', () => {
     });
 
     it('cancela (awaiting_human) quando o cliente está esperando resposta do atendente', async () => {
-      const { processor, repo, messages } = makeCadenceDeps({
+      const { processor, repo, messages, cadenceRunner } = makeCadenceDeps({
         assignedToId: 'u1', awaitingHumanReply: true, aiEnabled: null,
       });
       await processor.process({ data: { scheduledMessageId: 's1' } } as any);
@@ -240,6 +247,32 @@ describe('ScheduledDispatchProcessor', () => {
       expect(repo.update).toHaveBeenCalledWith('s1', expect.objectContaining({
         status: 'CANCELED', cancelReason: 'awaiting_human',
       }));
+      // Sem encerrar, a inscrição fica ACTIVE sem toque e bloqueia a conversa.
+      expect(cadenceRunner.stop).toHaveBeenCalledWith('e1', 'awaiting_human');
+    });
+
+    describe('reengajamento (NO_REPLY)', () => {
+      it('envia com awaitingHumanReply=true: o flag foi ligado pela msg do cliente, não por humano', async () => {
+        const { processor, messages } = makeCadenceDeps(
+          { assignedToId: null, awaitingHumanReply: true, aiEnabled: null },
+          'NO_REPLY',
+        );
+        await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+        expect(messages.send).toHaveBeenCalled();
+      });
+
+      it('para quando um vendedor assumiu a conversa', async () => {
+        const { processor, repo, messages, cadenceRunner } = makeCadenceDeps(
+          { assignedToId: 'u1', awaitingHumanReply: false, aiEnabled: false },
+          'NO_REPLY',
+        );
+        await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+        expect(messages.send).not.toHaveBeenCalled();
+        expect(repo.update).toHaveBeenCalledWith('s1', expect.objectContaining({
+          status: 'CANCELED', cancelReason: 'not_ai_parked',
+        }));
+        expect(cadenceRunner.stop).toHaveBeenCalledWith('e1', 'not_ai_parked');
+      });
     });
   });
 

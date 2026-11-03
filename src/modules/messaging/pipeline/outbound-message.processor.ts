@@ -176,7 +176,10 @@ export class OutboundMessageProcessor extends WorkerHost {
       // Toques de cadência NÃO têm aiAgentId → não re-disparam (sem loop).
       if ((updated?.metadata as any)?.aiAgentId && updated?.conversationId) {
         this.cadenceRunner
-          .maybeStartForNoReply(updated.conversationId)
+          .maybeStartForNoReply(
+            updated.conversationId,
+            (updated.content as { text?: string } | null)?.text,
+          )
           .catch((err) =>
             this.logger.warn(
               `cadence_no_reply_start_failed msg=${messageId}: ${(err as Error).message}`,

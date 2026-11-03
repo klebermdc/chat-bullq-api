@@ -131,6 +131,13 @@ function makeDeps(opts: any = {}) {
     userOrganization: {
       findFirst: jest.fn(async () => ({ userId: 'owner1' })),
     },
+    aiPendingAction: {
+      findFirst: jest.fn(async (): Promise<any> => null),
+    },
+    // Por padrão toda inscrição viva tem toque pendente (não é zumbi).
+    scheduledMessage: {
+      count: jest.fn(async () => 1),
+    },
   };
 
   const runner = new CadenceRunner(
@@ -574,6 +581,7 @@ describe('CadenceRunner.maybeStartForStage', () => {
 });
 
 describe('CadenceRunner.maybeStartForNoReply', () => {
+  const PERGUNTA = 'Quais parques você quer visitar?';
   const conv = {
     id: 'c1',
     organizationId: 'org1',
@@ -600,10 +608,67 @@ describe('CadenceRunner.maybeStartForNoReply', () => {
       .spyOn(runner, 'start')
       .mockResolvedValue({ id: 'e1' } as any);
 
-    const result = await runner.maybeStartForNoReply('c1');
+    const result = await runner.maybeStartForNoReply('c1', PERGUNTA);
 
     expect(startSpy).toHaveBeenCalledWith('c1', 'cad-nr', 'NO_REPLY');
     expect(result).toEqual({ id: 'e1' });
+  });
+
+  // Regressão 2026-11-01: toda mensagem do cliente liga awaitingHumanReply e a
+  // resposta da Aline não desliga, então a cadência nunca inscreveu ninguém.
+  it('inscreve mesmo com awaitingHumanReply=true (flag ligado pela msg do cliente)', async () => {
+    const { runner, cadences, prisma } = makeDeps();
+    prisma.conversation.findUnique.mockResolvedValue({ ...conv, awaitingHumanReply: true });
+    cadences.findNoReply.mockResolvedValue(
+      makeCadence({ id: 'cad-nr', trigger: 'NO_REPLY', enabled: true, watchedStageIds: [] }),
+    );
+    const startSpy = jest.spyOn(runner, 'start').mockResolvedValue({ id: 'e1' } as any);
+
+    await runner.maybeStartForNoReply('c1', PERGUNTA);
+
+    expect(startSpy).toHaveBeenCalledWith('c1', 'cad-nr', 'NO_REPLY');
+  });
+
+  it('NÃO inscreve quando a Aline não fez pergunta (despedida, aviso de transferência)', async () => {
+    const { runner, cadences, prisma } = makeDeps();
+    prisma.conversation.findUnique.mockResolvedValue(conv);
+    cadences.findNoReply.mockResolvedValue(
+      makeCadence({ id: 'cad-nr', trigger: 'NO_REPLY', enabled: true, watchedStageIds: [] }),
+    );
+    const startSpy = jest.spyOn(runner, 'start').mockResolvedValue({ id: 'e1' } as any);
+
+    const result = await runner.maybeStartForNoReply('c1', 'Perfeito, já tenho tudo que preciso 😊');
+
+    expect(startSpy).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+
+  it('NÃO inscreve quando há transferência aguardando distribuição', async () => {
+    const { runner, cadences, prisma } = makeDeps();
+    prisma.conversation.findUnique.mockResolvedValue(conv);
+    prisma.aiPendingAction.findFirst.mockResolvedValue({ id: 'pa1' });
+    cadences.findNoReply.mockResolvedValue(
+      makeCadence({ id: 'cad-nr', trigger: 'NO_REPLY', enabled: true, watchedStageIds: [] }),
+    );
+    const startSpy = jest.spyOn(runner, 'start').mockResolvedValue({ id: 'e1' } as any);
+
+    const result = await runner.maybeStartForNoReply('c1', PERGUNTA);
+
+    expect(startSpy).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+
+  it('NÃO inscreve em conversa encerrada', async () => {
+    const { runner, cadences, prisma } = makeDeps();
+    prisma.conversation.findUnique.mockResolvedValue({ ...conv, status: 'CLOSED' });
+    cadences.findNoReply.mockResolvedValue(
+      makeCadence({ id: 'cad-nr', trigger: 'NO_REPLY', enabled: true, watchedStageIds: [] }),
+    );
+    const startSpy = jest.spyOn(runner, 'start').mockResolvedValue({ id: 'e1' } as any);
+
+    await runner.maybeStartForNoReply('c1', PERGUNTA);
+
+    expect(startSpy).not.toHaveBeenCalled();
   });
 
   it('NÃO inscreve quando a IA foi desligada na conversa (aiEnabled=false)', async () => {
@@ -614,7 +679,7 @@ describe('CadenceRunner.maybeStartForNoReply', () => {
     );
     const startSpy = jest.spyOn(runner, 'start').mockResolvedValue({ id: 'e1' } as any);
 
-    const result = await runner.maybeStartForNoReply('c1');
+    const result = await runner.maybeStartForNoReply('c1', PERGUNTA);
 
     expect(startSpy).not.toHaveBeenCalled();
     expect(result).toBeNull();
@@ -638,31 +703,7 @@ describe('CadenceRunner.maybeStartForNoReply', () => {
       .spyOn(runner, 'start')
       .mockResolvedValue({ id: 'e1' } as any);
 
-    const result = await runner.maybeStartForNoReply('c1');
-
-    expect(startSpy).not.toHaveBeenCalled();
-    expect(result).toBeNull();
-  });
-
-  it('NÃO inscreve quando está aguardando humano (awaitingHumanReply=true)', async () => {
-    const { runner, cadences, prisma } = makeDeps();
-    prisma.conversation.findUnique.mockResolvedValue({
-      ...conv,
-      awaitingHumanReply: true,
-    });
-    cadences.findNoReply.mockResolvedValue(
-      makeCadence({
-        id: 'cad-nr',
-        trigger: 'NO_REPLY',
-        enabled: true,
-        watchedStageIds: [],
-      }),
-    );
-    const startSpy = jest
-      .spyOn(runner, 'start')
-      .mockResolvedValue({ id: 'e1' } as any);
-
-    const result = await runner.maybeStartForNoReply('c1');
+    const result = await runner.maybeStartForNoReply('c1', PERGUNTA);
 
     expect(startSpy).not.toHaveBeenCalled();
     expect(result).toBeNull();
@@ -684,7 +725,7 @@ describe('CadenceRunner.maybeStartForNoReply', () => {
       .spyOn(runner, 'start')
       .mockResolvedValue({ id: 'e1' } as any);
 
-    const result = await runner.maybeStartForNoReply('c1');
+    const result = await runner.maybeStartForNoReply('c1', PERGUNTA);
 
     expect(startSpy).not.toHaveBeenCalled();
     expect(result).toBeNull();
@@ -698,7 +739,7 @@ describe('CadenceRunner.maybeStartForNoReply', () => {
       .spyOn(runner, 'start')
       .mockResolvedValue({ id: 'e1' } as any);
 
-    const result = await runner.maybeStartForNoReply('c1');
+    const result = await runner.maybeStartForNoReply('c1', PERGUNTA);
 
     expect(startSpy).not.toHaveBeenCalled();
     expect(result).toBeNull();
@@ -852,5 +893,139 @@ describe('CadenceRunner.resumeNow', () => {
     await expect(runner.resumeNow('e1', 'org1')).rejects.toThrow(
       'enrollment_not_found',
     );
+  });
+});
+
+describe('CadenceRunner — saída do reengajamento (NO_REPLY)', () => {
+  const noReply = () =>
+    makeCadence({ id: 'cad-nr', trigger: 'NO_REPLY', lostStageId: 'stage-lista' });
+  const enrollment = {
+    id: 'enr1',
+    organizationId: 'org1',
+    cadenceId: 'cad-nr',
+    conversationId: 'conv1',
+    contactId: 'ct1',
+    cardId: 'card1',
+    currentStep: 2,
+    status: 'ACTIVE',
+  };
+
+  it('último toque: NÃO encerra na hora, agenda a saída para 1 dia depois', async () => {
+    const { runner, cadences, enrollments, enrollmentsStore, silenceQueue, prisma } = makeDeps();
+    cadences.findById.mockResolvedValue(noReply());
+    enrollmentsStore.push({ ...enrollment });
+
+    await runner.onStepSent('enr1', 2);
+
+    expect(enrollments.finishIfActive).not.toHaveBeenCalled();
+    expect(prisma.card.update).not.toHaveBeenCalled();
+    expect(silenceQueue.add).toHaveBeenCalledWith(
+      'cadence-no-reply-exit',
+      { enrollmentId: 'enr1' },
+      expect.objectContaining({
+        delay: 1440 * 60_000,
+        jobId: expect.stringMatching(/^cadexit-enr1-\d+$/),
+      }),
+    );
+  });
+
+  it('passado o dia: encerra e deixa o card ABERTO na etapa NORMAL (não é venda perdida)', async () => {
+    const { runner, cadences, enrollments, enrollmentsStore, prisma } = makeDeps();
+    cadences.findById.mockResolvedValue(noReply());
+    prisma.pipelineStage.findUnique.mockResolvedValue({ id: 'stage-lista', pipelineId: 'pl1', type: 'NORMAL' });
+    enrollmentsStore.push({ ...enrollment });
+
+    await runner.exitNoReply('enr1');
+
+    expect(enrollments.finishIfActive).toHaveBeenCalledWith(
+      'enr1',
+      expect.objectContaining({ status: 'COMPLETED_NO_REPLY' }),
+    );
+    expect(prisma.card.update).toHaveBeenCalledWith({
+      where: { id: 'card1' },
+      data: { stageId: 'stage-lista', status: 'OPEN', closedAt: null },
+    });
+  });
+
+  it('cliente respondeu durante a espera: a saída vira no-op', async () => {
+    const { runner, cadences, enrollments, enrollmentsStore, prisma } = makeDeps();
+    cadences.findById.mockResolvedValue(noReply());
+    enrollmentsStore.push({ ...enrollment, status: 'RESUMED_AI' });
+
+    await runner.exitNoReply('enr1');
+
+    expect(enrollments.finishIfActive).not.toHaveBeenCalled();
+    expect(prisma.card.update).not.toHaveBeenCalled();
+  });
+
+  it('etapa de saída LOST continua fechando o card como perdido', async () => {
+    const { runner, enrollmentsStore, prisma } = makeDeps();
+    prisma.pipelineStage.findUnique.mockResolvedValue({ id: 'stage-lost', pipelineId: 'pl1', type: 'LOST' });
+    enrollmentsStore.push({ ...enrollment, cadenceId: 'cad1' });
+
+    await runner.onStepSent('enr1', 2);
+
+    expect((prisma.card.update.mock.calls[0] as any[])[0].data).toEqual(
+      expect.objectContaining({ stageId: 'stage-lost', status: 'LOST', closedAt: expect.any(Date) }),
+    );
+  });
+
+  it('toque do reengajamento que cairia de madrugada vai para as 8h', async () => {
+    const { runner, cadences, enrollmentsStore, schedRepo } = makeDeps();
+    cadences.findById.mockResolvedValue(
+      makeCadence({
+        id: 'cad-nr',
+        trigger: 'NO_REPLY',
+        steps: [{ order: 1, delayMinutes: 180, contentType: 'TEXT', content: { text: 'oi' }, options: [] }],
+      }),
+    );
+    enrollmentsStore.length = 0;
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(new Date('2026-11-02T02:00:00.000Z').getTime()); // 23h BRT
+
+    await runner.start('conv1', 'cad-nr', 'NO_REPLY');
+    spy.mockRestore();
+
+    expect(schedRepo.create.mock.calls[0][0].scheduledAt).toEqual(new Date('2026-11-02T11:00:00.000Z')); // 8h BRT
+  });
+});
+
+describe('CadenceRunner.start — inscrição zumbi', () => {
+  const old = new Date(Date.now() - 3 * 24 * 3600_000);
+  const zumbi = {
+    id: 'enrZ',
+    organizationId: 'org1',
+    cadenceId: 'cad1',
+    conversationId: 'conv1',
+    contactId: 'ct1',
+    currentStep: 1,
+    status: 'ACTIVE',
+    startedAt: old,
+    lastStepAt: old,
+  };
+
+  it('ACTIVE antiga sem toque pendente é encerrada e não bloqueia a nova cadência', async () => {
+    const { runner, enrollments, enrollmentsStore, prisma } = makeDeps();
+    enrollmentsStore.push({ ...zumbi });
+    prisma.scheduledMessage.count.mockResolvedValue(0);
+
+    const result = await runner.start('conv1', 'cad1', 'STAGE_ENTER');
+
+    expect(enrollments.finishIfLive).toHaveBeenCalledWith(
+      'enrZ',
+      expect.objectContaining({ status: 'HANDED_OFF', endReason: 'stale' }),
+    );
+    expect(enrollments.create).toHaveBeenCalled();
+    expect(result?.id).not.toBe('enrZ');
+  });
+
+  it('ACTIVE recente sem toque pendente (entre um passo e outro) continua valendo', async () => {
+    const { runner, enrollments, enrollmentsStore, prisma } = makeDeps();
+    enrollmentsStore.push({ ...zumbi, lastStepAt: new Date() });
+    prisma.scheduledMessage.count.mockResolvedValue(0);
+
+    const result = await runner.start('conv1', 'cad1', 'STAGE_ENTER');
+
+    expect(enrollments.create).not.toHaveBeenCalled();
+    expect(result?.id).toBe('enrZ');
   });
 });

@@ -112,17 +112,20 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       return;
     }
 
-    // Cadência fala também em conversa com vendedor (decisão 26/10/2026: os
-    // toques eram quase todos cancelados como not_ai_parked). Só segura quando
-    // o cliente está esperando resposta do atendente. Vale também para os
+    // Cadência tem regra própria (ver `cadenceHoldReason`). Vale também para os
     // agendamentos antigos, criados com requireAiParked=true.
     if (row.origin === 'CADENCE') {
-      if (conversation.awaitingHumanReply) {
+      const holdReason = await this.cadenceHoldReason(row, conversation);
+      if (holdReason) {
         await this.repo.update(row.id, {
           status: 'CANCELED',
           canceledAt: new Date(),
-          cancelReason: 'awaiting_human',
+          cancelReason: holdReason,
         });
+        // Sem encerrar, a inscrição fica ACTIVE sem toque e bloqueia a conversa.
+        if (row.cadenceEnrollmentId) {
+          await this.cadenceRunner.stop(row.cadenceEnrollmentId, holdReason);
+        }
         return;
       }
     } else if (
@@ -246,6 +249,39 @@ export class ScheduledDispatchProcessor extends WorkerHost {
         failedReason: (err as Error).message.slice(0, 500),
       });
     }
+  }
+
+  /**
+   * Por que este toque de cadência não deve sair; `null` = pode enviar.
+   *
+   * - Reengajamento (NO_REPLY) é falar com quem sumiu da Aline: para quando um
+   *   vendedor assume ou a IA é desligada. `awaitingHumanReply` não conta aqui:
+   *   toda mensagem do cliente liga o flag e a resposta da Aline não desliga.
+   * - As demais falam também em conversa com vendedor (decisão de 26/10/2026) e
+   *   só seguram quando o cliente espera resposta do atendente.
+   */
+  private async cadenceHoldReason(
+    row: { cadenceEnrollmentId?: string | null },
+    conversation: {
+      assignedToId: string | null;
+      awaitingHumanReply: boolean;
+      aiEnabled: boolean | null;
+    },
+  ): Promise<string | null> {
+    const humanTookOver =
+      !!conversation.assignedToId || conversation.aiEnabled === false;
+    if (!humanTookOver && !conversation.awaitingHumanReply) return null;
+
+    const enrollment = row.cadenceEnrollmentId
+      ? await this.prisma.cadenceEnrollment.findUnique({
+          where: { id: row.cadenceEnrollmentId },
+          select: { cadence: { select: { trigger: true } } },
+        })
+      : null;
+    if (enrollment?.cadence.trigger === 'NO_REPLY') {
+      return humanTookOver ? 'not_ai_parked' : null;
+    }
+    return conversation.awaitingHumanReply ? 'awaiting_human' : null;
   }
 
   /**

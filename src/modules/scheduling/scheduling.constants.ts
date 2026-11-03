@@ -9,3 +9,5 @@ export const INACTIVITY_WATCHDOG_JOB = 'scan-inactivity';
 /** Watchdog de silêncio da cadência: decide retomar/rearmar/cancelar após a pausa. */
 export const CADENCE_SILENCE_QUEUE = 'cadence-silence';
 export const CADENCE_SILENCE_JOB = 'check-cadence-silence';
+/** Mesma fila: saída do reengajamento, um dia depois do último toque. */
+export const CADENCE_EXIT_JOB = 'cadence-no-reply-exit';

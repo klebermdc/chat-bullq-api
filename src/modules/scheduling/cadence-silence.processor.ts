@@ -7,7 +7,11 @@ import { CadencesRepository } from '../cadences/cadences.repository';
 import { CadenceRunner } from '../cadences/cadence-runner.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { AutoReengageService } from './inactivity/auto-reengage.service';
-import { CADENCE_SILENCE_QUEUE, CADENCE_SILENCE_JOB } from './scheduling.constants';
+import {
+  CADENCE_EXIT_JOB,
+  CADENCE_SILENCE_QUEUE,
+  CADENCE_SILENCE_JOB,
+} from './scheduling.constants';
 
 /** Quiet hours da retomada: 20h→8h no fuso padrão do Brasil. */
 const RESUME_QUIET_START = 20;
@@ -38,6 +42,10 @@ export class CadenceSilenceProcessor extends WorkerHost {
 
   async process(job: Job<{ enrollmentId: string }>): Promise<void> {
     const { enrollmentId } = job.data;
+    if (job.name === CADENCE_EXIT_JOB) {
+      await this.runner.exitNoReply(enrollmentId);
+      return;
+    }
     const enrollment = await this.enrollments.findById(enrollmentId);
     if (!enrollment || enrollment.status !== 'PAUSED') return;
 
