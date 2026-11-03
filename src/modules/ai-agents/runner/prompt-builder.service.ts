@@ -16,7 +16,8 @@ import {
   formatHoursSummary,
   type BusinessHoursConfig,
 } from '../../routing/availability/business-hours.util';
-import { ON_CALL_EMERGENCY_PHONE, type OnCallContext } from '../on-call/on-call.service';
+import type { OnCallContext } from '../on-call/on-call.service';
+import { EMERGENCY_CONTACT_TOOL } from '../emergency/emergency-contact.util';
 
 export interface PromptContext {
   organization: Organization;
@@ -216,6 +217,15 @@ EXEMPLO BOM (curto, humano, uma pergunta de cada vez):
 "manhã ou tarde fica melhor pra vc?"
 - \`transferToHuman\` é EXCLUSIVAMENTE pra escalada quando você NÃO consegue resolver. NÃO use pra "fechar ticket" depois de resolver — se você executou a ação com sucesso, basta confirmar pro cliente via \`replyToConversation\` e parar. Transferir uma conversa já resolvida desperdiça o tempo do humano.
 - Resolveu o problema? Responde, opcionalmente tagueia, e PARA. Conversa fechada não precisa de transferência.
+
+═══ Urgência em viagem ═══
+Existe um WhatsApp de emergência para passageiro que JÁ ESTÁ em viagem e tem um problema que não pode esperar. Ele só sai pela ferramenta \`${EMERGENCY_CONTACT_TOOL}\`; nunca escreva esse número numa resposta.
+- Use só quando as DUAS coisas estão nas palavras do próprio cliente: (1) ele já está no destino ou a caminho (no parque, no hotel, no aeroporto, no voo) e (2) tem um problema urgente agora (ingresso que não passa, transfer que não veio, hotel sem reserva, voo perdido, documento, saúde ou segurança).
+- Não deduza. "Vou viajar", "minha viagem é semana que vem", cotação, dúvida sobre ingresso ou reclamação que pode esperar NÃO são urgência em viagem.
+- Na dúvida, pergunte numa frase: "Você já está em viagem agora? O que está acontecendo?" e espere a resposta antes de usar a ferramenta.
+- Nos campos tripQuote e urgencyQuote, copie as palavras exatas do cliente. A ferramenta confere; se recusar, siga a instrução que ela devolve.
+- Ela só manda o contato quando ninguém da equipe está online. Se responder que tem gente online, diga ao cliente que a equipe já foi avisada.
+- A ferramenta já manda a mensagem ao cliente: depois dela, não chame replyToConversation.
 
 ═══ Mensagens com contexto faltando ═══
 Mensagens vindas do Instagram costumam chegar marcadas com "[respondeu a um story do Instagram]" no início do texto. Isso significa que o cliente reagiu a uma postagem que VOCÊ não viu — ele respondeu uma frase curta tipo "Hoje", "Sim", "Bora" pensando que vc sabe de qual story está falando. Quase sempre é resposta a uma campanha em andamento (live de hoje, oferta do dia, lançamento).
@@ -695,7 +705,7 @@ export class PromptBuilderService {
       `\n- NÃO tire dúvidas, NÃO consulte produtos ou pedidos, NÃO qualifique, NÃO venda, NÃO negocie, NÃO passe valores e NÃO transfira. Tudo isso é com ${sellerName}.`,
       `\n- Se ainda não avisou nesta conversa, diga numa frase curta que ${sellerName} está fora do horário e volta ${returnAt}.`,
       '\n- Triagem: se a mensagem mostra que é cotação, compra ou dúvida que pode esperar, não pergunte nada, só avise. Se houver sinal de urgência ou não der para saber, pergunte numa frase se o cliente já está em viagem e precisa de ajuda urgente agora.',
-      `\n- Só passe o telefone de emergência ${ON_CALL_EMERGENCY_PHONE} se o cliente JÁ ESTÁ em viagem (no destino ou a caminho) E tem um problema urgente, como ingresso que não passa na entrada, transfer, hotel ou documento. Quem está planejando, cotando ou com dúvida que pode esperar NÃO recebe o número.`,
+      `\n- Emergência confirmada (veja "Urgência em viagem" acima): use ${EMERGENCY_CONTACT_TOOL}. Quem está planejando, cotando ou com dúvida que pode esperar NÃO recebe o contato de emergência.`,
       `\n- Fora disso, diga que ${sellerName} responde assim que voltar e que o recado fica registrado.`,
       `\n- Registre com leaveNoteForSeller um resumo objetivo para ${sellerName} (o que o cliente quer e se recebeu o telefone de emergência). Registre de novo só se surgir informação nova.`,
       '\n- Depois de avisar, não puxe assunto nem mande mensagem extra. Responda só quando o cliente escrever, sempre com uma mensagem curta.',

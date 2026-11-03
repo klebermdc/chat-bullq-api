@@ -37,6 +37,7 @@ import type { SecurityRules } from '../prompts/types';
 import { RetrievalService } from '../rag/retrieval.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { sanitizeAssistantText } from './text-guards';
+import { EMERGENCY_CONTACT_TOOL } from '../emergency/emergency-contact.util';
 import { MediaUrlResolverService } from './media-url-resolver.service';
 import { isShadowMode } from '../shadow-learning/shadow-mode.util';
 import { ERROR_CODES } from '../../error-reporter/error-codes';
@@ -482,10 +483,7 @@ export class AiAgentRunnerService {
           if (result.finalAction && finalAction === AiFinalAction.NO_ACTION) {
             finalAction = result.finalAction as AiFinalAction;
           }
-          if (
-            result.toolName === 'replyToConversation' &&
-            (result.output as any)?.ok === true
-          ) {
+          if (sentCustomerMessage(result.toolName, result.output)) {
             replyAlreadySuccessful = true;
           }
         }
@@ -884,10 +882,7 @@ export class AiAgentRunnerService {
         finalAction,
       });
 
-      if (
-        call.name === 'replyToConversation' &&
-        (output as any)?.ok === true
-      ) {
+      if (sentCustomerMessage(call.name, output)) {
         repliedInThisBatch = true;
       }
     }
@@ -1180,6 +1175,15 @@ export class AiAgentRunnerService {
 
 interface LlmMessageWithToolCalls extends LlmMessage {
   toolCalls?: LlmToolCall[];
+}
+
+/**
+ * A ferramenta mandou mensagem ao cliente neste turno? O link de emergência
+ * conta como resposta: depois dele, a Aline não manda outra mensagem.
+ */
+function sentCustomerMessage(toolName: string, output: unknown): boolean {
+  if (toolName !== 'replyToConversation' && toolName !== EMERGENCY_CONTACT_TOOL) return false;
+  return (output as { ok?: boolean } | null)?.ok === true;
 }
 
 // sanitizeAssistantText vive em ./text-guards (importado no topo) pra

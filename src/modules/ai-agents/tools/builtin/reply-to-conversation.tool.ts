@@ -16,6 +16,10 @@ import {
   stripForeignScripts,
   stripThinkBlocks,
 } from '../../runner/text-guards';
+import {
+  EMERGENCY_CONTACT_TOOL,
+  mentionsEmergencyPhone,
+} from '../../emergency/emergency-contact.util';
 
 /**
  * Sends a TEXT message to the contact on behalf of the agent. The message
@@ -99,22 +103,27 @@ export class ReplyToConversationTool implements AiTool {
       };
     }
 
-    const [agent, contactChannel, conversation] = await Promise.all([
-      this.prisma.aiAgent.findUnique({
-        where: { id: ctx.agentId },
-        select: { name: true },
-      }),
-      this.prisma.contactChannel.findFirst({
-        where: { contactId: ctx.contactId, channelId: ctx.channelId },
-        select: { externalId: true },
-      }),
-      this.prisma.conversation.findUnique({
-        where: { id: ctx.conversationId },
-        select: {
-          organization: { select: { allowedUrlDomains: true } },
+    // Telefone de emergência só sai pela sendEmergencyContact, que confere
+    // se o cliente está mesmo em viagem com urgência e a equipe offline.
+    if (mentionsEmergencyPhone(text)) {
+      this.logger.warn(
+        `[emergency-phone-guard] blocked reply on conv=${ctx.conversationId} run=${ctx.runId} agent=${ctx.agentId}: "${text.slice(0, 120)}"`,
+      );
+      return {
+        output: {
+          ok: false,
+          error: 'emergency_phone_blocked',
+          message: `Mensagem bloqueada: o telefone de emergência nunca vai em texto. Se o cliente JÁ ESTÁ em viagem e tem um problema urgente, use ${EMERGENCY_CONTACT_TOOL}. Se não, responda sem o número.`,
         },
-      }),
-    ]);
+      };
+    }
+
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: ctx.conversationId },
+      select: {
+        organization: { select: { allowedUrlDomains: true } },
+      },
+    });
 
     // Guard contra URL inventada (hallucination). Org configura
     // `allowedUrlDomains` com lista de hosts permitidos (ex: ["bravy.co",
@@ -140,6 +149,29 @@ export class ReplyToConversationTool implements AiTool {
       };
     }
 
+    return this.deliver(text, ctx);
+  }
+
+  /**
+   * Envia o texto ao cliente sem os filtros acima. Só para mensagens montadas
+   * pelo sistema (ex.: o link de emergência), nunca para texto do modelo.
+   */
+  async deliver(
+    text: string,
+    ctx: ToolContext,
+    extraMetadata: Record<string, unknown> = {},
+  ): Promise<ToolResult> {
+    const [agent, contactChannel] = await Promise.all([
+      this.prisma.aiAgent.findUnique({
+        where: { id: ctx.agentId },
+        select: { name: true },
+      }),
+      this.prisma.contactChannel.findFirst({
+        where: { contactId: ctx.contactId, channelId: ctx.channelId },
+        select: { externalId: true },
+      }),
+    ]);
+
     if (!contactChannel?.externalId) {
       this.logger.error(
         `No contactChannel for contact ${ctx.contactId} on channel ${ctx.channelId} — cannot send`,
@@ -160,7 +192,7 @@ export class ReplyToConversationTool implements AiTool {
         content: { text },
         status: MessageStatus.QUEUED,
         senderName: agent?.name ?? 'AI',
-        metadata: { aiAgentId: ctx.agentId, runId: ctx.runId },
+        metadata: { ...extraMetadata, aiAgentId: ctx.agentId, runId: ctx.runId },
       },
     });
 

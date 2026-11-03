@@ -8,21 +8,20 @@ import {
   previousCloseAt,
   type BusinessHoursConfig,
 } from '../../routing/availability/business-hours.util';
+import { EMERGENCY_CONTACT_TOOL } from '../emergency/emergency-contact.util';
 
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 
 /**
- * Ferramentas da Aline de plantão: só responder e deixar recado. Ela avisa que
- * o vendedor está fora e faz a triagem de emergência; não consulta produto
- * nem pedido.
+ * Ferramentas da Aline de plantão: responder, deixar recado e o canal de
+ * urgência. Ela avisa que o vendedor está fora e faz a triagem de
+ * emergência; não consulta produto nem pedido.
  */
 export const ON_CALL_TOOLS: ReadonlySet<string> = new Set([
   'replyToConversation',
   'leaveNoteForSeller',
+  EMERGENCY_CONTACT_TOOL,
 ]);
-
-/** Telefone de emergência para quem já está em viagem, fora do horário. */
-export const ON_CALL_EMERGENCY_PHONE = '(11) 5194-1724';
 
 /** Ferramenta que só existe no plantão (fora dele, a Aline não deixa recado). */
 export const ON_CALL_ONLY_TOOL = 'leaveNoteForSeller';
