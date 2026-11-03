@@ -1,6 +1,7 @@
 /**
  * Canal de urgência: passageiro JÁ em viagem, com problema urgente, quando
- * ninguém da equipe está online. A Aline manda um link que abre o WhatsApp
+ * o vendedor dele não está online (colega online não conta). A Aline manda um
+ * link que abre o WhatsApp
  * de emergência com a mensagem do cliente já escrita.
  *
  * O número só sai pela ferramenta `sendEmergencyContact`, que confere as
