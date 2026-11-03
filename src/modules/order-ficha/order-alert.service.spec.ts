@@ -25,6 +25,14 @@ describe('OrderAlertService.raise', () => {
     expect(prisma.conversation.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'cv1' }, data: { hasOrderDivergence: true } }));
   });
 
+  it('demora sem proposta usa o título "Falta enviar proposta", não divergência', async () => {
+    await svc.raise('cv1', 'ch1', [
+      { kind: 'DELAY_NO_CART', message: 'Cliente pediu há 24h e ainda não recebeu proposta', detail: {}, detectedAt: '2026-07-20T00:00:00Z' },
+    ]);
+    const text = prisma.message.create.mock.calls[0][0].data.content.text;
+    expect(text).toBe('⚠️ Falta enviar proposta:\n• Cliente pediu há 24h e ainda não recebeu proposta');
+  });
+
   it('deduplica: não reposta SYSTEM idêntico ao último', async () => {
     const div = [{ kind: 'ITEM_MISMATCH' as const, message: 'x', detail: {}, detectedAt: '2026-07-20T00:00:00Z' }];
     prisma.message.findFirst.mockResolvedValue({ content: { text: '⚠️ Divergência no pedido:\n• x', orderDivergence: true } });

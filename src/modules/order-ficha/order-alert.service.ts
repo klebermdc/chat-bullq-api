@@ -24,8 +24,10 @@ export class OrderAlertService {
   async raise(conversationId: string, channelId: string, divergences: Divergence[]): Promise<void> {
     if (!divergences.length) return;
 
-    const text =
-      '⚠️ Divergência no pedido:\n' + divergences.map((d) => `• ${d.message}`).join('\n');
+    // Demora sem proposta não é divergência de carrinho: o aviso só cobra o envio.
+    const isOnlyDelay = divergences.every((d) => d.kind === 'DELAY_NO_CART');
+    const title = isOnlyDelay ? '⚠️ Falta enviar proposta:' : '⚠️ Divergência no pedido:';
+    const text = title + '\n' + divergences.map((d) => `• ${d.message}`).join('\n');
 
     const last = await this.prisma.message.findFirst({
       where: { conversationId, type: MessageContentType.SYSTEM },
