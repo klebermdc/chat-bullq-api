@@ -56,6 +56,13 @@ import { mergeQuotes } from './quote/quote-merge';
 import { HotelLookupService } from './quote/hotel/hotel-lookup.service';
 import { presentProposal } from './quote/quote-public';
 import { QUOTE_KIND } from './quote/quote.constants';
+import {
+  QUOTE_UPDATED_TEMPLATE,
+  quoteUpdatedTemplateContent,
+  type QuoteNotice,
+  type QuoteNoticeValues,
+} from './quote/quote-update-notice';
+import { computeWhatsappWindow } from '../messaging/conversations/whatsapp-window.util';
 import type { QuoteData } from './quote/quote.types';
 
 const INVALID_IMAGE = 'Imagem inválida.';
@@ -470,11 +477,63 @@ export class ProposalsService {
 
     const ctx: SendContext = { conversationId: current.conversationId, userId, organizationId, access };
     const quoteUrl = `${baseUrl}/${current.publicToken}`;
-    if (dto.notify !== false) {
-      await this.sendToCustomer(ctx, 'TEXT', { text: buildQuoteUpdatedMessage(customerName, quoteUrl, updated.quoteNumber) });
-    }
+    const notice: QuoteNotice =
+      dto.notify === false
+        ? 'OFF'
+        : await this.notifyQuoteUpdated(ctx, { customerName, quoteNumber: updated.quoteNumber, url: quoteUrl });
     await this.linkToPipeline(ctx, cart);
-    return { ...presentProposal(updated), quoteUrl };
+    return { ...presentProposal(updated), quoteUrl, notice };
+  }
+
+  /**
+   * Aviso de cotação atualizada: texto com a janela aberta; fechada, vai pelo
+   * template `cotacao_atualizada` do número da conversa (texto livre a Meta
+   * recusaria). Sem o template aprovado, não envia e devolve NO_TEMPLATE.
+   */
+  private async notifyQuoteUpdated(ctx: SendContext, values: QuoteNoticeValues): Promise<QuoteNotice> {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: ctx.conversationId },
+      select: {
+        channelId: true,
+        lastInboundAt: true,
+        metaWindowExpiresAt: true,
+        channel: { select: { type: true } },
+        contact: { select: { ctwaClidAt: true } },
+      },
+    });
+    const window = computeWhatsappWindow({
+      channelType: conversation?.channel?.type ?? '',
+      lastInboundAt: conversation?.lastInboundAt ?? null,
+      ctwaClidAt: conversation?.contact?.ctwaClidAt ?? null,
+      metaWindowExpiresAt: conversation?.metaWindowExpiresAt ?? null,
+      now: new Date(),
+    });
+    if (window.open) {
+      await this.sendToCustomer(ctx, 'TEXT', {
+        text: buildQuoteUpdatedMessage(values.customerName, values.url, values.quoteNumber),
+      });
+      return 'TEXT';
+    }
+
+    const template = conversation
+      ? await this.prisma.messageTemplate.findFirst({
+          where: {
+            organizationId: ctx.organizationId,
+            channelId: conversation.channelId,
+            name: QUOTE_UPDATED_TEMPLATE,
+            status: 'APPROVED',
+          },
+        })
+      : null;
+    const content = template ? quoteUpdatedTemplateContent(template, values) : null;
+    if (!content) {
+      this.logger.warn(
+        `quote_update_notice_no_template conv=${ctx.conversationId}: janela fechada e "${QUOTE_UPDATED_TEMPLATE}" não aprovado no número`,
+      );
+      return 'NO_TEMPLATE';
+    }
+    await this.sendToCustomer(ctx, 'TEMPLATE', content);
+    return 'TEMPLATE';
   }
 
   /** Página "Cotações": busca por número, cliente, telefone, hotel ou produto. */
@@ -579,7 +638,7 @@ export class ProposalsService {
   /** Toda mensagem da proposta (texto, prints, follow-ups) sai por aqui. */
   private sendToCustomer(
     ctx: SendContext,
-    type: 'TEXT' | 'IMAGE',
+    type: 'TEXT' | 'IMAGE' | 'TEMPLATE',
     content: Record<string, unknown>,
   ) {
     return this.messages.send(

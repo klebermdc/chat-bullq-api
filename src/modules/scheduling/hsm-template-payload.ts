@@ -15,7 +15,7 @@ export interface HsmTemplateRow {
 }
 
 /** Variáveis {{n}} do corpo, distintas e em ordem crescente. */
-function extractVariables(bodyText: string): string[] {
+export function extractVariables(bodyText: string): string[] {
   const seen = new Set<string>();
   const re = /\{\{(\d+)\}\}/g;
   let m: RegExpExecArray | null;

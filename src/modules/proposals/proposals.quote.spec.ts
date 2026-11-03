@@ -64,6 +64,7 @@ function deps() {
       conversation: { findUnique: jest.fn().mockResolvedValue(conversation) },
       proposal: { findUnique: jest.fn().mockResolvedValue(savedQuote()) },
       contact: { findUnique: jest.fn().mockResolvedValue({ name: 'Ana Souza' }) },
+      messageTemplate: { findFirst: jest.fn().mockResolvedValue(null) },
     } as any,
     render: { render: jest.fn().mockResolvedValue('TEXTO RENDER') } as any,
     extraction: {
@@ -414,15 +415,81 @@ describe('ProposalsService — cotação por link', () => {
       expect(d.pipelines.ensureConversationAtStageByName).toHaveBeenCalledWith(
         'org-1', 'conv-1', expect.any(String), { value: 9500, currency: 'BRL' },
       );
-      expect(out).toMatchObject({ quoteUrl: url, quoteVersion: 2, quoteNumber: 152 });
+      expect(out).toMatchObject({ quoteUrl: url, quoteVersion: 2, quoteNumber: 152, notice: 'TEXT' });
       expect(out.publicToken).toBeUndefined();
     });
 
     it('notify: false grava sem mandar mensagem', async () => {
       const d = deps();
-      await update(d, { notify: false });
+      const out: any = await update(d, { notify: false });
       expect(d.repo.updateQuote).toHaveBeenCalled();
       expect(d.messages.send).not.toHaveBeenCalled();
+      expect(out.notice).toBe('OFF');
+    });
+
+    describe('janela de 24h fechada', () => {
+      const closedConversation = {
+        id: 'conv-1',
+        channelId: 'chan-1',
+        lastInboundAt: new Date('2026-10-24T12:00:00.000Z'),
+        metaWindowExpiresAt: null,
+        channel: { type: 'WHATSAPP_OFFICIAL' },
+        contact: { ctwaClidAt: null },
+      };
+      const template = {
+        name: 'cotacao_atualizada',
+        language: 'pt_BR',
+        components: { body: { text: 'Oi, {{1}}! Atualizei sua cotação nº {{2}}. Acesse: {{3}} Lembrando do câmbio.' } },
+      };
+
+      it('manda pelo template do número, com nome, número e link', async () => {
+        const d = deps();
+        d.prisma.conversation.findUnique.mockResolvedValue(closedConversation);
+        d.prisma.messageTemplate.findFirst.mockResolvedValue(template);
+
+        const out: any = await update(d);
+
+        expect(d.prisma.messageTemplate.findFirst.mock.calls[0][0].where).toMatchObject({
+          organizationId: 'org-1', channelId: 'chan-1', name: 'cotacao_atualizada', status: 'APPROVED',
+        });
+        const sent = d.messages.send.mock.calls[0][0];
+        expect(sent.type).toBe('TEMPLATE');
+        expect(sent.content).toEqual({
+          name: 'cotacao_atualizada',
+          language: { code: 'pt_BR' },
+          components: [{
+            type: 'body',
+            parameters: [
+              { type: 'text', text: 'Ana' },
+              { type: 'text', text: '0152' },
+              { type: 'text', text: 'https://cotacao.orlandofastpass.com.br/tok_abcdefghijklmnopqrstuvwx' },
+            ],
+          }],
+        });
+        expect(out.notice).toBe('TEMPLATE');
+      });
+
+      it('sem o template aprovado não envia texto que a Meta recusaria, mas salva', async () => {
+        const d = deps();
+        d.prisma.conversation.findUnique.mockResolvedValue(closedConversation);
+
+        const out: any = await update(d);
+
+        expect(d.repo.updateQuote).toHaveBeenCalled();
+        expect(d.messages.send).not.toHaveBeenCalled();
+        expect(out.notice).toBe('NO_TEMPLATE');
+      });
+
+      it('janela aberta continua mandando texto', async () => {
+        const d = deps();
+        d.prisma.conversation.findUnique.mockResolvedValue({ ...closedConversation, lastInboundAt: new Date('2026-10-26T09:00:00.000Z') });
+
+        const out: any = await update(d);
+
+        expect(d.messages.send.mock.calls[0][0].type).toBe('TEXT');
+        expect(d.prisma.messageTemplate.findFirst).not.toHaveBeenCalled();
+        expect(out.notice).toBe('TEXT');
+      });
     });
 
     it.each([
