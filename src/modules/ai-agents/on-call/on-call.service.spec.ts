@@ -1,4 +1,4 @@
-import { OnCallService } from './on-call.service';
+import { ON_CALL_TOOLS, OnCallService } from './on-call.service';
 
 // Seg-sex 9h-18h (horário de São Paulo, UTC-3).
 const HOURS = {
@@ -103,5 +103,11 @@ describe('OnCallService.evaluate', () => {
     const result = await service.evaluate({ ...CONVERSATION, lastHumanReplyAt: repliedDuringHours });
 
     expect(result?.sellerName).toBe('Pedro');
+  });
+});
+
+describe('ON_CALL_TOOLS', () => {
+  it('no plantão a Aline só responde, deixa recado e usa o canal de urgência: sem consultar produto ou pedido', () => {
+    expect([...ON_CALL_TOOLS].sort()).toEqual(['leaveNoteForSeller', 'replyToConversation', 'sendEmergencyContact']);
   });
 });

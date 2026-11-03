@@ -44,7 +44,27 @@ describe('PromptBuilderService — Aline de plantão', () => {
     expect(text).toContain('Pedro');
     expect(text).toContain('amanhã às 9h');
     expect(text).toContain('leaveNoteForSeller');
+    expect(text).toContain('NÃO tire dúvidas');
     expect(text).toContain('NÃO negocie');
+  });
+
+  it('no plantão, só usa o canal de urgência depois de triar viagem em andamento', () => {
+    const text = volatilePart(buildCtx({ sellerName: 'Pedro', returnAt: 'amanhã às 9h' }));
+
+    expect(text).toContain('sendEmergencyContact');
+    expect(text).toContain('já está em viagem');
+    expect(text).toContain('não puxe assunto');
+  });
+
+  it('o número de emergência nunca entra no prompt: só a ferramenta conhece', () => {
+    const system = new PromptBuilderService()
+      .buildMessages(buildCtx({ sellerName: 'Pedro', returnAt: 'amanhã às 9h' }))
+      .find((m) => m.role === 'system') as any;
+    const full = system.content.map((part: any) => part.text).join('');
+
+    expect(full).toContain('═══ Urgência em viagem ═══');
+    expect(full).toContain('copie as palavras exatas do cliente');
+    expect(full.replace(/\D/g, '')).not.toContain('51941724');
   });
 
   it('no plantão, não manda "continuar qualificando" do horário da org', () => {

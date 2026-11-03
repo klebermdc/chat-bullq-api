@@ -20,6 +20,7 @@ import { AgendarReuniaoTool } from './builtin/agendar-reuniao.tool';
 import { MoveRecoveryCardTool } from './builtin/move-recovery-card.tool';
 import { SetLeadTemperatureTool } from './builtin/set-lead-temperature.tool';
 import { LeaveNoteForSellerTool } from './builtin/leave-note-for-seller.tool';
+import { SendEmergencyContactTool } from './builtin/send-emergency-contact.tool';
 import { HoppeClientService } from './client-ops/hoppe-client.service';
 import { GoogleAuthService } from './client-ops/google-auth.service';
 import { GoogleCalendarService } from './client-ops/google-calendar.service';
@@ -69,6 +70,7 @@ import { SalesRecoveryModule } from '../../sales-recovery/sales-recovery.module'
     MoveRecoveryCardTool,
     SetLeadTemperatureTool,
     LeaveNoteForSellerTool,
+    SendEmergencyContactTool,
     ToolRegistry,
     HttpToolExecutorService,
     SqlToolExecutorService,

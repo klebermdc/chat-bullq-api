@@ -8,15 +8,19 @@ import {
   previousCloseAt,
   type BusinessHoursConfig,
 } from '../../routing/availability/business-hours.util';
+import { EMERGENCY_CONTACT_TOOL } from '../emergency/emergency-contact.util';
 
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 
-/** Ferramentas da Aline de plantão: responder, consultar e deixar recado. */
+/**
+ * Ferramentas da Aline de plantão: responder, deixar recado e o canal de
+ * urgência. Ela avisa que o vendedor está fora e faz a triagem de
+ * emergência; não consulta produto nem pedido.
+ */
 export const ON_CALL_TOOLS: ReadonlySet<string> = new Set([
   'replyToConversation',
-  'lookupOffering',
-  'checkPurchase',
   'leaveNoteForSeller',
+  EMERGENCY_CONTACT_TOOL,
 ]);
 
 /** Ferramenta que só existe no plantão (fora dele, a Aline não deixa recado). */
@@ -37,7 +41,8 @@ type OnCallConversation = Pick<
 /**
  * Aline de plantão: a conversa tem vendedor, ele está fora do próprio horário
  * e ninguém da equipe respondeu desde que ele saiu. Aí a Aline atende no
- * lugar dele, em modo restrito, até ele voltar ou um humano responder.
+ * lugar dele, em modo restrito (avisa e faz a triagem de emergência), até
+ * ele voltar ou um humano responder.
  *
  * Liga por vendedor com o mesmo interruptor do aviso de fora do horário
  * (`UserOrganization.offHoursNoticeEnabled`) e usa o horário dele.

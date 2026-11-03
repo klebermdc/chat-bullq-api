@@ -19,6 +19,7 @@ import { AgendarReuniaoTool } from './builtin/agendar-reuniao.tool';
 import { MoveRecoveryCardTool } from './builtin/move-recovery-card.tool';
 import { SetLeadTemperatureTool } from './builtin/set-lead-temperature.tool';
 import { LeaveNoteForSellerTool } from './builtin/leave-note-for-seller.tool';
+import { SendEmergencyContactTool } from './builtin/send-emergency-contact.tool';
 
 /**
  * Registry of BUILT-IN skills (named "tools" in the code for legacy reasons).
@@ -58,6 +59,7 @@ export class ToolRegistry {
     moveRecoveryCard: MoveRecoveryCardTool,
     setLeadTemperature: SetLeadTemperatureTool,
     leaveNoteForSeller: LeaveNoteForSellerTool,
+    sendEmergencyContact: SendEmergencyContactTool,
   ) {
     this.register(reply, ['ORCHESTRATOR', 'WORKER']);
     this.register(transfer, ['ORCHESTRATOR', 'WORKER']);
@@ -83,6 +85,9 @@ export class ToolRegistry {
     this.register(checkPurchase, ['ORCHESTRATOR', 'WORKER']);
     // Só oferecida no modo plantão (o runner filtra fora dele).
     this.register(leaveNoteForSeller, ['ORCHESTRATOR', 'WORKER']);
+    // Canal de urgência: a própria ferramenta confere equipe offline e as
+    // provas de que o cliente está em viagem com urgência.
+    this.register(sendEmergencyContact, ['ORCHESTRATOR', 'WORKER']);
 
     // Client-ops (implementação): restritas aos agentes do env
     // CLIENT_OPS_AGENT_IDS (csv) — default Sofia. Mexem com credenciais
