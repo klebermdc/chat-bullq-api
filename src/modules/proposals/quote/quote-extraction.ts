@@ -38,7 +38,10 @@ export const QUOTE_SYSTEM_PROMPT =
   `${QUOTE_TEXT_MAX} caracteres) ou null. hotelName: SOMENTE quando o item é hospedagem (hotel, resort, ` +
   'casa de temporada), o nome do hotel exatamente como no print, sem a cidade; nos outros itens, null. ' +
   'hotelCountry: no item de hospedagem, o código ISO de 2 letras do país onde fica o hotel (ex.: ' +
-  '"US", "BR", "PT"), pela cidade ou país escrito no print; nos outros itens ou se não aparecer, null. ' +
+  '"US", "BR", "PT"), pela cidade ou país escrito no print ou, se não estiver escrito, pelo próprio ' +
+  'hotel quando você tiver certeza de onde ele fica (ex.: os hotéis da Disneyland Paris, como "Disney ' +
+  'Hotel New York - The Art of Marvel" ou "Disney Newport Bay Club" -> "FR"); nos outros itens ou na ' +
+  'dúvida, null. ' +
   'No nível de cima: total é o valor total da reserva; ' +
   'pixTotal é o valor à vista no Pix se aparecer, senão null; installments é o parcelamento se ' +
   'aparecer (ex.: "10x de R$ 1.797,16" -> {"count":10,"value":1797.16}), senão null. Converta o ' +
