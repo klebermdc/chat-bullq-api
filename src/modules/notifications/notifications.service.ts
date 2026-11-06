@@ -4,6 +4,7 @@ import { Queue } from 'bullmq';
 import { NotificationType, OrgRole } from '@prisma/client';
 import { NotificationsRepository } from './notifications.repository';
 import { PrismaService } from '../../database/prisma.service';
+import { PushIntent } from '../push/push.types';
 
 @Injectable()
 export class NotificationsService {
@@ -22,6 +23,8 @@ export class NotificationsService {
     title: string;
     body: string;
     data?: Record<string, any>;
+    /** Pede push no aparelho (só os gatilhos do vendedor passam isto). */
+    push?: PushIntent;
   }) {
     const notification = await this.repository.create({
       recipientId: params.recipientId,
@@ -40,6 +43,7 @@ export class NotificationsService {
       title: params.title,
       body: params.body,
       data: params.data,
+      push: params.push,
     });
 
     return notification;

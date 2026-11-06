@@ -248,6 +248,7 @@ model Organization {
   mediaAssets               MediaAsset[]
   tags                      Tag[]
   notifications             Notification[]
+  pushSubscriptions         PushSubscription[]
   invitations               Invitation[]
   apiKeys                   ApiKey[]
   aiAgents                  AiAgent[]
@@ -1057,18 +1058,26 @@ model Notification {
   @@map("notifications")
 }
 
+// Web Push: uma linha por navegador/aparelho. `endpoint` é a URL do serviço
+// de push do navegador (FCM, Apple, Mozilla, WNS); `p256dhKey`/`authKey`
+// cifram o conteúdo. `lastSeenAt` renova a cada abertura do app; inscrição
+// parada há 30 dias é descartada no envio.
 model PushSubscription {
-  id        String   @id @default(cuid())
-  userId    String   @map("user_id")
-  endpoint  String   @unique
-  p256dhKey String   @map("p256dh_key")
-  authKey   String   @map("auth_key")
-  userAgent String?  @map("user_agent")
-  createdAt DateTime @default(now()) @map("created_at")
+  id             String   @id @default(cuid())
+  userId         String   @map("user_id")
+  organizationId String   @map("organization_id")
+  endpoint       String   @unique
+  p256dhKey      String   @map("p256dh_key")
+  authKey        String   @map("auth_key")
+  userAgent      String?  @map("user_agent")
+  createdAt      DateTime @default(now()) @map("created_at")
+  lastSeenAt     DateTime @default(now()) @map("last_seen_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([userId], name: "idx_push_sub_user")
+  @@index([userId, organizationId], name: "idx_push_sub_user_org")
   @@map("push_subscriptions")
 }
 

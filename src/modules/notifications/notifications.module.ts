@@ -5,10 +5,13 @@ import { NotificationsService } from './notifications.service';
 import { NotificationsRepository } from './notifications.repository';
 import { NotificationProcessor } from './notification.processor';
 import { InboundNotifierService } from './inbound-notifier.service';
+import { SellerAlertService } from './seller-alert.service';
+import { PushModule } from '../push/push.module';
 
 @Module({
   imports: [
     BullModule.registerQueue({ name: 'notifications' }),
+    PushModule,
   ],
   controllers: [NotificationsController],
   providers: [
@@ -16,7 +19,8 @@ import { InboundNotifierService } from './inbound-notifier.service';
     NotificationsRepository,
     NotificationProcessor,
     InboundNotifierService,
+    SellerAlertService,
   ],
-  exports: [NotificationsService, InboundNotifierService],
+  exports: [NotificationsService, InboundNotifierService, SellerAlertService],
 })
 export class NotificationsModule {}

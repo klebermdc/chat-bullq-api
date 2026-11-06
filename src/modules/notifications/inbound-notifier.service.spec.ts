@@ -32,6 +32,18 @@ describe('InboundNotifierService', () => {
     expect(notifications.notifyOrgAgents).not.toHaveBeenCalled();
   });
 
+  it('conversa atribuída → pede push só com nome e conversa (sem a prévia)', async () => {
+    await svc.onInboundMessage({ ...base, assignedToId: 'agent-9', preview: 'segredo' });
+    const call = notifications.notify.mock.calls[0][0];
+    expect(call.push).toEqual({ kind: 'message', contactName: 'João', conversationId: 'c1' });
+    expect(JSON.stringify(call.push)).not.toContain('segredo');
+  });
+
+  it('lead sem dono para o OWNER → só no app, sem push', async () => {
+    await svc.onInboundMessage({ ...base, assignedToId: null, isNewConversation: true });
+    expect(notifications.notifyOrgAgents.mock.calls[0][0].push).toBeUndefined();
+  });
+
   it('sem dono, 1ª mensagem (lead novo) → notifica SÓ o OWNER', async () => {
     await svc.onInboundMessage({ ...base, assignedToId: null, isNewConversation: true });
     expect(notifications.notifyOrgAgents).toHaveBeenCalledWith(expect.objectContaining({

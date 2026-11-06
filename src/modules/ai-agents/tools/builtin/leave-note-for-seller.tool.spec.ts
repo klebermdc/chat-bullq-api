@@ -15,7 +15,8 @@ function make() {
     message: { create: jest.fn().mockResolvedValue(saved) },
   } as any;
   const realtime = { emitToChannel: jest.fn(), emitToConversation: jest.fn() } as any;
-  return { tool: new LeaveNoteForSellerTool(prisma, realtime), prisma, realtime, saved };
+  const sellerAlert = { onConversationAssigned: jest.fn().mockResolvedValue(undefined), onAiHandoff: jest.fn().mockResolvedValue(undefined), onSellerNote: jest.fn().mockResolvedValue(undefined), onSupportTicket: jest.fn().mockResolvedValue(undefined) } as any;
+  return { tool: new LeaveNoteForSellerTool(prisma, realtime, sellerAlert), prisma, realtime, saved, sellerAlert };
 }
 
 describe('LeaveNoteForSellerTool', () => {
@@ -38,6 +39,12 @@ describe('LeaveNoteForSellerTool', () => {
     });
     expect(data.senderId).toBeUndefined();
     expect(realtime.emitToConversation).toHaveBeenCalledWith('conv-1', 'message:new', { message: saved });
+  });
+
+  it('avisa o vendedor da conversa (sino + push com o Sendtur fechado)', async () => {
+    const { tool, sellerAlert } = make();
+    await tool.execute({ summary: 'Quer orçamento.' }, CTX);
+    expect(sellerAlert.onSellerNote).toHaveBeenCalledWith('conv-1');
   });
 
   it('recusa recado vazio', async () => {

@@ -7,6 +7,7 @@ import {
 } from "@prisma/client";
 import { PrismaService } from "../../database/prisma.service";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
+import { SellerAlertService } from "../notifications/seller-alert.service";
 import {
   CLOSED_SUPPORT_STAGE_KEYS,
   OPEN_SUPPORT_STAGE_KEY,
@@ -87,6 +88,7 @@ export class SupportTicketsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    private readonly sellerAlert: SellerAlertService,
   ) {}
 
   async open(input: OpenTicketInput): Promise<OpenTicketResult> {
@@ -154,6 +156,11 @@ export class SupportTicketsService {
       entry,
       result.isNew,
     );
+    // Chamado NOVO de cliente que tem vendedor: avisa o dono (sino + push com
+    // o Sendtur fechado). Atualização de chamado aberto não toca de novo.
+    if (result.isNew && conversation.assignedToId) {
+      await this.sellerAlert.onSupportTicket(conversation.id, result.ticketNumber);
+    }
     this.logger.log(
       `[support] ${result.isNew ? "aberto" : "atualizado"} ${result.ticketNumber} conv=${conversation.id} prioridade=${entry.priority} origem=${entry.source}`,
     );

@@ -35,8 +35,9 @@ function make(opts: {
     agentId: 'a1',
     runId: 'r1',
   } as any;
-  const tool = new TransferToHumanTool(realtime, pendingActions, prisma, replyTool);
-  return { tool, prisma, pendingActions, replyTool, ctx };
+  const sellerAlert = { onConversationAssigned: jest.fn().mockResolvedValue(undefined), onAiHandoff: jest.fn().mockResolvedValue(undefined), onSellerNote: jest.fn().mockResolvedValue(undefined), onSupportTicket: jest.fn().mockResolvedValue(undefined) } as any;
+  const tool = new TransferToHumanTool(realtime, pendingActions, prisma, replyTool, sellerAlert);
+  return { tool, prisma, pendingActions, replyTool, ctx, sellerAlert };
 }
 
 describe('TransferToHumanTool — resumo do SDR vira observação do lead', () => {
@@ -156,5 +157,13 @@ describe('TransferToHumanTool — card de distribuição (não expira / Esperand
     await tool.execute({ reason: 'lead qualificado' }, ctx);
 
     expect(pendingActions.listPending).toHaveBeenCalledWith('org1', 'conv1');
+  });
+});
+
+describe('TransferToHumanTool — aviso ao vendedor', () => {
+  it('pede o aviso ao dono da conversa', async () => {
+    const { tool, ctx, sellerAlert } = make();
+    await tool.execute({ reason: 'cliente pediu atendente' }, ctx);
+    expect(sellerAlert.onAiHandoff).toHaveBeenCalledWith('conv1');
   });
 });

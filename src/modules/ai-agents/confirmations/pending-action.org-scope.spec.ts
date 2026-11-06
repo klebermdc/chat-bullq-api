@@ -177,6 +177,7 @@ describe('PendingActionService — ações de outra organização', () => {
       prisma as never,
       saudacao as never,
       { moveOwner: jest.fn().mockResolvedValue('skipped') } as never,
+      { onConversationAssigned: jest.fn().mockResolvedValue(undefined), onAiHandoff: jest.fn().mockResolvedValue(undefined), onSellerNote: jest.fn().mockResolvedValue(undefined), onSupportTicket: jest.fn().mockResolvedValue(undefined) } as never,
     );
     return { service, fila };
   }

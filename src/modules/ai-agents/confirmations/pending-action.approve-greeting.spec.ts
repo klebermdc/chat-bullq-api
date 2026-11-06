@@ -33,6 +33,7 @@ function make(actionOverrides: Record<string, unknown> = {}, convo: any = {}) {
       prisma,
       attendantGreeting as any,
       { moveOwner: jest.fn().mockResolvedValue('skipped') } as any,
+      { onConversationAssigned: jest.fn().mockResolvedValue(undefined), onAiHandoff: jest.fn().mockResolvedValue(undefined), onSellerNote: jest.fn().mockResolvedValue(undefined), onSupportTicket: jest.fn().mockResolvedValue(undefined) } as any,
     ),
     storage,
     prisma,

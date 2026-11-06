@@ -51,6 +51,7 @@ function make(actionOverrides: Record<string, unknown> = {}) {
   } as any;
   const attendantGreeting = { greet: jest.fn().mockResolvedValue(undefined) };
   const legacyOwnerWriter = { moveOwner: jest.fn().mockResolvedValue('moved') };
+  const sellerAlert = { onConversationAssigned: jest.fn().mockResolvedValue(undefined), onAiHandoff: jest.fn().mockResolvedValue(undefined), onSellerNote: jest.fn().mockResolvedValue(undefined), onSupportTicket: jest.fn().mockResolvedValue(undefined) };
   return {
     svc: new PendingActionService(
       storage,
@@ -58,8 +59,10 @@ function make(actionOverrides: Record<string, unknown> = {}) {
       prisma,
       attendantGreeting as any,
       legacyOwnerWriter as any,
+      sellerAlert as any,
     ),
     legacyOwnerWriter,
+    sellerAlert,
     storage,
     prisma,
     action,
@@ -86,6 +89,14 @@ describe('PendingActionService.distribute', () => {
     expect(saved.status).toBe('PENDING');
     expect(saved.args).toMatchObject({ distributedTo: 'atendente9' });
     expect(saved.preview.action).toContain('Distribuído para');
+  });
+
+  it('avisa o atendente escolhido (sino + push)', async () => {
+    const { svc, sellerAlert } = make();
+    await svc.distribute('pa1', 'org1', 'operador1', 'atendente9');
+    expect(sellerAlert.onConversationAssigned).toHaveBeenCalledWith({
+      conversationId: 'conv1', recipientId: 'atendente9', previousAssigneeId: null, actorId: 'operador1',
+    });
   });
 
   it('não promove status quando a conversa não está PENDING', async () => {

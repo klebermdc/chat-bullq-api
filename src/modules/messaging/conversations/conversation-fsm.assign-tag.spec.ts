@@ -69,8 +69,11 @@ function makeFsm(conversationOverrides: Record<string, unknown> = {}) {
     moveOwner: jest.fn().mockResolvedValue('moved'),
   } as any;
 
+  const sellerAlert = { onConversationAssigned: jest.fn().mockResolvedValue(undefined), onAiHandoff: jest.fn().mockResolvedValue(undefined), onSellerNote: jest.fn().mockResolvedValue(undefined), onSupportTicket: jest.fn().mockResolvedValue(undefined) } as any;
+
   return {
-    svc: new ConversationFsmService(prisma, ratings, outbox, legacyOwnerWriter),
+    svc: new ConversationFsmService(prisma, ratings, outbox, legacyOwnerWriter, sellerAlert),
+    sellerAlert,
     tx,
     outbox,
     legacyOwnerWriter,
@@ -248,5 +251,25 @@ describe('ConversationFsmService.assign — trava otimista (compare-and-set)', (
     // fantasma e sem disparar automações (CONVERSATION_ASSIGNED).
     expect(tx.conversationAuditLog.create).not.toHaveBeenCalled();
     expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('avisa quem recebeu a conversa (sino + push), com o dono anterior', async () => {
+    const { svc, sellerAlert } = makeFsm({ assignedToId: 'u-barbara' });
+    await svc.assign('conv1', 'u-pedro', 'actor1');
+    expect(sellerAlert.onConversationAssigned).toHaveBeenCalledWith({
+      conversationId: 'conv1', recipientId: 'u-pedro', previousAssigneeId: 'u-barbara', actorId: 'actor1',
+    });
+  });
+
+  it('roteamento automático (sem actor) não avisa: o aviso da mensagem já cobre', async () => {
+    const { svc, sellerAlert } = makeFsm({ assignedToId: null });
+    await svc.assign('conv1', 'u-pedro');
+    expect(sellerAlert.onConversationAssigned).not.toHaveBeenCalled();
+  });
+
+  it('mesmo dono (no-op) não avisa', async () => {
+    const { svc, sellerAlert } = makeFsm({ assignedToId: 'u-pedro' });
+    await svc.assign('conv1', 'u-pedro', 'actor1');
+    expect(sellerAlert.onConversationAssigned).not.toHaveBeenCalled();
   });
 });

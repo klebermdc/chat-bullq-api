@@ -18,6 +18,7 @@ import { PendingActionStorage } from './pending-action.storage';
 import { PENDING_ACTION_EXECUTOR_QUEUE } from './queue-names';
 import { PrismaService } from '../../../database/prisma.service';
 import { LegacyOwnerWriterService } from '../../carteira-legado/legacy-owner-writer.service';
+import { SellerAlertService } from '../../notifications/seller-alert.service';
 import { AttendantGreetingService } from '../../messaging/attendant-greeting/attendant-greeting.service';
 import {
   attendantTagColor,
@@ -43,6 +44,7 @@ export class PendingActionService {
     private readonly prisma: PrismaService,
     private readonly attendantGreeting: AttendantGreetingService,
     private readonly legacyOwnerWriter: LegacyOwnerWriterService,
+    private readonly sellerAlert: SellerAlertService,
   ) {}
 
   /** Create a new PENDING action for human review. */
@@ -351,6 +353,15 @@ export class PendingActionService {
           `distribute: carteira não atualizada (conv=${action.conversationId}): ${e instanceof Error ? e.message : e}`,
         ),
       );
+
+    // Avisa o atendente escolhido (sino + push com o Sendtur fechado).
+    // Best-effort: o SellerAlertService nunca lança.
+    await this.sellerAlert.onConversationAssigned({
+      conversationId: action.conversationId,
+      recipientId: assignedToId,
+      previousAssigneeId,
+      actorId: actorUserId,
+    });
 
     // NÃO resolve a pendência: ela fica VISÍVEL como "norte" pro atendente
     // escolhido até ele clicar "Iniciar atendimento". Marca como distribuída,

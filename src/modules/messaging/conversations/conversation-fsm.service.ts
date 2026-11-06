@@ -10,6 +10,7 @@ import { RatingsService } from '../../ratings/ratings.service';
 import { LegacyOwnerWriterService } from '../../carteira-legado/legacy-owner-writer.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
 import { syncAttendantTag } from '../../../common/utils/sync-attendant-tag';
+import { SellerAlertService } from '../../notifications/seller-alert.service';
 
 type Transition = {
   from: ConversationStatus;
@@ -41,6 +42,7 @@ export class ConversationFsmService {
     private readonly ratings: RatingsService,
     private readonly outbox: OutboxService,
     private readonly legacyOwnerWriter: LegacyOwnerWriterService,
+    private readonly sellerAlert: SellerAlertService,
   ) {}
 
   canTransition(from: ConversationStatus, to: ConversationStatus): boolean {
@@ -246,6 +248,19 @@ export class ConversationFsmService {
             `carteira não atualizada (conv=${conversationId}): ${err instanceof Error ? err.message : err}`,
           ),
         );
+
+      // Avisa quem recebeu (sino + push com o Sendtur fechado), depois do
+      // commit. Sem `actorId` é roteamento automático na entrada da mensagem
+      // (carteira legada): o aviso de "mandou mensagem" que vem logo em
+      // seguida já cobre, sem tocar duas vezes. Quem se atribuiu não é avisado.
+      if (actorId) {
+        await this.sellerAlert.onConversationAssigned({
+          conversationId,
+          recipientId: agentId,
+          previousAssigneeId: conversation.assignedToId,
+          actorId,
+        });
+      }
     }
   }
 }
