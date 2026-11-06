@@ -20,6 +20,7 @@ const DEFAULT_RULES: SecurityRules = {
   // Lista expandida do PROMPTS-AUDIT.md — qualquer um destes denuncia IA.
   forbiddenEmojis: ['👋', '✅', '🎉', '🙏', '🤝', '✨', '📊', '📈'],
   language: 'pt-BR',
+  blockCommercialTalk: false,
 };
 
 /**
@@ -41,6 +42,8 @@ export function resolveSecurityRules(
       ]),
     ),
     customRules: override?.customRules ?? [],
+    // Só liga com booleano true: valor vindo errado do JSON não liga a trava.
+    blockCommercialTalk: override?.blockCommercialTalk === true,
   };
 }
 
@@ -63,6 +66,11 @@ export class SecurityLayerService {
     if (rules.noPriceCommitment) {
       lines.push(
         '- Inventar, alterar ou prometer preço, desconto, cupom ou oferta especial — preço só vem do catálogo/skill, nunca da sua cabeça',
+      );
+    }
+    if (rules.blockCommercialTalk) {
+      lines.push(
+        '- Você não fala de valores, preços, descontos, parcelas ou pagamento; isso é com o consultor. Nem preço de tabela: se o cliente perguntar, registre para o vendedor (transferToHuman, ou leaveNoteForSeller no plantão) e diga só que o consultor vai tratar disso com ele',
       );
     }
     if (rules.noDeadlineCommitment) {

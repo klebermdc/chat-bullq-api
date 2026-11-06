@@ -1,4 +1,5 @@
 import { LlmToolDefinition } from '../llm/llm.types';
+import type { OutboundGuardContext } from '../outbound-guards/send-check.types';
 
 /**
  * Context passed to every tool execution. Carries everything a tool might
@@ -14,6 +15,12 @@ export interface ToolContext {
   runId: string;
   /** ID of the inbound message that triggered the run. */
   triggerMessageId?: string;
+  /**
+   * Travas de saída do replyToConversation: ferramentas que já rodaram no run
+   * e o texto do system prompt (evidência da conferência de fato). Só o
+   * runner preenche; ausente = mensagem fora de um run do agente.
+   */
+  outboundGuards?: OutboundGuardContext;
 }
 
 export interface ToolResult {
