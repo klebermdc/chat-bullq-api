@@ -4,6 +4,7 @@ import { PrismaService } from '../../../../database/prisma.service';
 import { PendingActionService } from '../../confirmations/pending-action.service';
 import { AiTool, ToolContext, ToolResult } from '../tool.types';
 import { ReplyToConversationTool } from './reply-to-conversation.tool';
+import { SellerAlertService } from '../../../notifications/seller-alert.service';
 import { enterLeadStage } from '../../lead-stage.util';
 import { withHumanActionTaken } from '../../outbound-guards/outbound-checks';
 import {
@@ -70,6 +71,7 @@ export class TransferToHumanTool implements AiTool {
     private readonly pendingActions: PendingActionService,
     private readonly prisma: PrismaService,
     private readonly replyTool: ReplyToConversationTool,
+    private readonly sellerAlert: SellerAlertService,
   ) {}
 
   async execute(
@@ -189,6 +191,10 @@ export class TransferToHumanTool implements AiTool {
         reason,
       },
     );
+
+    // Conversa que já tem vendedor: ele é avisado (sino + push com o Sendtur
+    // fechado). Sem dono, o card vai para a fila do ADM, que distribui.
+    await this.sellerAlert.onAiHandoff(ctx.conversationId);
 
     this.logger.log(
       `Agent ${ctx.agentId} requested handoff for conv ${ctx.conversationId} → pendingAction=${action.id} (reason="${reason}")`,

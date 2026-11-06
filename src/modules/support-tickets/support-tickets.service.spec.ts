@@ -54,9 +54,10 @@ function make(opts: { pipeline?: any; openCard?: any; maxNumber?: number | null 
     message: { create: jest.fn().mockResolvedValue({ id: 'sys-1' }) },
   } as any;
   const realtime = { emitToOrg: jest.fn(), emitToChannel: jest.fn(), emitToConversation: jest.fn() } as any;
-  const svc = new SupportTicketsService(prisma, realtime);
+  const sellerAlert = { onConversationAssigned: jest.fn().mockResolvedValue(undefined), onAiHandoff: jest.fn().mockResolvedValue(undefined), onSellerNote: jest.fn().mockResolvedValue(undefined), onSupportTicket: jest.fn().mockResolvedValue(undefined) } as any;
+  const svc = new SupportTicketsService(prisma, realtime, sellerAlert);
   (svc as any).clock = () => NOW;
-  return { svc, prisma, realtime };
+  return { svc, prisma, realtime, sellerAlert };
 }
 
 describe('SupportTicketsService.open', () => {
@@ -199,5 +200,11 @@ describe('SupportTicketsService.open', () => {
     prisma.conversation.findUnique.mockResolvedValue({ ...CONVERSATION, organizationId: 'org-2' });
 
     await expect(svc.open(INPUT)).rejects.toThrow('Conversa não encontrada');
+  });
+
+  it('chamado NOVO avisa o vendedor da conversa', async () => {
+    const { svc, sellerAlert } = make({ maxNumber: 41 });
+    await svc.open(INPUT);
+    expect(sellerAlert.onSupportTicket).toHaveBeenCalledWith('conv-1', '#S-0042');
   });
 });

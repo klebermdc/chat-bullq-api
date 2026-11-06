@@ -303,6 +303,17 @@ export class RealtimeGateway
   }
 
   /**
+   * O usuário está com o Sendtur aberto nesta organização agora? Olha as
+   * conexões vivas (mais fiel que o hash `presence:*` do Redis, que expira com
+   * a aba aberta e some quando UMA das abas fecha). Usado pelo Web Push: app
+   * aberto = vale o som do app, sem push.
+   */
+  async hasOpenSession(userId: string, organizationId: string): Promise<boolean> {
+    const sockets = await this.server.in(`user:${userId}`).fetchSockets();
+    return sockets.some((s) => s.data.authReady && s.data.organizationId === organizationId);
+  }
+
+  /**
    * Push live channel-permission changes to a user's open sockets without
    * forcing a reconnect. Used when admin grants/revokes access via the
    * channel-access endpoints — the next message on that channel is delivered

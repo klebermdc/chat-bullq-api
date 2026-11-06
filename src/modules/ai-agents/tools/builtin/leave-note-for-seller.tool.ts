@@ -3,6 +3,7 @@ import { MessageContentType, MessageDirection, MessageStatus } from '@prisma/cli
 import { PrismaService } from '../../../../database/prisma.service';
 import { RealtimeGateway } from '../../../realtime/realtime.gateway';
 import { AiTool, ToolContext, ToolResult } from '../tool.types';
+import { SellerAlertService } from '../../../notifications/seller-alert.service';
 
 const MAX_SUMMARY_LENGTH = 1000;
 
@@ -34,6 +35,7 @@ export class LeaveNoteForSellerTool implements AiTool {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    private readonly sellerAlert: SellerAlertService,
   ) {}
 
   async execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
@@ -60,6 +62,9 @@ export class LeaveNoteForSellerTool implements AiTool {
       contactId: ctx.contactId,
     });
     this.realtime.emitToConversation(ctx.conversationId, 'message:new', { message });
+
+    // O vendedor está fora do horário: o recado só serve se chegar no bolso.
+    await this.sellerAlert.onSellerNote(ctx.conversationId);
 
     return { output: { ok: true } };
   }
