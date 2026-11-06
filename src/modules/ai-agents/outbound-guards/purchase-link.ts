@@ -67,6 +67,14 @@ function ehLinkDeCompra(url: URL): boolean {
   return endereco.split(/[^a-z0-9]+/).some((pedaco) => PURCHASE_TOKENS.has(pedaco));
 }
 
+/**
+ * O texto tem algum link? Com `blockCommercialTalk` a Aline é só SDR e não
+ * manda link nenhum (site, cotação, pagamento) — decisão do Kleber em 06/11/2026.
+ */
+export function contemLink(texto: string): boolean {
+  return [...(texto ?? '').matchAll(URL_NO_TEXTO)].length > 0;
+}
+
 /** O texto tem algum link de compra ou pagamento? */
 export function contemLinkDeCompra(texto: string): boolean {
   return [...(texto ?? '').matchAll(URL_NO_TEXTO)]
