@@ -9,7 +9,12 @@ export interface ResolvedConversation {
   status: ConversationStatus;
   isNew: boolean;
   wasReopened: boolean;
+  /** Reaberta mantendo o atendente que escreveu depois de finalizar. */
+  keptAssignee?: boolean;
 }
+
+/** Janela em que a resposta do cliente reabre a conversa finalizada. */
+const REOPEN_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const OPEN_STATES = [
   ConversationStatus.PENDING,
@@ -45,6 +50,9 @@ export class ConversationResolverService {
         const existing = await this.findOpen(organizationId, channelId, contactId);
         if (existing) return this.touchOpen(existing, isGroup);
 
+        // Ordena pela atividade: se o atendente mandou um template numa
+        // conversa finalizada antiga, é ELA que o cliente está respondendo,
+        // mesmo que outra tenha sido finalizada mais recentemente.
         const lastClosed = await this.prisma.conversation.findFirst({
           where: {
             organizationId,
@@ -52,38 +60,15 @@ export class ConversationResolverService {
             contactId,
             status: ConversationStatus.CLOSED,
           },
-          orderBy: { closedAt: 'desc' },
+          orderBy: [
+            { lastMessageAt: { sort: 'desc', nulls: 'last' } },
+            { closedAt: 'desc' },
+          ],
         });
 
         if (lastClosed) {
-          const closedAt = lastClosed.closedAt || lastClosed.updatedAt;
-          const hoursSinceClosed = (Date.now() - closedAt.getTime()) / (1000 * 60 * 60);
-          if (hoursSinceClosed < 24) {
-            await this.prisma.conversation.update({
-              where: { id: lastClosed.id },
-              data: {
-                status: ConversationStatus.PENDING,
-                closedAt: null,
-                assignedToId: null,
-              },
-            });
-            await this.prisma.conversationAuditLog.create({
-              data: {
-                conversationId: lastClosed.id,
-                action: 'REOPENED',
-                fromValue: ConversationStatus.CLOSED,
-                toValue: ConversationStatus.PENDING,
-                metadata: { trigger: 'new_inbound_message' },
-              },
-            });
-            this.logger.log(`Conversation reopened: ${lastClosed.id}`);
-            return {
-              conversationId: lastClosed.id,
-              status: ConversationStatus.PENDING,
-              isNew: false,
-              wasReopened: true,
-            };
-          }
+          const reopened = await this.tryReopen(lastClosed);
+          if (reopened) return reopened;
         }
 
         const protocol = this.generateProtocol();
@@ -126,6 +111,58 @@ export class ConversationResolverService {
         };
       },
     );
+  }
+
+  /**
+   * Reabre a conversa finalizada quando:
+   *  - foi finalizada há menos de 24h (regra antiga), ou
+   *  - o atendente escreveu nela DEPOIS de finalizar (template de retomada)
+   *    há menos de 24h — o cliente está respondendo esse envio, e a resposta
+   *    tem que cair na mesma conversa, não numa nova.
+   * No segundo caso quem mandou continua dono; no primeiro, volta sem dono.
+   */
+  private async tryReopen(lastClosed: {
+    id: string;
+    closedAt: Date | null;
+    updatedAt: Date;
+    lastOutboundAt: Date | null;
+  }): Promise<ResolvedConversation | null> {
+    const closedAt = lastClosed.closedAt ?? lastClosed.updatedAt;
+    const outboundAt = lastClosed.lastOutboundAt ?? null;
+    const reachedOutAfterClose =
+      outboundAt !== null && outboundAt.getTime() > closedAt.getTime();
+    const lastActivity = reachedOutAfterClose && outboundAt ? outboundAt : closedAt;
+    if (Date.now() - lastActivity.getTime() >= REOPEN_WINDOW_MS) return null;
+
+    await this.prisma.conversation.update({
+      where: { id: lastClosed.id },
+      data: {
+        status: ConversationStatus.PENDING,
+        closedAt: null,
+        ...(reachedOutAfterClose ? {} : { assignedToId: null }),
+      },
+    });
+    await this.prisma.conversationAuditLog.create({
+      data: {
+        conversationId: lastClosed.id,
+        action: 'REOPENED',
+        fromValue: ConversationStatus.CLOSED,
+        toValue: ConversationStatus.PENDING,
+        metadata: {
+          trigger: reachedOutAfterClose
+            ? 'reply_to_outreach_after_close'
+            : 'new_inbound_message',
+        },
+      },
+    });
+    this.logger.log(`Conversation reopened: ${lastClosed.id}`);
+    return {
+      conversationId: lastClosed.id,
+      status: ConversationStatus.PENDING,
+      isNew: false,
+      wasReopened: true,
+      keptAssignee: reachedOutAfterClose,
+    };
   }
 
   private async findOpen(

@@ -90,4 +90,105 @@ describe('ConversationResolverService.resolve', () => {
     expect(outbox.enqueue).not.toHaveBeenCalled();
     expect(result.wasReopened).toBe(true);
   });
+
+  const HOUR = 3600_000;
+  const DAY = 24 * HOUR;
+
+  const buildReopenPrisma = (lastClosed: Record<string, unknown> | null) => {
+    const findFirst = jest
+      .fn()
+      .mockResolvedValueOnce(null) // fast-path findOpen
+      .mockResolvedValueOnce(null) // locked findOpen
+      .mockResolvedValueOnce(lastClosed); // lastClosed lookup
+    const txMock = {
+      conversation: {
+        create: jest.fn().mockResolvedValue({ id: 'conv-new' }),
+      },
+      conversationAuditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    return {
+      conversation: { findFirst, update: jest.fn().mockResolvedValue({}) },
+      conversationAuditLog: { create: jest.fn().mockResolvedValue({}) },
+      $transaction: jest.fn((fn: any) => fn(txMock)),
+      txMock,
+    };
+  };
+
+  it('reabre conversa finalizada há meses quando o atendente mandou template nela agora', async () => {
+    // Arrange: finalizada em agosto, template enviado há 2 minutos.
+    const prisma = buildReopenPrisma({
+      id: 'conv-antiga',
+      status: ConversationStatus.CLOSED,
+      closedAt: new Date(Date.now() - 90 * DAY),
+      updatedAt: new Date(Date.now() - 2 * 60_000),
+      lastOutboundAt: new Date(Date.now() - 2 * 60_000),
+      assignedToId: 'user-rafael',
+    });
+    const outbox = { enqueue: jest.fn() };
+    const service = buildService(prisma, outbox);
+
+    // Act: o cliente responde ao template.
+    const result = await service.resolve(organizationId, channelId, contactId);
+
+    // Assert: mesma conversa, sem criar outra, e o atendente continua dono.
+    expect(result).toMatchObject({
+      conversationId: 'conv-antiga',
+      isNew: false,
+      wasReopened: true,
+      keptAssignee: true,
+    });
+    expect(prisma.txMock.conversation.create).not.toHaveBeenCalled();
+    const updateData = prisma.conversation.update.mock.calls[0][0].data;
+    expect(updateData).not.toHaveProperty('assignedToId');
+    expect(updateData.status).toBe(ConversationStatus.PENDING);
+  });
+
+  it('busca a última finalizada pela atividade mais recente, não só pela data de finalização', async () => {
+    const prisma = buildReopenPrisma(null);
+    const service = buildService(prisma, { enqueue: jest.fn() });
+
+    await service.resolve(organizationId, channelId, contactId);
+
+    const lastClosedQuery = prisma.conversation.findFirst.mock.calls[2][0];
+    expect(lastClosedQuery.orderBy).toEqual([
+      { lastMessageAt: { sort: 'desc', nulls: 'last' } },
+      { closedAt: 'desc' },
+    ]);
+  });
+
+  it('cria conversa nova quando a finalizada é antiga e ninguém escreveu nela depois', async () => {
+    const closedAt = new Date(Date.now() - 90 * DAY);
+    const prisma = buildReopenPrisma({
+      id: 'conv-antiga',
+      status: ConversationStatus.CLOSED,
+      closedAt,
+      updatedAt: closedAt,
+      lastOutboundAt: new Date(closedAt.getTime() - HOUR),
+      assignedToId: 'user-renata',
+    });
+    const service = buildService(prisma, { enqueue: jest.fn() });
+
+    const result = await service.resolve(organizationId, channelId, contactId);
+
+    expect(result.isNew).toBe(true);
+    expect(prisma.conversation.update).not.toHaveBeenCalled();
+  });
+
+  it('reabertura comum (<24h, sem envio depois de finalizar) continua tirando o atendente', async () => {
+    const closedAt = new Date(Date.now() - HOUR);
+    const prisma = buildReopenPrisma({
+      id: 'conv-recente',
+      status: ConversationStatus.CLOSED,
+      closedAt,
+      updatedAt: closedAt,
+      lastOutboundAt: new Date(closedAt.getTime() - 60_000),
+      assignedToId: 'user-renata',
+    });
+    const service = buildService(prisma, { enqueue: jest.fn() });
+
+    const result = await service.resolve(organizationId, channelId, contactId);
+
+    expect(result).toMatchObject({ wasReopened: true, keptAssignee: false });
+    expect(prisma.conversation.update.mock.calls[0][0].data.assignedToId).toBeNull();
+  });
 });
