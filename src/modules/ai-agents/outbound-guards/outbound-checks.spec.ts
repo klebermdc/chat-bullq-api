@@ -1,9 +1,12 @@
 import {
+  catalogWithoutPrices,
   fallbackRetryText,
   hasHumanAction,
+  isToolBlockedByCommercialRule,
   outboundVetoFrom,
   promptEvidenceFrom,
-  salesNudgeText,
+  shouldSendSalesNudge,
+  toolsForCommercialRule,
   withHumanActionTaken,
 } from './outbound-checks';
 
@@ -55,18 +58,6 @@ describe('withHumanActionTaken', () => {
   });
 });
 
-describe('salesNudgeText', () => {
-  it('padrão continua pedindo pitch + preço + link', () => {
-    expect(salesNudgeText(false)).toContain('preço');
-  });
-
-  it('com blockCommercialTalk não pede preço e manda deixar valores com o consultor', () => {
-    const texto = salesNudgeText(true);
-    expect(texto).not.toMatch(/\+ preço/);
-    expect(texto).toMatch(/consultor/);
-  });
-});
-
 describe('promptEvidenceFrom', () => {
   it('junta a camada de segurança com o texto do system prompt', () => {
     const evidencia = promptEvidenceFrom('REGRAS', [
@@ -98,5 +89,47 @@ describe('outboundVetoFrom / fallbackRetryText', () => {
     const texto = fallbackRetryText('veto comercial');
     expect(texto).toMatch(/NÃO foi enviada/);
     expect(texto).toContain('veto comercial');
+  });
+});
+
+describe('regra comercial nas ferramentas e na cutucada', () => {
+  const TOOLS = [
+    { name: 'replyToConversation', description: '', parameters: {} },
+    { name: 'lookupOffering', description: '', parameters: {} },
+    { name: 'checkPurchase', description: '', parameters: {} },
+  ];
+
+  it('com blockCommercialTalk, lookupOffering sai das ferramentas oferecidas', () => {
+    expect(toolsForCommercialRule(TOOLS, true).map((t) => t.name)).toEqual([
+      'replyToConversation',
+      'checkPurchase',
+    ]);
+    expect(isToolBlockedByCommercialRule('lookupOffering', true)).toBe(true);
+  });
+
+  it('sem a regra, lookupOffering continua (mesma lista de hoje)', () => {
+    expect(toolsForCommercialRule(TOOLS, false)).toEqual(TOOLS);
+    expect(isToolBlockedByCommercialRule('lookupOffering', false)).toBe(false);
+  });
+
+  it('com blockCommercialTalk não existe cutucada de vendas', () => {
+    const base = { calledSalesPrep: true, neverReplied: true, stillNoAction: true, nudgeUsed: false };
+    expect(shouldSendSalesNudge({ ...base, blockCommercialTalk: false })).toBe(true);
+    expect(shouldSendSalesNudge({ ...base, blockCommercialTalk: true })).toBe(false);
+    expect(shouldSendSalesNudge({ ...base, nudgeUsed: true, blockCommercialTalk: false })).toBe(false);
+  });
+});
+
+describe('catalogWithoutPrices', () => {
+  it('tira a descrição que fala de valor e mantém as outras, sem mexer no original', () => {
+    const catalogo = [
+      { slug: 'a', shortLine: 'a partir de R$ 699' },
+      { slug: 'b', shortLine: 'guia nos 4 parques' },
+    ];
+    expect(catalogWithoutPrices(catalogo)).toEqual([
+      { slug: 'a', shortLine: '' },
+      { slug: 'b', shortLine: 'guia nos 4 parques' },
+    ]);
+    expect(catalogo[0].shortLine).toBe('a partir de R$ 699');
   });
 });

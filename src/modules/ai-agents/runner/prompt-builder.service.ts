@@ -18,6 +18,7 @@ import {
 } from '../../routing/availability/business-hours.util';
 import type { OnCallContext } from '../on-call/on-call.service';
 import { EMERGENCY_CONTACT_TOOL } from '../emergency/emergency-contact.util';
+import { catalogWithoutPrices } from '../outbound-guards/outbound-checks';
 
 export interface PromptContext {
   organization: Organization;
@@ -45,6 +46,11 @@ export interface PromptContext {
   mediaUrls?: Map<string, { url: string; mimeType?: string }>;
   /** Aline de plantão: o vendedor da conversa está fora do horário. */
   onCall?: OnCallContext;
+  /**
+   * Org com `blockCommercialTalk`: a IA só qualifica. O catálogo serve só para
+   * entender o cliente, sem preço nem instrução de link.
+   */
+  blockCommercialTalk?: boolean;
 }
 
 /** Tipos de imagem enviados ao provider com suporte a vision. */
@@ -309,9 +315,13 @@ Como agir:
 <% if (it.catalog && it.catalog.length > 0) { %>
 
 ═══ Soluções que oferecemos ═══
+<% if (it.blockCommercialTalk) { %>
+Use essa lista só para entender o que o cliente procura. Valores, preço, link e compra são com o consultor: não cite valor, não mande link de compra e não prometa condição.
+<% } else { %>
 Use essa lista pra saber o que existe. Pra puxar preço, condições e
 link, chame a skill \`lookupOffering\` com o slug — NUNCA invente
 valor, prazo ou link, sempre busque antes de citar.
+<% } %>
 
 REGRA DE LINGUAGEM (CRÍTICO — denuncia vendedor amador):
 - PROIBIDO falar pro cliente: "pitch", "catálogo", "pack", "lançamento",
@@ -448,7 +458,7 @@ for (const p of it.catalog) {
 
 # <%= cat %>
 <% for (const p of byCat[cat]) { %>
-- \`<%= p.slug %>\` · <%= p.name %> — <%= p.shortLine %>
+- \`<%= p.slug %>\` · <%= p.name %><%= !it.blockCommercialTalk || p.shortLine ? ' — ' + p.shortLine : '' %>
 <% } %>
 <% } %>
 <% } %>`;
@@ -465,6 +475,8 @@ export class PromptBuilderService {
   buildMessages(ctx: PromptContext): LlmMessage[] {
     const systemText = this.eta.renderString(SYSTEM_TEMPLATE, {
       ...ctx,
+      // Com blockCommercialTalk, linha de catálogo com preço vai sem a descrição.
+      catalog: ctx.blockCommercialTalk ? catalogWithoutPrices(ctx.catalog ?? []) : ctx.catalog,
       now: this.formatNow(ctx.organization.aiTimezone),
       operationalContextLabel: this.formatRelativeUpdate(
         (ctx.agent as any).operationalContextUpdatedAt,

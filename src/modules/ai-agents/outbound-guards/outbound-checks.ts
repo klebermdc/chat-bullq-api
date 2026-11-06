@@ -7,6 +7,7 @@
 import type { LlmContent } from '../llm/llm.types';
 import type { ToolContext } from '../tools/tool.types';
 import type { PriorToolCall } from './send-check.types';
+import { contemAssuntoComercialNaSaida } from './commercial-topic';
 
 /** Ferramentas que acionam de verdade uma pessoa (transferência ou recado ao vendedor). */
 export const HUMAN_ACTION_TOOLS: ReadonlySet<string> = new Set([
@@ -70,18 +71,46 @@ export function fallbackRetryText(veto: string): string {
   );
 }
 
+/** Ferramentas que só servem para vender (preço, condição, link): somem com `blockCommercialTalk`. */
+export const COMMERCIAL_ONLY_TOOLS: ReadonlySet<string> = new Set(['lookupOffering']);
+
+/** A ferramenta fica de fora por causa da regra comercial da org? */
+export function isToolBlockedByCommercialRule(name: string, blockCommercialTalk: boolean): boolean {
+  return blockCommercialTalk && COMMERCIAL_ONLY_TOOLS.has(name);
+}
+
+/** As ferramentas oferecidas ao modelo, sem as de venda quando a regra está ligada. */
+export function toolsForCommercialRule<T extends { name: string }>(
+  tools: readonly T[],
+  blockCommercialTalk: boolean,
+): T[] {
+  return tools.filter((t) => !isToolBlockedByCommercialRule(t.name, blockCommercialTalk));
+}
+
 /**
- * Lembrete do runner quando o modelo rodou lookupOffering/checkPurchase e não
- * respondeu. Com `blockCommercialTalk`, não pede preço: valores são do consultor.
+ * A cutucada de vendas do runner (rodou lookupOffering/checkPurchase e não
+ * respondeu). Com `blockCommercialTalk` ela não existe: a IA só qualifica.
  */
-export function salesNudgeText(blockCommercialTalk: boolean): string {
-  const pedido = blockCommercialTalk
-    ? '1 frase de pitch ligada à dor + link (vindo do lookupOffering). NÃO fale de preço, valor, parcela ou pagamento: isso é com o consultor.'
-    : '1 frase de pitch ligada à dor + preço + link do checkout (vindos do lookupOffering).';
+export function shouldSendSalesNudge(input: {
+  calledSalesPrep: boolean;
+  neverReplied: boolean;
+  stillNoAction: boolean;
+  nudgeUsed: boolean;
+  blockCommercialTalk: boolean;
+}): boolean {
   return (
-    'Você rodou as tools de preparação (lookupOffering / checkPurchase) mas não chamou replyToConversation. ' +
-    `O cliente está esperando. Responda agora com replyToConversation: ${pedido} ` +
-    'Não termine este turn sem chamar replyToConversation.'
+    !input.blockCommercialTalk &&
+    input.calledSalesPrep &&
+    input.neverReplied &&
+    input.stillNoAction &&
+    !input.nudgeUsed
+  );
+}
+
+/** Catálogo sem preço: a descrição curta que fala de valor some (o nome fica). */
+export function catalogWithoutPrices<T extends { shortLine: string }>(catalog: readonly T[]): T[] {
+  return catalog.map((p) =>
+    contemAssuntoComercialNaSaida(p.shortLine ?? '') ? { ...p, shortLine: '' } : p,
   );
 }
 
