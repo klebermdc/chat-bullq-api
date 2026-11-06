@@ -226,6 +226,7 @@ export class InboundMessageProcessor extends WorkerHost {
         status,
         isNew: conversationIsNew,
         wasReopened: conversationWasReopened,
+        keptAssignee: conversationKeptAssignee,
       } = await this.conversationResolver.resolve(
         organizationId,
         channelId,
@@ -343,9 +344,12 @@ export class InboundMessageProcessor extends WorkerHost {
       // ele, antes do sino (que então avisa o vendedor) e antes do chatbot e
       // da Aline (que ficam de fora). Falha aqui cai no fluxo normal. Conversa
       // reaberta (<24h) também entra: o resolver a reabre SEM atendente.
+      // Exceção: reaberta porque o atendente mandou template depois de
+      // finalizar — ela segue com quem mandou.
       let routedToLegacyOwner = false;
       if (
         (conversationIsNew || conversationWasReopened) &&
+        !conversationKeptAssignee &&
         isNew &&
         direction === MessageDirection.INBOUND &&
         !message.isGroup
