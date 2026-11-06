@@ -175,4 +175,41 @@ describe('CreateProposalDto — cotação por link', () => {
       expect(await messagesFor(body)).toMatch(/price/);
     });
   });
+
+  describe('link da loja (só para o atendente)', () => {
+    const STORE_URL_ERROR = 'O link da loja precisa começar com http:// ou https://.';
+
+    it.each([
+      ['https://loja.orlandofastpass.com.br/carrinho/123', 'https://loja.orlandofastpass.com.br/carrinho/123'],
+      ['http://loja.exemplo.com/p?id=1', 'http://loja.exemplo.com/p?id=1'],
+      ['  https://loja.exemplo.com/x  ', 'https://loja.exemplo.com/x'],
+      ['', ''],
+      ['   ', ''],
+      [null, null],
+    ])('aceita storeUrl = %p (aparado)', async (value, expected) => {
+      const out = (await validate({ ...base, quote: quote({ storeUrl: value }) })) as CreateProposalDto;
+      expect(out.quote!.storeUrl).toBe(expected);
+    });
+
+    it('é opcional: sem o campo, a cotação passa', async () => {
+      const out = (await validate({ ...base, quote: quote() })) as CreateProposalDto;
+      expect(out.quote!.storeUrl).toBeUndefined();
+    });
+
+    it.each(['loja.exemplo.com/x', 'javascript:alert(1)', 'ftp://loja.exemplo.com/x', 'https://', 'https://loja exemplo.com'])(
+      'recusa storeUrl = %p com a mensagem em português',
+      async (value) => {
+        expect(await messagesFor({ ...base, quote: quote({ storeUrl: value }) })).toContain(STORE_URL_ERROR);
+      },
+    );
+
+    it('recusa link com mais de 500 caracteres', async () => {
+      const long = `https://loja.exemplo.com/${'a'.repeat(500)}`;
+      expect(await messagesFor({ ...base, quote: quote({ storeUrl: long }) })).toMatch(/500/);
+    });
+
+    it('recusa valor que não é texto', async () => {
+      expect(await messagesFor({ ...base, quote: quote({ storeUrl: 123 }) })).toContain(STORE_URL_ERROR);
+    });
+  });
 });

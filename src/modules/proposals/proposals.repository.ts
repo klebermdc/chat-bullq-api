@@ -4,7 +4,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { ExtractedCart, ProposalDetails, ProposalKind } from './proposals.types';
 import { quoteSearchOrder, quoteSearchWhere, type QuoteSearchFilter } from './quote/quote-search';
 import { QUOTE_KIND, QUOTE_NUMBER_ATTEMPTS } from './quote/quote.constants';
-import type { QuoteData } from './quote/quote.types';
+import type { StoredQuoteData } from './quote/quote.types';
 
 export interface CreateProposalInput {
   organizationId: string;
@@ -25,7 +25,7 @@ export interface CreateProposalInput {
 
 /** Nova versão de uma cotação conferida pelo atendente. */
 export interface QuoteUpdateInput {
-  quote: QuoteData;
+  quote: StoredQuoteData;
   customerName: string | null;
   cart: ExtractedCart;
   expiresAt: Date;

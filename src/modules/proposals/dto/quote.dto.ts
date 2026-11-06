@@ -8,14 +8,16 @@ import {
   IsOptional,
   IsPositive,
   IsString,
+  IsUrl,
   Matches,
   Max,
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CURRENCY_RE,
@@ -34,6 +36,8 @@ import {
   QUOTE_MAX_ITEMS,
   QUOTE_MAX_PEOPLE,
   QUOTE_PROVIDER_MAX,
+  QUOTE_STORE_URL_ERROR,
+  QUOTE_STORE_URL_MAX,
   QUOTE_TEXT_MAX,
   QUOTE_TITLE_MAX,
 } from '../quote/quote.constants';
@@ -79,6 +83,23 @@ function OptionalText(max: number, label: string): PropertyDecorator {
     IsOptional()(target, key);
     IsString()(target, key);
     MaxLength(max, { message: `${label} pode ter até ${max} caracteres.` })(target, key);
+  };
+}
+
+const trimIfText = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+const STORE_URL_OPTIONS: Parameters<typeof IsUrl>[0] = { protocols: ['http', 'https'], require_protocol: true, require_valid_protocol: true };
+
+/**
+ * Link da loja online: opcional, aparado; vazio passa (vira null ao gravar).
+ * Preenchido, precisa ser http(s) e caber em QUOTE_STORE_URL_MAX.
+ */
+function OptionalStoreUrl(): PropertyDecorator {
+  return (target, key) => {
+    Transform(trimIfText)(target, key);
+    ValidateIf((_, value) => value !== null && value !== undefined && value !== '')(target, key);
+    IsString({ message: QUOTE_STORE_URL_ERROR })(target, key);
+    MaxLength(QUOTE_STORE_URL_MAX, { message: `O link da loja pode ter até ${QUOTE_STORE_URL_MAX} caracteres.` })(target, key);
+    IsUrl(STORE_URL_OPTIONS, { message: QUOTE_STORE_URL_ERROR })(target, key);
   };
 }
 
@@ -240,4 +261,9 @@ export class QuoteDto {
   @ApiPropertyOptional({ nullable: true, maxLength: QUOTE_TEXT_MAX })
   @OptionalText(QUOTE_TEXT_MAX, 'A observação')
   notes?: string | null;
+
+  /** Link da loja online, só para o atendente consultar. Nunca vai ao cliente. */
+  @ApiPropertyOptional({ nullable: true, maxLength: QUOTE_STORE_URL_MAX, example: 'https://loja.exemplo.com/carrinho/123' })
+  @OptionalStoreUrl()
+  storeUrl?: string | null;
 }

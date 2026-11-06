@@ -1,4 +1,4 @@
-import type { QuoteData } from './quote/quote.types';
+import type { StoredQuoteData } from './quote/quote.types';
 
 export interface ExtractedPark {
   nome: string;
@@ -63,7 +63,7 @@ export interface ProposalDetails {
   title?: string;
   lines?: string[];
   images?: ProposalImage[];
-  /** QUOTE: a cotação conferida e como chamar o cliente na página. */
-  quote?: QuoteData;
+  /** QUOTE: a cotação conferida (com o link da loja, interno) e como chamar o cliente na página. */
+  quote?: StoredQuoteData;
   customerName?: string | null;
 }

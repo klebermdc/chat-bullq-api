@@ -97,6 +97,17 @@ describe('PublicQuotesService', () => {
       }
     });
 
+    it('o link da loja gravado na cotação não sai na resposta pública', async () => {
+      const storeUrl = 'https://loja.orlandofastpass.com.br/carrinho/777';
+      const { svc } = make(row({ details: { images: [], quote: { ...quote, storeUrl }, customerName: 'Ana' } }));
+
+      const out = await svc.view(TOKEN);
+
+      expect(out.quote).not.toHaveProperty('storeUrl');
+      expect(JSON.stringify(out)).not.toContain('storeUrl');
+      expect(JSON.stringify(out)).not.toContain(storeUrl);
+    });
+
     it('com número, o código é o nº da cotação; atualizada mostra a data', async () => {
       const { svc } = make(row({ quoteNumber: 152, quoteUpdatedAt: new Date('2026-10-26T11:00:00.000Z') }));
 
@@ -173,6 +184,17 @@ describe('PublicQuotesService', () => {
         expect.objectContaining({ code: '8K2Q1Z', status: 'ACTIVE' }),
         `https://cotacao.orlandofastpass.com.br/${TOKEN}`,
       );
+    });
+
+    it('o PDF não recebe o link da loja', async () => {
+      const storeUrl = 'https://loja.orlandofastpass.com.br/carrinho/777';
+      const { svc, pdf } = make(row({ details: { images: [], quote: { ...quote, storeUrl }, customerName: 'Ana' } }));
+
+      await svc.pdf(TOKEN);
+
+      const [view] = pdf.render.mock.calls[0];
+      expect(view.quote).not.toHaveProperty('storeUrl');
+      expect(JSON.stringify(view)).not.toContain(storeUrl);
     });
 
     it('410 quando expirada, sem abrir o gerador', async () => {
