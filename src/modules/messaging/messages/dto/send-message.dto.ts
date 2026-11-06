@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsObject, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsObject, IsEnum, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class SendMessageDto {
@@ -34,4 +34,12 @@ export class SendMessageDto {
   @IsOptional()
   @IsObject()
   replyTo?: { externalMessageId: string };
+
+  /**
+   * `true` = sai sem a assinatura do vendedor. Só OWNER/ADMIN; AGENT recebe 403.
+   */
+  @ApiPropertyOptional({ description: 'Enviar sem assinatura (só ADM/Owner)' })
+  @IsOptional()
+  @IsBoolean()
+  unsigned?: boolean;
 }

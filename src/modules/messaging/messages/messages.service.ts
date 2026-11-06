@@ -32,6 +32,7 @@ import { shouldAutoAssignOnReply } from './auto-assign.util';
 import { syncAttendantTag } from '../../../common/utils/sync-attendant-tag';
 import { buildSnippet, messageText } from './message-search';
 import { ContactHistoryService } from './contact-history.service';
+import { applySellerSignature, canSendUnsigned } from './seller-signature';
 
 import { buildQuotePreview } from '../pipeline/reply-context.resolver';
 @Injectable()
@@ -115,6 +116,14 @@ export class MessagesService {
       );
     }
     this.channelAccess.assertChannelAccess(access, conversation.channelId);
+
+    // Antes de persistir: um pedido negado não pode deixar linha OUTBOUND.
+    const wantsUnsigned = dto.unsigned === true;
+    if (wantsUnsigned && !canSendUnsigned(role)) {
+      throw new ForbiddenException(
+        'Só administradores podem enviar mensagem sem assinatura.',
+      );
+    }
 
     const contactChannel = conversation.contact.channels.find(
       (cc) => cc.channelId === conversation.channelId,
@@ -368,18 +377,23 @@ export class MessagesService {
       message,
     });
 
+    // Assinatura do vendedor: vai em toda mensagem digitada no chat (e em
+    // qualquer envio pra grupo, como já era). Automáticas e de sistema saem
+    // sem — não foi o vendedor quem escreveu. ADM/Owner podem desligar.
+    const shouldSign =
+      !wantsUnsigned &&
+      (conversation.isGroup || (!automated && opts?.system !== true));
     let outboundContent = dto.content;
-    if (conversation.isGroup && dto.type === 'TEXT' && outboundContent.text) {
+    if (shouldSign && dto.type === 'TEXT') {
       const sender = await this.prisma.user.findUnique({
         where: { id: senderId },
         select: { name: true },
       });
-      if (sender?.name) {
-        outboundContent = {
-          ...outboundContent,
-          text: `*${sender.name}*\n${outboundContent.text}`,
-        };
-      }
+      outboundContent = applySellerSignature(outboundContent, {
+        type: dto.type,
+        senderName: sender?.name,
+        channelType: conversation.channel.type,
+      });
     }
 
     await this.outboundQueue.add(
