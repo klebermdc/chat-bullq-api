@@ -41,9 +41,11 @@ import { EMERGENCY_CONTACT_TOOL } from '../emergency/emergency-contact.util';
 import { MediaUrlResolverService } from './media-url-resolver.service';
 import {
   fallbackRetryText,
+  isToolBlockedByCommercialRule,
   outboundVetoFrom,
   promptEvidenceFrom,
-  salesNudgeText,
+  shouldSendSalesNudge,
+  toolsForCommercialRule,
 } from '../outbound-guards/outbound-checks';
 import type { PriorToolCall } from '../outbound-guards/send-check.types';
 import { isShadowMode } from '../shadow-learning/shadow-mode.util';
@@ -231,10 +233,19 @@ export class AiAgentRunnerService {
     // Custom HTTP tools live in the DB; we keep their rows here so the
     // runner can hand them to HttpToolExecutor on tool-call time.
     const resolved = await this.resolveToolsAndSkills(agent.id, agent.kind);
+    // Regras de segurança da org. Com blockCommercialTalk a IA só qualifica:
+    // lookupOffering (preço, condição, link) nem é oferecido ao modelo.
+    const securityRules: SecurityRules = resolveSecurityRules(
+      (organization.aiSecurityRules as Partial<SecurityRules> | null) ?? undefined,
+    );
+    const blockCommercialTalk = securityRules.blockCommercialTalk === true;
     // Plantão: só responder, consultar e deixar recado. Fora dele, o recado
     // para o vendedor não existe.
-    const llmTools = resolved.llmTools.filter((t) =>
-      onCall ? ON_CALL_TOOLS.has(t.name) : t.name !== ON_CALL_ONLY_TOOL,
+    const llmTools = toolsForCommercialRule(
+      resolved.llmTools.filter((t) =>
+        onCall ? ON_CALL_TOOLS.has(t.name) : t.name !== ON_CALL_ONLY_TOOL,
+      ),
+      blockCommercialTalk,
     );
     const customSkillsByName = onCall ? new Map() : resolved.customSkillsByName;
     const skillInstructions = onCall ? [] : resolved.skillInstructions;
@@ -272,13 +283,11 @@ export class AiAgentRunnerService {
       skillInstructions,
       catalog,
       onCall,
+      blockCommercialTalk,
     });
 
     // Evidência da conferência de fato (guard 3): segurança + system prompt
     // do builder, capturados ANTES do RAG (memória da conversa, não fato).
-    const securityRules: SecurityRules = resolveSecurityRules(
-      (organization.aiSecurityRules as Partial<SecurityRules> | null) ?? undefined,
-    );
     const promptEvidence = promptEvidenceFrom(
       this.securityLayer.build(securityRules).content,
       messages[0]?.role === 'system' ? messages[0].content : '',
@@ -462,11 +471,15 @@ export class AiAgentRunnerService {
           );
           const neverReplied = !toolsCalled.has('replyToConversation');
           const stillNoAction = finalAction === AiFinalAction.NO_ACTION;
+          // Com blockCommercialTalk a cutucada de vendas não existe.
           if (
-            calledSalesPrep &&
-            neverReplied &&
-            stillNoAction &&
-            !salesNudgeUsed
+            shouldSendSalesNudge({
+              calledSalesPrep,
+              neverReplied,
+              stillNoAction,
+              nudgeUsed: salesNudgeUsed,
+              blockCommercialTalk,
+            })
           ) {
             salesNudgeUsed = true;
             this.logger.warn(
@@ -474,8 +487,8 @@ export class AiAgentRunnerService {
             );
             messages.push({
               role: 'user',
-              // Com blockCommercialTalk o lembrete não pede preço.
-              content: salesNudgeText(securityRules.blockCommercialTalk === true),
+              content:
+                'Você rodou as tools de preparação (lookupOffering / checkPurchase) mas não chamou replyToConversation. O cliente está esperando. Responda agora com replyToConversation: 1 frase de pitch ligada à dor + preço + link do checkout (vindos do lookupOffering). Não termine este turn sem chamar replyToConversation.',
             });
             continue;
           }
@@ -502,6 +515,7 @@ export class AiAgentRunnerService {
           replyAlreadySuccessful,
           agent.kind,
           !!onCall,
+          blockCommercialTalk,
         );
 
         priorToolCalls = [...priorToolCalls, ...toolResults.map(toPriorToolCall)];
@@ -729,6 +743,7 @@ export class AiAgentRunnerService {
     alreadyRepliedFromPriorIteration: boolean,
     agentKind: 'ORCHESTRATOR' | 'WORKER' = 'WORKER',
     onCall = false,
+    blockCommercialTalk = false,
   ): Promise<ToolCallOutcome[]> {
     const results: ToolCallOutcome[] = [];
     // Tracks whether THIS batch already produced a successful reply.
@@ -782,9 +797,10 @@ export class AiAgentRunnerService {
 
       // O modelo pode chamar uma ferramenta que não foi oferecida: no plantão
       // só as do plantão executam, e o recado só existe no plantão.
-      const blockedByMode = onCall
-        ? !ON_CALL_TOOLS.has(call.name)
-        : call.name === ON_CALL_ONLY_TOOL;
+      // Com blockCommercialTalk, lookupOffering não roda nem se o modelo chamar.
+      const blockedByMode =
+        (onCall ? !ON_CALL_TOOLS.has(call.name) : call.name === ON_CALL_ONLY_TOOL) ||
+        isToolBlockedByCommercialRule(call.name, blockCommercialTalk);
       if (blockedByMode) {
         const blockedOutput = {
           ok: false,

@@ -24,6 +24,7 @@ import { resolveSecurityRules } from '../../prompts/layers/security.layer';
 import type { SecurityRules } from '../../prompts/types';
 import { contemAssuntoComercialNaSaida } from '../../outbound-guards/commercial-topic';
 import { detectHumanPromise } from '../../outbound-guards/human-promise';
+import { contemLinkDeCompra } from '../../outbound-guards/purchase-link';
 import {
   COMMERCIAL_VETO_MESSAGE,
   HUMAN_PROMISE_VETO_MESSAGE,
@@ -171,7 +172,7 @@ export class ReplyToConversationTool implements AiTool {
     if (outboundBlock) return outboundBlock;
 
     const result = await this.deliver(text, ctx);
-    this.scheduleFactCheck(text, ctx, result);
+    this.scheduleFactCheck(text, ctx, result, securityRules);
     return result;
   }
 
@@ -188,7 +189,8 @@ export class ReplyToConversationTool implements AiTool {
     ctx: ToolContext,
     rules: SecurityRules,
   ): ToolResult | null {
-    if (rules.blockCommercialTalk && contemAssuntoComercialNaSaida(text)) {
+    const commercial = contemAssuntoComercialNaSaida(text) || contemLinkDeCompra(text);
+    if (rules.blockCommercialTalk && commercial) {
       return this.blockOutbound('commercial', 'commercial_talk_blocked', COMMERCIAL_VETO_MESSAGE, text, ctx);
     }
     // Sem o contexto do runner não dá pra saber o que já rodou: não trava.
@@ -228,11 +230,20 @@ export class ReplyToConversationTool implements AiTool {
     return { output: { ok: false, error, message } };
   }
 
-  /** Conferência de fato (só observa): depois do envio, sem esperar. */
-  private scheduleFactCheck(text: string, ctx: ToolContext, result: ToolResult): void {
+  /**
+   * Conferência de fato (só observa): depois do envio, sem esperar. Só nas
+   * orgs com `blockCommercialTalk` (hoje a OFP), para não gerar chamada de IA
+   * extra nas outras.
+   */
+  private scheduleFactCheck(
+    text: string,
+    ctx: ToolContext,
+    result: ToolResult,
+    rules: SecurityRules,
+  ): void {
     const promptEvidence = ctx.outboundGuards?.promptEvidence;
     const sent = (result.output as { ok?: boolean } | null)?.ok === true;
-    if (!sent || !promptEvidence) return;
+    if (!rules.blockCommercialTalk || !sent || !promptEvidence) return;
     this.factCheck.scheduleAfterSend({
       ctx,
       text,

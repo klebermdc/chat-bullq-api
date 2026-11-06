@@ -150,7 +150,7 @@ describe('ReplyToConversationTool — conferência de fato (só observa)', () =>
   };
 
   it('agenda a conferência depois do envio, sem bloquear', async () => {
-    const { tool, factCheck, queue } = make();
+    const { tool, factCheck, queue } = make({ blockCommercialTalk: true });
 
     const result = await tool.execute({ text: 'O Epcot abre às 10h.' }, { ...CTX, outboundGuards: GUARDS });
 
@@ -166,7 +166,7 @@ describe('ReplyToConversationTool — conferência de fato (só observa)', () =>
   });
 
   it('sem evidência do run (mensagem do sistema) não confere', async () => {
-    const { tool, factCheck } = make();
+    const { tool, factCheck } = make({ blockCommercialTalk: true });
 
     await tool.execute({ text: 'O Epcot abre às 10h.' }, CTX);
 
@@ -179,5 +179,55 @@ describe('ReplyToConversationTool — conferência de fato (só observa)', () =>
     await tool.execute({ text: 'Custa R$ 699' }, { ...CTX, outboundGuards: GUARDS });
 
     expect(factCheck.scheduleAfterSend).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReplyToConversationTool — conferência de fato só com blockCommercialTalk', () => {
+  it('flag desligado: zero conferência (nem chamada de IA, nem linha)', async () => {
+    const { tool, factCheck, sendChecks } = make();
+
+    const result = await tool.execute(
+      { text: 'O Epcot abre às 10h.' },
+      { ...CTX, outboundGuards: { priorToolCalls: [], promptEvidence: 'catálogo' } },
+    );
+
+    expect(result.output).toMatchObject({ ok: true });
+    expect(factCheck.scheduleAfterSend).not.toHaveBeenCalled();
+    expect(sendChecks.record).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReplyToConversationTool — link de compra com blockCommercialTalk', () => {
+  it('barra link de checkout mesmo em domínio permitido', async () => {
+    const { tool, queue, sendChecks } = make({ blockCommercialTalk: true });
+
+    const result = await tool.execute(
+      { text: 'Fecha por aqui: https://orlandofastpass.com.br/checkout/disney' },
+      CTX,
+    );
+
+    expect(result.output).toMatchObject({ ok: false, error: 'commercial_talk_blocked' });
+    expect(queue.add).not.toHaveBeenCalled();
+    expect(sendChecks.record).toHaveBeenCalledWith(expect.objectContaining({ check: 'commercial' }));
+  });
+
+  it('deixa passar link do domínio permitido que não é de compra', async () => {
+    const { tool, queue } = make({ blockCommercialTalk: true });
+
+    const result = await tool.execute(
+      { text: 'Dá uma olhada: https://orlandofastpass.com.br/parques/epcot' },
+      CTX,
+    );
+
+    expect(result.output).toMatchObject({ ok: true });
+    expect(queue.add).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem a regra, o link de checkout segue como hoje', async () => {
+    const { tool, queue } = make();
+
+    await tool.execute({ text: 'https://orlandofastpass.com.br/checkout/disney' }, CTX);
+
+    expect(queue.add).toHaveBeenCalledTimes(1);
   });
 });
