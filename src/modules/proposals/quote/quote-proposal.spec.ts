@@ -167,8 +167,17 @@ describe('normalizeQuote', () => {
       pixTotal: null,
       installments: null,
       notes: null,
+      storeUrl: null,
     });
     expect(JSON.stringify(input)).toBe(frozen);
+  });
+
+  it('link da loja: aparado; vazio ou só espaços vira null', () => {
+    expect(normalizeQuote({ ...quote(), storeUrl: '  https://loja.exemplo.com/c/1  ' }).storeUrl).toBe(
+      'https://loja.exemplo.com/c/1',
+    );
+    expect(normalizeQuote({ ...quote(), storeUrl: '   ' }).storeUrl).toBeNull();
+    expect(normalizeQuote({ ...quote(), storeUrl: null }).storeUrl).toBeNull();
   });
 
   it('texto só de espaços vira null', () => {

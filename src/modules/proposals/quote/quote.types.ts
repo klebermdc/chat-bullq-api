@@ -60,6 +60,15 @@ export interface QuoteData {
   notes: string | null;
 }
 
+/**
+ * A cotação como fica gravada em `details.quote`: o que o cliente vê mais o
+ * link da loja online, que é só do atendente. A página pública, o PDF e as
+ * mensagens usam `QuoteData`, que não tem esse campo de propósito.
+ */
+export interface StoredQuoteData extends QuoteData {
+  storeUrl: string | null;
+}
+
 export type QuoteTermsBlock = { kind: 'p'; text: string } | { kind: 'list'; items: string[] };
 
 /** Regras gerais da cotação (iguais para todas): câmbio e cancelamento. */

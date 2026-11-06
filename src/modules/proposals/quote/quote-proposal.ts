@@ -10,7 +10,7 @@ import {
   QUOTE_NUMBER_DIGITS,
   QUOTE_TOKEN_BYTES,
 } from './quote.constants';
-import type { QuoteData, QuoteInstallments, QuoteItem } from './quote.types';
+import type { QuoteData, QuoteInstallments, QuoteItem, StoredQuoteData } from './quote.types';
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -25,6 +25,8 @@ export interface QuoteInput {
   pixTotal?: number | null;
   installments?: QuoteInstallments | null;
   notes?: string | null;
+  /** Link da loja online (interno). O DTO já confere http(s) e tamanho. */
+  storeUrl?: string | null;
 }
 
 const PHONE_LIKE_RE = /^[\d\s()+.-]+$/;
@@ -130,7 +132,7 @@ function normalizeItem(item: QuoteItemInput, index: number): QuoteItem {
  * sempre presentes, textos aparados. Formato e limites já vêm do DTO; aqui só
  * o que cruza campos (datas) e o que o DTO não pega (título só de espaços).
  */
-export function normalizeQuote(input: QuoteInput): QuoteData {
+export function normalizeQuote(input: QuoteInput): StoredQuoteData {
   return {
     items: input.items.map(normalizeItem),
     currency: input.currency,
@@ -140,6 +142,7 @@ export function normalizeQuote(input: QuoteInput): QuoteData {
       ? { count: input.installments.count, value: input.installments.value }
       : null,
     notes: textOrNull(input.notes),
+    storeUrl: textOrNull(input.storeUrl),
   };
 }
 

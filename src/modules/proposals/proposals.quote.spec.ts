@@ -282,6 +282,16 @@ describe('ProposalsService — cotação por link', () => {
       expect(out.kind).toBe('QUOTE');
     });
 
+    it('link da loja vai para details.quote e fica fora da mensagem ao cliente', async () => {
+      const d = deps();
+      const storeUrl = 'https://loja.orlandofastpass.com.br/carrinho/42';
+
+      await makeService(d).create(linkBody({ quote: { ...quote, storeUrl } }), 'user-1', 'org-1', 'ALL' as any);
+
+      expect(d.repo.create.mock.calls[0][0].details.quote.storeUrl).toBe(storeUrl);
+      expect(JSON.stringify(d.messages.send.mock.calls)).not.toContain(storeUrl);
+    });
+
     it('validade padrão de 24h e mensagem sem nome', async () => {
       const d = deps();
 
@@ -417,6 +427,25 @@ describe('ProposalsService — cotação por link', () => {
       );
       expect(out).toMatchObject({ quoteUrl: url, quoteVersion: 2, quoteNumber: 152, notice: 'TEXT' });
       expect(out.publicToken).toBeUndefined();
+    });
+
+    it('link da loja: gravado na versão nova, fora da mensagem ao cliente', async () => {
+      const d = deps();
+      const storeUrl = 'https://loja.orlandofastpass.com.br/carrinho/42';
+
+      await update(d, { quote: { ...newer, storeUrl: `  ${storeUrl} ` } });
+
+      const [, change] = d.repo.updateQuote.mock.calls[0];
+      expect(change.quote.storeUrl).toBe(storeUrl);
+      const sent = JSON.stringify(d.messages.send.mock.calls);
+      expect(sent).not.toContain(storeUrl);
+    });
+
+    it('sem link da loja grava null', async () => {
+      const d = deps();
+      await update(d);
+      const [, change] = d.repo.updateQuote.mock.calls[0];
+      expect(change.quote.storeUrl).toBeNull();
     });
 
     it('notify: false grava sem mandar mensagem', async () => {

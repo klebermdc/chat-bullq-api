@@ -9,6 +9,9 @@ export const QUOTE_TITLE_MAX = 200;
 export const QUOTE_TEXT_MAX = 600;
 export const QUOTE_MAX_PEOPLE = 20;
 export const QUOTE_CUSTOMER_NAME_MAX = 60;
+/** Link da loja online da cotação (só o atendente vê; nunca vai ao cliente). */
+export const QUOTE_STORE_URL_MAX = 500;
+export const QUOTE_STORE_URL_ERROR = 'O link da loja precisa começar com http:// ou https://.';
 /** Teto de sanidade de valores; a coluna é Decimal(12, 2). */
 export const QUOTE_MAX_AMOUNT = 9_999_999;
 /** Parcelamento no cartão: até 10x (regra comercial de 27/10/2026). */

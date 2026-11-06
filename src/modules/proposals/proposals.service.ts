@@ -63,7 +63,7 @@ import {
   type QuoteNoticeValues,
 } from './quote/quote-update-notice';
 import { computeWhatsappWindow } from '../messaging/conversations/whatsapp-window.util';
-import type { QuoteData } from './quote/quote.types';
+import type { QuoteData, StoredQuoteData } from './quote/quote.types';
 
 const INVALID_IMAGE = 'Imagem inválida.';
 const QUOTE_NEEDS_LINK_OFF =
@@ -402,7 +402,7 @@ export class ProposalsService {
 
   private async sendQuote(
     dto: CreateProposalDto,
-    quote: QuoteData,
+    quote: StoredQuoteData,
     conversation: Conversation,
     ctx: SendContext,
     loaded: LoadedImage[],

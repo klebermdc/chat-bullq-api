@@ -55,6 +55,13 @@ describe('toPublicQuote', () => {
     expect(out.installments).toEqual({ count: 2, value: 100 });
   });
 
+  it('nunca devolve o link da loja (campo interno do atendente)', () => {
+    const out = toPublicQuote({ ...stored, storeUrl: 'https://loja.exemplo.com/carrinho/9' })!;
+
+    expect(out).not.toHaveProperty('storeUrl');
+    expect(JSON.stringify(out)).not.toContain('loja.exemplo.com');
+  });
+
   it('JSON sem itens devolve null', () => {
     expect(toPublicQuote(null)).toBeNull();
     expect(toPublicQuote({ items: 'x' })).toBeNull();
