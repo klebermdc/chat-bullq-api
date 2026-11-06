@@ -58,6 +58,71 @@ describe('ConversationsRepository.findInbox (busca + etiqueta)', () => {
     expect(andBlocks(where)).toHaveLength(2);
   });
 
+  describe('busca agrupa por contato', () => {
+    const buildSearchRepo = (scanRows: Array<{ id: string; contactId: string }>) => {
+      const findMany = jest
+        .fn()
+        .mockResolvedValueOnce(scanRows) // varredura dos ids que casam
+        .mockResolvedValue([]); // página
+      const count = jest.fn().mockResolvedValue(0);
+      const prisma = {
+        conversation: { findMany, count },
+        $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
+      };
+      return { repo: new ConversationsRepository(prisma as any), findMany };
+    };
+
+    it('mostra só a conversa mais recente de cada contato', async () => {
+      // Arrange: varredura já vem da mais recente para a mais antiga.
+      const { repo, findMany } = buildSearchRepo([
+        { id: 'rafa-hoje', contactId: 'rafa' },
+        { id: 'maria-ontem', contactId: 'maria' },
+        { id: 'rafa-agosto', contactId: 'rafa' },
+        { id: 'rafa-julho', contactId: 'rafa' },
+      ]);
+
+      // Act
+      await repo.findInbox({ organizationId: 'org-1', search: '11966144493' }, 0, 30);
+
+      // Assert
+      const scan = findMany.mock.calls[0][0];
+      expect(scan.select).toEqual({ id: true, contactId: true });
+      expect(scan.orderBy).toEqual({ lastMessageAt: { sort: 'desc', nulls: 'last' } });
+      const page = findMany.mock.calls[1][0];
+      expect(page.where.id).toEqual({ in: ['rafa-hoje', 'maria-ontem'] });
+    });
+
+    it('devolve vazio sem consultar a página quando nada casa', async () => {
+      const { repo, findMany } = buildSearchRepo([]);
+
+      const result = await repo.findInbox({ organizationId: 'org-1', search: 'ninguém' }, 0, 30);
+
+      expect(result).toEqual({ conversations: [], total: 0 });
+      expect(findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('respeita o filtro de ids que já existia', async () => {
+      const { repo, findMany } = buildSearchRepo([{ id: 'c-2', contactId: 'x' }]);
+
+      await repo.findInbox(
+        { organizationId: 'org-1', search: 'Ana', conversationIds: ['c-1', 'c-2'] },
+        0,
+        30,
+      );
+
+      expect(findMany.mock.calls[0][0].where.id).toEqual({ in: ['c-1', 'c-2'] });
+      expect(findMany.mock.calls[1][0].where.id).toEqual({ in: ['c-2'] });
+    });
+
+    it('sem busca, a lista não agrupa', async () => {
+      const { repo, findMany } = buildSearchRepo([]);
+
+      await repo.findInbox({ organizationId: 'org-1' }, 0, 30);
+
+      expect(findMany.mock.calls[0][0].select).toBeUndefined();
+    });
+  });
+
   it('não monta AND quando não há busca nem etiqueta', async () => {
     const { repo, whereOf } = buildRepo();
 

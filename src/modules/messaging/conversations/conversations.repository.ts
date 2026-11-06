@@ -81,11 +81,37 @@ export interface InboxFilters {
   excludeClosed?: boolean;
 }
 
-export type TabCounts = { waiting: number; inbox: number; closed: number };
+/**
+ * Teto da varredura que agrupa a busca por contato. Busca por nome/telefone
+ * casa poucas conversas; o teto só protege contra termo genérico ("a").
+ */
+const SEARCH_GROUP_SCAN_LIMIT = 2000;
+
+export type TabCounts ={ waiting: number; inbox: number; closed: number };
 
 @Injectable()
 export class ConversationsRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** Ids da conversa mais recente de cada contato entre as que casam com `where`. */
+  private async latestConversationPerContact(
+    where: Prisma.ConversationWhereInput,
+  ): Promise<string[]> {
+    const rows = await this.prisma.conversation.findMany({
+      where,
+      select: { id: true, contactId: true },
+      orderBy: { lastMessageAt: { sort: 'desc', nulls: 'last' } },
+      take: SEARCH_GROUP_SCAN_LIMIT,
+    });
+    const seenContacts = new Set<string>();
+    return rows
+      .filter((row) => {
+        if (seenContacts.has(row.contactId)) return false;
+        seenContacts.add(row.contactId);
+        return true;
+      })
+      .map((row) => row.id);
+  }
 
   async findInbox(
     filters: InboxFilters,
@@ -261,9 +287,20 @@ export class ConversationsRepository {
       }
     }
 
+    // Busca: um card por contato. O cliente que voltou várias vezes tem várias
+    // conversas; a lista mostra só a mais recente e o histórico das antigas
+    // aparece dentro do chat. A varredura usa o mesmo `where`, então já
+    // respeita os demais filtros e o teto de acesso.
+    let pageWhere = where;
+    if (filters.search) {
+      const latestIds = await this.latestConversationPerContact(where);
+      if (latestIds.length === 0) return { conversations: [], total: 0 };
+      pageWhere = { ...where, id: { in: latestIds } };
+    }
+
     const [conversations, total] = await this.prisma.$transaction([
       this.prisma.conversation.findMany({
-        where,
+        where: pageWhere,
         include: {
           contact: {
             select: {
@@ -316,7 +353,7 @@ export class ConversationsRepository {
         skip,
         take,
       }),
-      this.prisma.conversation.count({ where }),
+      this.prisma.conversation.count({ where: pageWhere }),
     ]);
 
     // Per-user unread counters. Caller passes currentUserId; the user's
