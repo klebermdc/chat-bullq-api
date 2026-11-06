@@ -24,10 +24,11 @@ import { resolveSecurityRules } from '../../prompts/layers/security.layer';
 import type { SecurityRules } from '../../prompts/types';
 import { contemAssuntoComercialNaSaida } from '../../outbound-guards/commercial-topic';
 import { detectHumanPromise } from '../../outbound-guards/human-promise';
-import { contemLinkDeCompra } from '../../outbound-guards/purchase-link';
+import { contemLink } from '../../outbound-guards/purchase-link';
 import {
   COMMERCIAL_VETO_MESSAGE,
   HUMAN_PROMISE_VETO_MESSAGE,
+  LINK_VETO_MESSAGE,
   hasHumanAction,
 } from '../../outbound-guards/outbound-checks';
 import { SendCheckRecorder } from '../../outbound-guards/send-check.recorder';
@@ -189,8 +190,11 @@ export class ReplyToConversationTool implements AiTool {
     ctx: ToolContext,
     rules: SecurityRules,
   ): ToolResult | null {
-    const commercial = contemAssuntoComercialNaSaida(text) || contemLinkDeCompra(text);
-    if (rules.blockCommercialTalk && commercial) {
+    // Com a regra, a Aline não manda link nenhum (site, cotação, pagamento).
+    if (rules.blockCommercialTalk && contemLink(text)) {
+      return this.blockOutbound('commercial', 'link_blocked', LINK_VETO_MESSAGE, text, ctx);
+    }
+    if (rules.blockCommercialTalk && contemAssuntoComercialNaSaida(text)) {
       return this.blockOutbound('commercial', 'commercial_talk_blocked', COMMERCIAL_VETO_MESSAGE, text, ctx);
     }
     // Sem o contexto do runner não dá pra saber o que já rodou: não trava.

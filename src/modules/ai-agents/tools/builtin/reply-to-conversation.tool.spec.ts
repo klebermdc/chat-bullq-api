@@ -206,20 +206,30 @@ describe('ReplyToConversationTool — link de compra com blockCommercialTalk', (
       CTX,
     );
 
-    expect(result.output).toMatchObject({ ok: false, error: 'commercial_talk_blocked' });
+    expect(result.output).toMatchObject({ ok: false, error: 'link_blocked' });
     expect(queue.add).not.toHaveBeenCalled();
     expect(sendChecks.record).toHaveBeenCalledWith(expect.objectContaining({ check: 'commercial' }));
   });
 
-  it('deixa passar link do domínio permitido que não é de compra', async () => {
-    const { tool, queue } = make({ blockCommercialTalk: true });
+  it.each([
+    ['site', 'Dá uma olhada: https://orlandofastpass.com.br/parques/epcot'],
+    ['cotação', 'Sua cotação: https://cotacao.orlandofastpass.com.br/c/abc123'],
+    ['sem protocolo', 'Veja em www.orlandofastpass.com.br'],
+  ])('barra qualquer link (%s), mesmo de domínio permitido', async (_caso, text) => {
+    const { tool, queue, sendChecks } = make({ blockCommercialTalk: true });
 
-    const result = await tool.execute(
-      { text: 'Dá uma olhada: https://orlandofastpass.com.br/parques/epcot' },
-      CTX,
-    );
+    const result = await tool.execute({ text }, CTX);
 
-    expect(result.output).toMatchObject({ ok: true });
+    expect(result.output).toMatchObject({ ok: false, error: 'link_blocked' });
+    expect(queue.add).not.toHaveBeenCalled();
+    expect(sendChecks.record).toHaveBeenCalledWith(expect.objectContaining({ check: 'commercial' }));
+  });
+
+  it('sem a regra, link do domínio permitido segue como hoje', async () => {
+    const { tool, queue } = make();
+
+    await tool.execute({ text: 'Dá uma olhada: https://orlandofastpass.com.br/parques/epcot' }, CTX);
+
     expect(queue.add).toHaveBeenCalledTimes(1);
   });
 

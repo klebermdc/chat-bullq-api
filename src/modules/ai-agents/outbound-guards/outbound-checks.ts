@@ -40,6 +40,12 @@ export const COMMERCIAL_VETO_MESSAGE =
   'vendedor com transferToHuman (ou leaveNoteForSeller, no plantão). A transferToHuman já avisa o cliente ' +
   'sozinha; com leaveNoteForSeller, diga ao cliente apenas que o consultor vai tratar disso com ele.';
 
+export const LINK_VETO_MESSAGE =
+  'Mensagem bloqueada: você não envia link nenhum ao cliente (nem site, nem cotação, nem pagamento). ' +
+  'Reescreva sem link, respondendo a dúvida com suas palavras. Se o cliente precisa de cotação, valores ' +
+  'ou link de compra, registre para o vendedor com transferToHuman (ou leaveNoteForSeller, no plantão) ' +
+  'ANTES de responder.';
+
 export const HUMAN_PROMISE_VETO_MESSAGE =
   'Mensagem bloqueada: você prometeu que o consultor, o vendedor ou a equipe vai agir, mas neste atendimento ' +
   'ninguém foi acionado. Se o cliente precisa mesmo de uma pessoa, chame transferToHuman (ou ' +
@@ -49,6 +55,7 @@ export const HUMAN_PROMISE_VETO_MESSAGE =
 /** Códigos de bloqueio das travas de saída novas (sem assunto comercial / promessa sem ação). */
 export const OUTBOUND_BLOCK_ERRORS: ReadonlySet<string> = new Set([
   'commercial_talk_blocked',
+  'link_blocked',
   'human_promise_without_action',
 ]);
 
