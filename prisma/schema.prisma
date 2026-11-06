@@ -1492,6 +1492,29 @@ model AiToolCall {
   @@map("ai_tool_calls")
 }
 
+/// Travas de saída do replyToConversation (guardrails da Aline). Uma linha por
+/// bloqueio (sem assunto comercial, promessa de humano sem ação) e por
+/// resultado da conferência de fato (que só observa). `sentence` guarda só o
+/// texto da própria IA, nunca dado do cliente.
+model AiSendCheck {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  conversationId String   @map("conversation_id")
+  runId          String   @map("run_id")
+  agentId        String   @map("agent_id")
+  /// commercial | human_promise | factual_claim
+  check          String   @map("check_kind")
+  /// blocked | passa | contradiz | nao_esta_na_base | nao_conferido
+  verdict        String
+  sentence       String?  @db.Text
+  scores         Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId, createdAt], name: "idx_send_check_org_time")
+  @@index([runId], name: "idx_send_check_run")
+  @@map("ai_send_checks")
+}
+
 model AiAgentHandoff {
   id             String   @id @default(cuid())
   conversationId String   @map("conversation_id")

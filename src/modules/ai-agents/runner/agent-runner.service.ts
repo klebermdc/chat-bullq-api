@@ -39,6 +39,13 @@ import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { sanitizeAssistantText } from './text-guards';
 import { EMERGENCY_CONTACT_TOOL } from '../emergency/emergency-contact.util';
 import { MediaUrlResolverService } from './media-url-resolver.service';
+import {
+  fallbackRetryText,
+  outboundVetoFrom,
+  promptEvidenceFrom,
+  salesNudgeText,
+} from '../outbound-guards/outbound-checks';
+import type { PriorToolCall } from '../outbound-guards/send-check.types';
 import { isShadowMode } from '../shadow-learning/shadow-mode.util';
 import { ERROR_CODES } from '../../error-reporter/error-codes';
 import { ErrorReporterService } from '../../error-reporter/error-reporter.service';
@@ -267,6 +274,16 @@ export class AiAgentRunnerService {
       onCall,
     });
 
+    // Evidência da conferência de fato (guard 3): segurança + system prompt
+    // do builder, capturados ANTES do RAG (memória da conversa, não fato).
+    const securityRules: SecurityRules = resolveSecurityRules(
+      (organization.aiSecurityRules as Partial<SecurityRules> | null) ?? undefined,
+    );
+    const promptEvidence = promptEvidenceFrom(
+      this.securityLayer.build(securityRules).content,
+      messages[0]?.role === 'system' ? messages[0].content : '',
+    );
+
     // Fase 2.5: augmenta o system message com Security Layer (prepend)
     // e RAG retrieval (append). Mantém o builder como source-of-truth da
     // estrutura principal do prompt — só decora com regras imutáveis e
@@ -294,7 +311,11 @@ export class AiAgentRunnerService {
     let finalAction: AiFinalAction = AiFinalAction.NO_ACTION;
     let iterationCount = 0;
     const toolsCalled = new Set<string>();
+    // Ferramentas do run, em ordem, para as travas de saída do reply.
+    let priorToolCalls: ReadonlyArray<PriorToolCall> = [];
     let salesNudgeUsed = false;
+    // Uma segunda chance quando o texto solto (fallback) cai numa trava de saída.
+    let outboundRetryUsed = false;
 
     // Roteamento de modelo (fugu por padrão, fugu-ultra só na síntese de
     // workers). Iterações de ferramenta são mecânicas → modelo barato. A
@@ -405,10 +426,20 @@ export class AiAgentRunnerService {
                   agentId: agent.id,
                   runId: run.id,
                   triggerMessageId: triggerMessage.id,
+                  outboundGuards: { priorToolCalls, promptEvidence },
                 },
               );
               if (result.finalAction) {
                 finalAction = result.finalAction as AiFinalAction;
+              }
+              // Texto solto barrado por trava de saída: sem retorno de tool o
+              // modelo não saberia; devolve o veto e dá mais uma volta.
+              const veto = outboundVetoFrom(result.output);
+              if (veto && !outboundRetryUsed) {
+                outboundRetryUsed = true;
+                messages.push({ role: 'assistant', content: text });
+                messages.push({ role: 'user', content: fallbackRetryText(veto) });
+                continue;
               }
             } catch (err: any) {
               this.logger.error(
@@ -443,8 +474,8 @@ export class AiAgentRunnerService {
             );
             messages.push({
               role: 'user',
-              content:
-                'Você rodou as tools de preparação (lookupOffering / checkPurchase) mas não chamou replyToConversation. O cliente está esperando. Responda agora com replyToConversation: 1 frase de pitch ligada à dor + preço + link do checkout (vindos do lookupOffering). Não termine este turn sem chamar replyToConversation.',
+              // Com blockCommercialTalk o lembrete não pede preço.
+              content: salesNudgeText(securityRules.blockCommercialTalk === true),
             });
             continue;
           }
@@ -465,6 +496,7 @@ export class AiAgentRunnerService {
             agentId: agent.id,
             runId: run.id,
             triggerMessageId: triggerMessage.id,
+            outboundGuards: { priorToolCalls, promptEvidence },
           },
           customSkillsByName,
           replyAlreadySuccessful,
@@ -472,6 +504,7 @@ export class AiAgentRunnerService {
           !!onCall,
         );
 
+        priorToolCalls = [...priorToolCalls, ...toolResults.map(toPriorToolCall)];
         for (const result of toolResults) {
           toolsCalled.add(result.toolName);
           messages.push({
@@ -696,20 +729,8 @@ export class AiAgentRunnerService {
     alreadyRepliedFromPriorIteration: boolean,
     agentKind: 'ORCHESTRATOR' | 'WORKER' = 'WORKER',
     onCall = false,
-  ): Promise<
-    Array<{
-      toolCallId: string;
-      toolName: string;
-      output: unknown;
-      finalAction?: string;
-    }>
-  > {
-    const results: Array<{
-      toolCallId: string;
-      toolName: string;
-      output: unknown;
-      finalAction?: string;
-    }> = [];
+  ): Promise<ToolCallOutcome[]> {
+    const results: ToolCallOutcome[] = [];
     // Tracks whether THIS batch already produced a successful reply.
     // Combined with the cross-iteration flag, it lets us block the very
     // first dup even when the model emits two replyToConversation calls
@@ -743,6 +764,7 @@ export class AiAgentRunnerService {
           toolCallId: call.id,
           toolName: call.name,
           output: blockedOutput,
+          ok: false,
         });
         const blockedRow = await this.prisma.aiToolCall.create({
           data: {
@@ -770,7 +792,7 @@ export class AiAgentRunnerService {
             ? 'Ferramenta indisponível no plantão. Responda o cliente, consulte informações ou deixe um recado para o vendedor.'
             : 'Ferramenta indisponível.',
         };
-        results.push({ toolCallId: call.id, toolName: call.name, output: blockedOutput });
+        results.push({ toolCallId: call.id, toolName: call.name, output: blockedOutput, ok: false });
         const blockedRow = await this.prisma.aiToolCall.create({
           data: {
             runId: ctx.runId,
@@ -784,6 +806,10 @@ export class AiAgentRunnerService {
         this.emitToolCall(ctx.conversationId, ctx.runId, blockedRow);
         continue;
       }
+
+      // Cada chamada enxerga as anteriores do mesmo lote (ex.: transferToHuman
+      // antes do replyToConversation na mesma resposta do modelo).
+      const callCtx = withBatchCalls(ctx, results);
 
       // Run + auto-retry on transient failures only. We retry once with a
       // short backoff when the error looks transient (network, timeout,
@@ -804,13 +830,13 @@ export class AiAgentRunnerService {
                     customSkill,
                     customSkill.tool,
                     call.arguments,
-                    ctx,
+                    callCtx,
                   )
                 : await this.httpExecutor.execute(
                     customSkill,
                     customSkill.tool,
                     call.arguments,
-                    ctx,
+                    callCtx,
                   );
             output = result.output;
             finalAction = result.finalAction;
@@ -820,7 +846,7 @@ export class AiAgentRunnerService {
           ) {
             // Built-in (gate de kind + allowlist por agente, ex.: client-ops).
             const tool = this.registry.get(call.name);
-            const result = await tool.execute(call.arguments, ctx);
+            const result = await tool.execute(call.arguments, callCtx);
             output = result.output;
             finalAction = result.finalAction;
           } else {
@@ -880,6 +906,7 @@ export class AiAgentRunnerService {
         toolName: call.name,
         output,
         finalAction,
+        ok: !isToolCallFailure({ error: errorMessage ?? null, output }),
       });
 
       if (sentCustomerMessage(call.name, output)) {
@@ -1171,6 +1198,31 @@ export class AiAgentRunnerService {
     }
     return '';
   }
+}
+
+interface ToolCallOutcome {
+  toolCallId: string;
+  toolName: string;
+  output: unknown;
+  finalAction?: string;
+  /** Funcionou (sem exceção e sem ok:false) — conta para as travas de saída. */
+  ok: boolean;
+}
+
+function toPriorToolCall(r: ToolCallOutcome): PriorToolCall {
+  return { name: r.toolName, ok: r.ok, output: r.output };
+}
+
+/** O contexto da próxima chamada, com as do mesmo lote já registradas. */
+function withBatchCalls(ctx: ToolContext, batch: ToolCallOutcome[]): ToolContext {
+  if (!ctx.outboundGuards || batch.length === 0) return ctx;
+  return {
+    ...ctx,
+    outboundGuards: {
+      ...ctx.outboundGuards,
+      priorToolCalls: [...ctx.outboundGuards.priorToolCalls, ...batch.map(toPriorToolCall)],
+    },
+  };
 }
 
 interface LlmMessageWithToolCalls extends LlmMessage {

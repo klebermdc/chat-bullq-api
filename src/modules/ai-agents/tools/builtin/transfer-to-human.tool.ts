@@ -5,6 +5,7 @@ import { PendingActionService } from '../../confirmations/pending-action.service
 import { AiTool, ToolContext, ToolResult } from '../tool.types';
 import { ReplyToConversationTool } from './reply-to-conversation.tool';
 import { enterLeadStage } from '../../lead-stage.util';
+import { withHumanActionTaken } from '../../outbound-guards/outbound-checks';
 import {
   isWithinHours,
   nextOpenAt,
@@ -112,9 +113,11 @@ export class TransferToHumanTool implements AiTool {
     //    troca o "em instantes alguém continua" por um aviso de retorno — senão
     //    a Aline promete atendimento imediato com a agência fechada.
     try {
+      // A própria transferência é a ação: o aviso ("vou te passar pra um
+      // consultor") não cai na trava de promessa de humano sem ação.
       await this.replyTool.execute(
         { text: await this.buildTransitionMessage(ctx) },
-        ctx,
+        withHumanActionTaken(ctx, this.name),
       );
     } catch (e) {
       this.logger.warn(`transfer: falha ao avisar cliente (conv=${ctx.conversationId}): ${(e as Error)?.message}`);

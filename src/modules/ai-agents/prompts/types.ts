@@ -63,6 +63,12 @@ export interface SecurityRules {
   language: 'pt-BR' | 'en-US';
   /** Regras adicionais por org (empilham sob as defaults). */
   customRules?: string[];
+  /**
+   * IA não fala de valor, preço, desconto, parcela, Pix ou pagamento — nem
+   * preço de tabela; isso é com o consultor. Liga o guard de saída
+   * `commercial_talk_blocked` no replyToConversation. Default: false.
+   */
+  blockCommercialTalk?: boolean;
 }
 
 /**

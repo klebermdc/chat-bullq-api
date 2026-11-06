@@ -20,6 +20,18 @@ import {
   EMERGENCY_CONTACT_TOOL,
   mentionsEmergencyPhone,
 } from '../../emergency/emergency-contact.util';
+import { resolveSecurityRules } from '../../prompts/layers/security.layer';
+import type { SecurityRules } from '../../prompts/types';
+import { contemAssuntoComercialNaSaida } from '../../outbound-guards/commercial-topic';
+import { detectHumanPromise } from '../../outbound-guards/human-promise';
+import {
+  COMMERCIAL_VETO_MESSAGE,
+  HUMAN_PROMISE_VETO_MESSAGE,
+  hasHumanAction,
+} from '../../outbound-guards/outbound-checks';
+import { SendCheckRecorder } from '../../outbound-guards/send-check.recorder';
+import { FactCheckService } from '../../outbound-guards/fact-check.service';
+import type { SendCheckKind } from '../../outbound-guards/send-check.types';
 
 /**
  * Sends a TEXT message to the contact on behalf of the agent. The message
@@ -52,6 +64,8 @@ export class ReplyToConversationTool implements AiTool {
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
+    private readonly sendChecks: SendCheckRecorder,
+    private readonly factCheck: FactCheckService,
   ) {}
 
   async execute(
@@ -121,7 +135,7 @@ export class ReplyToConversationTool implements AiTool {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: ctx.conversationId },
       select: {
-        organization: { select: { allowedUrlDomains: true } },
+        organization: { select: { allowedUrlDomains: true, aiSecurityRules: true } },
       },
     });
 
@@ -149,7 +163,82 @@ export class ReplyToConversationTool implements AiTool {
       };
     }
 
-    return this.deliver(text, ctx);
+    const securityRules = resolveSecurityRules(
+      (conversation?.organization?.aiSecurityRules as Partial<SecurityRules> | null) ??
+        undefined,
+    );
+    const outboundBlock = this.checkOutboundRules(text, ctx, securityRules);
+    if (outboundBlock) return outboundBlock;
+
+    const result = await this.deliver(text, ctx);
+    this.scheduleFactCheck(text, ctx, result);
+    return result;
+  }
+
+  /**
+   * Travas de saída da Aline (adaptadas do DeskcommCRM):
+   *  1. Sem assunto comercial — só com `blockCommercialTalk` ligado na org.
+   *  2. Promessa de humano sem ação — prometeu consultor/equipe e ninguém foi
+   *     acionado neste run (transferToHuman / leaveNoteForSeller).
+   * Bloqueio devolve erro com instrução pro modelo reescrever no mesmo run e
+   * grava uma linha em ai_send_checks.
+   */
+  private checkOutboundRules(
+    text: string,
+    ctx: ToolContext,
+    rules: SecurityRules,
+  ): ToolResult | null {
+    if (rules.blockCommercialTalk && contemAssuntoComercialNaSaida(text)) {
+      return this.blockOutbound('commercial', 'commercial_talk_blocked', COMMERCIAL_VETO_MESSAGE, text, ctx);
+    }
+    // Sem o contexto do runner não dá pra saber o que já rodou: não trava.
+    const guards = ctx.outboundGuards;
+    if (guards && !hasHumanAction(guards.priorToolCalls) && detectHumanPromise(text)) {
+      return this.blockOutbound(
+        'human_promise',
+        'human_promise_without_action',
+        HUMAN_PROMISE_VETO_MESSAGE,
+        text,
+        ctx,
+      );
+    }
+    return null;
+  }
+
+  private blockOutbound(
+    check: SendCheckKind,
+    error: string,
+    message: string,
+    text: string,
+    ctx: ToolContext,
+  ): ToolResult {
+    const tag = check === 'commercial' ? 'commercial-guard' : 'human-promise-guard';
+    this.logger.warn(
+      `[${tag}] blocked reply on conv=${ctx.conversationId} run=${ctx.runId} agent=${ctx.agentId}: "${text.slice(0, 120)}"`,
+    );
+    void this.sendChecks.record({
+      organizationId: ctx.organizationId,
+      conversationId: ctx.conversationId,
+      runId: ctx.runId,
+      agentId: ctx.agentId,
+      check,
+      verdict: 'blocked',
+      sentence: text,
+    });
+    return { output: { ok: false, error, message } };
+  }
+
+  /** Conferência de fato (só observa): depois do envio, sem esperar. */
+  private scheduleFactCheck(text: string, ctx: ToolContext, result: ToolResult): void {
+    const promptEvidence = ctx.outboundGuards?.promptEvidence;
+    const sent = (result.output as { ok?: boolean } | null)?.ok === true;
+    if (!sent || !promptEvidence) return;
+    this.factCheck.scheduleAfterSend({
+      ctx,
+      text,
+      promptEvidence,
+      priorToolCalls: ctx.outboundGuards?.priorToolCalls ?? [],
+    });
   }
 
   /**

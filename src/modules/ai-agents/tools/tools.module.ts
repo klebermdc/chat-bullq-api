@@ -36,6 +36,7 @@ import { SqlToolExecutorService } from './sql-tool-executor.service';
 import { ConfigModule } from '@nestjs/config';
 import { ConfirmationsModule } from '../confirmations/confirmations.module';
 import { SalesRecoveryModule } from '../../sales-recovery/sales-recovery.module';
+import { OutboundGuardsModule } from '../outbound-guards/outbound-guards.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { SalesRecoveryModule } from '../../sales-recovery/sales-recovery.module'
     RealtimeModule,
     ConfirmationsModule,
     SalesRecoveryModule,
+    OutboundGuardsModule,
     BullModule.registerQueue({ name: 'outbound-messages' }),
   ],
   providers: [
