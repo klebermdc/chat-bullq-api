@@ -6,6 +6,7 @@ function makeProcessor() {
   const prisma = {
     metaCapiEvent: { findUnique: jest.fn(), upsert: jest.fn() },
     card: { findUnique: jest.fn() },
+    leadSubmission: { findFirst: jest.fn().mockResolvedValue(null) },
   } as any;
   const config = { resolveConfig: jest.fn() } as any;
   const http = { sendEvents: jest.fn() } as any;
@@ -13,7 +14,7 @@ function makeProcessor() {
   return { proc, prisma, config, http };
 }
 
-const CFG = { datasetId: 'DS1', token: 'tok', testEventCode: null, enabled: true };
+const CFG = { datasetId: 'DS1', token: 'tok', testEventCode: null, pageId: 'PAGE1', enabled: true };
 
 function cardWith(contact: any, value: any = 1500) {
   return {
@@ -21,8 +22,9 @@ function cardWith(contact: any, value: any = 1500) {
     organizationId: 'org1',
     value,
     currency: 'BRL',
-    closedAt: new Date('2026-07-09T12:00:00Z'),
-    contact,
+    closedAt: new Date(),
+    contact: contact ? { id: 'ct1', email: null, ...contact } : contact,
+    conversation: { channel: { config: { businessAccountId: 'WABA1' } } },
   };
 }
 
@@ -88,15 +90,14 @@ describe('MetaCapiProcessor', () => {
     expect(event.event_name).toBe('Purchase');
     expect(event.event_id).toBe('card1:won');
     expect(event.action_source).toBe('business_messaging');
-    expect(event.user_data.ctwa_clid).toBe('CLID1');
-    expect(event.user_data.ph[0]).toMatch(/^[a-f0-9]{64}$/); // sha256 hex
+    expect(event.user_data).toEqual({ whatsapp_business_account_id: 'WABA1', ctwa_clid: 'CLID1' });
     expect(event.custom_data).toEqual({ value: 1500, currency: 'BRL' });
     expect(prisma.metaCapiEvent.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ create: expect.objectContaining({ status: 'SENT' }) }),
     );
   });
 
-  it('fora da janela de atribuição: envia só com ph, sem ctwa_clid', async () => {
+  it('fora da janela de atribuição: envia por hash (page_id + WABA + ph), sem ctwa_clid', async () => {
     const { proc, prisma, config, http } = makeProcessor();
     prisma.metaCapiEvent.findUnique.mockResolvedValue(null);
     config.resolveConfig.mockResolvedValue(CFG);
@@ -114,6 +115,8 @@ describe('MetaCapiProcessor', () => {
     const event = (http.sendEvents as AnyMock).mock.calls[0][0].data[0];
     expect(event.user_data.ctwa_clid).toBeUndefined();
     expect(event.user_data.ph).toBeDefined();
+    expect(event.user_data.page_id).toBe('PAGE1');
+    expect(event.user_data.whatsapp_business_account_id).toBe('WABA1');
   });
 
   it('falha no envio grava FAILED e lança (pra retry da fila)', async () => {
@@ -129,5 +132,27 @@ describe('MetaCapiProcessor', () => {
     expect(prisma.metaCapiEvent.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ create: expect.objectContaining({ status: 'FAILED' }) }),
     );
+  });
+
+  it('lead do site com fbclid: Purchase com action_source website e fbc', async () => {
+    const { proc, prisma, config, http } = makeProcessor();
+    prisma.metaCapiEvent.findUnique.mockResolvedValue(null);
+    config.resolveConfig.mockResolvedValue(CFG);
+    prisma.card.findUnique.mockResolvedValue(
+      cardWith({ phone: '5511999999999', ctwaClid: null, ctwaClidAt: null }),
+    );
+    const submittedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    prisma.leadSubmission.findFirst.mockResolvedValue({
+      createdAt: submittedAt,
+      attribution: { fbclid: 'IwAR1', page_url: 'https://ofp.com/', user_agent: 'UA', ip: '1.2.3.4' },
+    });
+    http.sendEvents.mockResolvedValue({ ok: true, status: 200, body: {} });
+
+    await proc.process(job());
+
+    const event = (http.sendEvents as AnyMock).mock.calls[0][0].data[0];
+    expect(event.action_source).toBe('website');
+    expect(event.user_data.fbc).toBe(`fb.1.${submittedAt.getTime()}.IwAR1`);
+    expect(event.event_id).toBe('card1:won');
   });
 });

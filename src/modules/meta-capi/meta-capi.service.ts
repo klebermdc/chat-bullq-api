@@ -9,6 +9,7 @@ const PUBLIC_SELECT = {
   datasetId: true,
   tokenPreview: true,
   testEventCode: true,
+  pageId: true,
   enabled: true,
   createdAt: true,
   updatedAt: true,
@@ -18,6 +19,8 @@ export interface ResolvedMetaCapiConfig {
   datasetId: string;
   token: string;
   testEventCode: string | null;
+  /** Página do Facebook do WhatsApp — exigida em evento sem ctwa_clid. */
+  pageId: string | null;
   enabled: boolean;
 }
 
@@ -63,6 +66,7 @@ export class MetaCapiService {
         organizationId,
         datasetId: dto.datasetId,
         testEventCode: dto.testEventCode ?? null,
+        pageId: dto.pageId || null,
         enabled: dto.enabled ?? false,
         // `create` sempre tem token (garantido acima).
         encryptedToken: tokenFields.encryptedToken!,
@@ -73,6 +77,7 @@ export class MetaCapiService {
         ...(dto.testEventCode !== undefined
           ? { testEventCode: dto.testEventCode || null }
           : {}),
+        ...(dto.pageId !== undefined ? { pageId: dto.pageId || null } : {}),
         ...(dto.enabled !== undefined ? { enabled: dto.enabled } : {}),
         ...tokenFields,
       },
@@ -142,6 +147,7 @@ export class MetaCapiService {
       datasetId: row.datasetId,
       token: this.crypto.decrypt(row.encryptedToken),
       testEventCode: row.testEventCode,
+      pageId: row.pageId,
       enabled: row.enabled,
     };
   }
