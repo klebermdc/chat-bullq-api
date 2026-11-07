@@ -36,6 +36,7 @@ import { ProjectsModule } from './modules/projects/projects.module';
 import { SalesRecoveryModule } from './modules/sales-recovery/sales-recovery.module';
 import { SchedulingModule } from './modules/scheduling/scheduling.module';
 import { CadencesModule } from './modules/cadences/cadences.module';
+import { ConversationAutoCloseModule } from './modules/conversation-auto-close/conversation-auto-close.module';
 import { AutomationsModule } from './modules/automations/automations.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { SalesReportsModule } from './modules/sales-reports/sales-reports.module';
@@ -117,6 +118,7 @@ import redisConfig from './config/redis.config';
     SalesRecoveryModule,
     SchedulingModule,
     CadencesModule,
+    ConversationAutoCloseModule,
     WebhooksModule,
     SalesReportsModule,
     ProposalsModule,
