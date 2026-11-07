@@ -37,7 +37,9 @@ describe('AttendantGreetingService', () => {
     );
     await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'TRANSFER' });
     expect(messages.send).toHaveBeenCalledTimes(1);
-    const [dto, senderId, orgId, access] = messages.send.mock.calls[0];
+    const [dto, senderId, orgId, access, , opts] = messages.send.mock.calls[0];
+    // Saudação não é resposta humana: não tira do Esperando nem cumpre SLA.
+    expect(opts).toEqual({ system: true, automated: true });
     expect(dto).toEqual({
       conversationId: 'c1',
       type: 'TEXT',
