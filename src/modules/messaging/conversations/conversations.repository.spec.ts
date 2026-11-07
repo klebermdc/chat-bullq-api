@@ -58,6 +58,51 @@ describe('ConversationsRepository.findInbox (busca + etiqueta)', () => {
     expect(andBlocks(where)).toHaveLength(2);
   });
 
+  it('intervalo de data olha a criação quando dateField=created', async () => {
+    const { repo, whereOf } = buildRepo();
+    const from = new Date('2026-11-01T00:00:00Z');
+
+    await repo.findInbox(
+      { organizationId: 'org-1', dateFrom: from, dateField: 'created' },
+      0,
+      30,
+    );
+
+    expect(whereOf().createdAt).toEqual({ gte: from });
+    expect(whereOf().lastMessageAt).toBeUndefined();
+  });
+
+  it('lista de atendentes com "sem atendente" não vira assignedToId=null solto', async () => {
+    const { repo, whereOf } = buildRepo();
+
+    await repo.findInbox(
+      { organizationId: 'org-1', assignedToIds: ['u1'], assignedToNone: true },
+      0,
+      30,
+    );
+
+    expect(whereOf().assignedToId).toBeUndefined();
+    expect(andBlocks(whereOf())).toContainEqual({
+      OR: [{ assignedToId: { in: ['u1'] } }, { assignedToId: null }],
+    });
+  });
+
+  it('atendente obrigatório (AGENT) continua valendo junto da lista', async () => {
+    const { repo, whereOf } = buildRepo();
+
+    await repo.findInbox(
+      {
+        organizationId: 'org-1',
+        assignedToIds: ['u1', 'u2'],
+        enforceAssignedToId: 'u9',
+      },
+      0,
+      30,
+    );
+
+    expect(whereOf().assignedToId).toBe('u9');
+  });
+
   describe('busca agrupa por contato', () => {
     const buildSearchRepo = (scanRows: Array<{ id: string; contactId: string }>) => {
       const findMany = jest

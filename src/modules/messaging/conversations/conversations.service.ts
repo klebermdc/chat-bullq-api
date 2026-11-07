@@ -17,6 +17,10 @@ import { ChannelType,
   Prisma,
 } from '@prisma/client';
 import { ConversationsRepository, InboxFilters } from './conversations.repository';
+import {
+  UNASSIGNED_TOKENS,
+  type ParsedAdvancedQuery,
+} from './inbox-advanced-query';
 import { resolveAssignmentScope } from './conversation-scope';
 import { ConversationAccessService } from './conversation-access.service';
 import { ConversationFsmService } from './conversation-fsm.service';
@@ -45,7 +49,6 @@ const SYNC_MESSAGE_PAGE_SIZE = 50;
 const SYNC_MAX_PAGES = 4;
 
 /** Valores de `assignedToId` que significam "sem responsável", não um id. */
-const UNASSIGNED_TOKENS = new Set(['none', 'null', 'unassigned']);
 
 /** Mídia com legenda entra no Resumo IA como `[rótulo] legenda`. */
 const SUMMARY_MEDIA_LABEL: Record<string, string> = {
@@ -163,7 +166,9 @@ export class ConversationsService {
       projectStatus?: string;
       dateFrom?: string;
       dateTo?: string;
-    },
+      /** Vários atendentes (com `assignedToNone`, inclui os sem atendente). */
+      assignedToIds?: string[];
+    } & ParsedAdvancedQuery,
     page: number,
     limit: number,
     access: ChannelAccess = 'ALL',
@@ -279,6 +284,15 @@ export class ConversationsService {
       stuckOnly: filters.stuckOnly,
       dateFrom: parseDate(filters.dateFrom),
       dateTo: parseDate(filters.dateTo),
+      dateField: filters.dateField,
+      assignedToIds: filters.assignedToIds,
+      tagMatch: filters.tagMatch,
+      excludeTagIds: filters.excludeTagIds,
+      stageIds: filters.stageIds,
+      lost: filters.lost,
+      lostReasons: filters.lostReasons,
+      origin: filters.origin,
+      idleBefore: filters.idleBefore,
     };
 
     const skip = (page - 1) * limit;
