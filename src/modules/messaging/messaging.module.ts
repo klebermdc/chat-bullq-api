@@ -23,6 +23,7 @@ import { LeadSourceTaggerService } from './pipeline/lead-source-tagger.service';
 import { LeadCardService } from './pipeline/lead-card.service';
 import { LegacyOwnerRoutingService } from './pipeline/legacy-owner-routing.service';
 import { CarteiraLegadoModule } from '../carteira-legado/carteira-legado.module';
+import { WebsiteLeadsModule } from '../website-leads/website-leads.module';
 import { LeadOriginService } from './pipeline/lead-origin.service';
 import { HistoryImportService } from './pipeline/history-import.service';
 import { InboundMessageProcessor } from './pipeline/inbound-message.processor';
@@ -86,6 +87,9 @@ import { ContactsRepository } from './contacts/contacts.repository';
     // Aresta one-way (messaging → notifications): NotificationsModule só
     // importa BullModule e não referencia MessagingModule, então sem ciclo.
     NotificationsModule,
+    // Leads do site: o inbound consulta o WebsiteLeadInboundService e o
+    // retorno automático usa start-conversation/carteira daqui → ciclo.
+    forwardRef(() => WebsiteLeadsModule),
   ],
   controllers: [ConversationsController, MessagesController, ContactsController],
   providers: [
@@ -118,6 +122,19 @@ import { ContactsRepository } from './contacts/contacts.repository';
     ContactsService,
     ContactsRepository,
   ],
-  exports: [ConversationsService, MessagesService, ConversationFsmService, ContactsService, HistoryImportService, UploadsService, TranscriptionService],
+  exports: [
+    ConversationsService,
+    MessagesService,
+    ConversationFsmService,
+    ContactsService,
+    HistoryImportService,
+    UploadsService,
+    TranscriptionService,
+    // Usados pelo WebsiteLeadsModule (lead do site).
+    StartConversationService,
+    LegacyOwnerRoutingService,
+    LeadCardService,
+    IdempotencyService,
+  ],
 })
 export class MessagingModule {}

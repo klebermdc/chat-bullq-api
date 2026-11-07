@@ -31,6 +31,16 @@ export class UpsertMetaCapiDto {
   @MaxLength(64)
   testEventCode?: string;
 
+  @ApiProperty({
+    required: false,
+    description:
+      'ID da Página do Facebook ligada ao WhatsApp. A Meta exige no evento de WhatsApp sem ctwa_clid.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  pageId?: string;
+
   @ApiProperty({ required: false, default: false })
   @IsOptional()
   @IsBoolean()

@@ -10,6 +10,7 @@ import { TransferToHumanTool } from './transfer-to-human.tool';
 function make(opts: {
   contact?: Record<string, unknown>;
   pending?: Array<{ id: string; toolName: string }>;
+  conversation?: Record<string, unknown>;
 } = {}) {
   const realtime = { emitToConversation: jest.fn() } as any;
   const pendingActions = {
@@ -23,7 +24,10 @@ function make(opts: {
         .mockResolvedValue({ notes: null, ...(opts.contact ?? {}) }),
       update: jest.fn().mockResolvedValue({ id: 'ct1' }),
     },
-    conversation: { update: jest.fn().mockResolvedValue({ id: 'conv1' }) },
+    conversation: {
+      update: jest.fn().mockResolvedValue({ id: 'conv1' }),
+      findUnique: jest.fn().mockResolvedValue(opts.conversation ?? null),
+    },
     // pipeline null → createVendasOfpCard degrada sem tocar em card.* (não é o foco)
     pipeline: { findFirst: jest.fn().mockResolvedValue(null) },
   } as any;
@@ -156,5 +160,37 @@ describe('TransferToHumanTool — card de distribuição (não expira / Esperand
     await tool.execute({ reason: 'lead qualificado' }, ctx);
 
     expect(pendingActions.listPending).toHaveBeenCalledWith('org1', 'conv1');
+  });
+});
+
+describe('TransferToHumanTool — lead do site com dono (Aline até o handoff)', () => {
+  it('entrega direto ao vendedor: sem pendência de distribuição, IA desligada', async () => {
+    const { tool, prisma, pendingActions, replyTool, ctx } = make({
+      conversation: { aiUntilHandoff: true, assignedToId: 'renata' },
+    });
+
+    const res = await tool.execute({ reason: 'qualificado', summary: 'Disney em julho' }, ctx);
+
+    expect(res.finalAction).toBe('TRANSFERRED_TO_HUMAN');
+    expect(pendingActions.create).not.toHaveBeenCalled();
+    expect(replyTool.execute).toHaveBeenCalled();
+    expect(prisma.contact.update).toHaveBeenCalled();
+    expect(prisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv1' },
+      data: expect.objectContaining({
+        aiEnabled: false,
+        activeAgentId: null,
+        aiUntilHandoff: false,
+        awaitingHumanReply: true,
+      }),
+    });
+  });
+
+  it('lead do site SEM dono segue o fluxo normal (fila Distribuir)', async () => {
+    const { tool, pendingActions, ctx } = make({
+      conversation: { aiUntilHandoff: true, assignedToId: null },
+    });
+    await tool.execute({ reason: 'qualificado' }, ctx);
+    expect(pendingActions.create).toHaveBeenCalled();
   });
 });

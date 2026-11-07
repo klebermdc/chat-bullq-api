@@ -1,17 +1,12 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { hashPhoneSha256 } from '../../common/utils/phone-hash.util';
 import { PrismaService } from '../../database/prisma.service';
 import { MetaCapiService } from './meta-capi.service';
 import { MetaCapiHttpClient } from './meta-capi.http-client';
 import { PurchaseJobData } from './meta-capi.queue';
-import {
-  META_CAPI_QUEUE,
-  CTWA_ATTRIBUTION_WINDOW_DAYS,
-} from './meta-capi.constants';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { META_CAPI_QUEUE } from './meta-capi.constants';
+import { buildPurchaseEvent } from './meta-capi.event-builder';
 
 @Processor(META_CAPI_QUEUE, { concurrency: 5 })
 export class MetaCapiProcessor extends WorkerHost {
@@ -44,43 +39,40 @@ export class MetaCapiProcessor extends WorkerHost {
       where: { id: cardId },
       include: {
         contact: {
-          select: { phone: true, ctwaClid: true, ctwaClidAt: true },
+          select: { id: true, phone: true, email: true, ctwaClid: true, ctwaClidAt: true },
         },
+        conversation: { select: { channel: { select: { config: true } } } },
       },
     });
     if (!card || card.organizationId !== organizationId) return;
 
     const value = card.value != null ? Number(card.value) : 0;
     const currency = card.currency || 'BRL';
+    const closedAt = card.closedAt ?? new Date();
 
-    const userData = this.buildUserData(card.contact);
-    if (Object.keys(userData).length === 0) {
-      // Sem ctwa_clid válido e sem telefone → não há como atribuir.
+    const built = buildPurchaseEvent({
+      eventId,
+      eventTime: Math.floor(closedAt.getTime() / 1000),
+      value,
+      currency,
+      now: closedAt,
+      contact: card.contact,
+      wabaId: this.wabaOf(card.conversation?.channel?.config),
+      pageId: cfg.pageId,
+      siteLead: card.contact ? await this.lastSiteLead(card.contact.id, closedAt) : null,
+    });
+    if (!built.ok) {
       await this.record(eventId, organizationId, cardId, 'SKIPPED', value, currency, {
-        reason: 'no_match_data',
+        reason: built.reason,
       });
       return;
     }
-
-    const eventTime = Math.floor(
-      (card.closedAt?.getTime() ?? Date.now()) / 1000,
-    );
 
     const result = await this.http.sendEvents({
       datasetId: cfg.datasetId,
       token: cfg.token,
       testEventCode: cfg.testEventCode,
-      data: [
-        {
-          event_name: 'Purchase',
-          event_time: eventTime,
-          action_source: 'business_messaging',
-          messaging_channel: 'whatsapp',
-          event_id: eventId,
-          user_data: userData,
-          custom_data: { value, currency },
-        },
-      ],
+      data: [built.event],
     });
 
     if (!result.ok) {
@@ -93,26 +85,29 @@ export class MetaCapiProcessor extends WorkerHost {
     this.logger.log(`Purchase enviado card=${cardId} value=${value} ${currency}`);
   }
 
-  /** Monta user_data com ctwa_clid (dentro da janela) + hash do telefone. */
-  private buildUserData(
-    contact: { phone: string | null; ctwaClid: string | null; ctwaClidAt: Date | null } | null,
-  ): Record<string, any> {
-    const ud: Record<string, any> = {};
-    if (!contact) return ud;
-
-    if (contact.ctwaClid && this.withinWindow(contact.ctwaClidAt)) {
-      ud.ctwa_clid = contact.ctwaClid;
-    }
-    const ph = hashPhoneSha256(contact.phone);
-    if (ph) ud.ph = [ph];
-
-    return ud;
+  /** WABA do canal oficial da conversa (config.businessAccountId). */
+  private wabaOf(config: unknown): string | null {
+    const id = (config as Record<string, unknown> | null)?.businessAccountId;
+    return typeof id === 'string' && id ? id : null;
   }
 
-  private withinWindow(clidAt: Date | null): boolean {
-    if (!clidAt) return false;
-    const ageDays = (Date.now() - clidAt.getTime()) / DAY_MS;
-    return ageDays <= CTWA_ATTRIBUTION_WINDOW_DAYS;
+  /** Último formulário do site do contato antes da venda. */
+  private async lastSiteLead(contactId: string, before: Date) {
+    const sub = await this.prisma.leadSubmission.findFirst({
+      where: { contactId, createdAt: { lte: before } },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true, attribution: true },
+    });
+    if (!sub) return null;
+    const a = (sub.attribution ?? {}) as Record<string, unknown>;
+    const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+    return {
+      submittedAt: sub.createdAt,
+      fbclid: str(a.fbclid),
+      pageUrl: str(a.page_url),
+      ip: str(a.ip),
+      userAgent: str(a.user_agent),
+    };
   }
 
   private async record(

@@ -137,3 +137,53 @@ describe('LeadCardService.ensureLeadCard', () => {
     await expect(service.ensureLeadCard(PARAMS)).resolves.toBeNull();
   });
 });
+
+describe('LeadCardService — card do lead do site (sem conversa ainda)', () => {
+  it('ensureContactLeadCard cria card só com o contato quando ele não tem card aberto', async () => {
+    const { service, prisma } = make();
+
+    const cardId = await service.ensureContactLeadCard({
+      organizationId: 'org-1',
+      contactId: 'contact-1',
+    });
+
+    expect(cardId).toBe('card-1');
+    expect(prisma.card.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        organizationId: 'org-1',
+        contactId: 'contact-1',
+        status: 'OPEN',
+      }),
+      select: { id: true },
+    });
+    expect(prisma.card.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ contactId: 'contact-1', conversationId: null, stageId: 'stage-lead' }),
+    });
+  });
+
+  it('ensureContactLeadCard não cria se o contato já tem card aberto (em qualquer etapa)', async () => {
+    const { service, prisma } = make();
+    prisma.card.findFirst.mockResolvedValueOnce({ id: 'card-velho' });
+
+    expect(await service.ensureContactLeadCard({ organizationId: 'org-1', contactId: 'contact-1' })).toBeNull();
+    expect(prisma.card.create).not.toHaveBeenCalled();
+  });
+
+  it('quando a conversa nasce, o card do site (sem conversa) ganha a conversa em vez de duplicar', async () => {
+    const { service, prisma, realtime } = make();
+    prisma.card.update = jest.fn().mockResolvedValue({ id: 'card-site', conversationId: 'conv-1' });
+    prisma.card.findFirst
+      .mockResolvedValueOnce(null) // nenhum card da conversa
+      .mockResolvedValueOnce({ id: 'card-site' }); // card do contato sem conversa
+
+    const cardId = await service.ensureLeadCard(PARAMS);
+
+    expect(cardId).toBeNull();
+    expect(prisma.card.update).toHaveBeenCalledWith({
+      where: { id: 'card-site' },
+      data: { conversationId: 'conv-1' },
+    });
+    expect(prisma.card.create).not.toHaveBeenCalled();
+    expect(realtime.emitToOrg).toHaveBeenCalledWith('org-1', 'card:updated', expect.anything());
+  });
+});

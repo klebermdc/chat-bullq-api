@@ -196,3 +196,18 @@ describe('LegacyOwnerRoutingService.routeNewConversation', () => {
     expect(prisma.conversation.update).not.toHaveBeenCalled();
   });
 });
+
+describe('LegacyOwnerRoutingService — lead do site com a Aline até o handoff', () => {
+  it('atribui ao dono da carteira mas deixa a Aline conduzindo (aiUntilHandoff)', async () => {
+    const { service, fsm, prisma } = make();
+
+    const result = await service.routeNewConversation(PARAMS, { aiUntilHandoffAgentId: 'aline' });
+
+    expect(result).toEqual({ routed: true, userId: 'user-renata', vendedor: 'Renata' });
+    expect(fsm.assign).toHaveBeenCalledWith('conv-1', 'user-renata');
+    expect(prisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv-1' },
+      data: { aiEnabled: true, activeAgentId: 'aline', aiUntilHandoff: true },
+    });
+  });
+});

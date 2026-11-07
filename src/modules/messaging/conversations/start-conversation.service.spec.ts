@@ -31,7 +31,7 @@ describe('StartConversationService.start', () => {
       components: [{ type: 'body', parameters: [{ type: 'text', text: 'João' }] }],
     };
     const res = await svc.start('org1', { channelId: 'ch1', phone: '+55 (11) 98201-5967', name: 'João', template }, 'ALL', creator);
-    expect(res).toEqual({ conversationId: 'conv1', contactId: 'c-new' });
+    expect(res).toEqual({ conversationId: 'conv1', contactId: 'c-new', messageId: 'm1' });
     expect(resolver.resolve).toHaveBeenCalledWith('org1', 'ch1', 'c-new');
     // Meta usa só os dígitos como external id (sem @s.whatsapp.net)
     expect(prisma.message.create).toHaveBeenCalledWith({ data: expect.objectContaining({ conversationId: 'conv1', direction: MessageDirection.OUTBOUND, type: MessageContentType.TEMPLATE, content: template, status: MessageStatus.QUEUED }) });
@@ -51,7 +51,7 @@ describe('StartConversationService.start', () => {
   it('cria contato novo, resolve conversa e enfileira a mensagem', async () => {
     const { svc, prisma, resolver, queue } = make({ existingCC: null, existingContact: null });
     const res = await svc.start('org1', { channelId: 'ch1', phone: '+55 (11) 98201-5967', name: 'João', email: 'joao@x.com', notes: 'lead quente', message: 'Olá!' }, 'ALL', creator);
-    expect(res).toEqual({ conversationId: 'conv1', contactId: 'c-new' });
+    expect(res).toEqual({ conversationId: 'conv1', contactId: 'c-new', messageId: 'm1' });
     expect(prisma.contact.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ organizationId: 'org1', phone: '5511982015967', name: 'João', email: 'joao@x.com', notes: 'lead quente' }) }));
     expect(resolver.resolve).toHaveBeenCalledWith('org1', 'ch1', 'c-new');
     expect(prisma.message.create).toHaveBeenCalledWith({ data: expect.objectContaining({ conversationId: 'conv1', direction: MessageDirection.OUTBOUND, type: MessageContentType.TEXT, content: { text: 'Olá!' }, status: MessageStatus.QUEUED }) });
@@ -94,5 +94,21 @@ describe('StartConversationService.start', () => {
     await expect(
       svc.start('org1', { channelId: 'ch1', phone: '5511982015967', message: 'oi' }, noAccess, creator),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('envio automático grava a origem e o texto preenchido do template na mensagem', async () => {
+    const { svc, prisma } = make({ channelType: ChannelType.WHATSAPP_OFFICIAL });
+    const template = { name: 'lead_site_retorno', language: { code: 'pt_BR' } };
+    await svc.start('org1', { channelId: 'ch1', phone: '5511982015967', template }, 'ALL', undefined, {
+      source: 'website_lead_followup',
+      senderName: 'Aline',
+      renderedText: 'Olá! Maria',
+    });
+    expect(prisma.message.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        senderName: 'Aline',
+        metadata: { source: 'website_lead_followup', renderedText: 'Olá! Maria' },
+      }),
+    });
   });
 });

@@ -10,6 +10,14 @@ export interface LegacyRouteParams {
   contactId: string;
 }
 
+export interface LegacyRouteOptions {
+  /**
+   * Lead do site que recebeu o template de retorno: a conversa fica com o
+   * vendedor dono, mas a IA (este agente) conduz as perguntas até o handoff.
+   */
+  aiUntilHandoffAgentId?: string;
+}
+
 export type LegacyRouteResult =
   | { routed: true; userId: string; vendedor: string }
   | { routed: false; reason: 'no_phone' | 'not_found' }
@@ -42,7 +50,10 @@ export class LegacyOwnerRoutingService {
     private readonly realtime: RealtimeGateway,
   ) {}
 
-  async routeNewConversation(params: LegacyRouteParams): Promise<LegacyRouteResult> {
+  async routeNewConversation(
+    params: LegacyRouteParams,
+    opts: LegacyRouteOptions = {},
+  ): Promise<LegacyRouteResult> {
     const { organizationId, conversationId, contactId } = params;
 
     const contact = await this.prisma.contact.findUnique({
@@ -88,9 +99,14 @@ export class LegacyOwnerRoutingService {
     await this.fsm.assign(conversationId, owner.user_id);
     // `shouldHandle` da IA ignora `assignedToId`: sem isto a Aline responderia
     // por cima do vendedor.
+    // Exceção: lead do site com a Aline até o handoff — ela pergunta e
+    // depois entrega a este mesmo vendedor (TransferToHumanTool).
+    const aiAgentId = opts.aiUntilHandoffAgentId;
     const updated = await this.prisma.conversation.update({
       where: { id: conversationId },
-      data: { aiEnabled: false, activeAgentId: null },
+      data: aiAgentId
+        ? { aiEnabled: true, activeAgentId: aiAgentId, aiUntilHandoff: true }
+        : { aiEnabled: false, activeAgentId: null },
     });
     this.realtime.emitToChannel(updated.channelId, 'conversation:updated', {
       conversation: updated,

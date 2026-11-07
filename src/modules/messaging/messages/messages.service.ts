@@ -226,10 +226,12 @@ export class MessagesService {
       where: { id: organizationId },
       select: { aiAutoDisableOnHuman: true },
     });
+    // Exceção: IA ligada pela automação do lead do site (`aiUntilHandoff`)
+    // não é "force-on de humano" — sai sempre que um humano responde.
     const shouldDisableAi =
       conversation.aiEnabled !== false &&
-      conversation.aiEnabled !== true &&
-      (org?.aiAutoDisableOnHuman ?? true);
+      (conversation.aiUntilHandoff ||
+        (conversation.aiEnabled !== true && (org?.aiAutoDisableOnHuman ?? true)));
 
     // Auto-assign: whoever replies owns the conversation. If the current
     // assignee is someone else (or null), flip to the sender. Same-sender
@@ -274,6 +276,7 @@ export class MessagesService {
                     aiDisabledBy: senderId,
                     aiDisabledAt: new Date(),
                     activeAgentId: null,
+                    aiUntilHandoff: false,
                   }
                 : {}),
             }),

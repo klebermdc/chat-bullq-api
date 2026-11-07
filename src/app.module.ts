@@ -11,6 +11,7 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { PlatformModule } from './modules/platform/platform.module';
 import { ChannelHubModule } from './modules/channel-hub/channel-hub.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
+import { WebsiteLeadsModule } from './modules/website-leads/website-leads.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { RoutingModule } from './modules/routing/routing.module';
@@ -93,6 +94,7 @@ import redisConfig from './config/redis.config';
     RealtimeModule,
     ChannelHubModule,
     MessagingModule,
+    WebsiteLeadsModule,
     NotificationsModule,
     RoutingModule,
     QuickRepliesModule,

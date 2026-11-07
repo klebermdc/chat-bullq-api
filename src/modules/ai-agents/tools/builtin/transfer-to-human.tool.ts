@@ -79,6 +79,11 @@ export class TransferToHumanTool implements AiTool {
     const reason = String(input.reason ?? '').trim() || 'Handoff sem motivo informado';
     const summary = input.summary ? String(input.summary).trim() : null;
 
+    // ── Lead do site com dono (carteira ou vendedor já na conversa): a Aline
+    //    conduziu só até aqui e entrega direto a ele — sem fila "Distribuir". ──
+    const owner = await this.untilHandoffOwner(ctx);
+    if (owner) return this.handOffToOwner(ctx, owner, summary);
+
     // ── Dedupe: se já existe um handoff PENDING pra essa conversa, NÃO cria
     //    outro card. Sem isso, a Aline re-qualificava o mesmo lead e empilhava
     //    cards repetidos (vimos 5 na mesma conversa, todos expirando). Reusa o
@@ -207,6 +212,81 @@ export class TransferToHumanTool implements AiTool {
       // Mantém o sinal de "saí do loop" — o agent deve parar de responder
       // até o operador decidir. Sem isso o LLM seguiria conversando como
       // se tivesse transferido de fato.
+      finalAction: 'TRANSFERRED_TO_HUMAN',
+    };
+  }
+
+  /** Dono da conversa quando a IA está nela só até o handoff, ou null. */
+  private async untilHandoffOwner(ctx: ToolContext): Promise<string | null> {
+    try {
+      const conv = await this.prisma.conversation.findUnique({
+        where: { id: ctx.conversationId },
+        select: { aiUntilHandoff: true, assignedToId: true },
+      });
+      return conv?.aiUntilHandoff && conv.assignedToId ? conv.assignedToId : null;
+    } catch (e) {
+      this.logger.warn(`transfer: dono não lido (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Entrega ao vendedor dono: avisa o cliente, grava o resumo, leva o card a
+   * "Coletando Informação" (o dono já é conhecido, não há o que distribuir)
+   * e desliga a IA na hora — o vendedor assume.
+   */
+  private async handOffToOwner(
+    ctx: ToolContext,
+    ownerId: string,
+    summary: string | null,
+  ): Promise<ToolResult> {
+    try {
+      await this.replyTool.execute(
+        { text: await this.buildTransitionMessage(ctx) },
+        withHumanActionTaken(ctx, this.name),
+      );
+    } catch (e) {
+      this.logger.warn(`transfer: falha ao avisar cliente (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
+    }
+    try {
+      await this.saveHandoffSummaryAsNote(ctx, summary);
+    } catch (e) {
+      this.logger.warn(`transfer: falha ao salvar resumo (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
+    }
+    try {
+      await enterLeadStage(this.prisma, this.realtime, {
+        conversationId: ctx.conversationId,
+        organizationId: ctx.organizationId,
+        contactId: ctx.contactId,
+        stageContains: 'coletando',
+      });
+    } catch (e) {
+      this.logger.warn(`transfer: card não movido (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
+    }
+
+    const updated = await this.prisma.conversation.update({
+      where: { id: ctx.conversationId },
+      data: {
+        aiEnabled: false,
+        aiDisabledAt: new Date(),
+        activeAgentId: null,
+        aiUntilHandoff: false,
+        awaitingHumanReply: true,
+      },
+    });
+    this.realtime.emitToConversation(ctx.conversationId, 'conversation:updated', {
+      conversation: updated,
+    });
+    this.logger.log(`transfer: lead do site entregue ao dono ${ownerId} (conv=${ctx.conversationId})`);
+
+    return {
+      output: {
+        ok: true,
+        status: 'handed_to_owner',
+        message:
+          'Transferência concluída: o cliente JÁ foi avisado e o vendedor responsável assume agora. NÃO escreva mais nada.',
+        agent_should_say: '',
+      },
       finalAction: 'TRANSFERRED_TO_HUMAN',
     };
   }

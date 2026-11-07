@@ -85,6 +85,70 @@ export class LeadCardService {
     });
     if (existing) return null;
 
+    // Lead do site: o card nasceu no envio do formulário, antes de existir
+    // conversa. Quando a conversa aparece, ela é presa a esse card em vez de
+    // abrir um segundo.
+    if (contactId) {
+      const orphan = await this.prisma.card.findFirst({
+        where: {
+          organizationId,
+          contactId,
+          conversationId: null,
+          status: 'OPEN',
+          ...NOT_LOST_RECOVERY,
+        },
+        select: { id: true },
+      });
+      if (orphan) {
+        const card = await this.prisma.card.update({
+          where: { id: orphan.id },
+          data: { conversationId },
+        });
+        this.realtime.emitToOrg(organizationId, 'card:updated', { card });
+        this.logger.log(`lead-card: card ${orphan.id} do site ligado à conv ${conversationId}`);
+        return null;
+      }
+    }
+
+    return this.createCard({ organizationId, conversationId, contactId });
+  }
+
+  /**
+   * Card do lead que chegou pelo formulário do site, quando ainda não há
+   * conversa. Só cria se o contato não tiver card aberto em nenhum funil de
+   * vendas — lead antigo em "Proposta enviada" que preenche o site de novo
+   * continua onde está. Best-effort, igual ao `ensureLeadCard`.
+   */
+  async ensureContactLeadCard(params: {
+    organizationId: string;
+    contactId: string;
+  }): Promise<string | null> {
+    try {
+      const existing = await this.prisma.card.findFirst({
+        where: {
+          organizationId: params.organizationId,
+          contactId: params.contactId,
+          status: 'OPEN',
+          ...NOT_LOST_RECOVERY,
+        },
+        select: { id: true },
+      });
+      if (existing) return null;
+      return await this.createCard({ ...params, conversationId: null });
+    } catch (err) {
+      this.logger.warn(
+        `lead-card do site falhou (não crítico) contato=${params.contactId}: ${(err as Error)?.message}`,
+      );
+      return null;
+    }
+  }
+
+  private async createCard(params: {
+    organizationId: string;
+    conversationId: string | null;
+    contactId?: string | null;
+  }): Promise<string | null> {
+    const { organizationId, conversationId, contactId } = params;
     const pipeline = await this.prisma.pipeline.findFirst({
       where: {
         organizationId,
