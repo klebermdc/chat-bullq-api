@@ -24,11 +24,12 @@ export class SalesReportsController {
   @Get()
   getReport(
     @CurrentUser('email') email: string,
+    @CurrentUser('name') name: string,
     @CurrentUserRole() role: OrgRole,
     @Query() q: ReportQueryDto,
   ) {
     return this.service.getReport({
-      role, email,
+      role, email, name,
       vendedor: q.vendedor,
       day: q.day,
       month: q.month,
@@ -44,11 +45,12 @@ export class SalesReportsController {
   @Get('orders')
   getOrders(
     @CurrentUser('email') email: string,
+    @CurrentUser('name') name: string,
     @CurrentUserRole() role: OrgRole,
     @Query() q: ReportQueryDto,
   ) {
     return this.service.getOrdersPage({
-      role, email,
+      role, email, name,
       vendedor: q.vendedor, month: q.month, year: q.year,
       status: q.status, produto: q.produto, fornecedor: q.fornecedor, search: q.search,
       page: q.page, perPage: q.per_page,
@@ -56,8 +58,12 @@ export class SalesReportsController {
   }
 
   @Get('facets')
-  getFacets(@CurrentUser('email') email: string, @CurrentUserRole() role: OrgRole) {
-    return this.service.getFacets({ role, email });
+  getFacets(
+    @CurrentUser('email') email: string,
+    @CurrentUser('name') name: string,
+    @CurrentUserRole() role: OrgRole,
+  ) {
+    return this.service.getFacets({ role, email, name });
   }
 
   @Get('vendedores')

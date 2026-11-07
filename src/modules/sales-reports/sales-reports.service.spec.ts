@@ -129,3 +129,67 @@ describe('SalesReportsService db source', () => {
     expect(r.totals.venda).toBe(100);
   });
 });
+
+describe('SalesReportsService name fallback (vínculo pelo nome do pedido)', () => {
+  async function build(orderVendedores: string[]) {
+    const ofp = {
+      getProfiles: jest.fn().mockResolvedValue([
+        { id: 'u1', email: 'pedro@orlandofastpass.com.br', full_name: 'Pedro' },
+      ]),
+      getRoles: jest.fn().mockResolvedValue([
+        { user_id: 'u1', role: 'salesperson', salesperson_name: 'Pedro' },
+      ]),
+      getOrders: jest.fn().mockResolvedValue(
+        orderVendedores.map((v, i) => ({ id: `o${i}`, vendedor: v, venda: 10, status: 'Pendente', data: '06/11/2026' })),
+      ),
+    } as any;
+    const mod = await Test.createTestingModule({
+      providers: [
+        SalesReportsService,
+        { provide: OfpReportService, useValue: ofp },
+        { provide: PrismaService, useValue: { ofpSalesOrder: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn() } } },
+        { provide: ConfigService, useValue: { get: () => 'live' } },
+      ],
+    }).compile();
+    return mod.get(SalesReportsService);
+  }
+
+  it('links an agent with no OFP account by the first name used on orders', async () => {
+    // Arrange
+    const svc = await build(['Suelen', 'Pedro', 'Bárbara']);
+    // Act
+    const r = await svc.getReport({ role: OrgRole.AGENT, email: 'suelen@orlandofastpass.com.br', name: 'Suelen Souza' });
+    // Assert
+    expect(r.scope).toBe('seller');
+    expect(r.seller).toBe('Suelen');
+  });
+
+  it('ignores case and accents when matching the name', async () => {
+    const svc = await build(['Bárbara', 'Pedro']);
+    expect(await svc.resolveOwnVendedor('barbara@x.com', 'barbara')).toBe('Bárbara');
+  });
+
+  it('prefers the full-name match over the first-name match', async () => {
+    const svc = await build(['Ana', 'Ana Paula']);
+    expect(await svc.resolveOwnVendedor('ana@x.com', 'Ana Paula')).toBe('Ana Paula');
+  });
+
+  it('refuses when the name matches more than one vendedor', async () => {
+    const svc = await build(['Rafael', 'RAFAEL']);
+    await expect(
+      svc.getReport({ role: OrgRole.AGENT, email: 'rafa@x.com', name: 'Rafael' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('refuses when there is no name and no email link', async () => {
+    const svc = await build(['Suelen']);
+    await expect(
+      svc.getFacets({ role: OrgRole.AGENT, email: 'suelen@orlandofastpass.com.br' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('keeps the email link as first choice', async () => {
+    const svc = await build(['Suelen', 'Pedro']);
+    expect(await svc.resolveOwnVendedor('pedro@orlandofastpass.com.br', 'Suelen')).toBe('Pedro');
+  });
+});
