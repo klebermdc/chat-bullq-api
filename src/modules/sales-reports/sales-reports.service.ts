@@ -3,7 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { OrgRole } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { OfpReportService, OfpOrder } from './ofp-report.service';
+import { matchVendedorByName } from './vendedor-match';
 import { aggregate, computeFacets, filterOrders, projectOrder, ReportFacets, SalesReport } from './report-aggregator';
+
+const NOT_LINKED_MESSAGE = 'Sua conta não está vinculada a um vendedor no OFP Hub.';
 
 function dateKey(d: string | null): number {
   const m = d ? /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(d.trim()) : null;
@@ -14,6 +17,7 @@ function dateKey(d: string | null): number {
 export interface GetReportInput {
   role: OrgRole;
   email: string;
+  name?: string;
   vendedor?: string;
   day?: number;
   month?: number;
@@ -49,6 +53,31 @@ export class SalesReportsService {
   async resolveVendedor(email: string): Promise<string | null> {
     const map = await this.vendedorMap();
     return map.get(email.toLowerCase()) ?? null;
+  }
+
+  /** Nomes de vendedor gravados nos pedidos — a mesma base da tabela geral. */
+  private async orderVendedorNames(): Promise<string[]> {
+    const source = this.config.get<string>('OFP_REPORTS_SOURCE') ?? 'db';
+    if (source === 'db' && (await this.prisma.ofpSalesOrder.count()) > 0) {
+      const rows = await this.prisma.ofpSalesOrder.findMany({ distinct: ['vendedor'], select: { vendedor: true } });
+      return rows.map((r) => r.vendedor).filter((v): v is string => !!v);
+    }
+    const orders = await this.ofp.getOrders({});
+    return orders.map((o) => o.vendedor).filter((v): v is string => !!v);
+  }
+
+  /** E-mail vinculado no OFP Hub primeiro; senão, o nome do usuário contra o vendedor dos pedidos. */
+  async resolveOwnVendedor(email: string, name?: string): Promise<string | null> {
+    const byEmail = await this.resolveVendedor(email);
+    if (byEmail) return byEmail;
+    if (!name) return null;
+    return matchVendedorByName(name, await this.orderVendedorNames());
+  }
+
+  private async requireOwnVendedor(email: string, name?: string): Promise<string> {
+    const own = await this.resolveOwnVendedor(email, name);
+    if (!own) throw new ForbiddenException(NOT_LINKED_MESSAGE);
+    return own;
   }
 
   private async loadOrders(filters: { vendedor?: string; day?: number; month?: number; year?: number; status?: string; produto?: string; fornecedor?: string }): Promise<OfpOrder[]> {
@@ -106,9 +135,7 @@ export class SalesReportsService {
     let scope: 'all' | 'seller';
 
     if (!isAdmin) {
-      const own = await this.resolveVendedor(input.email);
-      if (!own) throw new ForbiddenException('Sua conta não está vinculada a um vendedor no OFP Hub.');
-      vendedor = own;
+      vendedor = await this.requireOwnVendedor(input.email, input.name);
       scope = 'seller';
     } else if (input.vendedor) {
       vendedor = input.vendedor;
@@ -130,7 +157,7 @@ export class SalesReportsService {
   }
 
   async getOrdersPage(input: {
-    role: OrgRole; email: string;
+    role: OrgRole; email: string; name?: string;
     vendedor?: string; month?: number; year?: number;
     status?: string; produto?: string; fornecedor?: string; search?: string;
     page?: number; perPage?: number;
@@ -138,9 +165,7 @@ export class SalesReportsService {
     const isAdmin = input.role === OrgRole.OWNER || input.role === OrgRole.ADMIN;
     let vendedor = input.vendedor;
     if (!isAdmin) {
-      const own = await this.resolveVendedor(input.email);
-      if (!own) throw new ForbiddenException('Sua conta não está vinculada a um vendedor no OFP Hub.');
-      vendedor = own; // force: ignore any client-supplied vendedor
+      vendedor = await this.requireOwnVendedor(input.email, input.name); // force: ignore any client-supplied vendedor
     }
     const raw = await this.loadOrders({
       vendedor, month: input.month, year: input.year,
@@ -159,13 +184,11 @@ export class SalesReportsService {
     return { data, page, perPage, total, totalPages: Math.max(1, Math.ceil(total / perPage)) };
   }
 
-  async getFacets(input: { role: OrgRole; email: string }): Promise<ReportFacets> {
+  async getFacets(input: { role: OrgRole; email: string; name?: string }): Promise<ReportFacets> {
     const isAdmin = input.role === OrgRole.OWNER || input.role === OrgRole.ADMIN;
     let vendedor: string | undefined;
     if (!isAdmin) {
-      const own = await this.resolveVendedor(input.email);
-      if (!own) throw new ForbiddenException('Sua conta não está vinculada a um vendedor no OFP Hub.');
-      vendedor = own;
+      vendedor = await this.requireOwnVendedor(input.email, input.name);
     }
     const orders = await this.loadOrders({ vendedor });
     return computeFacets(orders);
