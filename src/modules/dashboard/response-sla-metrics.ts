@@ -23,6 +23,11 @@ interface CountedRow {
   breached: boolean;
 }
 
+/** Esperas que entram no %: respondidas por humano ou estouradas. */
+export const COUNTED_WAIT_WHERE = {
+  OR: [{ respondedAt: { not: null } }, { breached: true }],
+} satisfies Prisma.ResponseSlaRecordWhereInput;
+
 export interface AgentResponseSla {
   avgBusinessResponseMinutes: number | null;
   responseSlaPercent: number | null;
@@ -94,7 +99,7 @@ function countedRows(
     organizationId,
     ...(agentId ? { agentId } : {}),
     waitingSince: { gte: range.from, lte: range.to },
-    OR: [{ respondedAt: { not: null } }, { breached: true }],
+    ...COUNTED_WAIT_WHERE,
   };
   return prisma.responseSlaRecord.findMany({
     where,
@@ -108,10 +113,21 @@ function countedRows(
   });
 }
 
+/**
+ * Quantas esperas contadas ficaram no prazo (respondida e sem estouro).
+ * Exportada para o placar diário da gestão usar a MESMA regra do dashboard.
+ */
+export function countWithin(
+  rows: ReadonlyArray<Pick<CountedRow, 'respondedAt' | 'breached'>>,
+): { within: number; total: number } {
+  const within = rows.filter((r) => r.respondedAt !== null && !r.breached).length;
+  return { within, total: rows.length };
+}
+
 function percentWithin(rows: CountedRow[]): number | null {
   if (rows.length === 0) return null;
-  const within = rows.filter((r) => r.respondedAt !== null && !r.breached).length;
-  return Math.round((within / rows.length) * 100);
+  const { within, total } = countWithin(rows);
+  return Math.round((within / total) * 100);
 }
 
 function average(values: number[]): number | null {
