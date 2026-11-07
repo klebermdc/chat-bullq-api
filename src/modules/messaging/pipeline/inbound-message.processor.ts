@@ -31,6 +31,10 @@ import { IngestInput as OrderFichaIngestInput } from '../../order-ficha/order-fi
 import { InboundNotifierService } from '../../notifications/inbound-notifier.service';
 import { buildMessageReceivedPayload } from './message-received-payload.builder';
 import {
+  WebsiteLeadInboundDecision,
+  WebsiteLeadInboundService,
+} from '../../website-leads/website-lead-inbound.service';
+import {
   AutomationTrigger,
   ChannelType,
   MessageDirection,
@@ -128,6 +132,8 @@ export class InboundMessageProcessor extends WorkerHost {
     private readonly inboundNotifier: InboundNotifierService,
     private readonly orgOffHours: OrgOffHoursNoticeService,
     private readonly legacyOwnerRouting: LegacyOwnerRoutingService,
+    @Inject(forwardRef(() => WebsiteLeadInboundService))
+    private readonly websiteLeadInbound: WebsiteLeadInboundService,
   ) {
     super();
   }
@@ -340,6 +346,20 @@ export class InboundMessageProcessor extends WorkerHost {
         message: savedMessage,
       });
 
+      // Lead do site que recebeu o template de retorno: a Aline conduz até o
+      // handoff. Decide ANTES da carteira e do chatbot — senão a resposta ao
+      // template mandaria para o vendedor desligando a IA, ou o chatbot de
+      // boas-vindas entraria por cima. "Agora não" já é respondido aqui.
+      const websiteLead = await this.evaluateWebsiteLead({
+        organizationId,
+        channelId,
+        conversationId,
+        contactId,
+        conversationIsNewOrReopened: conversationIsNew || conversationWasReopened,
+        message,
+        eligible: isNew && direction === MessageDirection.INBOUND && !message.isGroup,
+      });
+
       // Carteira legada: lead novo que já era de um vendedor volta direto pra
       // ele, antes do sino (que então avisa o vendedor) e antes do chatbot e
       // da Aline (que ficam de fora). Falha aqui cai no fluxo normal. Conversa
@@ -350,6 +370,7 @@ export class InboundMessageProcessor extends WorkerHost {
       if (
         (conversationIsNew || conversationWasReopened) &&
         !conversationKeptAssignee &&
+        !websiteLead.skipLegacyRouting &&
         isNew &&
         direction === MessageDirection.INBOUND &&
         !message.isGroup
@@ -465,6 +486,7 @@ export class InboundMessageProcessor extends WorkerHost {
       if (
         !isEcho &&
         !routedToLegacyOwner &&
+        !websiteLead.skipChatbot &&
         (status === ConversationStatus.BOT ||
           status === ConversationStatus.PENDING)
       ) {
@@ -594,7 +616,7 @@ export class InboundMessageProcessor extends WorkerHost {
       // instead of seeing "[audio]" and apologizing it can't listen. Cost
       // is ~$0.006/min — predictable and pays for itself the moment the
       // bot answers a single audio without bouncing the customer to text.
-      if (!isEcho) {
+      if (!isEcho && !websiteLead.skipAi) {
         const dispatch = async () => {
           if (savedMessage.type === PrismaContentType.AUDIO) {
             try {
@@ -740,6 +762,36 @@ export class InboundMessageProcessor extends WorkerHost {
     }
   }
 
+  /** Best-effort: falha aqui cai no fluxo normal, nunca derruba a mensagem. */
+  private async evaluateWebsiteLead(params: {
+    organizationId: string;
+    channelId: string;
+    conversationId: string;
+    contactId: string;
+    conversationIsNewOrReopened: boolean;
+    message: NormalizedInboundMessage;
+    eligible: boolean;
+  }): Promise<WebsiteLeadInboundDecision> {
+    const none = { skipLegacyRouting: false, skipChatbot: false, skipAi: false };
+    if (!params.eligible) return none;
+    const c = (params.message.content ?? {}) as Record<string, any>;
+    try {
+      return await this.websiteLeadInbound.evaluate({
+        organizationId: params.organizationId,
+        channelId: params.channelId,
+        conversationId: params.conversationId,
+        contactId: params.contactId,
+        conversationIsNewOrReopened: params.conversationIsNewOrReopened,
+        text: typeof c.text === 'string' ? c.text : null,
+      });
+    } catch (err: any) {
+      this.logger.warn(
+        `lead do site: avaliação falhou (segue fluxo normal) conv=${params.conversationId}: ${err?.message ?? err}`,
+      );
+      return none;
+    }
+  }
+
   private async checkActiveBotForChannel(channelId: string): Promise<boolean> {
     const link = await this.prisma.chatbotFlowChannel.findFirst({
       where: {
@@ -817,7 +869,7 @@ export class InboundMessageProcessor extends WorkerHost {
     const [conversation, org] = await Promise.all([
       this.prisma.conversation.findUnique({
         where: { id: conversationId },
-        select: { aiEnabled: true },
+        select: { aiEnabled: true, aiUntilHandoff: true },
       }),
       this.prisma.organization.findUnique({
         where: { id: organizationId },
@@ -825,8 +877,11 @@ export class InboundMessageProcessor extends WorkerHost {
       }),
     ]);
     if (!conversation) return;
-    if (conversation.aiEnabled === false || conversation.aiEnabled === true) return;
-    if (!(org?.aiAutoDisableOnHuman ?? true)) return;
+    // IA ligada pela automação do lead do site sai quando um humano responde.
+    if (!conversation.aiUntilHandoff) {
+      if (conversation.aiEnabled === false || conversation.aiEnabled === true) return;
+      if (!(org?.aiAutoDisableOnHuman ?? true)) return;
+    }
 
     await this.prisma.conversation.update({
       where: { id: conversationId },
@@ -834,6 +889,7 @@ export class InboundMessageProcessor extends WorkerHost {
         aiEnabled: false,
         aiDisabledAt: new Date(),
         activeAgentId: null,
+        aiUntilHandoff: false,
       },
     });
     this.logger.log(

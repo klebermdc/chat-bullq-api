@@ -752,6 +752,13 @@ model Conversation {
   /// Frontend filtra por isso na inbox e no dashboard.
   isStuck             Boolean   @default(false) @map("is_stuck")
 
+  /// IA ligada por automação (follow-up do lead do site), não por um humano.
+  /// A Aline conduz até o handoff — inclusive em conversa já atribuída ao
+  /// vendedor da carteira — e sai quando transfere ou quando um humano
+  /// responde. Diferente de `aiEnabled=true` "na mão", que um humano respondendo
+  /// não desliga.
+  aiUntilHandoff      Boolean   @default(false) @map("ai_until_handoff")
+
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   channel      Channel      @relation(fields: [channelId], references: [id])
   segment      Segment?     @relation(fields: [segmentId], references: [id], onDelete: SetNull)
@@ -1515,6 +1522,62 @@ model AiSendCheck {
   @@map("ai_send_checks")
 }
 
+/// Configuração da entrada de leads do site (formulários do Elementor) por
+/// organização. O token do webhook é guardado só como hash; o texto puro
+/// aparece uma vez, ao gerar.
+model WebsiteLeadSettings {
+  organizationId String    @id @map("organization_id")
+  enabled        Boolean   @default(false)
+  /// Canal oficial que manda o template de retorno. null = nenhum envio.
+  channelId      String?   @map("channel_id")
+  /// Linha de `message_templates` usada no retorno.
+  templateId     String?   @map("template_id")
+  delayMinutes   Int       @default(5) @map("delay_minutes")
+  tokenHash      String?   @unique @map("token_hash")
+  tokenPreview   String?   @map("token_preview")
+  tokenCreatedAt DateTime? @map("token_created_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@map("website_lead_settings")
+}
+
+/// Histórico de envios de formulário do site. Um contato pode mandar vários;
+/// `contact.metadata.attribution` guarda só o último, aqui ficam todos.
+model LeadSubmission {
+  id                     String    @id @default(cuid())
+  organizationId         String    @map("organization_id")
+  contactId              String    @map("contact_id")
+  /// main | guiamento
+  formKind               String    @map("form_kind")
+  formId                 String?   @map("form_id")
+  formName               String?   @map("form_name")
+  /// Hash do envio (form + telefone + e-mail + nome + página). Envio igual
+  /// repetido em pouco tempo (duplo clique, reenvio) não vira outro registro.
+  dedupeKey              String    @map("dedupe_key")
+  phone                  String
+  raw                    Json      @default("{}")
+  attribution            Json      @default("{}")
+  /// PENDING | SENT | SKIPPED | FAILED | DECLINED
+  followupStatus         String    @default("PENDING") @map("followup_status")
+  followupReason         String?   @map("followup_reason")
+  followupScheduledAt    DateTime? @map("followup_scheduled_at")
+  followupSentAt         DateTime? @map("followup_sent_at")
+  followupConversationId String?   @map("followup_conversation_id")
+  followupMessageId      String?   @map("followup_message_id")
+  /// Nome e categoria do template no envio — base do relatório de custo
+  /// (MARKETING é pago por mensagem entregue).
+  followupTemplateName   String?   @map("followup_template_name")
+  followupCategory       String?   @map("followup_category")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  @@index([organizationId, createdAt], name: "idx_lead_sub_org_time")
+  @@index([contactId, createdAt], name: "idx_lead_sub_contact_time")
+  @@index([organizationId, dedupeKey], name: "idx_lead_sub_dedupe")
+  @@map("lead_submissions")
+}
+
 model AiAgentHandoff {
   id             String   @id @default(cuid())
   conversationId String   @map("conversation_id")
@@ -2107,6 +2170,9 @@ model MetaCapiConfig {
   encryptedToken String   @map("encrypted_token")
   tokenPreview   String   @map("token_preview")
   testEventCode  String?  @map("test_event_code")
+  /// Página do Facebook ligada ao WhatsApp. A Meta exige `page_id` no
+  /// user_data de evento de WhatsApp sem ctwa_clid (caminho por hash).
+  pageId         String?  @map("page_id")
   enabled        Boolean  @default(false)
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")

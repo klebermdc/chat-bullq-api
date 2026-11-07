@@ -10,6 +10,15 @@ import { externalIdVariants, normalizePhone, phoneVariants } from '../../../comm
 import { StartConversationDto } from './dto/start-conversation.dto';
 import type { ChannelAccess } from '../../iam/channel-access/channel-access.service';
 
+/** Envio automático (sem atendente digitando), ex.: retorno do lead do site. */
+export interface StartConversationOptions {
+  /** `metadata.source` da mensagem — identifica o envio em relatório. */
+  source?: string;
+  senderName?: string;
+  /** Texto do template já preenchido, para a IA e o histórico enxergarem. */
+  renderedText?: string;
+}
+
 @Injectable()
 export class StartConversationService {
   private readonly logger = new Logger(StartConversationService.name);
@@ -32,7 +41,8 @@ export class StartConversationService {
     dto: StartConversationDto,
     access: ChannelAccess,
     creator?: { userOrganizationId: string; role: OrgRole },
-  ): Promise<{ conversationId: string; contactId: string }> {
+    opts: StartConversationOptions = {},
+  ): Promise<{ conversationId: string; contactId: string; messageId: string }> {
     const channel = await this.prisma.channel.findFirst({
       where: { id: dto.channelId, organizationId, deletedAt: null },
     });
@@ -73,8 +83,8 @@ export class StartConversationService {
     const payload = isOfficial
       ? { type: MessageContentType.TEMPLATE, content: dto.template as Prisma.InputJsonValue }
       : { type: MessageContentType.TEXT, content: { text: dto.message as string } as Prisma.InputJsonValue };
-    await this.enqueue(channel.id, conversationId, externalId, payload);
-    return { conversationId, contactId };
+    const messageId = await this.enqueue(channel.id, conversationId, externalId, payload, opts);
+    return { conversationId, contactId, messageId };
   }
 
   private async resolveContact(
@@ -137,7 +147,8 @@ export class StartConversationService {
     conversationId: string,
     externalId: string,
     payload: { type: MessageContentType; content: Prisma.InputJsonValue },
-  ) {
+    opts: StartConversationOptions = {},
+  ): Promise<string> {
     const { type, content } = payload;
     const message = await this.prisma.message.create({
       data: {
@@ -146,8 +157,11 @@ export class StartConversationService {
         type,
         content,
         status: MessageStatus.QUEUED,
-        senderName: 'Atendimento',
-        metadata: { source: 'start_conversation' },
+        senderName: opts.senderName ?? 'Atendimento',
+        metadata: {
+          source: opts.source ?? 'start_conversation',
+          ...(opts.renderedText ? { renderedText: opts.renderedText } : {}),
+        },
       },
     });
     await this.prisma.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date() } });
@@ -156,5 +170,6 @@ export class StartConversationService {
       { messageId: message.id, channelId, contactExternalId: externalId, message: { type, content } },
       { attempts: 6, backoff: { type: 'fixed', delay: 6_000 }, removeOnComplete: true, removeOnFail: false },
     );
+    return message.id;
   }
 }

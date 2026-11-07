@@ -682,7 +682,11 @@ export class PromptBuilderService {
             .filter(Boolean)
             .join(' / ')
         : '';
-      const parts = [header, body, elements].filter(Boolean).join('\n');
+      // HSM enviado pelo sistema (ex.: retorno do lead do site): o content é o
+      // payload da Meta, sem texto. O texto preenchido vem na metadata.
+      const rendered = (message.metadata as Record<string, any> | null)?.renderedText;
+      const renderedText = !body && typeof rendered === 'string' && rendered ? rendered : null;
+      const parts = [header, body ?? renderedText, elements].filter(Boolean).join('\n');
       const buttonsLine = buttons ? `\n[botões: ${buttons}]` : '';
       if (parts || buttons) return `${prefix}${parts}${buttonsLine}`;
       return `${prefix}[template sem texto extraído]`;
