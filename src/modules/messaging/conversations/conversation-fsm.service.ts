@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { AutomationTrigger, ConversationStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
@@ -10,6 +11,7 @@ import { RatingsService } from '../../ratings/ratings.service';
 import { LegacyOwnerWriterService } from '../../carteira-legado/legacy-owner-writer.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
 import { syncAttendantTag } from '../../../common/utils/sync-attendant-tag';
+import { ResponseSlaService } from '../../response-sla/response-sla.service';
 
 type Transition = {
   from: ConversationStatus;
@@ -41,6 +43,7 @@ export class ConversationFsmService {
     private readonly ratings: RatingsService,
     private readonly outbox: OutboxService,
     private readonly legacyOwnerWriter: LegacyOwnerWriterService,
+    @Optional() private readonly responseSla?: ResponseSlaService,
   ) {}
 
   canTransition(from: ConversationStatus, to: ConversationStatus): boolean {
@@ -112,6 +115,11 @@ export class ConversationFsmService {
     });
 
     this.logger.log(`Conversation ${conversationId}: ${from} → ${to}`);
+
+    // SLA de resposta: finalizar encerra a espera sem resposta.
+    if (to === ConversationStatus.CLOSED) {
+      void this.responseSla?.onWaitEnded(conversationId, 'closed', new Date());
+    }
 
     // Só pede avaliação quando houve atendimento humano de verdade. Fechar
     // direto de PENDING/BOT (lead descartado da fila, nunca assumido) não
@@ -236,6 +244,8 @@ export class ConversationFsmService {
     });
 
     if (!isNoOp) {
+      // SLA de resposta: prazo recalculado com o horário do novo dono.
+      void this.responseSla?.onOwnerChanged(conversationId, new Date());
       // Transferir vale como troca de dono: o cliente da carteira legada passa
       // a ser do novo vendedor, senão a próxima conversa nova dele voltaria
       // pro antigo. Best-effort: nunca derruba a atribuição.

@@ -161,6 +161,7 @@ model User {
   assignedCards            Card[]                  @relation("CardAssignee")
   scheduledMessages        ScheduledMessage[]      @relation("ScheduledMessageCreator")
   initiatedCalls           Call[]                  @relation("CallAgent")
+  responseSlaRecords       ResponseSlaRecord[]     @relation("ResponseSlaAgent")
 
   @@map("users")
 }
@@ -285,6 +286,7 @@ model Organization {
   emailCampaigns            EmailCampaign[]
   adAccountConnections      AdAccountConnection[]
   marketingGoal             MarketingGoal?
+  responseSlaRecords        ResponseSlaRecord[]
 
   @@map("organizations")
 }
@@ -779,6 +781,7 @@ model Conversation {
   cards             Card[]                 @relation("CardConversation")
   scheduledMessages ScheduledMessage[]
   calls             Call[]
+  responseSlaRecords ResponseSlaRecord[]
 
   @@index([organizationId, status], name: "idx_conv_org_status")
   @@index([organizationId, status, awaitingHumanReply], name: "idx_conv_org_status_awaiting")
@@ -3288,4 +3291,43 @@ model ContractSettings {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("contract_settings")
+}
+
+/// Um período em que o cliente esperou resposta humana (SLA de resposta
+/// contado só no expediente do dono da conversa). Uma linha por espera:
+/// nasce quando `conversations.awaiting_human_reply` liga e fecha quando um
+/// humano responde (`responded_at`) ou a espera acaba sem resposta
+/// (`ended_at`: finalizada, arquivada, retirada do Esperando).
+/// Ver src/modules/response-sla. Índice único parcial (SQL cru na migração)
+/// garante no máximo uma espera aberta por conversa.
+model ResponseSlaRecord {
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  conversationId  String    @map("conversation_id")
+  /// Dono da conversa (último conhecido). null = sem atendente.
+  agentId         String?   @map("agent_id")
+  /// Meta vigente quando a espera começou (`settings.responseSlaMinutes`).
+  slaMinutes      Int       @map("sla_minutes")
+  waitingSince    DateTime  @map("waiting_since")
+  /// Prazo em minutos úteis. null = agenda sem nenhuma janela habilitada.
+  dueAt           DateTime? @map("due_at")
+  warnedAt        DateTime? @map("warned_at")
+  breached        Boolean   @default(false)
+  breachedAt      DateTime? @map("breached_at")
+  respondedAt     DateTime? @map("responded_at")
+  /// Minutos úteis até a resposta humana (mesmo cálculo do prazo).
+  businessMinutes Int?      @map("business_minutes")
+  endedAt         DateTime? @map("ended_at")
+  endReason       String?   @map("end_reason")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  agent        User?        @relation("ResponseSlaAgent", fields: [agentId], references: [id], onDelete: SetNull)
+
+  @@unique([conversationId, waitingSince])
+  @@index([organizationId, waitingSince])
+  @@index([agentId, waitingSince])
+  @@map("response_sla_records")
 }

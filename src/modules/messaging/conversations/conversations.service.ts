@@ -5,8 +5,10 @@ import {
   ForbiddenException,
   BadRequestException,
   Inject,
+  Optional,
   forwardRef,
 } from '@nestjs/common';
+import { ResponseSlaService } from '../../response-sla/response-sla.service';
 import { ChannelType,
   Conversation,
   ConversationStatus,
@@ -85,6 +87,7 @@ export class ConversationsService {
     private readonly summarizer: ConversationSummaryService,
     @Inject(forwardRef(() => AttendantGreetingService))
     private readonly attendantGreeting: AttendantGreetingService,
+    @Optional() private readonly responseSla?: ResponseSlaService,
   ) {}
 
   /**
@@ -1007,6 +1010,7 @@ export class ConversationsService {
       this.scheduled
         .cancelPendingForConversation(id, 'conversation_closed')
         .catch(() => undefined);
+      void this.responseSla?.onWaitEnded(id, 'archived', new Date());
     }
 
     this.broadcastUpdate(updated as Conversation);
@@ -1041,6 +1045,11 @@ export class ConversationsService {
         metadata: {},
       },
     });
+    // SLA de resposta: "Colocar no esperando" abre a espera; "Retirar" a
+    // encerra sem resposta (fica fora do % de cumprimento).
+    void (waiting
+      ? this.responseSla?.onCustomerWaiting(id, new Date())
+      : this.responseSla?.onWaitEnded(id, 'manual_unmark', new Date()));
 
     this.broadcastUpdate(updated as Conversation);
     return updated;

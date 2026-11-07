@@ -74,7 +74,10 @@ export class AttendantGreetingService {
         conversation.organizationId,
         'ALL',
         undefined,
-        { system: true },
+        // `automated`: a saudação sai em nome do vendedor, mas não é resposta
+        // humana. Sem isso ela tirava a conversa do Esperando e contava como
+        // SLA cumprido em 0 min sem ninguém ter respondido o cliente.
+        { system: true, automated: true },
       );
 
       // Marca quem já se apresentou (alimenta a guarda acima). Mesclado pra
