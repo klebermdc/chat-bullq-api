@@ -136,3 +136,18 @@ describe('InboundMessageProcessor — resposta ao template do lead do site', () 
     expect(chatbotQueue.add).toHaveBeenCalledWith('process-bot', expect.anything(), expect.anything());
   });
 });
+
+describe('InboundMessageProcessor — aviso de fora do horário com a Aline até o handoff', () => {
+  it('não manda o aviso do vendedor quando a Aline está conduzindo', async () => {
+    const agentAvailability = { onInboundReply: jest.fn() };
+    const proc: any = Object.create(InboundMessageProcessor.prototype);
+    proc.prisma = { conversation: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', aiUntilHandoff: true }) } };
+    proc.agentRouter = { shouldHandle: jest.fn() };
+    proc.agentAvailability = agentAvailability;
+
+    await proc.noticeOffHoursUnlessOnCall('c1');
+
+    expect(agentAvailability.onInboundReply).not.toHaveBeenCalled();
+    expect(proc.agentRouter.shouldHandle).not.toHaveBeenCalled();
+  });
+});

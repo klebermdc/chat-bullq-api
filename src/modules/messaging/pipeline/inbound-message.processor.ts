@@ -857,6 +857,9 @@ export class InboundMessageProcessor extends WorkerHost {
       where: { id: conversationId },
     });
     if (!conversation) return;
+    // Lead do site com a Aline até o handoff: quem responde é ela, mesmo com
+    // vendedor dono — o aviso de "fora do horário do atendente" não cabe.
+    if (conversation.aiUntilHandoff) return;
     const decision = await this.agentRouter.shouldHandle(conversation);
     if (decision.onCall) return;
     await this.agentAvailability.onInboundReply(conversationId);
