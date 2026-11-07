@@ -215,9 +215,12 @@ export class ContactResolverService {
   private buildCtwaData(
     message: NormalizedInboundMessage,
   ): Record<string, unknown> {
-    if (!message.referral?.ctwaClid) return {};
+    // Referral só com o source_id (sem clid) também conta: o anúncio entra no
+    // relatório. `ctwaClidAt` é a hora do clique; o clid fica nulo (sem ele a
+    // CAPI não usa o caminho por clique — certo, ele não veio).
+    if (!message.referral?.ctwaClid && !message.referral?.sourceId) return {};
     return {
-      ctwaClid: message.referral.ctwaClid,
+      ctwaClid: message.referral.ctwaClid ?? null,
       ctwaSourceId: message.referral.sourceId ?? null,
       ctwaSourceType: message.referral.sourceType ?? null,
       ctwaClidAt: message.timestamp,

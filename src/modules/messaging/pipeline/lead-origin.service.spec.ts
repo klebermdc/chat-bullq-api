@@ -62,3 +62,22 @@ describe('LeadOriginService.setOrigin', () => {
     );
   });
 });
+
+describe('LeadOriginService — tag de anúncio', () => {
+  it('AD usa "Anúncio Meta", a mesma tag do CTWA automático', async () => {
+    const { service, prisma } = make();
+    await service.setOrigin('org-1', 'conv-1', 'AD');
+    expect(prisma.tag.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { organizationId_name: { organizationId: 'org-1', name: 'Anúncio Meta' } },
+      }),
+    );
+  });
+
+  it('trocar a origem também limpa a tag antiga "Anúncio"', async () => {
+    const { service, prisma } = make();
+    await service.setOrigin('org-1', 'conv-1', 'WHATSAPP_DIRECT');
+    const names = prisma.tag.findMany.mock.calls[0][0].where.name.in;
+    expect(names).toEqual(expect.arrayContaining(['Anúncio', 'Anúncio Meta']));
+  });
+});

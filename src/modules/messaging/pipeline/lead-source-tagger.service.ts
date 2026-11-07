@@ -6,7 +6,7 @@ import { ORIGIN_TAG_NAMES } from './lead-origin.constants';
 const INSTAGRAM_TAG_NAME = ORIGIN_TAG_NAMES.INSTAGRAM_ORGANIC;
 
 /** Nome da tag aplicada a leads que vieram de anúncio Click-to-WhatsApp. */
-const AD_TAG_NAME = 'Anúncio Meta';
+const AD_TAG_NAME = ORIGIN_TAG_NAMES.AD;
 
 /** Frase-marca padrão no texto pré-preenchido do link wa.me (configurável). */
 const DEFAULT_MARKER = 'vim pelo instagram';
@@ -24,6 +24,7 @@ const DEFAULT_MARKER = 'vim pelo instagram';
 const DEFAULT_AD_MARKERS = [
   'quero fazer uma cotação',
   'olá! posso ter mais informações sobre isso?',
+  'olá! vi esse anúncio e quero solicitar uma cotação.',
 ];
 
 function normalize(s?: string | null): string {
@@ -134,8 +135,10 @@ export class LeadSourceTaggerService {
     organizationId: string;
     conversationId: string;
     ctwaClid?: string | null;
+    /** Id do anúncio do referral — vale mesmo quando o clid não veio. */
+    sourceId?: string | null;
   }): Promise<boolean> {
-    if (!params.ctwaClid) return false;
+    if (!params.ctwaClid && !params.sourceId) return false;
     return this.applyTag(
       params.organizationId,
       params.conversationId,

@@ -49,14 +49,16 @@ export interface MediaByAdRow {
 export class AttributionRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Leads do período agrupados por anúncio. Só `ctwaSourceType='ad'`. */
+  /** Leads que clicaram no anúncio no período, por anúncio. Só `ctwaSourceType='ad'`. */
   async leadsByAd(organizationId: string, from: Date, to: Date): Promise<LeadsByAdRow[]> {
     const grouped = await this.prisma.contact.groupBy({
       by: ['ctwaSourceId'],
       where: {
         organizationId,
         deletedAt: null,
-        createdAt: { gte: from, lte: to },
+        // Período pelo CLIQUE no anúncio, não pela criação do contato: cliente
+        // antigo que volta por um anúncio conta para ele.
+        ctwaClidAt: { gte: from, lte: to },
         ctwaSourceType: CTWA_SOURCE_TYPE_AD,
         ctwaSourceId: { not: null },
       },
@@ -125,7 +127,7 @@ export class AttributionRepository {
         where: {
           organizationId,
           deletedAt: null,
-          createdAt: { gte: from, lte: to },
+          ctwaClidAt: { gte: from, lte: to },
           ctwaSourceType: CTWA_SOURCE_TYPE_AD,
           ctwaSourceId: { not: null },
         },

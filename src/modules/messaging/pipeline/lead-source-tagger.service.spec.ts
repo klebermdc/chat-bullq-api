@@ -98,6 +98,12 @@ describe('LeadSourceTaggerService', () => {
       expect(prisma.conversationTag.create).not.toHaveBeenCalled();
     });
 
+    it('marca quando o referral traz só o source_id do anúncio (sem ctwaClid)', async () => {
+      const { service, prisma } = make();
+      expect(await service.tagAdLeadIfReferral({ ...base, ctwaClid: null, sourceId: '1202100' })).toBe(true);
+      expect(prisma.conversationTag.create).toHaveBeenCalled();
+    });
+
     it('é idempotente: re-aplicar a tag não estoura', async () => {
       const { service, prisma } = make();
       prisma.conversationTag.create.mockRejectedValueOnce({ code: 'P2002' });
@@ -109,6 +115,11 @@ describe('LeadSourceTaggerService', () => {
   });
 
   describe('matchesAdMarker (frase automática de anúncio)', () => {
+    it('reconhece a frase do anúncio de cotação do site', () => {
+      const { service } = make();
+      expect(service.matchesAdMarker('Olá! Vi esse anúncio e quero solicitar uma cotação.')).toBe(true);
+    });
+
     it('casa a frase EXATA do anúncio, ignorando caixa/acento', () => {
       const { service } = make();
       expect(service.matchesAdMarker('Quero fazer uma cotação')).toBe(true);

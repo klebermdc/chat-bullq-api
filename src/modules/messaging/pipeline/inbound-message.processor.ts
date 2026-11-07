@@ -450,6 +450,7 @@ export class InboundMessageProcessor extends WorkerHost {
             organizationId,
             conversationId,
             ctwaClid: message.referral?.ctwaClid,
+            sourceId: message.referral?.sourceId,
           })
           .catch((err) =>
             this.logger.warn(`ad-source tag falhou (não crítico): ${err.message}`),
