@@ -18,6 +18,8 @@ export const ERROR_CODES = {
 
   // source: JOB
   JOB_FAILED: 'JOB_FAILED',
+  /** Aviso de SLA de resposta para a gestão (WhatsApp) não saiu. */
+  SLA_MANAGER_ALERT_FAILED: 'SLA_MANAGER_ALERT_FAILED',
 
   // source: JOB — marketing
   MARKETING_SYNC_FAILED: 'MARKETING_SYNC_FAILED',

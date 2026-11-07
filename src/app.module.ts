@@ -38,6 +38,7 @@ import { SchedulingModule } from './modules/scheduling/scheduling.module';
 import { CadencesModule } from './modules/cadences/cadences.module';
 import { ConversationAutoCloseModule } from './modules/conversation-auto-close/conversation-auto-close.module';
 import { ResponseSlaModule } from './modules/response-sla/response-sla.module';
+import { SlaManagerAlertsModule } from './modules/response-sla/manager-alerts/manager-alerts.module';
 import { AutomationsModule } from './modules/automations/automations.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { SalesReportsModule } from './modules/sales-reports/sales-reports.module';
@@ -121,6 +122,7 @@ import redisConfig from './config/redis.config';
     CadencesModule,
     ConversationAutoCloseModule,
     ResponseSlaModule,
+    SlaManagerAlertsModule,
     WebhooksModule,
     SalesReportsModule,
     ProposalsModule,
