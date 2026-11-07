@@ -3,8 +3,12 @@ import { ChannelType, ConversationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { attachWindowExpiry } from './attach-window-expiry';
 import { buildSearchOr } from './inbox-search';
+import {
+  buildAdvancedBlocks,
+  type InboxAdvancedFilters,
+} from './inbox-advanced-where';
 
-export interface InboxFilters {
+export interface InboxFilters extends InboxAdvancedFilters {
   organizationId: string;
   status?: ConversationStatus[];
   channelId?: string;
@@ -25,8 +29,6 @@ export interface InboxFilters {
   /** Filter by conversation kind: individual (1-on-1) vs group (WA group
    *  / IG group thread). Undefined = both. */
   kind?: 'INDIVIDUAL' | 'GROUP';
-  /** Tag ids applied to the conversation OR its contact. ANY match. */
-  tagIds?: string[];
   assignedToId?: string;
   /**
    * Só conversas SEM responsável (`assignedToId IS NULL`) — os leads que
@@ -66,6 +68,8 @@ export interface InboxFilters {
   /** Inclusive bounds on lastMessageAt (last activity). Dates already parsed. */
   dateFrom?: Date;
   dateTo?: Date;
+  /** Qual data o intervalo olha: última atividade (padrão) ou criação. */
+  dateField?: 'lastMessage' | 'created';
   /**
    * Aba de atendimento — sinal independente do enum `status`:
    *   true  → "Esperando" (cliente aguardando resposta humana)
@@ -199,18 +203,11 @@ export class ConversationsRepository {
     // montada apagava a anterior (etiqueta + busca perdia a etiqueta).
     const andBlocks: Prisma.ConversationWhereInput[] = [];
 
-    if (filters.tagIds && filters.tagIds.length > 0) {
-      // Match conversations that carry ANY of the requested tags. Includes
-      // tags applied directly on the conversation OR on its contact —
-      // operators tag both ways and expect the inbox to surface either.
-      andBlocks.push({
-        OR: [
-          { tags: { some: { tagId: { in: filters.tagIds } } } },
-          { contact: { tags: { some: { tagId: { in: filters.tagIds } } } } },
-        ],
-      });
-    }
-    if (filters.assignedToNone) where.assignedToId = null;
+    // Etiquetas, vários atendentes, funil, venda perdida, origem, parado há X.
+    andBlocks.push(...buildAdvancedBlocks(filters));
+    // Com lista de atendentes, o "sem atendente" já foi para o bloco OR acima.
+    const hasAssigneeList = (filters.assignedToIds?.length ?? 0) > 0;
+    if (filters.assignedToNone && !hasAssigneeList) where.assignedToId = null;
     else if (filters.assignedToId) where.assignedToId = filters.assignedToId;
     if (filters.enforceAssignedToId) {
       // Precedência sobre o filtro opcional — barreira, não preferência.
@@ -218,10 +215,12 @@ export class ConversationsRepository {
     }
     if (filters.stuckOnly) where.isStuck = true;
     if (filters.dateFrom || filters.dateTo) {
-      where.lastMessageAt = {
+      const range = {
         ...(filters.dateFrom ? { gte: filters.dateFrom } : {}),
         ...(filters.dateTo ? { lte: filters.dateTo } : {}),
       };
+      if (filters.dateField === 'created') where.createdAt = range;
+      else where.lastMessageAt = range;
     }
     if (filters.search) {
       const searchOr = buildSearchOr(filters.search);

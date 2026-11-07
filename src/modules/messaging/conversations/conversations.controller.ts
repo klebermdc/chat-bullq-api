@@ -12,6 +12,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import {
+  parseAdvancedQuery,
+  parseAssignees,
+  type AdvancedQuery,
+} from './inbox-advanced-query';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { ChannelType, OrgRole } from '@prisma/client';
 import { FEATURE_MAP } from '../../../common/rbac/feature-map';
@@ -134,6 +139,15 @@ export class ConversationsController {
       'Aba de atendimento: waiting (Esperando) | inbox (Caixa de entrada) | closed (Finalizados)',
   })
   @ApiQuery({ name: 'channelId', required: false })
+  @ApiQuery({ name: 'channelIds', required: false, description: 'Vários canais, separados por vírgula' })
+  @ApiQuery({ name: 'tagMode', required: false, description: "'all' = conversa precisa de todas as tagIds" })
+  @ApiQuery({ name: 'excludeTagIds', required: false, description: 'Etiquetas que não podem estar na conversa nem no contato' })
+  @ApiQuery({ name: 'stageIds', required: false, description: 'Etapas do funil (card aberto da conversa ou do contato)' })
+  @ApiQuery({ name: 'lost', required: false, description: "'only' | 'exclude' — venda perdida" })
+  @ApiQuery({ name: 'lostReasons', required: false, description: 'Códigos do motivo, com lost=only' })
+  @ApiQuery({ name: 'origin', required: false, description: "'ad' (veio de anúncio) | 'organic'" })
+  @ApiQuery({ name: 'idleHours', required: false, description: 'Última mensagem há mais de N horas' })
+  @ApiQuery({ name: 'dateField', required: false, description: "'created' = dateFrom/dateTo olham a criação" })
   @ApiQuery({
     name: 'channelTypes',
     required: false,
@@ -200,6 +214,7 @@ export class ConversationsController {
     @Query('projectStatus') projectStatus?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
+    @Query() advancedQuery: AdvancedQuery = {},
   ) {
     const archivedScope =
       archived === 'only' || archived === 'any' ? archived : 'exclude';
@@ -225,7 +240,8 @@ export class ConversationsController {
           parseChannelTypes(channelTypes),
           role,
         ),
-        assignedToId,
+        // Um id, "none" ou lista (atendentes + sem atendente).
+        ...parseAssignees(assignedToId),
         search,
         archived: archivedScope,
         unreadOnly: unread === 'true' || unread === '1',
@@ -238,6 +254,9 @@ export class ConversationsController {
         projectStatus: projectStatus || undefined,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
+        // Filtros avançados do painel: vários canais, etiqueta todas/excluída,
+        // funil, venda perdida, origem, parado há X, data de criação.
+        ...parseAdvancedQuery(advancedQuery, new Date()),
       },
       parseInt(page || '1', 10),
       parseInt(limit || '20', 10),
