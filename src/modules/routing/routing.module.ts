@@ -6,8 +6,6 @@ import { DepartmentsController } from './departments/departments.controller';
 import { DepartmentsService } from './departments/departments.service';
 import { DepartmentsRepository } from './departments/departments.repository';
 import { RouterService } from './router.service';
-import { SlaService } from './sla/sla.service';
-import { SlaTimerProcessor } from './sla/sla-timer.processor';
 import { WatchdogModule } from './watchdog/watchdog.module';
 import { AgentAvailabilityService } from './availability/agent-availability.service';
 import { OrgOffHoursNoticeService } from './availability/org-off-hours-notice.service';
@@ -16,7 +14,6 @@ import { OrgOffHoursNoticeService } from './availability/org-off-hours-notice.se
   imports: [
     BullModule.registerQueue(
       { name: 'conversation-router' },
-      { name: 'sla-timers' },
       // OrgOffHoursNoticeService (modo MESSAGE) enfileira o envio do texto fixo
       // pelo mesmo caminho da IA. RealtimeGateway vem do RealtimeModule (@Global).
       { name: 'outbound-messages' },
@@ -29,7 +26,7 @@ import { OrgOffHoursNoticeService } from './availability/org-off-hours-notice.se
     WatchdogModule,
   ],
   controllers: [DepartmentsController],
-  providers: [DepartmentsRepository, DepartmentsService, RouterService, SlaService, SlaTimerProcessor, AgentAvailabilityService, OrgOffHoursNoticeService],
-  exports: [DepartmentsService, DepartmentsRepository, RouterService, SlaService, AgentAvailabilityService, OrgOffHoursNoticeService],
+  providers: [DepartmentsRepository, DepartmentsService, RouterService, AgentAvailabilityService, OrgOffHoursNoticeService],
+  exports: [DepartmentsService, DepartmentsRepository, RouterService, AgentAvailabilityService, OrgOffHoursNoticeService],
 })
 export class RoutingModule {}

@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
@@ -17,6 +18,7 @@ import type {
 import { PendingActionStorage } from './pending-action.storage';
 import { PENDING_ACTION_EXECUTOR_QUEUE } from './queue-names';
 import { PrismaService } from '../../../database/prisma.service';
+import { ResponseSlaService } from '../../response-sla/response-sla.service';
 import { LegacyOwnerWriterService } from '../../carteira-legado/legacy-owner-writer.service';
 import { AttendantGreetingService } from '../../messaging/attendant-greeting/attendant-greeting.service';
 import {
@@ -43,6 +45,7 @@ export class PendingActionService {
     private readonly prisma: PrismaService,
     private readonly attendantGreeting: AttendantGreetingService,
     private readonly legacyOwnerWriter: LegacyOwnerWriterService,
+    @Optional() private readonly responseSla?: ResponseSlaService,
   ) {}
 
   /** Create a new PENDING action for human review. */
@@ -230,6 +233,7 @@ export class PendingActionService {
           where: { id: action.conversationId },
           data: { awaitingHumanReply: false },
         });
+        void this.responseSla?.onWaitEnded(action.conversationId, 'handoff_rejected', new Date());
       } catch (err: any) {
         this.logger.warn(
           `reject: falha ao limpar Esperando (conv=${action.conversationId}): ${err?.message ?? err}`,
@@ -341,6 +345,10 @@ export class PendingActionService {
     } catch (e) {
       this.logger.warn(`distribute: falha ao taguear atendente (conv=${action.conversationId}): ${(e as Error)?.message}`);
     }
+
+    // SLA de resposta: com dono definido o prazo passa a seguir o horário dele
+    // (ou começa agora, se a espera ainda não estava aberta).
+    void this.responseSla?.onOwnerChanged(action.conversationId, new Date());
 
     // Distribuir vale como troca de dono na carteira legada (mesma regra do
     // transferir), senão a próxima conversa nova volta pro vendedor antigo.

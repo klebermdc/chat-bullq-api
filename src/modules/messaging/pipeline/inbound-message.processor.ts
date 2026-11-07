@@ -1,5 +1,5 @@
 import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
-import { Logger, Inject, forwardRef } from '@nestjs/common';
+import { Logger, Inject, Optional, forwardRef } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
 import { ScheduledMessagesService } from '../../scheduling/scheduled-messages.service';
 import { CadenceInboundService } from '../../cadences/cadence-inbound.service';
@@ -30,6 +30,8 @@ import { ORDER_FICHA_QUEUE } from '../../order-ficha/order-ficha.processor';
 import { IngestInput as OrderFichaIngestInput } from '../../order-ficha/order-ficha.service';
 import { InboundNotifierService } from '../../notifications/inbound-notifier.service';
 import { buildMessageReceivedPayload } from './message-received-payload.builder';
+import { ResponseSlaService } from '../../response-sla/response-sla.service';
+import { isAiInCharge } from '../../response-sla/response-sla.rules';
 import {
   WebsiteLeadInboundDecision,
   WebsiteLeadInboundService,
@@ -134,6 +136,7 @@ export class InboundMessageProcessor extends WorkerHost {
     private readonly legacyOwnerRouting: LegacyOwnerRoutingService,
     @Inject(forwardRef(() => WebsiteLeadInboundService))
     private readonly websiteLeadInbound: WebsiteLeadInboundService,
+    @Optional() private readonly responseSla?: ResponseSlaService,
   ) {
     super();
   }
@@ -528,6 +531,9 @@ export class InboundMessageProcessor extends WorkerHost {
       // se ninguém respondeu na janela. Echo (msg da gente que voltou via
       // webhook) não conta — essas vão pelo path OUTBOUND e cancelam.
       if (!isEcho && direction === MessageDirection.INBOUND) {
+        // SLA de resposta: só mensagem nova e ao vivo (re-entrega do webhook
+        // e importação de histórico não passam por aqui com isNew=true).
+        if (isNew && !message.isGroup) this.startResponseSla(conversationId);
         this.watchdog.scheduleCheck(conversationId).catch((err) =>
           this.logger.warn(
             `Watchdog scheduleCheck failed for conv ${conversationId}: ${err?.message ?? err}`,
@@ -601,6 +607,8 @@ export class InboundMessageProcessor extends WorkerHost {
         // respeita o force-off/force-on da conversa e o ajuste da org.
         // Sem isto a Aline responde POR CIMA de quem já atendeu.
         if (humanEcho) {
+          // Vendedor respondeu pelo app (coexistência): fecha a espera do SLA.
+          void this.responseSla?.onHumanReply(conversationId, new Date());
           this.disableAiAfterHumanEcho(organizationId, conversationId).catch((err) =>
             this.logger.warn(
               `human_echo_ai_disable_failed conv=${conversationId}: ${(err as Error).message}`,
@@ -808,6 +816,22 @@ export class InboundMessageProcessor extends WorkerHost {
    * Loaded conversation needs to be re-fetched here because the rule-based
    * chatbot above may have updated `status` / fields meanwhile.
    */
+  /**
+   * Abre a espera do SLA de resposta (o próprio serviço ignora se a org não
+   * ligou o recurso ou se já há espera aberta). Enquanto a IA conduz a
+   * conversa o relógio não começa — o flag "Esperando" liga mesmo assim.
+   */
+  private startResponseSla(conversationId: string): void {
+    if (!this.responseSla) return;
+    void this.responseSla.onCustomerWaiting(conversationId, new Date(), async () => {
+      const conversation = await this.prisma.conversation.findUnique({
+        where: { id: conversationId },
+      });
+      if (!conversation) return false;
+      return isAiInCharge(conversation, await this.agentRouter.shouldHandle(conversation));
+    });
+  }
+
   private async tryAiAgent(
     conversationId: string,
     triggerMessageId: string,

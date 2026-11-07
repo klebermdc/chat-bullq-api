@@ -15,7 +15,8 @@ function toMinutes(hhmm: string): number {
 }
 
 // weekday (0=sunday) + minutos-do-dia de `at` no fuso `tz`
-function localParts(at: Date, tz: string): { dow: number; minutes: number } {
+// Exportada para o cálculo de minutos úteis (business-minutes.util).
+export function localParts(at: Date, tz: string): { dow: number; minutes: number } {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: tz, weekday: 'long', hour: '2-digit', minute: '2-digit', hour12: false,
   }).formatToParts(at);
@@ -27,7 +28,7 @@ function localParts(at: Date, tz: string): { dow: number; minutes: number } {
 }
 
 // janelas [inicioMin, fimMin] do dia `dow`; enabled sem windows = dia todo
-function dayWindows(config: BusinessHoursConfig, dow: number): Array<[number, number]> {
+export function dayWindows(config: BusinessHoursConfig, dow: number): Array<[number, number]> {
   const day = config[DAY_KEYS[dow]];
   if (!day || !day.enabled) return [];
   const windows = day.windows ?? [];

@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import {
+  isResponseSlaEnabled,
+  responseSlaByAgent,
+  responseSlaCompliance,
+  responseSlaDailySeries,
+} from './response-sla-metrics';
 
 export interface DateRange {
   from: Date;
@@ -231,10 +237,13 @@ export class DashboardService {
       const b = buckets.get(d)!;
       return { date: d, value: b.tmrCount > 0 ? Math.round(b.tmrSum / b.tmrCount) : 0 };
     });
-    const sla = dayKeys.map((d) => {
-      const b = buckets.get(d)!;
-      return { date: d, value: b.slaCount > 0 ? Math.round((b.slaWithin / b.slaCount) * 100) : 0 };
-    });
+    // SLA de resposta em horário útil ligado na org → série vem das esperas.
+    const sla = (await isResponseSlaEnabled(this.prisma, organizationId))
+      ? await responseSlaDailySeries(this.prisma, organizationId, range, dayKeys, assignedToId)
+      : dayKeys.map((d) => {
+          const b = buckets.get(d)!;
+          return { date: d, value: b.slaCount > 0 ? Math.round((b.slaWithin / b.slaCount) * 100) : 0 };
+        });
     const resolution = dayKeys.map((d) => {
       const b = buckets.get(d)!;
       return { date: d, value: b.created > 0 ? Math.round((b.closed / b.created) * 100) : 0 };
@@ -492,7 +501,19 @@ export class DashboardService {
       }
     }
 
+    // Campos opcionais do SLA de resposta (só com o recurso ligado na org).
+    const slaByAgent = (await isResponseSlaEnabled(this.prisma, organizationId))
+      ? await responseSlaByAgent(this.prisma, organizationId, range, assignedToId)
+      : null;
+
     return Array.from(agentMap.values()).map((a) => ({
+      ...(slaByAgent
+        ? {
+            avgBusinessResponseMinutes:
+              slaByAgent.get(a.agent.id)?.avgBusinessResponseMinutes ?? null,
+            responseSlaPercent: slaByAgent.get(a.agent.id)?.responseSlaPercent ?? null,
+          }
+        : {}),
       agent: a.agent,
       totalConversations: a.total,
       closedConversations: a.closed,
@@ -799,6 +820,11 @@ export class DashboardService {
   }
 
   private async getSlaCompliance(organizationId: string, range: DateRange, assignedToId?: string): Promise<number | null> {
+    // SLA de resposta em horário útil (settings.responseSlaMinutes) tem
+    // prioridade: % de esperas respondidas dentro da meta no período.
+    if (await isResponseSlaEnabled(this.prisma, organizationId)) {
+      return responseSlaCompliance(this.prisma, organizationId, range, assignedToId);
+    }
     const dept = await this.prisma.department.findFirst({
       where: { organizationId, isDefault: true },
       select: { slaFirstResponse: true },

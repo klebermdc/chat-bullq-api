@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ResponseSlaService } from '../../../response-sla/response-sla.service';
 import { RealtimeGateway } from '../../../realtime/realtime.gateway';
 import { PrismaService } from '../../../../database/prisma.service';
 import { PendingActionService } from '../../confirmations/pending-action.service';
@@ -70,6 +71,7 @@ export class TransferToHumanTool implements AiTool {
     private readonly pendingActions: PendingActionService,
     private readonly prisma: PrismaService,
     private readonly replyTool: ReplyToConversationTool,
+    @Optional() private readonly responseSla?: ResponseSlaService,
   ) {}
 
   async execute(
@@ -152,6 +154,9 @@ export class TransferToHumanTool implements AiTool {
         where: { id: ctx.conversationId },
         data: { awaitingHumanReply: true },
       });
+      // SLA de resposta: o handoff é o momento em que o cliente passa a
+      // esperar um humano (até aqui a Aline conduzia).
+      void this.responseSla?.onCustomerWaiting(ctx.conversationId, new Date());
     } catch (e) {
       this.logger.warn(`transfer: falha ao marcar Esperando (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
     }
@@ -274,6 +279,7 @@ export class TransferToHumanTool implements AiTool {
         awaitingHumanReply: true,
       },
     });
+    void this.responseSla?.onCustomerWaiting(ctx.conversationId, new Date());
     this.realtime.emitToConversation(ctx.conversationId, 'conversation:updated', {
       conversation: updated,
     });

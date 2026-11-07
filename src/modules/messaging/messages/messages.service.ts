@@ -4,8 +4,10 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
+import { ResponseSlaService } from '../../response-sla/response-sla.service';
 import { Queue } from 'bullmq';
 import {
   MessageDirection,
@@ -50,6 +52,7 @@ export class MessagesService {
     private readonly conversationAccess: ConversationAccessService,
     private readonly contactHistory: ContactHistoryService,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
+    @Optional() private readonly responseSla?: ResponseSlaService,
   ) {}
 
   async send(
@@ -282,6 +285,12 @@ export class MessagesService {
             }),
       },
     });
+
+    // SLA de resposta: resposta humana fecha a espera (depois do update, para
+    // registrar o dono já atualizado pelo auto-assign).
+    if (!automated) {
+      void this.responseSla?.onHumanReply(conversation.id, new Date());
+    }
 
     if (shouldAutoAssign) {
       // Virou dono ao responder: a etiqueta do vendedor acompanha, igual ao
