@@ -113,3 +113,26 @@ describe('ContactResolverService.resolve — 9º dígito', () => {
     expect(prisma.contact.create).toHaveBeenCalled();
   });
 });
+
+describe('ContactResolverService — referral de anúncio', () => {
+  const svc = new ContactResolverService({} as any, {} as any);
+  const at = new Date('2026-11-07T12:00:00Z');
+  const build = (referral: any) => (svc as any).buildCtwaData({ referral, timestamp: at });
+
+  it('guarda o anúncio mesmo quando a Meta não manda o ctwa_clid', () => {
+    expect(build({ sourceId: '1202100', sourceType: 'ad' })).toEqual({
+      ctwaClid: null,
+      ctwaSourceId: '1202100',
+      ctwaSourceType: 'ad',
+      ctwaClidAt: at,
+    });
+  });
+
+  it('com ctwa_clid guarda tudo', () => {
+    expect(build({ ctwaClid: 'CLID', sourceId: '1', sourceType: 'ad' })).toMatchObject({ ctwaClid: 'CLID', ctwaSourceId: '1' });
+  });
+
+  it('sem referral não toca nas colunas', () => {
+    expect(build(undefined)).toEqual({});
+  });
+});

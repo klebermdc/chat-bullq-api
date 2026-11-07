@@ -132,7 +132,15 @@ describe('WhatsAppOfficialMessageMapper — captura de referral (Click-to-WhatsA
     expect(res?.referral).toBeUndefined();
   });
 
-  it('ignora referral sem ctwa_clid (ex.: referral só com headline)', () => {
+  it('guarda referral com source_id mesmo sem ctwa_clid (Meta às vezes omite o clid)', () => {
+    const res = mapper.normalizeInbound(
+      { ...baseMessage, referral: { source_id: '120210000000000', source_type: 'ad', headline: 'Promo' } },
+      { profile: { name: 'Lead' } },
+    );
+    expect(res?.referral).toEqual({ ctwaClid: undefined, sourceId: '120210000000000', sourceType: 'ad' });
+  });
+
+  it('ignora referral sem ctwa_clid nem source_id (ex.: só headline)', () => {
     const res = mapper.normalizeInbound(
       { ...baseMessage, referral: { source_type: 'ad', headline: 'Promo' } },
       { profile: { name: 'Lead' } },

@@ -36,8 +36,10 @@ export class WhatsAppOfficialMessageMapper {
 
     // Click-to-WhatsApp: o Cloud API só envia `referral` na 1ª mensagem depois
     // que o lead clica no anúncio. `ctwa_clid` amarra a conversa ao anúncio e é
-    // o identificador forte de atribuição na Conversions API.
-    if (message.referral?.ctwa_clid) {
+    // o identificador forte de atribuição na Conversions API. Às vezes a Meta
+    // manda o referral só com o `source_id` (id do anúncio), sem o clid: ainda
+    // assim é lead de anúncio e o anúncio serve para o relatório.
+    if (message.referral?.ctwa_clid || message.referral?.source_id) {
       result.referral = {
         ctwaClid: message.referral.ctwa_clid,
         sourceId: message.referral.source_id,
