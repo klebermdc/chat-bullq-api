@@ -4,13 +4,19 @@ describe('ConversationsRepository.findInbox (busca + etiqueta)', () => {
   const buildRepo = () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const count = jest.fn().mockResolvedValue(0);
+    // Busca de contatos (SQL cru): devolve os contatos "achados".
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValue([{ id: 'contato-1', total: BigInt(1) }]);
     const prisma = {
       conversation: { findMany, count },
+      $queryRaw: queryRaw,
       $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
     };
     return {
       repo: new ConversationsRepository(prisma as any),
       whereOf: () => findMany.mock.calls[0][0].where,
+      queryRaw,
     };
   };
 
@@ -18,8 +24,8 @@ describe('ConversationsRepository.findInbox (busca + etiqueta)', () => {
   const hasClause = (where: any, pick: (c: any) => unknown) =>
     andBlocks(where).some((block) => (block.OR ?? []).some(pick));
 
-  it('busca por telefone com máscara casa o telefone gravado em dígitos', async () => {
-    const { repo, whereOf } = buildRepo();
+  it('busca procura os contatos da base e casa as conversas deles', async () => {
+    const { repo, whereOf, queryRaw } = buildRepo();
 
     await repo.findInbox(
       { organizationId: 'org-1', search: '(11) 98201-5967' },
@@ -27,11 +33,10 @@ describe('ConversationsRepository.findInbox (busca + etiqueta)', () => {
       30,
     );
 
+    // O telefone vai para a busca de contatos já em dígitos e com variantes.
+    expect(queryRaw.mock.calls[0][0].values).toContain('%11982015967%');
     expect(
-      hasClause(
-        whereOf(),
-        (c) => c.contact?.phone?.contains === '11982015967',
-      ),
+      hasClause(whereOf(), (c) => c.contactId?.in?.includes('contato-1')),
     ).toBe(true);
   });
 
@@ -51,7 +56,7 @@ describe('ConversationsRepository.findInbox (busca + etiqueta)', () => {
     expect(hasClause(where, (c) => c.tags?.some?.tagId?.in?.includes('tag-1'))).toBe(
       true,
     );
-    expect(hasClause(where, (c) => c.contact?.name?.contains === 'Maria')).toBe(
+    expect(hasClause(where, (c) => c.contactId?.in?.includes('contato-1'))).toBe(
       true,
     );
     // Duas restrições independentes: etiqueta E busca, não uma OU a outra.
@@ -112,6 +117,7 @@ describe('ConversationsRepository.findInbox (busca + etiqueta)', () => {
       const count = jest.fn().mockResolvedValue(0);
       const prisma = {
         conversation: { findMany, count },
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'contato-1', total: BigInt(1) }]),
         $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
       };
       return { repo: new ConversationsRepository(prisma as any), findMany };

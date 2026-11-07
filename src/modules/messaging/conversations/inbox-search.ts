@@ -1,31 +1,24 @@
 import { Prisma } from '@prisma/client';
 
 /**
- * Mínimo de dígitos para o termo virar busca por telefone. Abaixo disso o
- * `contains` casaria com boa parte do banco e afogaria o resultado textual.
+ * Teto de contatos que a busca da inbox considera. Termo bem específico
+ * (nome, telefone) casa poucos; o teto só protege contra termo genérico ("a").
  */
-export const MIN_PHONE_DIGITS = 3;
+export const SEARCH_CONTACT_LIMIT = 2000;
 
 /**
- * Cláusulas OR da busca do inbox: nome do contato, protocolo e telefone.
- *
- * O telefone é gravado só em dígitos (`normalizePhone` → "5511982015967"), então
- * casar o termo cru falha em qualquer máscara: "(11) 98201-5967" nunca achava o
- * lead. Por isso o termo é reduzido a dígitos antes de comparar.
+ * Cláusulas OR da busca do inbox: conversa de um contato que casou a busca
+ * de contatos (nome sem acento, palavra por palavra, telefone em qualquer
+ * máscara, e-mail — ver contacts/contact-search.ts) ou protocolo.
  */
-export function buildSearchOr(term: string): Prisma.ConversationWhereInput[] {
+export function buildSearchOr(
+  term: string,
+  contactIds: readonly string[],
+): Prisma.ConversationWhereInput[] {
   const trimmed = (term || '').trim();
   if (!trimmed) return [];
-
-  const digits = trimmed.replace(/\D/g, '');
-  const clauses: Prisma.ConversationWhereInput[] = [
-    { contact: { name: { contains: trimmed, mode: 'insensitive' } } },
+  return [
+    ...(contactIds.length > 0 ? [{ contactId: { in: [...contactIds] } }] : []),
     { protocol: { contains: trimmed, mode: 'insensitive' } },
   ];
-
-  if (digits.length >= MIN_PHONE_DIGITS) {
-    clauses.push({ contact: { phone: { contains: digits } } });
-  }
-
-  return clauses;
 }

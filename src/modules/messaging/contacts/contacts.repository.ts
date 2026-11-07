@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
+import { findContactIdsBySearch } from './contact-search';
+
+const CONTACT_LIST_INCLUDE = {
+  channels: { include: { channel: { select: { id: true, type: true, name: true } } } },
+  tags: { include: { tag: true } },
+  _count: { select: { conversations: true } },
+} satisfies Prisma.ContactInclude;
 
 @Injectable()
 export class ContactsRepository {
@@ -12,24 +19,13 @@ export class ContactsRepository {
     skip: number,
     take: number,
   ) {
+    if (search?.trim()) return this.searchByOrg(organizationId, search, skip, take);
+
     const where: Prisma.ContactWhereInput = { organizationId, deletedAt: null };
-
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { phone: { contains: search } },
-        { email: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
     const [contacts, total] = await this.prisma.$transaction([
       this.prisma.contact.findMany({
         where,
-        include: {
-          channels: { include: { channel: { select: { id: true, type: true, name: true } } } },
-          tags: { include: { tag: true } },
-          _count: { select: { conversations: true } },
-        },
+        include: CONTACT_LIST_INCLUDE,
         orderBy: { updatedAt: 'desc' },
         skip,
         take,
@@ -37,6 +33,25 @@ export class ContactsRepository {
       this.prisma.contact.count({ where }),
     ]);
 
+    return { contacts, total };
+  }
+
+  /**
+   * Busca com nome sem acento e por palavra, telefone em qualquer máscara
+   * (com/sem 55 e 9) e e-mail. A ordem vem da busca (mais recente primeiro).
+   */
+  private async searchByOrg(organizationId: string, search: string, skip: number, take: number) {
+    const { ids, total } = await findContactIdsBySearch(this.prisma, organizationId, search, {
+      take,
+      skip,
+    });
+    if (ids.length === 0) return { contacts: [], total };
+    const rows = await this.prisma.contact.findMany({
+      where: { id: { in: ids } },
+      include: CONTACT_LIST_INCLUDE,
+    });
+    const byId = new Map(rows.map((c) => [c.id, c]));
+    const contacts = ids.map((id) => byId.get(id)).filter((c) => c !== undefined);
     return { contacts, total };
   }
 
