@@ -65,17 +65,23 @@ SELECT (SELECT count(*) FROM conv_raw) AS conversas_no_arquivo,
          AS mensagens_sem_conversa;
 
 -- Quantos clientes da Umbler já têm contato no Sendtur com o mesmo telefone.
+-- Variantes de cada telefone calculadas uma vez e cruzadas por igualdade (hash join).
+-- Comparar ct.d = ANY(telefone_variantes(...)) avaliava a função por par
+-- telefone x contato: com ~41 mil telefones e ~52 mil contatos levava horas.
+CREATE TEMP TABLE tel_var AS
+  SELECT t.telefone, v.v
+    FROM (SELECT DISTINCT telefone FROM conv_raw) t
+    LEFT JOIN LATERAL unnest(pg_temp.telefone_variantes(t.telefone)) AS v(v) ON true;
 CREATE TEMP TABLE casamento AS
-  WITH tel AS (SELECT DISTINCT telefone FROM conv_raw),
-       ct AS (
+  WITH ct AS (
          SELECT id, regexp_replace(phone, '\D', '', 'g') AS d
            FROM contacts
           WHERE organization_id = :'org' AND deleted_at IS NULL AND phone IS NOT NULL
        )
-  SELECT t.telefone, count(DISTINCT ct.id) AS contatos
-    FROM tel t
-    LEFT JOIN ct ON ct.d = ANY(pg_temp.telefone_variantes(t.telefone))
-   GROUP BY t.telefone;
+  SELECT tv.telefone, count(DISTINCT ct.id) AS contatos
+    FROM tel_var tv
+    LEFT JOIN ct ON ct.d = tv.v
+   GROUP BY tv.telefone;
 
 \echo
 \echo '=== CASAMENTO COM CONTATOS DO SENDTUR (por telefone) ==='
