@@ -1,4 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { ResponseSlaService } from '../../../response-sla/response-sla.service';
 import { RealtimeGateway } from '../../../realtime/realtime.gateway';
 import { PrismaService } from '../../../../database/prisma.service';
@@ -6,6 +7,7 @@ import { PendingActionService } from '../../confirmations/pending-action.service
 import { AiTool, ToolContext, ToolResult } from '../tool.types';
 import { ReplyToConversationTool } from './reply-to-conversation.tool';
 import { enterLeadStage } from '../../lead-stage.util';
+import { buildHandoffBrief } from './handoff-brief';
 import { withHumanActionTaken } from '../../outbound-guards/outbound-checks';
 import {
   isWithinHours,
@@ -60,8 +62,35 @@ export class TransferToHumanTool implements AiTool {
       summary: {
         type: 'string',
         description:
-          'Optional short summary of the conversation so far so the human picks up faster.',
+          'Resumo curto da conversa em PT-BR, para o vendedor assumir sem reler tudo.',
         maxLength: 1000,
+      },
+      // Ficha estruturada: o vendedor vê fixa acima do campo de mensagem.
+      // Preencha só o que o cliente disse; omita o que não sabe.
+      destination: {
+        type: 'string',
+        description: 'Destino e o que o cliente quer lá (ex.: "Orlando — Disney e Universal").',
+        maxLength: 300,
+      },
+      travelDates: {
+        type: 'string',
+        description: 'Datas ou período da viagem, como o cliente falou (ex.: "10 a 20/07/2027", "férias de julho").',
+        maxLength: 300,
+      },
+      travelers: {
+        type: 'string',
+        description: 'Quem viaja (ex.: "2 adultos + 2 crianças (5 e 8 anos)").',
+        maxLength: 300,
+      },
+      budget: {
+        type: 'string',
+        description: 'Orçamento que o cliente mencionou, se mencionou.',
+        maxLength: 300,
+      },
+      pendingQuestions: {
+        type: 'string',
+        description: 'O que ainda falta perguntar ou definir com o cliente.',
+        maxLength: 300,
       },
     },
   };
@@ -84,7 +113,7 @@ export class TransferToHumanTool implements AiTool {
     // ── Lead do site com dono (carteira ou vendedor já na conversa): a Aline
     //    conduziu só até aqui e entrega direto a ele — sem fila "Distribuir". ──
     const owner = await this.untilHandoffOwner(ctx);
-    if (owner) return this.handOffToOwner(ctx, owner, summary);
+    if (owner) return this.handOffToOwner(ctx, owner, summary, input);
 
     // ── Dedupe: se já existe um handoff PENDING pra essa conversa, NÃO cria
     //    outro card. Sem isso, a Aline re-qualificava o mesmo lead e empilhava
@@ -144,6 +173,7 @@ export class TransferToHumanTool implements AiTool {
     } catch (e) {
       this.logger.warn(`transfer: falha ao salvar resumo na observação (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
     }
+    await this.saveHandoffBrief(ctx, input);
     // 4) Surfacing: coloca o lead na aba "Esperando" (fila de distribuição) JÁ
     //    no handoff. Antes isso só acontecia quando o ADM clicava "Distribuir",
     //    então o lead ficava invisível na "Entrada" e o card morria sem ninguém
@@ -244,6 +274,7 @@ export class TransferToHumanTool implements AiTool {
     ctx: ToolContext,
     ownerId: string,
     summary: string | null,
+    input: Record<string, unknown>,
   ): Promise<ToolResult> {
     try {
       await this.replyTool.execute(
@@ -258,6 +289,7 @@ export class TransferToHumanTool implements AiTool {
     } catch (e) {
       this.logger.warn(`transfer: falha ao salvar resumo (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
     }
+    await this.saveHandoffBrief(ctx, input);
     try {
       await enterLeadStage(this.prisma, this.realtime, {
         conversationId: ctx.conversationId,
@@ -354,6 +386,29 @@ export class TransferToHumanTool implements AiTool {
     this.logger.log(
       `transfer: card do lead entrou na etapa "Distribuir" (conv=${ctx.conversationId})`,
     );
+  }
+
+  /**
+   * Grava a ficha da Aline em conversation.metadata.handoffBrief (o web mostra
+   * fixa acima do campo de mensagem). Merge atômico no jsonb, sem ler antes:
+   * não pisa em outras chaves do metadata gravadas em paralelo. Best-effort.
+   */
+  private async saveHandoffBrief(
+    ctx: ToolContext,
+    input: Record<string, unknown>,
+  ): Promise<void> {
+    const brief = buildHandoffBrief(input, new Date());
+    if (!brief) return;
+    try {
+      await this.prisma.$executeRaw(
+        Prisma.sql`UPDATE conversations
+           SET metadata = coalesce(metadata, '{}'::jsonb)
+                          || jsonb_build_object('handoffBrief', ${JSON.stringify(brief)}::jsonb)
+         WHERE id = ${ctx.conversationId}`,
+      );
+    } catch (e) {
+      this.logger.warn(`transfer: ficha da Aline não gravada (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
+    }
   }
 
   /**
