@@ -194,3 +194,64 @@ describe('TransferToHumanTool — lead do site com dono (Aline até o handoff)',
     expect(pendingActions.create).toHaveBeenCalled();
   });
 });
+
+describe('TransferToHumanTool — ficha da Aline fixa na conversa', () => {
+  const withRaw = (t: ReturnType<typeof make>) => {
+    t.prisma.$executeRaw = jest.fn().mockResolvedValue(1);
+    return t;
+  };
+  // $executeRaw recebe um Prisma.Sql: values = [ficha em JSON, conversationId].
+  const sqlValues = (t: ReturnType<typeof make>) => t.prisma.$executeRaw.mock.calls[0][0].values;
+  const briefArg = (t: ReturnType<typeof make>) => JSON.parse(sqlValues(t)[0]);
+
+  const INPUT = {
+    reason: 'lead qualificado',
+    summary: 'Disney em julho',
+    destination: 'Orlando',
+    travelers: '2 adultos',
+  };
+
+  it('grava a ficha no metadata da conversa (fila Distribuir)', async () => {
+    const t = withRaw(make());
+    await t.tool.execute(INPUT, t.ctx);
+
+    expect(t.prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(briefArg(t)).toMatchObject({
+      summary: 'Disney em julho',
+      destination: 'Orlando',
+      travelers: '2 adultos',
+    });
+    expect(sqlValues(t)[1]).toBe('conv1');
+  });
+
+  it('grava a ficha também na entrega direta ao dono', async () => {
+    const t = withRaw(make({ conversation: { aiUntilHandoff: true, assignedToId: 'renata' } }));
+    await t.tool.execute(INPUT, t.ctx);
+
+    expect(briefArg(t)).toMatchObject({ destination: 'Orlando' });
+  });
+
+  it('sem resumo nem campos, não grava ficha', async () => {
+    const t = withRaw(make());
+    await t.tool.execute({ reason: 'cliente pediu humano' }, t.ctx);
+
+    expect(t.prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it('falha ao gravar a ficha não derruba a transferência', async () => {
+    const t = make();
+    t.prisma.$executeRaw = jest.fn().mockRejectedValue(new Error('db down'));
+    const res = await t.tool.execute(INPUT, t.ctx);
+
+    expect(res.finalAction).toBe('TRANSFERRED_TO_HUMAN');
+    expect(t.pendingActions.create).toHaveBeenCalled();
+  });
+
+  it('expõe os campos estruturados no schema da tool', () => {
+    const { tool } = make();
+    const props = Object.keys((tool.parameters as any).properties);
+    expect(props).toEqual(
+      expect.arrayContaining(['destination', 'travelDates', 'travelers', 'budget', 'pendingQuestions']),
+    );
+  });
+});
