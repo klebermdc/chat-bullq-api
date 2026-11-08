@@ -73,6 +73,24 @@ describe('ScheduledDispatchProcessor', () => {
     expect(repo.update).toHaveBeenCalledWith('s1', expect.objectContaining({ status: 'SENT', sentMessageId: 'm1' }));
   });
 
+  it('agendamento manual segue como resposta de quem agendou (não automática)', async () => {
+    const { processor, messages } = makeDeps(base);
+    await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+    expect(messages.send).toHaveBeenCalledWith(
+      expect.anything(), 'user1', 'org1', 'ALL', undefined,
+      { system: true, automated: false },
+    );
+  });
+
+  it('AUTO_REENGAGE envia como automática', async () => {
+    const { processor, messages } = makeDeps({ ...base, origin: 'AUTO_REENGAGE' });
+    await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+    expect(messages.send).toHaveBeenCalledWith(
+      expect.anything(), 'user1', 'org1', 'ALL', undefined,
+      { system: true, automated: true },
+    );
+  });
+
   it('no-op idempotente quando já não está PENDING', async () => {
     const { processor, messages } = makeDeps({ ...base, status: 'CANCELED' });
     await processor.process({ data: { scheduledMessageId: 's1' } } as any);
@@ -249,6 +267,18 @@ describe('ScheduledDispatchProcessor', () => {
       }));
       // Sem encerrar, a inscrição fica ACTIVE sem toque e bloqueia a conversa.
       expect(cadenceRunner.stop).toHaveBeenCalledWith('e1', 'awaiting_human');
+    });
+
+    it('envia como automática: o toque não pode desligar a IA nem dar dono à conversa', async () => {
+      const { processor, messages } = makeCadenceDeps(
+        { assignedToId: null, awaitingHumanReply: false, aiEnabled: null },
+        'NO_REPLY',
+      );
+      await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+      expect(messages.send).toHaveBeenCalledWith(
+        expect.anything(), 'user1', 'org1', 'ALL', undefined,
+        { system: true, automated: true },
+      );
     });
 
     describe('reengajamento (NO_REPLY)', () => {
@@ -508,7 +538,7 @@ describe('ScheduledDispatchProcessor', () => {
         'org1',
         'ALL',
         undefined,
-        { system: true },
+        { system: true, automated: true },
       );
     });
 
@@ -527,7 +557,7 @@ describe('ScheduledDispatchProcessor', () => {
         'org1',
         'ALL',
         undefined,
-        { system: true },
+        { system: true, automated: true },
       );
     });
 
@@ -551,7 +581,7 @@ describe('ScheduledDispatchProcessor', () => {
         'org1',
         'ALL',
         undefined,
-        { system: true },
+        { system: true, automated: true },
       );
     });
 
@@ -629,7 +659,7 @@ describe('ScheduledDispatchProcessor', () => {
           type: 'TEMPLATE',
           content: expect.objectContaining({ name: 'candecia1', language: { code: 'en_US' } }),
         }),
-        'user1', 'org1', 'ALL', undefined, { system: true },
+        'user1', 'org1', 'ALL', undefined, { system: true, automated: true },
       );
     });
 
@@ -686,7 +716,7 @@ describe('ScheduledDispatchProcessor', () => {
         'org1',
         'ALL',
         undefined,
-        { system: true },
+        { system: true, automated: true },
       );
       expect(repo.update).toHaveBeenCalledWith(
         's1',
@@ -743,7 +773,7 @@ describe('ScheduledDispatchProcessor', () => {
         'org1',
         'ALL',
         undefined,
-        { system: true },
+        { system: true, automated: true },
       );
     });
   });
