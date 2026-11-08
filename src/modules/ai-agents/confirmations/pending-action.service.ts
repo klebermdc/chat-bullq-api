@@ -310,24 +310,38 @@ export class PendingActionService {
     // no mesmo lead ~ao mesmo tempo, o primeiro grava (count=1) e o segundo
     // não casa o where (o dono já mudou) → count=0 → 409. Sem isso, o segundo
     // sobrescrevia o primeiro em silêncio e os dois "ganhavam" o mesmo lead.
-    const claimed = await this.prisma.conversation.updateMany({
-      where: { id: action.conversationId, assignedToId: previousAssigneeId },
-      data: {
-        aiEnabled: false,
-        assignedToId,
-        awaitingHumanReply: true,
-        // Promove PENDING→OPEN (conversa entrou em atendimento humano); mantém
-        // o status quando já é outro. A aba "Esperando" é o flag acima.
-        ...(conv.status === 'PENDING'
-          ? { status: 'OPEN', firstResponseAt: conv.firstResponseAt ?? new Date() }
-          : {}),
-      },
+    // O log ASSIGNED vai na mesma transação (igual ao fsm.assign): o placar do
+    // dia conta as atribuições por ele, e sem o log a distribuição da IA sumia.
+    const conversationId = action.conversationId;
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.conversation.updateMany({
+        where: { id: conversationId, assignedToId: previousAssigneeId },
+        data: {
+          aiEnabled: false,
+          assignedToId,
+          awaitingHumanReply: true,
+          // Promove PENDING→OPEN (conversa entrou em atendimento humano); mantém
+          // o status quando já é outro. A aba "Esperando" é o flag acima.
+          ...(conv.status === 'PENDING'
+            ? { status: 'OPEN', firstResponseAt: conv.firstResponseAt ?? new Date() }
+            : {}),
+        },
+      });
+      if (claimed.count === 0) {
+        throw new ConflictException(
+          'Esta conversa já foi distribuída por outra pessoa. Atualize a lista e tente de novo.',
+        );
+      }
+      await tx.conversationAuditLog.create({
+        data: {
+          conversationId,
+          actorId: actorUserId,
+          action: 'ASSIGNED',
+          fromValue: previousAssigneeId,
+          toValue: assignedToId,
+        },
+      });
     });
-    if (claimed.count === 0) {
-      throw new ConflictException(
-        'Esta conversa já foi distribuída por outra pessoa. Atualize a lista e tente de novo.',
-      );
-    }
 
     // Tag com o nome do atendente (best-effort). O card fica na etapa
     // "Distribuir"; só vai pra "Coletando Informação" quando o atendente
