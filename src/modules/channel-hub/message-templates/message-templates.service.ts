@@ -168,6 +168,26 @@ export class MessageTemplatesService {
     return this.repo.update(t.id, { isReengagement: false });
   }
 
+  /**
+   * Define o template que sai sozinho quando um lead é distribuído (ou muda de
+   * dono) com a janela de 24h fechada. Só aprovado, pelo mesmo motivo da
+   * retomada.
+   */
+  async setDistribution(orgId: string, id: string) {
+    const t = await this.mustFind(orgId, id);
+    if (t.status !== 'APPROVED') {
+      throw new BadRequestException(
+        'Só um template aprovado pela Meta pode ser o de distribuição',
+      );
+    }
+    return this.repo.setDistribution(t.channelId, t.id);
+  }
+
+  async clearDistribution(orgId: string, id: string) {
+    const t = await this.mustFind(orgId, id);
+    return this.repo.update(t.id, { isDistribution: false });
+  }
+
   async remove(orgId: string, id: string) {
     const t = await this.mustFind(orgId, id);
     if (t.metaTemplateId) {

@@ -379,6 +379,17 @@ export class PendingActionService {
     ).toISOString();
     await this.storage.save(action, action.status); // continua PENDING
 
+    // Lead que esperou mais de 24h (ex.: fim de semana) não recebe texto livre:
+    // com a janela fechada sai o template de distribuição do canal em nome do
+    // atendente escolhido. Janela aberta não manda nada aqui — a saudação em
+    // texto continua no "Iniciar atendimento" (Aprovar). Best-effort.
+    await this.attendantGreeting.greet({
+      conversationId: action.conversationId,
+      attendantUserId: assignedToId,
+      source: 'DISTRIBUTE',
+      onlyWhenWindowClosed: true,
+    });
+
     this.logger.log({
       msg: 'pending_action_distributed',
       id,

@@ -25,6 +25,7 @@ const build = () => {
     updateByMetaId: jest.fn().mockResolvedValue({ count: 1 }),
     delete: jest.fn().mockResolvedValue({ id: 't1' }),
     setReengagement: jest.fn().mockResolvedValue({ id: 't1', isReengagement: true }),
+    setDistribution: jest.fn().mockResolvedValue({ id: 't1', isDistribution: true }),
   };
   const http = {
     createTemplate: jest
@@ -155,6 +156,43 @@ describe('MessageTemplatesService', () => {
       await service.clearReengagement('org1', 't1');
 
       expect(repo.update).toHaveBeenCalledWith('t1', { isReengagement: false });
+    });
+  });
+
+  describe('template de distribuição', () => {
+    it('marca um template aprovado como o de distribuição do seu canal', async () => {
+      const { repo, service } = build();
+      repo.findById.mockResolvedValueOnce({ id: 't1', channelId: 'ch1', status: 'APPROVED' });
+
+      await service.setDistribution('org1', 't1');
+
+      expect(repo.setDistribution).toHaveBeenCalledWith('ch1', 't1');
+    });
+
+    it('recusa template que não está aprovado', async () => {
+      const { repo, service } = build();
+
+      await expect(service.setDistribution('org1', 't1')).rejects.toMatchObject({
+        status: 400,
+      });
+      expect(repo.setDistribution).not.toHaveBeenCalled();
+    });
+
+    it('recusa template de outra organização (404)', async () => {
+      const { repo, service } = build();
+      repo.findById.mockResolvedValueOnce(null);
+
+      await expect(service.setDistribution('org1', 'tX')).rejects.toMatchObject({
+        status: 404,
+      });
+    });
+
+    it('desmarca a distribuição sem exigir status', async () => {
+      const { repo, service } = build();
+
+      await service.clearDistribution('org1', 't1');
+
+      expect(repo.update).toHaveBeenCalledWith('t1', { isDistribution: false });
     });
   });
 });

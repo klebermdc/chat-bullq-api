@@ -100,6 +100,18 @@ export class MessageTemplatesController {
     return this.service.clearReengagement(orgId, id);
   }
 
+  @Put(':id/distribution')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  setDistribution(@CurrentOrg('id') orgId: string, @Param('id') id: string) {
+    return this.service.setDistribution(orgId, id);
+  }
+
+  @Delete(':id/distribution')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  clearDistribution(@CurrentOrg('id') orgId: string, @Param('id') id: string) {
+    return this.service.clearDistribution(orgId, id);
+  }
+
   @Delete(':id')
   @Roles(OrgRole.OWNER, OrgRole.ADMIN)
   remove(@CurrentOrg('id') orgId: string, @Param('id') id: string) {

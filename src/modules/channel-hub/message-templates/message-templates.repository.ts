@@ -39,14 +39,27 @@ export class MessageTemplatesRepository {
 
   /** Troca o template de retomada do canal: desmarca o anterior e marca este. */
   setReengagement(channelId: string, id: string) {
+    return this.setChannelMarker('isReengagement', channelId, id);
+  }
+
+  /** Troca o template de distribuição do canal: desmarca o anterior e marca este. */
+  setDistribution(channelId: string, id: string) {
+    return this.setChannelMarker('isDistribution', channelId, id);
+  }
+
+  private setChannelMarker(
+    field: 'isReengagement' | 'isDistribution',
+    channelId: string,
+    id: string,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       await tx.messageTemplate.updateMany({
-        where: { channelId, isReengagement: true, NOT: { id } },
-        data: { isReengagement: false },
+        where: { channelId, [field]: true, NOT: { id } },
+        data: { [field]: false },
       });
       return tx.messageTemplate.update({
         where: { id },
-        data: { isReengagement: true },
+        data: { [field]: true },
       });
     });
   }

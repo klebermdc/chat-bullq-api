@@ -68,6 +68,26 @@ function make(actionOverrides: Record<string, unknown> = {}) {
 }
 
 describe('PendingActionService.distribute', () => {
+  it('com a janela fechada, manda o template de distribuição em nome do atendente escolhido', async () => {
+    const { svc, attendantGreeting } = make();
+    await svc.distribute('pa1', 'org1', 'operador1', 'atendente9');
+    expect(attendantGreeting.greet).toHaveBeenCalledWith({
+      conversationId: 'conv1',
+      attendantUserId: 'atendente9',
+      source: 'DISTRIBUTE',
+      onlyWhenWindowClosed: true,
+    });
+  });
+
+  it('não chama a saudação quando a distribuição perde a corrida (409)', async () => {
+    const { svc, prisma, attendantGreeting } = make();
+    prisma.conversation.updateMany.mockResolvedValue({ count: 0 });
+    await expect(svc.distribute('pa1', 'org1', 'op1', 'at1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(attendantGreeting.greet).not.toHaveBeenCalled();
+  });
+
   it('pausa IA + atribui ao atendente + move pro Esperando + resolve a pendência', async () => {
     const { svc, storage, prisma } = make();
     await svc.distribute('pa1', 'org1', 'operador1', 'atendente9');

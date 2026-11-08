@@ -2306,6 +2306,10 @@ model MessageTemplate {
   /// Template que o atendente usa para retomar contato com a janela de 24h
   /// fechada. No máximo um por canal (garantido em MessageTemplatesRepository).
   isReengagement   Boolean   @default(false) @map("is_reengagement")
+  /// Template enviado sozinho quando um lead é distribuído/transferido com a
+  /// janela de 24h fechada ({{1}} = cliente, {{2}} = vendedor). No máximo um
+  /// por canal (índice único parcial na migração).
+  isDistribution   Boolean   @default(false) @map("is_distribution")
   metaTemplateId   String?   @unique @map("meta_template_id")
   rejectionReason  String?   @map("rejection_reason")
   createdAt        DateTime  @default(now()) @map("created_at")
