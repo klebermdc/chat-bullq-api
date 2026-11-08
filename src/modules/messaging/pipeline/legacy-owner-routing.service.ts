@@ -96,7 +96,7 @@ export class LegacyOwnerRoutingService {
 
     // Atribui antes de desligar a IA: se a atribuição perder uma corrida, a
     // conversa continua com a Aline em vez de ficar sem ninguém.
-    await this.fsm.assign(conversationId, owner.user_id);
+    await this.fsm.assign(conversationId, owner.user_id, undefined, 'legacy_owner');
     // `shouldHandle` da IA ignora `assignedToId`: sem isto a Aline responderia
     // por cima do vendedor.
     // Exceção: lead do site com a Aline até o handoff — ela pergunta e

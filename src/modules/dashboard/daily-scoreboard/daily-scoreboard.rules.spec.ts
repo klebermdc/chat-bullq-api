@@ -78,9 +78,9 @@ describe('buildDailyScoreboard', () => {
           open({ id: 'c', lastHumanReplyAt: T('2026-11-08T14:00:00Z') }),
         ],
         lastAssignments: [
-          { conversationId: 'a', agentId: 'marcella', assignedAt: T('2026-11-08T13:00:00Z') },
-          { conversationId: 'b', agentId: 'marcella', assignedAt: T('2026-11-07T12:00:00Z') },
-          { conversationId: 'c', agentId: 'marcella', assignedAt: T('2026-11-08T12:00:00Z') },
+          { conversationId: 'a', agentId: 'marcella', source: 'distribution', assignedAt: T('2026-11-08T13:00:00Z') },
+          { conversationId: 'b', agentId: 'marcella', source: 'distribution', assignedAt: T('2026-11-07T12:00:00Z') },
+          { conversationId: 'c', agentId: 'marcella', source: 'distribution', assignedAt: T('2026-11-08T12:00:00Z') },
         ],
       }),
     );
@@ -98,7 +98,7 @@ describe('buildDailyScoreboard', () => {
           open({ id: 'b', createdAt: T('2026-11-02T12:00:00Z'), reopenedAt: T('2026-11-06T12:00:00Z') }),
         ],
         // log antigo de OUTRO vendedor não vale para o dono atual
-        lastAssignments: [{ conversationId: 'a', agentId: 'pedro', assignedAt: T('2026-11-04T12:00:00Z') }],
+        lastAssignments: [{ conversationId: 'a', agentId: 'pedro', source: 'distribution', assignedAt: T('2026-11-04T12:00:00Z') }],
       }),
     );
     const m = rowOf(r, 'marcella');
@@ -125,8 +125,8 @@ describe('buildDailyScoreboard', () => {
           }),
         ],
         lastAssignments: [
-          { conversationId: 'b', agentId: 'marcella', assignedAt: T('2026-11-08T10:00:00Z') },
-          { conversationId: 'c', agentId: 'marcella', assignedAt: T('2026-11-08T10:00:00Z') },
+          { conversationId: 'b', agentId: 'marcella', source: 'distribution', assignedAt: T('2026-11-08T10:00:00Z') },
+          { conversationId: 'c', agentId: 'marcella', source: 'distribution', assignedAt: T('2026-11-08T10:00:00Z') },
         ],
       }),
     );
@@ -144,6 +144,7 @@ describe('buildDailyScoreboard', () => {
           {
             conversationId: 'a',
             agentId: 'pedro',
+            source: 'distribution',
             assignedAt: T('2026-11-08T12:00:00Z'),
             firstReplyAt: T('2026-11-08T12:10:00Z'),
             lastHumanReplyAt: T('2026-11-08T16:00:00Z'),
@@ -152,6 +153,7 @@ describe('buildDailyScoreboard', () => {
           {
             conversationId: 'b',
             agentId: 'pedro',
+            source: 'distribution',
             assignedAt: T('2026-11-08T12:00:00Z'),
             firstReplyAt: null,
             lastHumanReplyAt: T('2026-11-08T12:30:00Z'),
@@ -160,6 +162,7 @@ describe('buildDailyScoreboard', () => {
           {
             conversationId: 'c',
             agentId: 'pedro',
+            source: 'distribution',
             assignedAt: T('2026-11-08T12:00:00Z'),
             firstReplyAt: null,
             lastHumanReplyAt: T('2026-11-07T12:00:00Z'),
@@ -221,7 +224,7 @@ describe('buildDailyScoreboard', () => {
       input({
         openConversations: [open({ id: 'a', assignedToId: 'marcella' })],
         dayAssignments: [
-          { conversationId: 'x', agentId: 'pedro', assignedAt: T('2026-11-08T12:00:00Z'), firstReplyAt: null, lastHumanReplyAt: null },
+          { conversationId: 'x', agentId: 'pedro', source: 'distribution', assignedAt: T('2026-11-08T12:00:00Z'), firstReplyAt: null, lastHumanReplyAt: null },
         ],
       }),
     );
@@ -254,10 +257,10 @@ describe('buildDailyScoreboard', () => {
         input({
           openConversations: [open({ id: 'a' }), open({ id: 'b' }), open({ id: 'c' })],
           lastAssignments: [
-            { conversationId: 'a', agentId: 'marcella', assignedAt: T('2026-11-08T13:00:00Z') },
-            { conversationId: 'b', agentId: 'marcella', assignedAt: T('2026-11-08T04:00:00Z') },
+            { conversationId: 'a', agentId: 'marcella', source: 'distribution', assignedAt: T('2026-11-08T13:00:00Z') },
+            { conversationId: 'b', agentId: 'marcella', source: 'distribution', assignedAt: T('2026-11-08T04:00:00Z') },
             // 23h de ontem em Brasília
-            { conversationId: 'c', agentId: 'marcella', assignedAt: T('2026-11-08T02:00:00Z') },
+            { conversationId: 'c', agentId: 'marcella', source: 'distribution', assignedAt: T('2026-11-08T02:00:00Z') },
           ],
         }),
       );
@@ -279,6 +282,7 @@ describe('buildDailyScoreboard', () => {
           lastAssignments: ['a', 'b', 'c'].map((id) => ({
             conversationId: id,
             agentId: 'marcella',
+            source: 'distribution',
             assignedAt: T('2026-11-01T12:00:00Z'),
           })),
         }),
@@ -300,4 +304,63 @@ describe('buildDailyScoreboard', () => {
       expect(r.queue).toMatchObject({ unassignedToday: 0, unassignedTodayOldestSince: null });
     });
   });
+
+  describe('novos × retorno', () => {
+    const day = (conversationId: string, source: string, firstReplyAt: Date | null = null) => ({
+      conversationId,
+      agentId: 'pedro',
+      source,
+      assignedAt: T('2026-11-08T12:00:00Z'),
+      firstReplyAt,
+      lastHumanReplyAt: firstReplyAt,
+    });
+
+    it('recebidos hoje: só distribution é cliente novo; o resto é retorno', () => {
+      const r = buildDailyScoreboard(
+        input({
+          dayAssignments: [
+            day('a', 'distribution'),
+            day('b', 'distribution'),
+            day('c', 'legacy_owner'),
+            day('d', 'transfer'),
+            day('e', 'self'),
+            day('f', 'automation'),
+          ],
+        }),
+      );
+      expect(rowOf(r, 'pedro')).toMatchObject({ assignedToday: 6, assignedNewToday: 2, returnedToday: 4 });
+    });
+
+    it('não começou hoje: divide pela origem da atribuição atual', () => {
+      const r = buildDailyScoreboard(
+        input({
+          openConversations: [open({ id: 'a' }), open({ id: 'b' }), open({ id: 'c' }), open({ id: 'velha' })],
+          lastAssignments: [
+            { conversationId: 'a', agentId: 'marcella', source: 'distribution', assignedAt: T('2026-11-08T13:00:00Z') },
+            { conversationId: 'b', agentId: 'marcella', source: 'legacy_owner', assignedAt: T('2026-11-08T14:00:00Z') },
+            { conversationId: 'c', agentId: 'marcella', source: 'transfer', assignedAt: T('2026-11-08T15:00:00Z') },
+            // atribuída antes de hoje: fora dos campos do dia
+            { conversationId: 'velha', agentId: 'marcella', source: 'distribution', assignedAt: T('2026-11-05T15:00:00Z') },
+          ],
+        }),
+      );
+      expect(rowOf(r, 'marcella')).toMatchObject({
+        notStarted: 4,
+        notStartedToday: 3,
+        notStartedNewToday: 1,
+        notStartedReturnedToday: 2,
+      });
+    });
+
+    it('vendedor zerado devolve 0 nos campos novos', () => {
+      const r = buildDailyScoreboard(input());
+      expect(rowOf(r, 'pedro')).toMatchObject({
+        assignedNewToday: 0,
+        returnedToday: 0,
+        notStartedNewToday: 0,
+        notStartedReturnedToday: 0,
+      });
+    });
+  });
 });
+

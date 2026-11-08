@@ -11,6 +11,7 @@ import { RatingsService } from '../../ratings/ratings.service';
 import { LegacyOwnerWriterService } from '../../carteira-legado/legacy-owner-writer.service';
 import { OutboxService } from '../../automations/outbox/outbox.service';
 import { syncAttendantTag } from '../../../common/utils/sync-attendant-tag';
+import { AssignmentSource, deriveAssignmentSource } from './assignment-source';
 import { ResponseSlaService } from '../../response-sla/response-sla.service';
 
 type Transition = {
@@ -133,10 +134,15 @@ export class ConversationFsmService {
     }
   }
 
+  /**
+   * @param source origem gravada no log (`metadata.source`); sem ela, é
+   *   deduzida de quem estava com o cliente e de quem fez a ação.
+   */
   async assign(
     conversationId: string,
     agentId: string,
     actorId?: string,
+    source?: AssignmentSource,
   ): Promise<void> {
     const conversation = await this.prisma.conversation.findUniqueOrThrow({
       where: { id: conversationId },
@@ -183,6 +189,15 @@ export class ConversationFsmService {
           action: 'ASSIGNED',
           fromValue: conversation.assignedToId,
           toValue: agentId,
+          metadata: {
+            source:
+              source ??
+              deriveAssignmentSource({
+                fromValue: conversation.assignedToId,
+                toValue: agentId,
+                actorId: actorId || agentId,
+              }),
+          },
         },
       });
 

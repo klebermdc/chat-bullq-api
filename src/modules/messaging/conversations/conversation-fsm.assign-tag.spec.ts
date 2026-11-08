@@ -249,4 +249,28 @@ describe('ConversationFsmService.assign — trava otimista (compare-and-set)', (
     expect(tx.conversationAuditLog.create).not.toHaveBeenCalled();
     expect(outbox.enqueue).not.toHaveBeenCalled();
   });
+
+  describe('origem da atribuição (metadata.source)', () => {
+    const assignedLog = (tx: any) =>
+      tx.conversationAuditLog.create.mock.calls.find((c: any[]) => c[0].data.action === 'ASSIGNED')[0].data;
+
+    it('grava a origem informada pelo chamador', async () => {
+      const { svc, tx } = makeFsm({ assignedToId: null });
+      await svc.assign('conv1', 'u-pedro', undefined, 'legacy_owner');
+      expect(assignedLog(tx).metadata).toEqual({ source: 'legacy_owner' });
+    });
+
+    it('sem origem informada, deduz: de outro vendedor é transferência', async () => {
+      const { svc, tx } = makeFsm({ assignedToId: 'u-barbara' });
+      await svc.assign('conv1', 'u-pedro', 'gestor');
+      expect(assignedLog(tx).metadata).toEqual({ source: 'transfer' });
+    });
+
+    it('sem origem informada, deduz: da fila por outra pessoa é distribuição', async () => {
+      const { svc, tx } = makeFsm({ assignedToId: null });
+      await svc.assign('conv1', 'u-pedro', 'gestor');
+      expect(assignedLog(tx).metadata).toEqual({ source: 'distribution' });
+    });
+  });
 });
+

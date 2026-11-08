@@ -27,6 +27,24 @@ const OPEN_STATUSES: ConversationStatus[] = [
 const utcTimestamp = (at: Date): string => at.toISOString().replace('T', ' ').replace('Z', '');
 
 /**
+ * Origem do log ASSIGNED (`l`, com a conversa `c`). Logs gravados antes de
+ * existir `metadata.source` são deduzidos: de outro vendedor é transferência;
+ * sem autor (ou o próprio vendedor) com o contato na carteira legada é
+ * carteira; o próprio vendedor é `self`; o resto é distribuição.
+ */
+const ASSIGNMENT_SOURCE_SQL = Prisma.sql`
+  COALESCE(
+    l.metadata->>'source',
+    CASE
+      WHEN l.from_value IS NOT NULL AND l.from_value <> l.to_value THEN 'transfer'
+      WHEN (l.actor_id IS NULL OR l.actor_id = l.to_value)
+           AND EXISTS (SELECT 1 FROM contacts k, buscar_vendedor_legado(k.phone) lg
+                        WHERE k.id = c.contact_id) THEN 'legacy_owner'
+      WHEN l.actor_id = l.to_value THEN 'self'
+      ELSE 'distribution'
+    END)`;
+
+/**
  * Placar do dia por vendedor, para o OFP Hub (API pública, chave `pk_`).
  * Só leitura. As regras de cada número ficam em daily-scoreboard.rules.ts.
  */
@@ -108,20 +126,29 @@ export class DailyScoreboardService {
   /** Log ASSIGNED mais recente de cada conversa aberta com dono. */
   private async lastAssignments(conversationIds: string[]): Promise<LastAssignmentRow[]> {
     if (conversationIds.length === 0) return [];
-    const rows = await this.prisma.$queryRaw<Array<{ conversation_id: string; agent_id: string; assigned_at: Date }>>`
+    const rows = await this.prisma.$queryRaw<
+      Array<{ conversation_id: string; agent_id: string; assigned_at: Date; source: string }>
+    >`
       SELECT DISTINCT ON (l.conversation_id)
-             l.conversation_id, l.to_value AS agent_id, l.created_at AS assigned_at
+             l.conversation_id, l.to_value AS agent_id, l.created_at AS assigned_at,
+             ${ASSIGNMENT_SOURCE_SQL} AS source
         FROM conversation_audit_logs l
+        JOIN conversations c ON c.id = l.conversation_id
        WHERE l.action = 'ASSIGNED'
          AND l.to_value IS NOT NULL
          AND l.conversation_id = ANY(${conversationIds}::text[])
        ORDER BY l.conversation_id, l.created_at DESC`;
-    return rows.map((r) => ({ conversationId: r.conversation_id, agentId: r.agent_id, assignedAt: r.assigned_at }));
+    return rows.map((r) => ({
+      conversationId: r.conversation_id,
+      agentId: r.agent_id,
+      assignedAt: r.assigned_at,
+      source: r.source,
+    }));
   }
 
   /**
    * Atribuições do dia: uma linha por (conversa, vendedor) com a atribuição
-   * mais cedo do dia e a 1ª mensagem do próprio vendedor depois dela (envio
+   * mais cedo do dia (e a origem dela) e a 1ª mensagem do próprio vendedor depois dela (envio
    * automático em nome dele não conta).
    */
   private async dayAssignments(organizationId: string, day: DayBounds): Promise<DayAssignmentRow[]> {
@@ -130,12 +157,15 @@ export class DailyScoreboardService {
         conversation_id: string;
         agent_id: string;
         assigned_at: Date;
+        source: string;
         last_human_reply_at: Date | null;
         first_reply_at: Date | null;
       }>
     >`
       WITH day_logs AS (
-        SELECT l.conversation_id, l.to_value AS agent_id, MIN(l.created_at) AS assigned_at
+        SELECT DISTINCT ON (l.conversation_id, l.to_value)
+               l.conversation_id, l.to_value AS agent_id, l.created_at AS assigned_at,
+               ${ASSIGNMENT_SOURCE_SQL} AS source
           FROM conversation_audit_logs l
           JOIN conversations c ON c.id = l.conversation_id
          WHERE c.organization_id = ${organizationId}
@@ -144,9 +174,9 @@ export class DailyScoreboardService {
            AND l.to_value IS NOT NULL
            AND l.created_at >= ${utcTimestamp(day.start)}::timestamp
            AND l.created_at < ${utcTimestamp(day.end)}::timestamp
-         GROUP BY l.conversation_id, l.to_value
+         ORDER BY l.conversation_id, l.to_value, l.created_at
       )
-      SELECT d.conversation_id, d.agent_id, d.assigned_at, c.last_human_reply_at,
+      SELECT d.conversation_id, d.agent_id, d.assigned_at, d.source, c.last_human_reply_at,
              (SELECT MIN(m.created_at)
                 FROM messages m
                WHERE m.conversation_id = d.conversation_id
@@ -160,6 +190,7 @@ export class DailyScoreboardService {
       conversationId: r.conversation_id,
       agentId: r.agent_id,
       assignedAt: r.assigned_at,
+      source: r.source,
       lastHumanReplyAt: r.last_human_reply_at,
       firstReplyAt: r.first_reply_at,
     }));

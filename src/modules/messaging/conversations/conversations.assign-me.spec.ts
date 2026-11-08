@@ -49,7 +49,7 @@ describe('ConversationsService.assignToMe — saudação', () => {
 
     await svc.assignToMe('conv1', 'org1', 'agent-new', 'ALL');
 
-    expect(fsm.assign).toHaveBeenCalledWith('conv1', 'agent-new', 'agent-new');
+    expect(fsm.assign).toHaveBeenCalledWith('conv1', 'agent-new', 'agent-new', 'self');
     expect(attendantGreeting.greet).toHaveBeenCalledTimes(1);
     expect(attendantGreeting.greet).toHaveBeenCalledWith({
       conversationId: 'conv1',
