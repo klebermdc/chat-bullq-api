@@ -57,6 +57,8 @@ export interface ScoreboardInput {
   agents: ScoreboardAgentInfo[];
   /** Atendentes ativos: aparecem mesmo com tudo zerado. */
   rosterIds: Set<string>;
+  /** Limites do dia do placar, para os campos "...Today". */
+  day: DayBounds;
 }
 
 export interface ScoreboardAgentRow {
@@ -65,8 +67,12 @@ export interface ScoreboardAgentRow {
   startedToday: number;
   notStarted: number;
   notStartedOldestSince: string | null;
+  notStartedToday: number;
+  notStartedTodayOldestSince: string | null;
   awaitingReply: number;
   awaitingOldestSince: string | null;
+  awaitingReplyToday: number;
+  awaitingTodayOldestSince: string | null;
   closedToday: number;
   openTotal: number;
   avgPickupMinutes: number | null;
@@ -76,7 +82,13 @@ export interface DailyScoreboard {
   date: string;
   timezone: string;
   generatedAt: string;
-  queue: { unassigned: number; oldestSince: string | null; enteredToday: number };
+  queue: {
+    unassigned: number;
+    oldestSince: string | null;
+    enteredToday: number;
+    unassignedToday: number;
+    unassignedTodayOldestSince: string | null;
+  };
   agents: ScoreboardAgentRow[];
 }
 
@@ -136,6 +148,16 @@ export function localDayBounds(date: string, timeZone: string): DayBounds {
 
 const iso = (at: Date | null): string | null => (at ? at.toISOString() : null);
 
+const isInDay = (at: Date | null, day: DayBounds): at is Date => !!at && at >= day.start && at < day.end;
+
+/** Contagem e mais antigo de um recorte. */
+interface Bucket {
+  count: number;
+  oldest: Date | null;
+}
+
+const emptyBucket = (): Bucket => ({ count: 0, oldest: null });
+
 function earliest(current: Date | null, candidate: Date | null): Date | null {
   if (!candidate) return current;
   return !current || candidate < current ? candidate : current;
@@ -147,8 +169,10 @@ interface AgentTally {
   pickupMinutes: number[];
   notStarted: number;
   notStartedOldest: Date | null;
+  notStartedToday: Bucket;
   awaitingReply: number;
   awaitingOldest: Date | null;
+  awaitingToday: Bucket;
   openTotal: number;
 }
 
@@ -158,8 +182,10 @@ const emptyTally = (): AgentTally => ({
   pickupMinutes: [],
   notStarted: 0,
   notStartedOldest: null,
+  notStartedToday: emptyBucket(),
   awaitingReply: 0,
   awaitingOldest: null,
+  awaitingToday: emptyBucket(),
   openTotal: 0,
 });
 
@@ -173,10 +199,16 @@ function currentAssignmentAt(conv: OpenConversationRow, last: LastAssignmentRow 
   return conv.reopenedAt && conv.reopenedAt > conv.createdAt ? conv.reopenedAt : conv.createdAt;
 }
 
+function addToBucket(bucket: Bucket, at: Date): void {
+  bucket.count += 1;
+  bucket.oldest = earliest(bucket.oldest, at);
+}
+
 function tallyOpenConversation(
   tally: AgentTally,
   conv: OpenConversationRow,
   last: LastAssignmentRow | undefined,
+  day: DayBounds,
 ): void {
   tally.openTotal += 1;
   const assignedAt = currentAssignmentAt(conv, last);
@@ -184,11 +216,13 @@ function tallyOpenConversation(
   if (isNotStarted) {
     tally.notStarted += 1;
     tally.notStartedOldest = earliest(tally.notStartedOldest, assignedAt);
+    if (isInDay(assignedAt, day)) addToBucket(tally.notStartedToday, assignedAt);
     return;
   }
   if (conv.awaitingHumanReply) {
     tally.awaitingReply += 1;
     tally.awaitingOldest = earliest(tally.awaitingOldest, conv.lastInboundAt);
+    if (isInDay(conv.lastInboundAt, day)) addToBucket(tally.awaitingToday, conv.lastInboundAt);
   }
 }
 
@@ -219,7 +253,21 @@ function buildQueue(input: ScoreboardInput): DailyScoreboard['queue'] {
     (acc, c) => earliest(acc, c.reopenedAt && c.reopenedAt > c.createdAt ? c.reopenedAt : c.createdAt),
     null,
   );
-  return { unassigned: unassigned.length, oldestSince: iso(oldest), enteredToday: input.enteredToday };
+  // Entrada no dia: a criação ou a reabertura que caiu no dia (a mais cedo).
+  const today = emptyBucket();
+  for (const c of unassigned) {
+    const entryToday = [c.createdAt, c.reopenedAt]
+      .filter((at): at is Date => isInDay(at, input.day))
+      .reduce<Date | null>((acc, at) => earliest(acc, at), null);
+    if (entryToday) addToBucket(today, entryToday);
+  }
+  return {
+    unassigned: unassigned.length,
+    oldestSince: iso(oldest),
+    enteredToday: input.enteredToday,
+    unassignedToday: today.count,
+    unassignedTodayOldestSince: iso(today.oldest),
+  };
 }
 
 export function buildDailyScoreboard(input: ScoreboardInput): DailyScoreboard {
@@ -235,7 +283,7 @@ export function buildDailyScoreboard(input: ScoreboardInput): DailyScoreboard {
   const lastByConversation = new Map(input.lastAssignments.map((l) => [l.conversationId, l]));
   for (const conv of input.openConversations) {
     if (!conv.assignedToId) continue;
-    tallyOpenConversation(tallyOf(conv.assignedToId), conv, lastByConversation.get(conv.id));
+    tallyOpenConversation(tallyOf(conv.assignedToId), conv, lastByConversation.get(conv.id), input.day);
   }
   for (const row of input.dayAssignments) tallyDayAssignment(tallyOf(row.agentId), row);
 
@@ -255,8 +303,12 @@ export function buildDailyScoreboard(input: ScoreboardInput): DailyScoreboard {
         startedToday: t.startedToday,
         notStarted: t.notStarted,
         notStartedOldestSince: iso(t.notStartedOldest),
+        notStartedToday: t.notStartedToday.count,
+        notStartedTodayOldestSince: iso(t.notStartedToday.oldest),
         awaitingReply: t.awaitingReply,
         awaitingOldestSince: iso(t.awaitingOldest),
+        awaitingReplyToday: t.awaitingToday.count,
+        awaitingTodayOldestSince: iso(t.awaitingToday.oldest),
         closedToday,
         openTotal: t.openTotal,
         avgPickupMinutes: average(t.pickupMinutes),
