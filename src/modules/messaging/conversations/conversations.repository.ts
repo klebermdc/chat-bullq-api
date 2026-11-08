@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { ChannelType, ConversationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { attachWindowExpiry } from './attach-window-expiry';
-import { buildSearchOr } from './inbox-search';
+import { buildSearchOr, SEARCH_CONTACT_LIMIT } from './inbox-search';
+import { findContactIdsBySearch } from '../contacts/contact-search';
 import {
   buildAdvancedBlocks,
   type InboxAdvancedFilters,
@@ -223,7 +224,13 @@ export class ConversationsRepository {
       else where.lastMessageAt = range;
     }
     if (filters.search) {
-      const searchOr = buildSearchOr(filters.search);
+      const { ids: contactIds } = await findContactIdsBySearch(
+        this.prisma,
+        filters.organizationId,
+        filters.search,
+        { take: SEARCH_CONTACT_LIMIT },
+      );
+      const searchOr = buildSearchOr(filters.search, contactIds);
       if (searchOr.length > 0) andBlocks.push({ OR: searchOr });
     }
 
