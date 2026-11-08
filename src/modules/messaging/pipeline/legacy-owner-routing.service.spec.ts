@@ -70,7 +70,7 @@ describe('LegacyOwnerRoutingService.routeNewConversation', () => {
     const result = await service.routeNewConversation(PARAMS);
 
     expect(result).toEqual({ routed: true, userId: 'user-renata', vendedor: 'Renata' });
-    expect(fsm.assign).toHaveBeenCalledWith('conv-1', 'user-renata');
+    expect(fsm.assign).toHaveBeenCalledWith('conv-1', 'user-renata', undefined, 'legacy_owner');
     expect(prisma.conversation.update).toHaveBeenCalledWith({
       where: { id: 'conv-1' },
       data: { aiEnabled: false, activeAgentId: null },
@@ -204,7 +204,7 @@ describe('LegacyOwnerRoutingService — lead do site com a Aline até o handoff'
     const result = await service.routeNewConversation(PARAMS, { aiUntilHandoffAgentId: 'aline' });
 
     expect(result).toEqual({ routed: true, userId: 'user-renata', vendedor: 'Renata' });
-    expect(fsm.assign).toHaveBeenCalledWith('conv-1', 'user-renata');
+    expect(fsm.assign).toHaveBeenCalledWith('conv-1', 'user-renata', undefined, 'legacy_owner');
     expect(prisma.conversation.update).toHaveBeenCalledWith({
       where: { id: 'conv-1' },
       data: { aiEnabled: true, activeAgentId: 'aline', aiUntilHandoff: true },

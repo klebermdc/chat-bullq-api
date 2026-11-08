@@ -4,6 +4,10 @@
  */
 
 const MINUTE_MS = 60_000;
+/** Origem que conta como cliente novo liberado; as outras são retorno. */
+const NEW_CLIENT_SOURCE = 'distribution';
+
+const isNewClient = (source: string): boolean => source === NEW_CLIENT_SOURCE;
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export interface DayBounds {
@@ -31,6 +35,8 @@ export interface OpenConversationRow {
 export interface LastAssignmentRow {
   conversationId: string;
   agentId: string;
+  /** metadata.source do log (ou deduzida nos logs antigos). */
+  source: string;
   assignedAt: Date;
 }
 
@@ -38,6 +44,7 @@ export interface LastAssignmentRow {
 export interface DayAssignmentRow {
   conversationId: string;
   agentId: string;
+  source: string;
   assignedAt: Date;
   lastHumanReplyAt: Date | null;
   /** 1ª mensagem humana do próprio vendedor depois da atribuição. */
@@ -64,10 +71,14 @@ export interface ScoreboardInput {
 export interface ScoreboardAgentRow {
   agent: ScoreboardAgentInfo;
   assignedToday: number;
+  assignedNewToday: number;
+  returnedToday: number;
   startedToday: number;
   notStarted: number;
   notStartedOldestSince: string | null;
   notStartedToday: number;
+  notStartedNewToday: number;
+  notStartedReturnedToday: number;
   notStartedTodayOldestSince: string | null;
   awaitingReply: number;
   awaitingOldestSince: string | null;
@@ -165,11 +176,13 @@ function earliest(current: Date | null, candidate: Date | null): Date | null {
 
 interface AgentTally {
   assignedToday: number;
+  assignedNewToday: number;
   startedToday: number;
   pickupMinutes: number[];
   notStarted: number;
   notStartedOldest: Date | null;
   notStartedToday: Bucket;
+  notStartedNewToday: number;
   awaitingReply: number;
   awaitingOldest: Date | null;
   awaitingToday: Bucket;
@@ -178,11 +191,13 @@ interface AgentTally {
 
 const emptyTally = (): AgentTally => ({
   assignedToday: 0,
+  assignedNewToday: 0,
   startedToday: 0,
   pickupMinutes: [],
   notStarted: 0,
   notStartedOldest: null,
   notStartedToday: emptyBucket(),
+  notStartedNewToday: 0,
   awaitingReply: 0,
   awaitingOldest: null,
   awaitingToday: emptyBucket(),
@@ -204,6 +219,15 @@ function addToBucket(bucket: Bucket, at: Date): void {
   bucket.oldest = earliest(bucket.oldest, at);
 }
 
+/**
+ * Sem log do dono atual não há origem gravada; conta como cliente novo, que
+ * era o caso do "Distribuir" antes de ele gravar log.
+ */
+function currentAssignmentIsNew(conv: OpenConversationRow, last: LastAssignmentRow | undefined): boolean {
+  if (last && last.agentId === conv.assignedToId) return isNewClient(last.source);
+  return true;
+}
+
 function tallyOpenConversation(
   tally: AgentTally,
   conv: OpenConversationRow,
@@ -216,7 +240,10 @@ function tallyOpenConversation(
   if (isNotStarted) {
     tally.notStarted += 1;
     tally.notStartedOldest = earliest(tally.notStartedOldest, assignedAt);
-    if (isInDay(assignedAt, day)) addToBucket(tally.notStartedToday, assignedAt);
+    if (isInDay(assignedAt, day)) {
+      addToBucket(tally.notStartedToday, assignedAt);
+      if (currentAssignmentIsNew(conv, last)) tally.notStartedNewToday += 1;
+    }
     return;
   }
   if (conv.awaitingHumanReply) {
@@ -228,6 +255,7 @@ function tallyOpenConversation(
 
 function tallyDayAssignment(tally: AgentTally, row: DayAssignmentRow): void {
   tally.assignedToday += 1;
+  if (isNewClient(row.source)) tally.assignedNewToday += 1;
   // Resposta pelo painel tem mensagem do vendedor; pelo app do celular
   // (coexistência) só sobra o lastHumanReplyAt da conversa.
   const repliedAt =
@@ -300,10 +328,14 @@ export function buildDailyScoreboard(input: ScoreboardInput): DailyScoreboard {
       return {
         agent,
         assignedToday: t.assignedToday,
+        assignedNewToday: t.assignedNewToday,
+        returnedToday: t.assignedToday - t.assignedNewToday,
         startedToday: t.startedToday,
         notStarted: t.notStarted,
         notStartedOldestSince: iso(t.notStartedOldest),
         notStartedToday: t.notStartedToday.count,
+        notStartedNewToday: t.notStartedNewToday,
+        notStartedReturnedToday: t.notStartedToday.count - t.notStartedNewToday,
         notStartedTodayOldestSince: iso(t.notStartedToday.oldest),
         awaitingReply: t.awaitingReply,
         awaitingOldestSince: iso(t.awaitingOldest),

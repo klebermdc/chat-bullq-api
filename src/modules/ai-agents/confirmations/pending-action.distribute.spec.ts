@@ -87,6 +87,7 @@ describe('PendingActionService.distribute', () => {
         action: 'ASSIGNED',
         fromValue: 'antigo1',
         toValue: 'atendente9',
+        metadata: { source: 'distribution' },
       },
     });
   });

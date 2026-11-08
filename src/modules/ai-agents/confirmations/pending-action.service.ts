@@ -339,6 +339,7 @@ export class PendingActionService {
           action: 'ASSIGNED',
           fromValue: previousAssigneeId,
           toValue: assignedToId,
+          metadata: { source: 'distribution' },
         },
       });
     });

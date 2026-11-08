@@ -1078,7 +1078,7 @@ export class ConversationsService {
     // Só saúda quando o atendente EFETIVAMENTE passa a ser o responsável
     // (assumir a própria conversa que já é sua vira no-op — sem saudação).
     const assigneeChanged = conversation.assignedToId !== userId;
-    await this.fsm.assign(id, userId, userId);
+    await this.fsm.assign(id, userId, userId, 'self');
     const updated = await this.repository.findById(id);
     this.broadcastUpdate(updated as Conversation | null);
 

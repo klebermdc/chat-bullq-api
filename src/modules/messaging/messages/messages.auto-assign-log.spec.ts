@@ -56,6 +56,7 @@ describe('MessagesService.send — log ASSIGNED no auto-assign', () => {
         action: 'ASSIGNED',
         fromValue: null,
         toValue: 'seller-u2',
+        metadata: { source: 'self' },
         createdAt: SENT_AT,
       },
     });

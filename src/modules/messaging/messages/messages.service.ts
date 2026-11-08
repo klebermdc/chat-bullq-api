@@ -311,6 +311,7 @@ export class MessagesService {
             action: 'ASSIGNED',
             fromValue: conversation.assignedToId,
             toValue: senderId,
+            metadata: { source: 'self' },
             // Mesmo instante da mensagem: a atribuição e a 1ª resposta são o
             // mesmo ato, e o placar mede a resposta a partir da atribuição.
             createdAt: message.createdAt,
