@@ -203,8 +203,11 @@ export class ConversationsService {
     // semântica própria e não usam as abas). Ex.: "Distribuição" = fila de
     // handoff. Vale a mesma regra da aba: fechadas ficam de fora, porque um
     // atendimento encerrado não está esperando ninguém.
+    // Filtro de fase (Com a IA / Na fila) já define se espera humano: a aba
+    // não pode zerar a lista por cima dele.
     const awaitingHumanReply =
-      filters.awaitingHumanReply ?? tabAwaitingHumanReply;
+      filters.awaitingHumanReply ??
+      (filters.phases?.length ? undefined : tabAwaitingHumanReply);
     const excludeClosed =
       tabExcludeClosed || filters.awaitingHumanReply !== undefined;
 

@@ -106,19 +106,33 @@ function originBlock(f: InboxAdvancedFilters): Block | null {
   return null;
 }
 
+const DISTRIBUTE: Block = {
+  cards: { some: { stage: { name: { contains: 'distribu', mode: 'insensitive' } } } },
+};
+
 /**
- * Mesma regra dos rótulos da lista de conversas (web, LEAD_PHASE): conversa
- * aberta e sem atendente; "Na fila" quando algum card dela está na etapa
- * "Distribuir", "Com a IA" quando nenhum está.
+ * "Com a IA" = a Aline está de fato no comando — mesma regra de isAiParked
+ * (não espera humano, IA não desligada na conversa) + o canal tem um agente
+ * autônomo ativo e não está com a IA desligada. Sem isso entravam conversas
+ * já passadas para a fila de espera e de canais sem Aline.
  */
+const WITH_AI: Block = {
+  awaitingHumanReply: false,
+  AND: [{ OR: [{ aiEnabled: null }, { aiEnabled: true }] }, { NOT: DISTRIBUTE }],
+  channel: {
+    aiEnabled: { not: false },
+    aiAgentChannels: {
+      some: { mode: 'AUTONOMOUS', agent: { isActive: true, deletedAt: null } },
+    },
+  },
+};
+
+/** Fase do lead: sempre conversa aberta e sem atendente; "Na fila" = etapa Distribuir. */
 function phaseBlock(f: InboxAdvancedFilters): Block | null {
   if (!hasAny(f.phases)) return null;
-  const distribute: Block = {
-    cards: { some: { stage: { name: { contains: 'distribu', mode: 'insensitive' } } } },
-  };
   const OR: Block[] = [];
-  if (f.phases.includes('sdr')) OR.push({ NOT: distribute });
-  if (f.phases.includes('queue')) OR.push(distribute);
+  if (f.phases.includes('sdr')) OR.push(WITH_AI);
+  if (f.phases.includes('queue')) OR.push(DISTRIBUTE);
   return { status: { not: 'CLOSED' }, assignedToId: null, OR };
 }
 

@@ -106,3 +106,63 @@ describe('ConversationsService.findInbox — awaitingHumanReply fora das abas', 
     expect(repo.mock.calls[0][0].awaitingHumanReply).toBe(true);
   });
 });
+
+describe('Inbox view — filtros do painel por cima da view', () => {
+  const ORG = 'org-1';
+  const USER = 'user-1';
+  const build = (viewFilters: Record<string, any>, findInbox: jest.Mock) =>
+    new InboxViewsService(
+      {
+        inboxView: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'view-1',
+            organizationId: ORG,
+            userId: USER,
+            filters: viewFilters,
+          }),
+        },
+      } as any,
+      { findInbox } as any,
+    );
+  const okInbox = () =>
+    jest.fn().mockResolvedValue({ conversations: [], pagination: { page: 1, limit: 30, total: 0, totalPages: 0 } });
+
+  it('repassa os filtros avançados (fase, etapa) para a consulta', async () => {
+    const findInbox = okInbox();
+    const service = build({}, findInbox);
+
+    await service.findConversations('view-1', ORG, USER, 'ALL', 1, 30, undefined, {
+      advanced: { phases: ['sdr'], stageIds: ['st1'] },
+    });
+
+    const filters = findInbox.mock.calls[0][1];
+    expect(filters.phases).toEqual(['sdr']);
+    expect(filters.stageIds).toEqual(['st1']);
+  });
+
+  it('com fase marcada, o "esperando humano" fixo da view não zera a lista', async () => {
+    const findInbox = okInbox();
+    const service = build({ awaitingHumanReply: true }, findInbox);
+
+    await service.findConversations('view-1', ORG, USER, 'ALL', 1, 30, undefined, {
+      advanced: { phases: ['sdr'] },
+    });
+
+    expect(findInbox.mock.calls[0][1].awaitingHumanReply).toBeUndefined();
+  });
+});
+
+describe('ConversationsService.findInbox — fase por cima da aba', () => {
+  it('na aba Esperando, o filtro de fase não herda awaitingHumanReply da aba', async () => {
+    const repo = jest.fn().mockResolvedValue({ conversations: [], total: 0 });
+    const service = Object.create(ConversationsService.prototype);
+    service.repository = { findInbox: repo };
+    service.attachProjects = jest.fn().mockResolvedValue(undefined);
+
+    await service.findInbox('org-1', { tab: 'waiting', phases: ['sdr'] }, 1, 30);
+
+    const args = repo.mock.calls[0][0];
+    expect(args.awaitingHumanReply).toBeUndefined();
+    expect(args.excludeClosed).toBe(true);
+  });
+});
