@@ -26,7 +26,12 @@ export interface InboxAdvancedFilters {
   origin?: 'ad' | 'organic';
   /** Última mensagem anterior a este instante ("parado há mais de X"). */
   idleBefore?: Date;
+  /** Fase do lead sem atendente: 'sdr' = com a IA; 'queue' = na fila (Distribuir). */
+  phases?: LeadPhase[];
 }
+
+export const LEAD_PHASES = ['sdr', 'queue'] as const;
+export type LeadPhase = (typeof LEAD_PHASES)[number];
 
 type Block = Prisma.ConversationWhereInput;
 
@@ -101,12 +106,29 @@ function originBlock(f: InboxAdvancedFilters): Block | null {
   return null;
 }
 
+/**
+ * Mesma regra dos rótulos da lista de conversas (web, LEAD_PHASE): conversa
+ * aberta e sem atendente; "Na fila" quando algum card dela está na etapa
+ * "Distribuir", "Com a IA" quando nenhum está.
+ */
+function phaseBlock(f: InboxAdvancedFilters): Block | null {
+  if (!hasAny(f.phases)) return null;
+  const distribute: Block = {
+    cards: { some: { stage: { name: { contains: 'distribu', mode: 'insensitive' } } } },
+  };
+  const OR: Block[] = [];
+  if (f.phases.includes('sdr')) OR.push({ NOT: distribute });
+  if (f.phases.includes('queue')) OR.push(distribute);
+  return { status: { not: 'CLOSED' }, assignedToId: null, OR };
+}
+
 export function buildAdvancedBlocks(f: InboxAdvancedFilters): Block[] {
   const single = [
     assigneeBlock(f),
     stageBlock(f),
     lostBlock(f),
     originBlock(f),
+    phaseBlock(f),
     f.idleBefore ? { lastMessageAt: { lte: f.idleBefore } } : null,
   ].filter((b): b is Block => b !== null);
   return [...tagBlocks(f), ...single];

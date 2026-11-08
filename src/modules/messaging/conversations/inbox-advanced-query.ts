@@ -1,5 +1,5 @@
 import { LOST_REASON_CODES } from '../../pipelines/lost-sale.constants';
-import type { InboxAdvancedFilters } from './inbox-advanced-where';
+import { LEAD_PHASES, type InboxAdvancedFilters } from './inbox-advanced-where';
 
 /** Teto de itens por lista na URL — protege a consulta de um IN gigante. */
 const MAX_LIST_ITEMS = 100;
@@ -20,6 +20,7 @@ export interface AdvancedQuery {
   origin?: string;
   idleHours?: string;
   dateField?: string;
+  phase?: string;
 }
 
 export type ParsedAdvancedQuery = Omit<
@@ -68,6 +69,13 @@ export function parseAssignees(raw: string | undefined): {
   return { assignedToIds: ids, ...none };
 }
 
+function parsePhases(raw: string | undefined): InboxAdvancedFilters['phases'] {
+  const phases = parseList(raw)
+    ?.map((p) => pick(p, LEAD_PHASES))
+    .filter((p): p is (typeof LEAD_PHASES)[number] => p !== undefined);
+  return phases?.length ? [...new Set(phases)] : undefined;
+}
+
 /** Lê os filtros avançados da URL. Valor desconhecido é ignorado, não erro. */
 export function parseAdvancedQuery(q: AdvancedQuery, now: Date): ParsedAdvancedQuery {
   const lostReasons = parseList(q.lostReasons)?.filter((code) =>
@@ -83,6 +91,7 @@ export function parseAdvancedQuery(q: AdvancedQuery, now: Date): ParsedAdvancedQ
     origin: pick(q.origin, ['ad', 'organic'] as const),
     idleBefore: parseIdleBefore(q.idleHours, now),
     dateField: pick(q.dateField, ['created'] as const),
+    phases: parsePhases(q.phase),
   };
   return Object.fromEntries(
     Object.entries(parsed).filter(([, v]) => v !== undefined),
