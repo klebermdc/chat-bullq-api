@@ -205,16 +205,24 @@ export class MessagesService {
       // metadata.replyTo é consumido pela UI pra renderizar a quote box
       // em cima da bolha — sem isso o quote só apareceria no app do
       // cliente (WhatsApp/IG), nunca no nosso inbox.
-      metadata: replyTo
-        ? {
-            replyTo: {
-              messageId: replyTo.messageId,
-              externalMessageId: replyTo.externalMessageId,
-              previewText: replyTo.previewText,
-              senderName: replyTo.senderName,
-            },
-          }
-        : undefined,
+      // `automated` marca o envio automático feito em nome do vendedor
+      // (saudação, aviso): o placar do dia não conta isso como resposta dele.
+      metadata:
+        replyTo || automated
+          ? {
+              ...(replyTo
+                ? {
+                    replyTo: {
+                      messageId: replyTo.messageId,
+                      externalMessageId: replyTo.externalMessageId,
+                      previewText: replyTo.previewText,
+                      senderName: replyTo.senderName,
+                    },
+                  }
+                : {}),
+              ...(automated ? { automated: true } : {}),
+            }
+          : undefined,
     });
 
     // Auto-pause the AI on this conversation when a human replies. Behavior
@@ -293,6 +301,26 @@ export class MessagesService {
     }
 
     if (shouldAutoAssign) {
+      // Registra a troca de dono como o fsm.assign faz: o placar do dia conta
+      // as atribuições pelo log. Best-effort — nunca derruba o envio.
+      await this.prisma.conversationAuditLog
+        .create({
+          data: {
+            conversationId: conversation.id,
+            actorId: senderId,
+            action: 'ASSIGNED',
+            fromValue: conversation.assignedToId,
+            toValue: senderId,
+            // Mesmo instante da mensagem: a atribuição e a 1ª resposta são o
+            // mesmo ato, e o placar mede a resposta a partir da atribuição.
+            createdAt: message.createdAt,
+          },
+        })
+        .catch((err: unknown) =>
+          this.logger.warn(
+            `log ASSIGNED não gravado no auto-assign (conv=${conversation.id}): ${err instanceof Error ? err.message : err}`,
+          ),
+        );
       // Virou dono ao responder: a etiqueta do vendedor acompanha, igual ao
       // botão de atribuir. Best-effort — nunca derruba o envio.
       await syncAttendantTag(this.prisma, {

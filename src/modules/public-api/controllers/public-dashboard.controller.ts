@@ -1,6 +1,7 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { DashboardService } from '../../dashboard/dashboard.service';
+import { DailyScoreboardService } from '../../dashboard/daily-scoreboard/daily-scoreboard.service';
 import { ApiKeyAuthGuard } from '../../../common/guards';
 import { ApiKeyThrottleGuard } from '../guards/api-key-throttle.guard';
 import { CurrentOrg } from '../../../common/decorators';
@@ -18,7 +19,17 @@ function parseRange(from?: string, to?: string) {
 @UseGuards(ApiKeyAuthGuard, ApiKeyThrottleGuard)
 @Controller('public/dashboard')
 export class PublicDashboardController {
-  constructor(private readonly service: DashboardService) {}
+  constructor(
+    private readonly service: DashboardService,
+    private readonly dailyScoreboard: DailyScoreboardService,
+  ) {}
+
+  @Get('daily-scoreboard')
+  @ApiOperation({ summary: 'Placar do dia por vendedor (recebidos, não começou, esperando, fila)' })
+  @ApiQuery({ name: 'date', required: false, description: 'YYYY-MM-DD no fuso da org; padrão hoje' })
+  getDailyScoreboard(@CurrentOrg('id') orgId: string, @Query('date') date?: string) {
+    return this.dailyScoreboard.getDailyScoreboard(orgId, date);
+  }
 
   @Get('overview')
   @ApiOperation({ summary: 'Overview metrics (totals, deltas, current open/pending/etc.)' })

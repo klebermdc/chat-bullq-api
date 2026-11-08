@@ -48,7 +48,9 @@ function make(actionOverrides: Record<string, unknown> = {}) {
       update: jest.fn().mockResolvedValue({}),
     },
     pipelineStage: { findFirst: jest.fn().mockResolvedValue(null) },
+    conversationAuditLog: { create: jest.fn().mockResolvedValue({}) },
   } as any;
+  prisma.$transaction = jest.fn((fn: (tx: unknown) => unknown) => fn(prisma));
   const attendantGreeting = { greet: jest.fn().mockResolvedValue(undefined) };
   const legacyOwnerWriter = { moveOwner: jest.fn().mockResolvedValue('moved') };
   return {
@@ -68,6 +70,34 @@ function make(actionOverrides: Record<string, unknown> = {}) {
 }
 
 describe('PendingActionService.distribute', () => {
+  it('grava o log ASSIGNED da troca de dono (o placar do dia conta por ele)', async () => {
+    const { svc, prisma } = make();
+    prisma.conversation.findUnique.mockResolvedValue({
+      status: 'OPEN',
+      firstResponseAt: null,
+      organizationId: 'org1',
+      contactId: 'contact1',
+      assignedToId: 'antigo1',
+    });
+    await svc.distribute('pa1', 'org1', 'operador1', 'atendente9');
+    expect(prisma.conversationAuditLog.create).toHaveBeenCalledWith({
+      data: {
+        conversationId: 'conv1',
+        actorId: 'operador1',
+        action: 'ASSIGNED',
+        fromValue: 'antigo1',
+        toValue: 'atendente9',
+      },
+    });
+  });
+
+  it('não grava log quando outra pessoa distribuiu antes (409)', async () => {
+    const { svc, prisma } = make();
+    prisma.conversation.updateMany.mockResolvedValue({ count: 0 });
+    await expect(svc.distribute('pa1', 'org1', 'operador1', 'atendente9')).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.conversationAuditLog.create).not.toHaveBeenCalled();
+  });
+
   it('com a janela fechada, manda o template de distribuição em nome do atendente escolhido', async () => {
     const { svc, attendantGreeting } = make();
     await svc.distribute('pa1', 'org1', 'operador1', 'atendente9');
