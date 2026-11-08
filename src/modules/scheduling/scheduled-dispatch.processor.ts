@@ -189,7 +189,12 @@ export class ScheduledDispatchProcessor extends WorkerHost {
         row.organizationId,
         'ALL',
         undefined,
-        { system: true },
+        // Toque de cadência/reengajamento é do sistema, não de uma pessoa: sem
+        // `automated` o envio era tratado como resposta humana do remetente
+        // (dono ou OWNER) — desligava a IA, atribuía a conversa a ele e a
+        // resposta do cliente não chegava à Aline nem à distribuição.
+        // Agendamento MANUAL segue como resposta de quem agendou.
+        { system: true, automated: row.origin !== 'MANUAL' },
       );
       await this.repo.update(row.id, {
         status: 'SENT',
