@@ -14,6 +14,9 @@ function makeDeps(overrides: any = {}) {
     user: {
       findUnique: jest.fn().mockResolvedValue({ name: 'Bárbara Silva' }),
     },
+    messageTemplate: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
     ...overrides.prisma,
   };
   const messages = { send: jest.fn().mockResolvedValue({ id: 'm1' }) };
@@ -125,5 +128,144 @@ describe('AttendantGreetingService', () => {
     await expect(
       svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'TRANSFER' }),
     ).resolves.toBeUndefined();
+  });
+
+  describe('janela de 24h fechada', () => {
+    const HOUR = 60 * 60 * 1000;
+    const closedConversation = (extra: Record<string, unknown> = {}) => ({
+      id: 'c1',
+      organizationId: 'org1',
+      isGroup: false,
+      metadata: {},
+      channelId: 'ch1',
+      lastInboundAt: new Date(Date.now() - 30 * HOUR),
+      metaWindowExpiresAt: null,
+      channel: { type: 'WHATSAPP_OFFICIAL' },
+      contact: { name: 'Maria Souza', ctwaClidAt: null },
+      ...extra,
+    });
+    const distributionTemplate = {
+      id: 't1',
+      name: 'distribuicao_vendedor',
+      language: 'pt_BR',
+      components: { body: { text: 'Oi {{1}}, aqui é {{2}} da OFP.' } },
+      variableExamples: {},
+    };
+
+    it('envia o template de distribuição do canal com cliente e vendedor', async () => {
+      const { prisma, messages, settings } = makeDeps();
+      prisma.conversation.findUnique.mockResolvedValue(closedConversation());
+      prisma.messageTemplate.findFirst.mockResolvedValue(distributionTemplate);
+      const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+
+      await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'TRANSFER' });
+
+      expect(prisma.messageTemplate.findFirst).toHaveBeenCalledWith({
+        where: { channelId: 'ch1', isDistribution: true, status: 'APPROVED' },
+      });
+      expect(messages.send).toHaveBeenCalledTimes(1);
+      const [dto, senderId, , , , opts] = messages.send.mock.calls[0];
+      expect(senderId).toBe('u1');
+      expect(opts).toEqual({ system: true, automated: true });
+      expect(dto).toEqual({
+        conversationId: 'c1',
+        type: 'TEMPLATE',
+        content: {
+          name: 'distribuicao_vendedor',
+          language: { code: 'pt_BR' },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: 'Maria' },
+                { type: 'text', text: 'Bárbara' },
+              ],
+            },
+          ],
+        },
+      });
+      const meta = prisma.conversation.update.mock.calls[0][0].data.metadata;
+      expect(meta.attendantGreeting).toMatchObject({ userId: 'u1', kind: 'TEMPLATE' });
+    });
+
+    it('envia o template mesmo com a saudação em texto desligada', async () => {
+      const { prisma, messages, settings } = makeDeps();
+      settings.get.mockResolvedValue({ enabled: false, template: 'x' });
+      prisma.conversation.findUnique.mockResolvedValue(closedConversation());
+      prisma.messageTemplate.findFirst.mockResolvedValue(distributionTemplate);
+      const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+
+      await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'DISTRIBUTE' });
+
+      expect(messages.send.mock.calls[0][0].type).toBe('TEMPLATE');
+    });
+
+    it('não envia nada quando o canal não tem template de distribuição', async () => {
+      const { prisma, messages, settings } = makeDeps();
+      prisma.conversation.findUnique.mockResolvedValue(closedConversation());
+      const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+
+      await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'TRANSFER' });
+
+      expect(messages.send).not.toHaveBeenCalled();
+      expect(prisma.conversation.update).not.toHaveBeenCalled();
+    });
+
+    it('não envia template com cabeçalho de mídia (não dá para preencher sozinho)', async () => {
+      const { prisma, messages, settings } = makeDeps();
+      prisma.conversation.findUnique.mockResolvedValue(closedConversation());
+      prisma.messageTemplate.findFirst.mockResolvedValue({
+        ...distributionTemplate,
+        components: { header: { format: 'IMAGE' }, body: { text: 'Oi {{1}}' } },
+      });
+      const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+
+      await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'TRANSFER' });
+
+      expect(messages.send).not.toHaveBeenCalled();
+    });
+
+    it('com a janela aberta segue mandando o texto de saudação', async () => {
+      const { prisma, messages, settings } = makeDeps();
+      prisma.conversation.findUnique.mockResolvedValue(
+        closedConversation({ lastInboundAt: new Date(Date.now() - 2 * HOUR) }),
+      );
+      const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+
+      await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'TRANSFER' });
+
+      expect(prisma.messageTemplate.findFirst).not.toHaveBeenCalled();
+      expect(messages.send.mock.calls[0][0].type).toBe('TEXT');
+    });
+
+    it('onlyWhenWindowClosed: com a janela aberta não envia nada', async () => {
+      const { prisma, messages, settings } = makeDeps();
+      prisma.conversation.findUnique.mockResolvedValue(
+        closedConversation({ lastInboundAt: new Date(Date.now() - 2 * HOUR) }),
+      );
+      const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+
+      await svc.greet({
+        conversationId: 'c1',
+        attendantUserId: 'u1',
+        source: 'DISTRIBUTE',
+        onlyWhenWindowClosed: true,
+      });
+
+      expect(messages.send).not.toHaveBeenCalled();
+    });
+
+    it('não repete o template para o mesmo vendedor na mesma conversa', async () => {
+      const { prisma, messages, settings } = makeDeps();
+      prisma.conversation.findUnique.mockResolvedValue(
+        closedConversation({ metadata: { attendantGreeting: { userId: 'u1' } } }),
+      );
+      prisma.messageTemplate.findFirst.mockResolvedValue(distributionTemplate);
+      const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+
+      await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'HANDOFF_APPROVE' });
+
+      expect(messages.send).not.toHaveBeenCalled();
+    });
   });
 });

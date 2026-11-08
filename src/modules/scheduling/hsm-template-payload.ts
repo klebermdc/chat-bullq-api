@@ -3,7 +3,8 @@
  * cadência e reengajamento — onde não há ninguém para digitar as variáveis.
  *
  * Regra de preenchimento: `{{1}}` = primeiro nome do contato; as demais saem
- * dos `variableExamples` cadastrados no template. Parâmetro vazio é rejeitado
+ * de `values` (quando o chamador sabe o valor, ex.: `{{2}}` = vendedor na
+ * distribuição) ou dos `variableExamples` cadastrados no template. Parâmetro vazio é rejeitado
  * pela Meta, então cai em '-' (mesmo padrão do `recovery-outreach`).
  */
 
@@ -45,6 +46,7 @@ export function firstName(name: string | null | undefined): string {
 export function buildHsmTemplateContent(
   template: HsmTemplateRow,
   contactName: string | null,
+  values: Readonly<Record<string, string>> = {},
 ): Record<string, any> | null {
   const components = asRecord(template.components);
   if (mediaHeaderFormat(components)) return null;
@@ -60,7 +62,8 @@ export function buildHsmTemplateContent(
 
   if (vars.length > 0) {
     const value = (n: string): string => {
-      const raw = n === '1' ? firstName(contactName) : String(examples[n] ?? '');
+      const raw =
+        n === '1' ? firstName(contactName) : String(values[n] ?? examples[n] ?? '');
       return raw.trim() || '-';
     };
     payload.components = [
