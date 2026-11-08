@@ -82,11 +82,11 @@ export function buildQuoteMessage(customerName: string | null, url: string, quot
   );
 }
 
-/** Cotação atualizada pelo atendente: o link é o mesmo e a validade recomeça. */
+/** Cotação atualizada pelo atendente: o link é o mesmo. A validade não aparece para o cliente. */
 export function buildQuoteUpdatedMessage(customerName: string | null, url: string, quoteNumber: number | null): string {
   return (
     `${greetingFor(customerName)} Atualizei sua ${quoteLabel(quoteNumber)}. É o mesmo link de antes, já com as ` +
-    `informações novas, e ela vale por mais ${QUOTE_DEFAULT_VALIDITY_HOURS} horas. ${EXCHANGE_REMINDER}\n\n${url}`
+    `informações novas. ${EXCHANGE_REMINDER}\n\n${url}`
   );
 }
 

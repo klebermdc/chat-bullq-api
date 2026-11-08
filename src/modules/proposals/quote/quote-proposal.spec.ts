@@ -100,9 +100,9 @@ describe('firstName / buildQuoteMessage', () => {
     );
   });
 
-  it('cotação atualizada: mesmo link, validade nova e o aviso de câmbio', () => {
+  it('cotação atualizada: mesmo link e o aviso de câmbio, sem falar de validade', () => {
     expect(buildQuoteUpdatedMessage('Ana Souza', url, 152)).toBe(
-      'Oi, Ana! Atualizei sua cotação nº 0152. É o mesmo link de antes, já com as informações novas, e ela vale por mais 24 horas. ' +
+      'Oi, Ana! Atualizei sua cotação nº 0152. É o mesmo link de antes, já com as informações novas. ' +
         'Lembrando que os valores em reais seguem o câmbio do dólar do dia e podem mudar até a confirmação do pagamento.\n\nhttps://c.x/tok',
     );
     expect(buildQuoteUpdatedMessage(null, url, null)).toMatch(/^Oi! Atualizei sua cotação\. É o mesmo link/);
