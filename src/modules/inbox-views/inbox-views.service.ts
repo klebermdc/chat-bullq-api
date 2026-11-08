@@ -6,6 +6,7 @@ import {
 import { OrgRole } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { ConversationsService } from '../messaging/conversations/conversations.service';
+import type { ParsedAdvancedQuery } from '../messaging/conversations/inbox-advanced-query';
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import {
   CreateInboxViewDto,
@@ -209,6 +210,8 @@ export class InboxViewsService {
       stuck?: string;
       dateFrom?: string;
       dateTo?: string;
+      /** Filtros do painel (fase, etapa, perdida…). Canais ficam com a view. */
+      advanced?: Omit<ParsedAdvancedQuery, 'channelIds'>;
     },
     role?: OrgRole,
   ) {
@@ -273,6 +276,9 @@ export class InboxViewsService {
     const finalAssignedToId = ov.assignedToId ?? assignedToId;
     const finalAssignedToNone = ov.assignedToId ? false : assignedToNone;
     const finalStuck = ov.stuck === 'true' || ov.stuck === '1';
+    const advanced = ov.advanced ?? {};
+    // Fase (Com a IA / Na fila) já decide se espera humano: vence o flag da view.
+    const finalAwaiting = advanced.phases?.length ? undefined : filters.awaitingHumanReply;
 
     return this.conversationsService.findInbox(
       organizationId,
@@ -284,13 +290,14 @@ export class InboxViewsService {
         tagIds: finalTagIds,
         assignedToId: finalAssignedToId,
         assignedToNone: finalAssignedToNone || undefined,
-        awaitingHumanReply: filters.awaitingHumanReply,
+        awaitingHumanReply: finalAwaiting,
         search: extraSearch,
         archived: finalArchived,
         unreadOnly: finalUnread,
         stuckOnly: finalStuck || undefined,
         dateFrom: ov.dateFrom || undefined,
         dateTo: ov.dateTo || undefined,
+        ...advanced,
       },
       page,
       limit,

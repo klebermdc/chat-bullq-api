@@ -25,6 +25,10 @@ import {
 } from '../../common/decorators';
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { OrgRole } from '@prisma/client';
+import {
+  parseAdvancedQuery,
+  type AdvancedQuery,
+} from '../messaging/conversations/inbox-advanced-query';
 
 @ApiTags('Inbox Views')
 @ApiBearerAuth()
@@ -106,7 +110,10 @@ export class InboxViewsController {
     @Query('stuck') stuck?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
+    @Query() advancedQuery: AdvancedQuery = {},
   ) {
+    // Canais ficam com a view; o resto do painel (fase, etapa…) vale por cima.
+    const { channelIds: _ignored, ...advanced } = parseAdvancedQuery(advancedQuery, new Date());
     return this.service.findConversations(
       id,
       orgId,
@@ -125,6 +132,7 @@ export class InboxViewsController {
         stuck,
         dateFrom,
         dateTo,
+        advanced,
       },
       role,
     );
