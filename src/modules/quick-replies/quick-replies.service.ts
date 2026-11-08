@@ -25,6 +25,12 @@ export function normalizeShortcut(raw: string): string {
   return shortcut;
 }
 
+/** Categoria sem espaços nas pontas; vazia vira nula ("Outras" na tela). */
+export function normalizeCategory(raw: string | null | undefined): string | null {
+  const category = (raw ?? '').trim();
+  return category || null;
+}
+
 /** Quem está pedindo: decide o que ele enxerga. */
 export interface QuickReplyViewer {
   userId: string;
@@ -51,6 +57,7 @@ export class QuickRepliesService {
       shortcut,
       title: dto.title,
       content: dto.content,
+      category: normalizeCategory(dto.category),
       organization: { connect: { id: orgId } },
       ...(ownerUserId && { owner: { connect: { id: ownerUserId } } }),
     });
@@ -92,6 +99,7 @@ export class QuickRepliesService {
       ...(shortcut !== undefined && { shortcut }),
       ...(dto.title !== undefined && { title: dto.title }),
       ...(dto.content !== undefined && { content: dto.content }),
+      ...(dto.category !== undefined && { category: normalizeCategory(dto.category) }),
       ...(dto.ownerUserId !== undefined && {
         owner: dto.ownerUserId ? { connect: { id: dto.ownerUserId } } : { disconnect: true },
       }),

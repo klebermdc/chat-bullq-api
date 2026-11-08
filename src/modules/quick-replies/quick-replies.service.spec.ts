@@ -110,4 +110,29 @@ describe('QuickRepliesService', () => {
       expect(repo.update).toHaveBeenCalledWith('q1', { title: 'Novo' });
     });
   });
+
+  describe('categoria', () => {
+    it('grava a categoria sem espaços nas pontas', async () => {
+      const { svc, repo } = make();
+      await svc.create('org1', { shortcut: 'pix', title: 'Pix', content: 'x', category: '  Pagamento ' });
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ category: 'Pagamento' }));
+    });
+
+    it('categoria vazia ou ausente fica nula', async () => {
+      const { svc, repo } = make();
+      await svc.create('org1', { shortcut: 'pix', title: 'Pix', content: 'x', category: '   ' });
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ category: null }));
+      await svc.create('org1', { shortcut: 'pix2', title: 'Pix', content: 'x' });
+      expect(repo.create).toHaveBeenLastCalledWith(expect.objectContaining({ category: null }));
+    });
+
+    it('editar com categoria vazia limpa; sem categoria não mexe', async () => {
+      const existing = { id: 'q1', organizationId: 'org1', ownerUserId: null };
+      const { svc, repo } = make({ existing });
+      await svc.update('q1', 'org1', { category: '' });
+      expect(repo.update).toHaveBeenLastCalledWith('q1', { category: null });
+      await svc.update('q1', 'org1', { category: 'Disney' });
+      expect(repo.update).toHaveBeenLastCalledWith('q1', { category: 'Disney' });
+    });
+  });
 });
