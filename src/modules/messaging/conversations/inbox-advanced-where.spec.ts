@@ -127,4 +127,37 @@ describe('buildAdvancedBlocks (filtros avançados da inbox)', () => {
 
     expect(blocks).toHaveLength(5);
   });
+  describe('fase do lead (Com a IA / Na fila)', () => {
+    const distribute = { cards: { some: { stage: { name: { contains: 'distribu', mode: 'insensitive' } } } } };
+
+    it('"Na fila" = aberta, sem atendente e com card na etapa Distribuir', () => {
+      const [block] = buildAdvancedBlocks({ phases: ['queue'] });
+
+      expect(block).toEqual({
+        status: { not: 'CLOSED' },
+        assignedToId: null,
+        OR: [distribute],
+      });
+    });
+
+    it('"Com a IA" = aberta, sem atendente e fora da etapa Distribuir', () => {
+      const [block] = buildAdvancedBlocks({ phases: ['sdr'] });
+
+      expect(block).toEqual({
+        status: { not: 'CLOSED' },
+        assignedToId: null,
+        OR: [{ NOT: distribute }],
+      });
+    });
+
+    it('as duas juntas viram OR, sempre aberta e sem atendente', () => {
+      const [block] = buildAdvancedBlocks({ phases: ['sdr', 'queue'] });
+
+      expect(block).toEqual({
+        status: { not: 'CLOSED' },
+        assignedToId: null,
+        OR: [{ NOT: distribute }, distribute],
+      });
+    });
+  });
 });

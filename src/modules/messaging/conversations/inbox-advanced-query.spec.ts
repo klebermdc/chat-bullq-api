@@ -88,4 +88,8 @@ describe('parseAdvancedQuery', () => {
 
     expect(parseAdvancedQuery({ channelIds: many }, now).channelIds).toHaveLength(100);
   });
+  it('phase aceita sdr e queue, ignora o resto', () => {
+    expect(parseAdvancedQuery({ phase: 'queue, sdr ,xx' }, now).phases).toEqual(['queue', 'sdr']);
+    expect(parseAdvancedQuery({ phase: 'xx' }, now).phases).toBeUndefined();
+  });
 });
