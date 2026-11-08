@@ -24,6 +24,7 @@ function input(overrides: Partial<ScoreboardInput> = {}): ScoreboardInput {
       { id: 'pedro', name: 'Pedro', avatarUrl: null },
     ],
     rosterIds: new Set(['marcella', 'pedro']),
+    day: { start: T('2026-11-08T03:00:00Z'), end: T('2026-11-09T03:00:00Z') },
     ...overrides,
   };
 }
@@ -183,7 +184,14 @@ describe('buildDailyScoreboard', () => {
         ],
       }),
     );
-    expect(r.queue).toEqual({ unassigned: 2, oldestSince: '2026-11-07T22:10:00.000Z', enteredToday: 40 });
+    // as duas entraram antes da meia-noite de Brasília (08/11 03:00 UTC)
+    expect(r.queue).toEqual({
+      unassigned: 2,
+      oldestSince: '2026-11-07T22:10:00.000Z',
+      enteredToday: 40,
+      unassignedToday: 0,
+      unassignedTodayOldestSince: null,
+    });
   });
 
   it('atendente ativo aparece zerado; ex-membro só aparece com número', () => {
@@ -218,5 +226,78 @@ describe('buildDailyScoreboard', () => {
       }),
     );
     expect(r.agents.map((a) => a.agent.id)).toEqual(['pedro', 'marcella']);
+  });
+
+  describe('campos do dia', () => {
+    it('fila do dia: sem dono que entrou hoje (criada ou reaberta)', () => {
+      const r = buildDailyScoreboard(
+        input({
+          openConversations: [
+            open({ id: 'antiga', assignedToId: null, createdAt: T('2026-11-07T22:10:00Z') }),
+            open({ id: 'nova', assignedToId: null, createdAt: T('2026-11-08T12:00:00Z') }),
+            open({
+              id: 'reaberta',
+              assignedToId: null,
+              createdAt: T('2026-10-01T00:00:00Z'),
+              reopenedAt: T('2026-11-08T10:00:00Z'),
+            }),
+          ],
+        }),
+      );
+      expect(r.queue.unassignedToday).toBe(2);
+      expect(r.queue.unassignedTodayOldestSince).toBe('2026-11-08T10:00:00.000Z');
+      expect(r.queue.unassigned).toBe(3);
+    });
+
+    it('não começou hoje: só as com última atribuição no dia', () => {
+      const r = buildDailyScoreboard(
+        input({
+          openConversations: [open({ id: 'a' }), open({ id: 'b' }), open({ id: 'c' })],
+          lastAssignments: [
+            { conversationId: 'a', agentId: 'marcella', assignedAt: T('2026-11-08T13:00:00Z') },
+            { conversationId: 'b', agentId: 'marcella', assignedAt: T('2026-11-08T04:00:00Z') },
+            // 23h de ontem em Brasília
+            { conversationId: 'c', agentId: 'marcella', assignedAt: T('2026-11-08T02:00:00Z') },
+          ],
+        }),
+      );
+      const m = rowOf(r, 'marcella');
+      expect(m.notStarted).toBe(3);
+      expect(m.notStartedToday).toBe(2);
+      expect(m.notStartedTodayOldestSince).toBe('2026-11-08T04:00:00.000Z');
+    });
+
+    it('esperando hoje: só as com última mensagem do cliente no dia', () => {
+      const replied = { lastHumanReplyAt: T('2026-11-08T05:00:00Z'), awaitingHumanReply: true };
+      const r = buildDailyScoreboard(
+        input({
+          openConversations: [
+            open({ id: 'a', ...replied, lastInboundAt: T('2026-11-08T14:00:00Z') }),
+            open({ id: 'b', ...replied, lastInboundAt: T('2026-11-08T09:00:00Z') }),
+            open({ id: 'c', ...replied, lastInboundAt: T('2026-11-07T20:00:00Z') }),
+          ],
+          lastAssignments: ['a', 'b', 'c'].map((id) => ({
+            conversationId: id,
+            agentId: 'marcella',
+            assignedAt: T('2026-11-01T12:00:00Z'),
+          })),
+        }),
+      );
+      const m = rowOf(r, 'marcella');
+      expect(m.awaitingReply).toBe(3);
+      expect(m.awaitingReplyToday).toBe(2);
+      expect(m.awaitingTodayOldestSince).toBe('2026-11-08T09:00:00.000Z');
+    });
+
+    it('vendedor zerado devolve 0 e null nos campos do dia', () => {
+      const r = buildDailyScoreboard(input());
+      expect(rowOf(r, 'pedro')).toMatchObject({
+        notStartedToday: 0,
+        notStartedTodayOldestSince: null,
+        awaitingReplyToday: 0,
+        awaitingTodayOldestSince: null,
+      });
+      expect(r.queue).toMatchObject({ unassignedToday: 0, unassignedTodayOldestSince: null });
+    });
   });
 });

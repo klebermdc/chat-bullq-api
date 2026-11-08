@@ -73,6 +73,7 @@ export class DailyScoreboardService {
       enteredToday,
       agents: agents.map((a) => ({ id: a.id, name: a.name, avatarUrl: a.avatarUrl ?? null })),
       rosterIds,
+      day,
     });
   }
 
