@@ -1,3 +1,4 @@
+import { scopedUserWhere } from '../conversations/conversation-scope';
 import { ContactsRepository } from './contacts.repository';
 
 describe('ContactsRepository.findById — filtro de conversas por atribuição', () => {
@@ -19,7 +20,7 @@ describe('ContactsRepository.findById — filtro de conversas por atribuição',
     const { repo, prisma } = make();
     await repo.findById('c1', 'agent-u1');
     const arg = prisma.contact.findFirst.mock.calls[0][0];
-    expect(arg.include.conversations.where).toEqual({ assignedToId: 'agent-u1' });
+    expect(arg.include.conversations.where).toEqual({ ...scopedUserWhere('agent-u1') });
   });
 });
 

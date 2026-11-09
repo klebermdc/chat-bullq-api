@@ -8,7 +8,10 @@ import { OrgRole } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../database/prisma.service';
 import { AudioSourceService } from './audio-source.service';
-import { resolveAssignmentScope } from '../conversations/conversation-scope';
+import {
+  canAgentReachConversation,
+  resolveAssignmentScope,
+} from '../conversations/conversation-scope';
 import { ProviderKeyResolverService } from '../../ai-provider-keys/provider-key-resolver.service';
 import axios from 'axios';
 
@@ -67,7 +70,7 @@ export class TranscriptionService {
     if (
       opts.currentUserId &&
       resolveAssignmentScope(opts.role, opts.currentUserId) &&
-      message.conversation.assignedToId !== opts.currentUserId
+      !(await canAgentReachConversation(this.prisma, message.conversation, opts.currentUserId))
     ) {
       throw new ForbiddenException();
     }

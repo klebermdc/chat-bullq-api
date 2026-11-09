@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
-import { resolveAssignmentScope } from './conversation-scope';
+import { resolveAssignmentScope, scopedUserWhere } from './conversation-scope';
 
 /**
  * Guarda de acesso a conversas — extraída de `ConversationsService` pra ser
@@ -41,7 +41,8 @@ export class ConversationAccessService {
       where: {
         id,
         organizationId,
-        ...(scoped ? { assignedToId: scoped } : {}),
+        // Dono ou vendedor incluído na conversa (compartilhada).
+        ...(scoped ? scopedUserWhere(scoped) : {}),
       },
     });
     if (!conversation) throw new NotFoundException('Conversation not found');

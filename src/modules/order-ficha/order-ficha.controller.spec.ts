@@ -1,3 +1,4 @@
+import { scopedUserWhere } from '../messaging/conversations/conversation-scope';
 import { OrgRole } from '@prisma/client';
 import { OrderFichaController } from './order-ficha.controller';
 
@@ -50,7 +51,7 @@ describe('OrderFichaController.getForConversation — escopo por atribuição', 
     const out = await ctrl.getForConversation('cv1', 'org-a', OrgRole.AGENT, 'agent-u1');
     expect(out).toBeNull();
     expect(prisma.conversation.findFirst).toHaveBeenCalledWith({
-      where: { id: 'cv1', organizationId: 'org-a', assignedToId: 'agent-u1' },
+      where: { id: 'cv1', organizationId: 'org-a', ...scopedUserWhere('agent-u1') },
       select: { id: true },
     });
   });

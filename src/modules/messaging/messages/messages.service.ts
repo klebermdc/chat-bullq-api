@@ -28,7 +28,10 @@ import {
 import { WatchdogService } from '../../routing/watchdog/watchdog.service';
 import { SegmentReadService } from '../../segments/segment-read.service';
 import { ChannelAdapterRegistry } from '../../channel-hub/channel-adapter.registry';
-import { resolveAssignmentScope } from '../conversations/conversation-scope';
+import {
+  canAgentReachConversation,
+  resolveAssignmentScope,
+} from '../conversations/conversation-scope';
 import { ConversationAccessService } from '../conversations/conversation-access.service';
 import { shouldAutoAssignOnReply } from './auto-assign.util';
 import { syncAttendantTag } from '../../../common/utils/sync-attendant-tag';
@@ -254,12 +257,18 @@ export class MessagesService {
     // já tem dono — quando um gestor entra só pra intervir/responder, o cliente
     // permanece com o agente de direito. Para transferir de propósito existe o
     // endpoint dedicado de transferência.
+    const isParticipant =
+      !automated &&
+      conversation.assignedToId != null &&
+      conversation.assignedToId !== senderId &&
+      (await canAgentReachConversation(this.prisma, conversation, senderId));
     const shouldAutoAssign =
       !automated &&
       shouldAutoAssignOnReply({
         currentAssigneeId: conversation.assignedToId,
         senderId,
         role,
+        isParticipant,
       });
 
     await this.prisma.conversation.update({
@@ -742,7 +751,7 @@ export class MessagesService {
     if (
       currentUserId &&
       resolveAssignmentScope(role, currentUserId) &&
-      conversation.assignedToId !== currentUserId
+      !(await canAgentReachConversation(this.prisma, conversation, currentUserId))
     ) {
       throw new ForbiddenException();
     }

@@ -27,6 +27,7 @@ describe('ContactHistoryService.resolveScope', () => {
       findMany: jest.fn().mockResolvedValue(conversations),
     },
     contact: { findMany: jest.fn().mockResolvedValue(contacts) },
+    conversationParticipant: { findUnique: jest.fn().mockResolvedValue(null) },
   });
 
   const build = (prisma: any) =>

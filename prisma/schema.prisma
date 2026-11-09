@@ -162,6 +162,8 @@ model User {
   scheduledMessages        ScheduledMessage[]      @relation("ScheduledMessageCreator")
   initiatedCalls           Call[]                  @relation("CallAgent")
   responseSlaRecords       ResponseSlaRecord[]     @relation("ResponseSlaAgent")
+  sharedConversations      ConversationParticipant[] @relation("ParticipantUser")
+  addedParticipants        ConversationParticipant[] @relation("ParticipantAddedBy")
 
   @@map("users")
 }
@@ -782,6 +784,7 @@ model Conversation {
   scheduledMessages ScheduledMessage[]
   calls             Call[]
   responseSlaRecords ResponseSlaRecord[]
+  participants      ConversationParticipant[]
 
   @@index([organizationId, status], name: "idx_conv_org_status")
   @@index([organizationId, status, awaitingHumanReply], name: "idx_conv_org_status_awaiting")
@@ -793,6 +796,25 @@ model Conversation {
   @@index([contactId], name: "idx_conv_contact")
   @@index([lastMessageAt], name: "idx_conv_last_msg")
   @@map("conversations")
+}
+
+/// Vendedor incluído numa conversa de outro (ex.: Renata inclui o Kleber).
+/// Vê e responde a conversa, mas não vira dono: SLA, placar, push e aba
+/// Esperando continuam só do `Conversation.assignedToId`.
+model ConversationParticipant {
+  id             String   @id @default(cuid())
+  conversationId String   @map("conversation_id")
+  userId         String   @map("user_id")
+  addedById      String?  @map("added_by_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation("ParticipantUser", fields: [userId], references: [id], onDelete: Cascade)
+  addedBy      User?        @relation("ParticipantAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@unique([conversationId, userId])
+  @@index([userId], name: "idx_conv_participant_user")
+  @@map("conversation_participants")
 }
 
 model ConversationRating {

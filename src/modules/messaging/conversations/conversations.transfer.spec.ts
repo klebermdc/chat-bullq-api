@@ -39,6 +39,7 @@ function makeService(opts: {
       // precisa devolver algo truthy pra não confundir com "não encontrada".
       findFirst: jest.fn().mockResolvedValue(conversation),
     },
+    conversationParticipant: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     userOrganization: {
       findFirst: jest.fn().mockResolvedValue(
         opts.targetMember === undefined

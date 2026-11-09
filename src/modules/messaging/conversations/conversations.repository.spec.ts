@@ -1,3 +1,4 @@
+import { agentScopeBlock, scopedUserWhere } from './conversation-scope';
 import { ConversationsRepository } from './conversations.repository';
 
 describe('ConversationsRepository.findInbox (busca + etiqueta)', () => {
@@ -105,7 +106,39 @@ describe('ConversationsRepository.findInbox (busca + etiqueta)', () => {
       30,
     );
 
-    expect(whereOf().assignedToId).toBe('u9');
+    expect(whereOf().AND).toContainEqual(scopedUserWhere('u9'));
+  });
+
+  it('AGENT na aba Esperando: só a conversa dele, sem as compartilhadas', async () => {
+    const { repo, whereOf } = buildRepo();
+    await repo.findInbox(
+      { organizationId: 'org-1', awaitingHumanReply: true, enforceAssignedToId: 'u9' },
+      0,
+      30,
+    );
+    expect(whereOf().awaitingHumanReply).toBeUndefined();
+    expect(whereOf().AND).toContainEqual(agentScopeBlock('u9', true));
+  });
+
+  it('AGENT na Caixa de entrada: compartilhadas entram mesmo esperando', async () => {
+    const { repo, whereOf } = buildRepo();
+    await repo.findInbox(
+      { organizationId: 'org-1', awaitingHumanReply: false, enforceAssignedToId: 'u9' },
+      0,
+      30,
+    );
+    expect(whereOf().AND).toContainEqual(agentScopeBlock('u9', false));
+  });
+
+  it('"Minhas" do próprio AGENT não esconde as compartilhadas', async () => {
+    const { repo, whereOf } = buildRepo();
+    await repo.findInbox(
+      { organizationId: 'org-1', assignedToId: 'u9', enforceAssignedToId: 'u9' },
+      0,
+      30,
+    );
+    expect(whereOf().assignedToId).toBeUndefined();
+    expect(whereOf().AND).toContainEqual(scopedUserWhere('u9'));
   });
 
   describe('busca agrupa por contato', () => {
@@ -197,7 +230,7 @@ describe('ConversationsRepository.countByStatus (RN-05 assignment scope)', () =>
 
     expect(groupBy).toHaveBeenCalledTimes(1);
     const arg = groupBy.mock.calls[0][0];
-    expect(arg.where.assignedToId).toBe('user-agent');
+    expect(arg.where.OR).toEqual(scopedUserWhere('user-agent').OR);
     expect(arg.where.organizationId).toBe('org-1');
   });
 
@@ -218,7 +251,7 @@ describe('ConversationsRepository.countByStatus (RN-05 assignment scope)', () =>
     await repo.countByStatus('org-1', ['ch-1', 'ch-2'], 'user-agent');
 
     const arg = groupBy.mock.calls[0][0];
-    expect(arg.where.assignedToId).toBe('user-agent');
+    expect(arg.where.OR).toEqual(scopedUserWhere('user-agent').OR);
     expect(arg.where.channelId).toEqual({ in: ['ch-1', 'ch-2'] });
   });
 
@@ -306,6 +339,30 @@ describe('ConversationsRepository.countByTab (abas de atendimento)', () => {
     const prisma = { conversation: { groupBy } };
     return new ConversationsRepository(prisma as any);
   };
+
+  it('AGENT: compartilhadas abertas somam na Caixa de entrada, nunca no Esperando', async () => {
+    const groupBy = jest
+      .fn()
+      // 1ª: conversas dele
+      .mockResolvedValueOnce([
+        { status: 'OPEN', awaitingHumanReply: true, _count: 2 },
+        { status: 'OPEN', awaitingHumanReply: false, _count: 1 },
+      ])
+      // 2ª: compartilhadas com ele
+      .mockResolvedValueOnce([
+        { status: 'OPEN', _count: 4 },
+        { status: 'CLOSED', _count: 1 },
+      ]);
+    const repo = buildRepo(groupBy);
+
+    const out = await repo.countByTab('org-1', { enforceAssignedToId: 'u9' });
+
+    expect(out).toEqual({ waiting: 2, inbox: 5, closed: 1 });
+    expect(groupBy.mock.calls[0][0].where.assignedToId).toBe('u9');
+    expect(groupBy.mock.calls[1][0].where.participants).toEqual({
+      some: { userId: 'u9' },
+    });
+  });
 
   it('mapeia status/awaitingHumanReply para as 3 abas (CLOSED sempre → finalizados)', async () => {
     const groupBy = jest.fn().mockResolvedValue([
