@@ -8,6 +8,7 @@ function makeService(opts: {
   conversation?: Record<string, unknown>;
   card?: Record<string, unknown> | null;
   lostStage?: Record<string, unknown> | null;
+  extraStages?: Record<string, unknown>[];
   fromStage?: Record<string, unknown> | null;
   placement?: Record<string, unknown> | null;
 } = {}) {
@@ -31,6 +32,17 @@ function makeService(opts: {
       update: jest.fn().mockResolvedValue({}),
     },
     pipelineStage: {
+      findMany: jest.fn().mockImplementation(() => {
+        const lost =
+          opts.lostStage === undefined
+            ? { id: 'stage-lost', name: 'Venda perdida', type: 'LOST' }
+            : opts.lostStage;
+        return Promise.resolve([
+          { id: 'stage-proposta', name: 'Proposta', type: 'NORMAL' },
+          ...(opts.extraStages ?? []),
+          ...(lost ? [lost] : []),
+        ]);
+      }),
       findFirst: jest.fn().mockImplementation((args: any) =>
         Promise.resolve(
           args?.where?.type === 'LOST'
@@ -192,6 +204,67 @@ describe('LostSaleService.markLost', () => {
     expect(prisma.conversation.update.mock.calls[0][0].data.metadata).toEqual({
       lostFromStatus: ConversationStatus.OPEN,
     });
+  });
+
+  it('"Não respondeu" vai para a etapa de mesmo nome do funil, não para Venda perdida', async () => {
+    const { svc, pipelines } = makeService({
+      extraStages: [{ id: 'stage-nao-respondeu', name: ' nao  RESPONDEU ', type: 'NORMAL' }],
+    });
+
+    await svc.markLost('o1', 'conv-1', { reason: 'NO_REPLY' }, ACTOR);
+
+    expect(pipelines.moveCard).toHaveBeenCalledWith(
+      'card-1',
+      'o1',
+      { toStageId: 'stage-nao-respondeu', toIndex: 0 },
+      OrgRole.AGENT,
+      'u1',
+    );
+  });
+
+  it('motivo sem etapa própria no funil continua indo para Venda perdida', async () => {
+    const { svc, pipelines } = makeService({
+      extraStages: [{ id: 'stage-nao-respondeu', name: 'Não respondeu', type: 'NORMAL' }],
+    });
+
+    await svc.markLost('o1', 'conv-1', { reason: 'PRICE' }, ACTOR);
+
+    expect(pipelines.moveCard.mock.calls[0][2]).toEqual({ toStageId: 'stage-lost', toIndex: 0 });
+  });
+
+  it('funil só com a etapa do motivo (sem LOST) ainda move o card', async () => {
+    const { svc, pipelines } = makeService({
+      lostStage: null,
+      extraStages: [{ id: 'stage-nao-respondeu', name: 'Não respondeu', type: 'NORMAL' }],
+    });
+
+    await svc.markLost('o1', 'conv-1', { reason: 'NO_REPLY' }, ACTOR);
+
+    expect(pipelines.moveCard.mock.calls[0][2].toStageId).toBe('stage-nao-respondeu');
+  });
+
+  it('trocar o motivo para "Não respondeu" move o card e guarda a etapa de antes da primeira marcação', async () => {
+    const { svc, prisma, pipelines } = makeService({
+      conversation: {
+        status: ConversationStatus.CLOSED,
+        lostAt: new Date(),
+        metadata: { lostFromStatus: ConversationStatus.OPEN },
+      },
+      card: {
+        id: 'card-1',
+        pipelineId: 'pipe-1',
+        stageId: 'stage-lost',
+        metadata: { lostFromStageId: 'stage-proposta' },
+      },
+      extraStages: [{ id: 'stage-nao-respondeu', name: 'Não respondeu', type: 'NORMAL' }],
+    });
+
+    await svc.markLost('o1', 'conv-1', { reason: 'NO_REPLY' }, ACTOR);
+
+    expect(prisma.card.update.mock.calls[0][0].data.metadata).toEqual({
+      lostFromStageId: 'stage-proposta',
+    });
+    expect(pipelines.moveCard.mock.calls[0][2].toStageId).toBe('stage-nao-respondeu');
   });
 });
 
