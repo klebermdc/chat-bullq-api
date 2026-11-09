@@ -5,6 +5,7 @@ export const QUICK_REPLY_TITLE_MAX = 80;
 /** Mesmo teto de texto de uma mensagem de WhatsApp. */
 export const QUICK_REPLY_CONTENT_MAX = 4096;
 export const QUICK_REPLY_OWNER_ID_MAX = 64;
+export const QUICK_REPLY_CATEGORY_MAX = 60;
 
 export class CreateQuickReplyDto {
   /** Normalizado no service (sem barra, minúsculo). */
@@ -33,4 +34,11 @@ export class CreateQuickReplyDto {
   @IsNotEmpty()
   @MaxLength(QUICK_REPLY_OWNER_ID_MAX)
   ownerUserId?: string | null;
+
+  /** Grupo na janela de mensagens rápidas. Vazio ou ausente = sem categoria. */
+  @ApiPropertyOptional({ nullable: true, example: 'Disney' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(QUICK_REPLY_CATEGORY_MAX)
+  category?: string | null;
 }

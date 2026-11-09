@@ -987,6 +987,8 @@ model QuickReply {
   /// Vendedor dono da mensagem. Nulo = da equipe inteira. Preenchido = só ele
   /// (e dono/admin da organização) enxerga e usa.
   ownerUserId    String?   @map("owner_user_id")
+  /// Grupo da mensagem na janela do atendente (ex.: "Disney"). Nulo = "Outras".
+  category       String?
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
   deletedAt      DateTime? @map("deleted_at")

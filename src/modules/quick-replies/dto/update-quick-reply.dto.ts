@@ -1,6 +1,7 @@
 import { IsString, IsOptional, IsNotEmpty, MaxLength, ValidateIf } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  QUICK_REPLY_CATEGORY_MAX,
   QUICK_REPLY_CONTENT_MAX,
   QUICK_REPLY_OWNER_ID_MAX,
   QUICK_REPLY_TITLE_MAX,
@@ -35,4 +36,11 @@ export class UpdateQuickReplyDto {
   @IsNotEmpty()
   @MaxLength(QUICK_REPLY_OWNER_ID_MAX)
   ownerUserId?: string | null;
+
+  /** Vazio ou nulo tira a categoria; ausente não mexe. */
+  @ApiPropertyOptional({ nullable: true })
+  @ValidateIf((_dto, value) => value !== undefined && value !== null)
+  @IsString()
+  @MaxLength(QUICK_REPLY_CATEGORY_MAX)
+  category?: string | null;
 }
