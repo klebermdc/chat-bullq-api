@@ -35,6 +35,7 @@ function makeFsm(conversationOverrides: Record<string, unknown> = {}) {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     conversationAuditLog: { create: jest.fn().mockResolvedValue({}) },
+    conversationParticipant: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     user: {
       findUnique: jest.fn(({ where }: any) =>
         Promise.resolve(usersById[where.id] ?? null),

@@ -662,6 +662,11 @@ export class ConversationsRepository {
         isArchived: false,
         ...(channelFilter !== undefined ? { channelId: channelFilter } : {}),
         participants: { some: { userId: opts.enforceAssignedToId } },
+        // Sem as dele (já contadas acima); `not` sozinho perderia as sem dono.
+        OR: [
+          { assignedToId: null },
+          { assignedToId: { not: opts.enforceAssignedToId } },
+        ],
       },
       _count: true,
     });

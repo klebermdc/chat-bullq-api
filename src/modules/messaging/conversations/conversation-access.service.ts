@@ -31,6 +31,12 @@ export class ConversationAccessService {
     organizationId: string,
     role?: OrgRole,
     currentUserId?: string,
+    /**
+     * Conversa compartilhada: o vendedor incluído passa só onde a rota pede
+     * (enviar, reagir, apagar mensagem, ver participantes). Sem isto a guarda
+     * é do dono — assumir, editar, encerrar, transferir e IA seguem dele.
+     */
+    opts: { allowParticipant?: boolean } = {},
   ) {
     // Sem currentUserId = chamador de sistema (cadência, webhook, automação,
     // agente de IA) — mantém irrestrito, igual ao resto do arquivo.
@@ -42,7 +48,9 @@ export class ConversationAccessService {
         id,
         organizationId,
         // Dono ou vendedor incluído na conversa (compartilhada).
-        ...(scoped ? scopedUserWhere(scoped) : {}),
+        ...(scoped
+          ? scopedUserWhere(scoped, { ownedOnly: !opts.allowParticipant })
+          : {}),
       },
     });
     if (!conversation) throw new NotFoundException('Conversation not found');

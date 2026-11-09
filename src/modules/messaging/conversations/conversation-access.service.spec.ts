@@ -1,4 +1,3 @@
-import { scopedUserWhere } from './conversation-scope';
 import { NotFoundException } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { ConversationAccessService } from './conversation-access.service';
@@ -38,7 +37,7 @@ describe('ConversationAccessService.assertConversationAccess', () => {
     const { svc, prisma } = makeService({ id: 'conv1' });
     await svc.assertConversationAccess('conv1', 'org1', OrgRole.AGENT, 'agent-u1');
     expect(prisma.conversation.findFirst).toHaveBeenCalledWith({
-      where: { id: 'conv1', organizationId: 'org1', ...scopedUserWhere('agent-u1') },
+      where: { id: 'conv1', organizationId: 'org1', assignedToId: 'agent-u1' },
     });
   });
 
@@ -64,7 +63,7 @@ describe('ConversationAccessService.assertConversationAccess', () => {
       svc.assertConversationAccess('conv1', 'org1', undefined, 'u1'),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.conversation.findFirst).toHaveBeenCalledWith({
-      where: { id: 'conv1', organizationId: 'org1', ...scopedUserWhere('u1') },
+      where: { id: 'conv1', organizationId: 'org1', assignedToId: 'u1' },
     });
   });
 
@@ -74,5 +73,32 @@ describe('ConversationAccessService.assertConversationAccess', () => {
     expect(prisma.conversation.findFirst).toHaveBeenCalledWith({
       where: { id: 'conv1', organizationId: 'org1' },
     });
+  });
+
+  it('incluído na conversa: só passa onde a rota permite (enviar/ler)', async () => {
+    const { svc, prisma } = makeService({ id: 'conv1' });
+    await svc.assertConversationAccess('conv1', 'org1', OrgRole.AGENT, 'kleber', {
+      allowParticipant: true,
+    });
+    expect(prisma.conversation.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'conv1',
+        organizationId: 'org1',
+        OR: [
+          { assignedToId: 'kleber' },
+          { participants: { some: { userId: 'kleber' } } },
+        ],
+      },
+    });
+  });
+
+  it('sem allowParticipant a guarda é do dono (assumir, encerrar, transferir)', async () => {
+    const { svc, prisma } = makeService(null);
+    await expect(
+      svc.assertConversationAccess('conv1', 'org1', OrgRole.AGENT, 'kleber'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.conversation.findFirst.mock.calls[0][0].where.assignedToId).toBe(
+      'kleber',
+    );
   });
 });

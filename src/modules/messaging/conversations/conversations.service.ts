@@ -645,10 +645,6 @@ export class ConversationsService {
       : null;
 
     await this.fsm.assign(id, toUserId, actorId);
-    // Quem era incluído e virou dono deixa de ser participante.
-    await this.prisma.conversationParticipant.deleteMany({
-      where: { conversationId: id, userId: toUserId },
-    });
 
     const fromLabel = fromUser?.name ?? 'ninguém';
     const toLabel = target.user.name ?? 'atendente';

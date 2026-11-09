@@ -1,4 +1,3 @@
-import { scopedUserWhere } from './conversation-scope';
 import { NotFoundException } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { ConversationsService } from './conversations.service';
@@ -46,7 +45,7 @@ describe('ConversationsService.assertConversationAccess', () => {
     const { svc, prisma } = makeService({ id: 'conv1' });
     await (svc as any).assertConversationAccess('conv1', 'org1', OrgRole.AGENT, 'agent-u1');
     expect(prisma.conversation.findFirst).toHaveBeenCalledWith({
-      where: { id: 'conv1', organizationId: 'org1', ...scopedUserWhere('agent-u1') },
+      where: { id: 'conv1', organizationId: 'org1', assignedToId: 'agent-u1' },
     });
   });
 
@@ -72,7 +71,7 @@ describe('ConversationsService.assertConversationAccess', () => {
       (svc as any).assertConversationAccess('conv1', 'org1', undefined, 'u1'),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.conversation.findFirst).toHaveBeenCalledWith({
-      where: { id: 'conv1', organizationId: 'org1', ...scopedUserWhere('u1') },
+      where: { id: 'conv1', organizationId: 'org1', assignedToId: 'u1' },
     });
   });
 
@@ -97,7 +96,7 @@ describe('ConversationsService.assignToMe — AGENT não reivindica conversa alh
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(fsm.assign).not.toHaveBeenCalled();
     expect(prisma.conversation.findFirst).toHaveBeenCalledWith({
-      where: { id: 'conv1', organizationId: 'org1', ...scopedUserWhere('agent-u1') },
+      where: { id: 'conv1', organizationId: 'org1', assignedToId: 'agent-u1' },
     });
   });
 });

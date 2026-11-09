@@ -119,6 +119,7 @@ export class MessagesService {
         organizationId,
         role,
         senderId,
+        { allowParticipant: true },
       );
     }
     this.channelAccess.assertChannelAccess(access, conversation.channelId);
@@ -531,6 +532,7 @@ export class MessagesService {
       organizationId,
       role,
       senderId,
+      { allowParticipant: true },
     );
     this.channelAccess.assertChannelAccess(access, conversation.channelId);
 
@@ -633,6 +635,7 @@ export class MessagesService {
       organizationId,
       role,
       actorId,
+      { allowParticipant: true },
     );
     this.channelAccess.assertChannelAccess(access, message.conversation.channelId);
 

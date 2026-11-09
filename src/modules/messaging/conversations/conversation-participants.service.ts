@@ -151,6 +151,7 @@ export class ConversationParticipantsService {
       organizationId,
       actor.role,
       actor.userId,
+      { allowParticipant: true },
     );
     this.channelAccess.assertChannelAccess(actor.access, conversation.channelId);
     return conversation;
