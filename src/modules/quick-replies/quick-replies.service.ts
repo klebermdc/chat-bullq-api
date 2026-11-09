@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { QuickRepliesRepository } from './quick-replies.repository';
@@ -45,14 +46,19 @@ function canSeeAll(viewer: QuickReplyViewer): boolean {
 export class QuickRepliesService {
   constructor(private readonly repository: QuickRepliesRepository) {}
 
-  async create(orgId: string, dto: CreateQuickReplyDto) {
+  /**
+   * Dono/admin escolhem o dono (ou a equipe). Atendente sempre cria para si
+   * mesmo: o que vier em `ownerUserId` é ignorado.
+   */
+  async create(orgId: string, dto: CreateQuickReplyDto, viewer: QuickReplyViewer) {
     const shortcut = normalizeShortcut(dto.shortcut);
     const existing = await this.repository.findByShortcut(orgId, shortcut);
     if (existing) {
       throw new ConflictException(`O atalho /${shortcut} já existe`);
     }
-    const ownerUserId = dto.ownerUserId ?? null;
-    if (ownerUserId) await this.assertMember(orgId, ownerUserId);
+    const isManager = canSeeAll(viewer);
+    const ownerUserId = isManager ? dto.ownerUserId ?? null : viewer.userId;
+    if (ownerUserId && isManager) await this.assertMember(orgId, ownerUserId);
     return this.repository.create({
       shortcut,
       title: dto.title,
@@ -85,8 +91,10 @@ export class QuickRepliesService {
     return row;
   }
 
-  async update(id: string, orgId: string, dto: UpdateQuickReplyDto) {
-    await this.findOne(id, orgId);
+  /** Atendente só edita a própria e não troca o dono dela. */
+  async update(id: string, orgId: string, dto: UpdateQuickReplyDto, viewer: QuickReplyViewer) {
+    await this.findEditable(id, orgId, viewer);
+    const isManager = canSeeAll(viewer);
     const shortcut = dto.shortcut !== undefined ? normalizeShortcut(dto.shortcut) : undefined;
     if (shortcut !== undefined) {
       const clash = await this.repository.findByShortcut(orgId, shortcut);
@@ -94,13 +102,13 @@ export class QuickRepliesService {
         throw new ConflictException(`O atalho /${shortcut} já existe`);
       }
     }
-    if (dto.ownerUserId) await this.assertMember(orgId, dto.ownerUserId);
+    if (isManager && dto.ownerUserId) await this.assertMember(orgId, dto.ownerUserId);
     return this.repository.update(id, {
       ...(shortcut !== undefined && { shortcut }),
       ...(dto.title !== undefined && { title: dto.title }),
       ...(dto.content !== undefined && { content: dto.content }),
       ...(dto.category !== undefined && { category: normalizeCategory(dto.category) }),
-      ...(dto.ownerUserId !== undefined && {
+      ...(isManager && dto.ownerUserId !== undefined && {
         owner: dto.ownerUserId ? { connect: { id: dto.ownerUserId } } : { disconnect: true },
       }),
     });
@@ -112,8 +120,18 @@ export class QuickRepliesService {
     }
   }
 
-  async remove(id: string, orgId: string) {
-    const row = await this.findOne(id, orgId);
+  /** Atendente só exclui a própria; a da equipe e a de outro vendedor não. */
+  async remove(id: string, orgId: string, viewer: QuickReplyViewer) {
+    const row = await this.findEditable(id, orgId, viewer);
     return this.repository.softDelete(id, row.shortcut);
+  }
+
+  /** A de outro vendedor some (404); a da equipe aparece, mas não é dele (403). */
+  private async findEditable(id: string, orgId: string, viewer: QuickReplyViewer) {
+    const row = await this.findOneVisible(id, orgId, viewer);
+    if (!canSeeAll(viewer) && row.ownerUserId !== viewer.userId) {
+      throw new ForbiddenException('Só administradores mudam ou excluem mensagens rápidas da equipe.');
+    }
+    return row;
   }
 }

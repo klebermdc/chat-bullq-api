@@ -14,7 +14,7 @@ import { QuickRepliesService } from './quick-replies.service';
 import { CreateQuickReplyDto } from './dto/create-quick-reply.dto';
 import { UpdateQuickReplyDto } from './dto/update-quick-reply.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentOrg, CurrentUser, CurrentUserRole, Roles } from '../../common/decorators';
+import { CurrentOrg, CurrentUser, CurrentUserRole } from '../../common/decorators';
 
 @ApiTags('Quick replies')
 @ApiBearerAuth()
@@ -23,11 +23,16 @@ import { CurrentOrg, CurrentUser, CurrentUserRole, Roles } from '../../common/de
 export class QuickRepliesController {
   constructor(private readonly service: QuickRepliesService) {}
 
+  /** Qualquer membro cria; atendente cria só para si (regra no service). */
   @Post()
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
   @ApiOperation({ summary: 'Create quick reply' })
-  create(@CurrentOrg('id') orgId: string, @Body() dto: CreateQuickReplyDto) {
-    return this.service.create(orgId, dto);
+  create(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole | undefined,
+    @Body() dto: CreateQuickReplyDto,
+  ) {
+    return this.service.create(orgId, dto, { userId, role });
   }
 
   @Get()
@@ -51,21 +56,27 @@ export class QuickRepliesController {
     return this.service.findOneVisible(id, orgId, { userId, role });
   }
 
+  /** Atendente só mexe na própria (regra no service). */
   @Patch(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
   @ApiOperation({ summary: 'Update quick reply' })
   update(
     @Param('id') id: string,
     @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole | undefined,
     @Body() dto: UpdateQuickReplyDto,
   ) {
-    return this.service.update(id, orgId, dto);
+    return this.service.update(id, orgId, dto, { userId, role });
   }
 
   @Delete(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
   @ApiOperation({ summary: 'Soft-delete quick reply' })
-  remove(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
-    return this.service.remove(id, orgId);
+  remove(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUserRole() role: OrgRole | undefined,
+  ) {
+    return this.service.remove(id, orgId, { userId, role });
   }
 }

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { QuickRepliesService, normalizeShortcut } from './quick-replies.service';
 
@@ -11,6 +11,9 @@ describe('normalizeShortcut', () => {
     expect(() => normalizeShortcut('olá mundo')).toThrow(BadRequestException);
   });
 });
+
+const ADMIN = { userId: 'adm', role: OrgRole.ADMIN };
+const AGENT = { userId: 'u3', role: OrgRole.AGENT };
 
 describe('QuickRepliesService', () => {
   function make(opts: { existing?: any; byShortcut?: any; isMember?: boolean } = {}) {
@@ -28,21 +31,21 @@ describe('QuickRepliesService', () => {
 
   it('grava o atalho normalizado', async () => {
     const { svc, repo } = make();
-    await svc.create('org1', { shortcut: '/Pix', title: 'Pix', content: 'Chave: x' });
+    await svc.create('org1', { shortcut: '/Pix', title: 'Pix', content: 'Chave: x' }, ADMIN);
     expect(repo.findByShortcut).toHaveBeenCalledWith('org1', 'pix');
     expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ shortcut: 'pix' }));
   });
 
   it('recusa atalho repetido com 409', async () => {
     const { svc } = make({ byShortcut: { id: 'outro' } });
-    await expect(svc.create('org1', { shortcut: 'pix', title: 'Pix', content: 'x' })).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.create('org1', { shortcut: 'pix', title: 'Pix', content: 'x' }, ADMIN)).rejects.toBeInstanceOf(ConflictException);
   });
 
   // O índice único (org, atalho) inclui as apagadas: sem liberar o atalho,
   // recriar "/pix" depois de apagar dava 500.
   it('apagar libera o atalho para ser reusado', async () => {
     const { svc, repo } = make({ existing: { id: 'q1', organizationId: 'org1', shortcut: 'pix' } });
-    await svc.remove('q1', 'org1');
+    await svc.remove('q1', 'org1', ADMIN);
     expect(repo.softDelete).toHaveBeenCalledWith('q1', 'pix');
   });
 
@@ -79,14 +82,14 @@ describe('QuickRepliesService', () => {
 
     it('grava o vendedor escolhido quando ele é da organização', async () => {
       const { svc, repo } = make();
-      await svc.create('org1', { shortcut: 'pix', title: 'Pix', content: 'x', ownerUserId: 'u3' });
+      await svc.create('org1', { shortcut: 'pix', title: 'Pix', content: 'x', ownerUserId: 'u3' }, ADMIN);
       expect(repo.isMember).toHaveBeenCalledWith('org1', 'u3');
       expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ owner: { connect: { id: 'u3' } } }));
     });
 
     it('sem vendedor a mensagem fica para toda a equipe', async () => {
       const { svc, repo } = make();
-      await svc.create('org1', { shortcut: 'pix', title: 'Pix', content: 'x' });
+      await svc.create('org1', { shortcut: 'pix', title: 'Pix', content: 'x' }, ADMIN);
       expect(repo.isMember).not.toHaveBeenCalled();
       expect(repo.create.mock.calls[0][0].owner).toBeUndefined();
     });
@@ -94,19 +97,19 @@ describe('QuickRepliesService', () => {
     it('recusa vendedor que não é da organização', async () => {
       const { svc } = make({ isMember: false });
       await expect(
-        svc.create('org1', { shortcut: 'pix', title: 'Pix', content: 'x', ownerUserId: 'fora' }),
+        svc.create('org1', { shortcut: 'pix', title: 'Pix', content: 'x', ownerUserId: 'fora' }, ADMIN),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('editar com vendedor nulo devolve a mensagem para toda a equipe', async () => {
       const { svc, repo } = make({ existing: { id: 'q1', organizationId: 'org1', ownerUserId: 'u3' } });
-      await svc.update('q1', 'org1', { ownerUserId: null });
+      await svc.update('q1', 'org1', { ownerUserId: null }, ADMIN);
       expect(repo.update).toHaveBeenCalledWith('q1', { owner: { disconnect: true } });
     });
 
     it('editar sem mexer no vendedor mantém o dono', async () => {
       const { svc, repo } = make({ existing: { id: 'q1', organizationId: 'org1', ownerUserId: 'u3' } });
-      await svc.update('q1', 'org1', { title: 'Novo' });
+      await svc.update('q1', 'org1', { title: 'Novo' }, ADMIN);
       expect(repo.update).toHaveBeenCalledWith('q1', { title: 'Novo' });
     });
   });
@@ -114,25 +117,67 @@ describe('QuickRepliesService', () => {
   describe('categoria', () => {
     it('grava a categoria sem espaços nas pontas', async () => {
       const { svc, repo } = make();
-      await svc.create('org1', { shortcut: 'pix', title: 'Pix', content: 'x', category: '  Pagamento ' });
+      await svc.create('org1', { shortcut: 'pix', title: 'Pix', content: 'x', category: '  Pagamento ' }, ADMIN);
       expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ category: 'Pagamento' }));
     });
 
     it('categoria vazia ou ausente fica nula', async () => {
       const { svc, repo } = make();
-      await svc.create('org1', { shortcut: 'pix', title: 'Pix', content: 'x', category: '   ' });
+      await svc.create('org1', { shortcut: 'pix', title: 'Pix', content: 'x', category: '   ' }, ADMIN);
       expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ category: null }));
-      await svc.create('org1', { shortcut: 'pix2', title: 'Pix', content: 'x' });
+      await svc.create('org1', { shortcut: 'pix2', title: 'Pix', content: 'x' }, ADMIN);
       expect(repo.create).toHaveBeenLastCalledWith(expect.objectContaining({ category: null }));
     });
 
     it('editar com categoria vazia limpa; sem categoria não mexe', async () => {
       const existing = { id: 'q1', organizationId: 'org1', ownerUserId: null };
       const { svc, repo } = make({ existing });
-      await svc.update('q1', 'org1', { category: '' });
+      await svc.update('q1', 'org1', { category: '' }, ADMIN);
       expect(repo.update).toHaveBeenLastCalledWith('q1', { category: null });
-      await svc.update('q1', 'org1', { category: 'Disney' });
+      await svc.update('q1', 'org1', { category: 'Disney' }, ADMIN);
       expect(repo.update).toHaveBeenLastCalledWith('q1', { category: 'Disney' });
+    });
+  });
+
+  describe('atendente cria, edita e exclui só as dele', () => {
+    it('mensagem criada pelo atendente fica só para ele, mesmo pedindo outro dono ou a equipe', async () => {
+      const { svc, repo } = make();
+      await svc.create('org1', { shortcut: 'a', title: 'A', content: 'x', ownerUserId: 'outro' }, AGENT);
+      await svc.create('org1', { shortcut: 'b', title: 'B', content: 'x', ownerUserId: null }, AGENT);
+      expect(repo.create.mock.calls[0][0].owner).toEqual({ connect: { id: 'u3' } });
+      expect(repo.create.mock.calls[1][0].owner).toEqual({ connect: { id: 'u3' } });
+      expect(repo.isMember).not.toHaveBeenCalled();
+    });
+
+    it('atendente exclui a própria', async () => {
+      const { svc, repo } = make({ existing: { id: 'q1', organizationId: 'org1', ownerUserId: 'u3', shortcut: 'a' } });
+      await svc.remove('q1', 'org1', AGENT);
+      expect(repo.softDelete).toHaveBeenCalledWith('q1', 'a');
+    });
+
+    it('atendente não exclui nem edita a da equipe', async () => {
+      const { svc, repo } = make({ existing: { id: 'q1', organizationId: 'org1', ownerUserId: null, shortcut: 'a' } });
+      await expect(svc.remove('q1', 'org1', AGENT)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(svc.update('q1', 'org1', { title: 'x' }, AGENT)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repo.softDelete).not.toHaveBeenCalled();
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it('atendente não enxerga nem exclui a de outro vendedor', async () => {
+      const { svc } = make({ existing: { id: 'q1', organizationId: 'org1', ownerUserId: 'outro', shortcut: 'a' } });
+      await expect(svc.remove('q1', 'org1', AGENT)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('atendente edita a própria, mas não passa ela para a equipe ou para outro', async () => {
+      const { svc, repo } = make({ existing: { id: 'q1', organizationId: 'org1', ownerUserId: 'u3', shortcut: 'a' } });
+      await svc.update('q1', 'org1', { title: 'Novo', ownerUserId: null }, AGENT);
+      expect(repo.update).toHaveBeenCalledWith('q1', { title: 'Novo' });
+    });
+
+    it('admin exclui a da equipe', async () => {
+      const { svc, repo } = make({ existing: { id: 'q1', organizationId: 'org1', ownerUserId: null, shortcut: 'a' } });
+      await svc.remove('q1', 'org1', ADMIN);
+      expect(repo.softDelete).toHaveBeenCalledWith('q1', 'a');
     });
   });
 });
