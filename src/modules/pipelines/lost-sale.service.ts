@@ -32,6 +32,7 @@ import {
   LOST_REASONS_REQUIRING_NOTE,
   type LostReason,
 } from './lost-sale.constants';
+import { pickLostStage } from './lost-stage';
 
 type JsonObject = Prisma.InputJsonObject;
 
@@ -279,7 +280,11 @@ export class LostSaleService {
     });
   }
 
-  /** Sem card ou sem etapa LOST no funil, segue só com a conversa. */
+  /**
+   * O card vai para a etapa com o nome do motivo, se o funil tiver uma (ex.:
+   * "Não respondeu"); senão, para a primeira etapa LOST. Sem card ou sem
+   * nenhuma das duas, segue só com a conversa.
+   */
   private async moveCardToLost(
     organizationId: string,
     conversationId: string,
@@ -289,11 +294,13 @@ export class LostSaleService {
     const card = await this.findCard(organizationId, conversationId, actor);
     if (!card) return;
 
-    const lostStage = await this.prisma.pipelineStage.findFirst({
-      where: { pipelineId: card.pipelineId, type: 'LOST' },
+    const stages = await this.prisma.pipelineStage.findMany({
+      where: { pipelineId: card.pipelineId },
       orderBy: { order: 'asc' },
+      select: { id: true, name: true, type: true },
     });
-    if (!lostStage) {
+    const target = pickLostStage(stages, reason);
+    if (!target) {
       this.logger.warn(
         `lost_sale_no_lost_stage pipeline=${card.pipelineId} card=${card.id}`,
       );
@@ -301,12 +308,15 @@ export class LostSaleService {
     }
 
     const metadata = asObject(card.metadata);
-    const alreadyThere = card.stageId === lostStage.id;
+    const alreadyThere = card.stageId === target.id;
+    // Na troca de motivo o card já saiu da etapa original: o Desfazer volta
+    // para a de antes da primeira marcação, então ela não é sobrescrita.
+    const keepFrom = alreadyThere || typeof metadata[CARD_FROM_STAGE_KEY] === 'string';
     await this.prisma.card.update({
       where: { id: card.id },
       data: {
         closedReason: reason,
-        metadata: alreadyThere
+        metadata: keepFrom
           ? metadata
           : { ...metadata, [CARD_FROM_STAGE_KEY]: card.stageId },
       },
@@ -316,7 +326,7 @@ export class LostSaleService {
     await this.pipelines.moveCard(
       card.id,
       organizationId,
-      { toStageId: lostStage.id, toIndex: 0 } as MoveCardDto,
+      { toStageId: target.id, toIndex: 0 } as MoveCardDto,
       actor.role,
       actor.userId,
     );
