@@ -3,6 +3,16 @@ import { PrismaService } from '../../../database/prisma.service';
 import { LlmService } from '../../ai-agents/llm/llm.service';
 import { LlmContent } from '../../ai-agents/llm/llm.types';
 import { SAKANA_SIMPLE_MODEL } from '../../ai-agents/llm/llm.constants';
+import {
+  stripForeignScripts,
+  stripThinkBlocks,
+} from '../../ai-agents/runner/text-guards';
+
+/**
+ * O MiniMax pensa (<think>) antes de responder e isso conta no limite de
+ * tokens: com 256 o raciocínio podia comer a resposta inteira.
+ */
+const DRAFT_MAX_TOKENS = 1024;
 
 @Injectable()
 export class ReengageDraftService {
@@ -45,7 +55,7 @@ export class ReengageDraftService {
         organizationId,
         modelId: SAKANA_SIMPLE_MODEL,
         temperature: 0.7,
-        maxTokens: 256,
+        maxTokens: DRAFT_MAX_TOKENS,
         messages: [
           {
             role: 'system',
@@ -69,7 +79,10 @@ export class ReengageDraftService {
           },
         ],
       });
-      const text = this.extractText(res.message.content).trim();
+      // O raciocínio do modelo (<think>, em inglês) nunca vai pro cliente.
+      const text = stripForeignScripts(
+        stripThinkBlocks(this.extractText(res.message.content)),
+      ).trim();
       return text || null;
     } catch (err) {
       this.logger.warn(

@@ -57,6 +57,20 @@ describe('ReengageDraftService', () => {
     );
   });
 
+  it('descarta o raciocínio <think> do modelo e manda só a mensagem', async () => {
+    const { service } = makeDeps(
+      '<think>\nWe need only message max 2 sentences.\n</think>\nOi, Manoel! 😊 Quer que eu continue?',
+    );
+    expect(await service.draft('org1', 'c1')).toBe(
+      'Oi, Manoel! 😊 Quer que eu continue?',
+    );
+  });
+
+  it('retorna null quando o modelo só pensou (think sem fechar)', async () => {
+    const { service } = makeDeps('<think>We need only message max 2 sentences');
+    expect(await service.draft('org1', 'c1')).toBeNull();
+  });
+
   it('faz trim e retorna null quando o texto é vazio', async () => {
     const { service } = makeDeps('   ');
     expect(await service.draft('org1', 'c1')).toBeNull();
