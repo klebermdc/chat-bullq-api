@@ -131,9 +131,12 @@ describe('buildAdvancedBlocks (filtros avançados da inbox)', () => {
     const distribute = {
       cards: { some: { stage: { name: { contains: 'distribu', mode: 'insensitive' } } } },
     };
+    const pendingHandoff = {
+      aiPendingActions: { some: { toolName: 'transferToHuman', status: 'PENDING' } },
+    };
     const withAi = {
       awaitingHumanReply: false,
-      AND: [{ OR: [{ aiEnabled: null }, { aiEnabled: true }] }, { NOT: distribute }],
+      AND: [{ OR: [{ aiEnabled: null }, { aiEnabled: true }] }, { NOT: pendingHandoff }],
       channel: {
         aiEnabled: { not: false },
         aiAgentChannels: {
@@ -142,10 +145,10 @@ describe('buildAdvancedBlocks (filtros avançados da inbox)', () => {
       },
     };
 
-    it('"Na fila" = aberta, sem atendente e com card na etapa Distribuir', () => {
+    it('"Na fila" = aberta, sem atendente e com transferência da IA pendente de distribuição', () => {
       const [block] = buildAdvancedBlocks({ phases: ['queue'] });
 
-      expect(block).toEqual({ status: { not: 'CLOSED' }, assignedToId: null, OR: [distribute] });
+      expect(block).toEqual({ status: { not: 'CLOSED' }, assignedToId: null, OR: [pendingHandoff] });
     });
 
     it('"Com a IA" exige a IA de fato no comando: sem esperar humano, IA ligada e canal com agente', () => {
@@ -160,7 +163,7 @@ describe('buildAdvancedBlocks (filtros avançados da inbox)', () => {
       expect(block).toEqual({
         status: { not: 'CLOSED' },
         assignedToId: null,
-        OR: [withAi, distribute],
+        OR: [withAi, pendingHandoff],
       });
     });
   });
