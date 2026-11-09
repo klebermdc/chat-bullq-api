@@ -1,5 +1,6 @@
 import { IsOptional, IsBoolean, IsInt, IsArray, ArrayNotEmpty, Min, Max, IsIn, IsString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { MIN_REENGAGE_RETRY_HOURS } from '../../scheduling.constants';
 
 export class UpdateInactivitySettingsDto {
   @ApiPropertyOptional() @IsOptional() @IsBoolean() enabled?: boolean;
@@ -15,7 +16,12 @@ export class UpdateInactivitySettingsDto {
   @ApiPropertyOptional() @IsOptional() @IsBoolean() autoReengage?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) reengageFromBand?: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) maxAttempts?: number;
-  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) retryEveryHours?: number;
+  @ApiPropertyOptional({ minimum: MIN_REENGAGE_RETRY_HOURS })
+  @IsOptional() @IsInt()
+  @Min(MIN_REENGAGE_RETRY_HOURS, {
+    message: `O intervalo entre tentativas precisa ser de pelo menos ${MIN_REENGAGE_RETRY_HOURS} horas.`,
+  })
+  retryEveryHours?: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(23) quietHoursStart?: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(23) quietHoursEnd?: number;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() reengageOnlyAiParked?: boolean;

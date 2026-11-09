@@ -381,6 +381,23 @@ describe('ScheduledDispatchProcessor', () => {
     expect(repo.update).toHaveBeenCalledWith('s2', { jobId: 'j' });
   });
 
+  it('AUTO_REENGAGE com intervalo de 1h salvo: o próximo toque espera no mínimo 24h', async () => {
+    const row = {
+      ...base,
+      origin: 'AUTO_REENGAGE',
+      attempt: 1,
+      maxAttempts: 4,
+      retryEveryHours: 1,
+      contactId: 'ct1',
+      channelId: 'ch1',
+    };
+    const { processor, repo } = makeDeps(row);
+    const before = Date.now();
+    await processor.process({ data: { scheduledMessageId: 's1' } } as any);
+    const { scheduledAt } = (repo.create as jest.Mock).mock.calls[0][0];
+    expect(scheduledAt.getTime() - before).toBeGreaterThanOrEqual(24 * 3600_000);
+  });
+
   it('AUTO_REENGAGE na última tentativa: NÃO agenda próximo', async () => {
     const row = {
       ...base,

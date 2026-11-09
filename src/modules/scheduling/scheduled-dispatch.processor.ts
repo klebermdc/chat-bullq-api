@@ -10,7 +10,11 @@ import { PrismaService } from '../../database/prisma.service';
 import { MessagesService } from '../messaging/messages/messages.service';
 import { CadenceRunner } from '../cadences/cadence-runner.service';
 import { ScheduledMessagesRepository } from './scheduled-messages.repository';
-import { SCHEDULED_DISPATCH_QUEUE, SCHEDULED_DISPATCH_JOB } from './scheduling.constants';
+import {
+  MIN_REENGAGE_RETRY_HOURS,
+  SCHEDULED_DISPATCH_QUEUE,
+  SCHEDULED_DISPATCH_JOB,
+} from './scheduling.constants';
 import { isAiParked } from '../../common/utils/ai-parked.util';
 import { computeWhatsappWindow } from '../messaging/conversations/whatsapp-window.util';
 import { buildHsmTemplateContent } from './hsm-template-payload';
@@ -210,7 +214,12 @@ export class ScheduledDispatchProcessor extends WorkerHost {
       // tentativas. O auto-cancel no inbound (Fase 1) cancela esse próximo se
       // o cliente responder antes.
       if (row.origin === 'AUTO_REENGAGE' && row.attempt < row.maxAttempts) {
-        const nextAt = new Date(Date.now() + (row.retryEveryHours ?? 48) * 3600_000);
+        // Piso vale também para configs antigas já salvas com intervalo menor.
+        const retryHours = Math.max(
+          row.retryEveryHours ?? 48,
+          MIN_REENGAGE_RETRY_HOURS,
+        );
+        const nextAt = new Date(Date.now() + retryHours * 3600_000);
         const next = await this.repo.create({
           organizationId: row.organizationId,
           conversationId: row.conversationId,
