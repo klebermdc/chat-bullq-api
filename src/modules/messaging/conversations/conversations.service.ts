@@ -299,6 +299,8 @@ export class ConversationsService {
       lostReasons: filters.lostReasons,
       origin: filters.origin,
       idleBefore: filters.idleBefore,
+      // Com a IA / Na fila. Sem esta linha o filtro era lido e descartado.
+      phases: filters.phases,
     };
 
     const skip = (page - 1) * limit;
