@@ -339,6 +339,13 @@ export class ConversationsRepository {
             },
           },
           tags: { include: { tag: true } },
+          // Transferência da Aline esperando distribuição → linha rosa "Na fila"
+          // (mesma regra do filtro ?phase=queue). Índice (conversation, status).
+          aiPendingActions: {
+            where: { toolName: 'transferToHuman', status: 'PENDING' },
+            select: { id: true },
+            take: 1,
+          },
           // Cards do funil → selo da etapa atual (ex.: "Coletando Informação").
           cards: {
             select: {

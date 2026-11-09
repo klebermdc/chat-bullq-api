@@ -106,8 +106,14 @@ function originBlock(f: InboxAdvancedFilters): Block | null {
   return null;
 }
 
-const DISTRIBUTE: Block = {
-  cards: { some: { stage: { name: { contains: 'distribu', mode: 'insensitive' } } } },
+/**
+ * Lead esperando distribuição = transferência da Aline (transferToHuman)
+ * ainda PENDENTE — é ela que mostra o botão "Distribuir". O nome da etapa do
+ * card não serve: o card fica em "Distribuir" depois de rejeitar, expirar ou
+ * mover à mão.
+ */
+export const PENDING_HANDOFF: Block = {
+  aiPendingActions: { some: { toolName: 'transferToHuman', status: 'PENDING' } },
 };
 
 /**
@@ -118,7 +124,7 @@ const DISTRIBUTE: Block = {
  */
 const WITH_AI: Block = {
   awaitingHumanReply: false,
-  AND: [{ OR: [{ aiEnabled: null }, { aiEnabled: true }] }, { NOT: DISTRIBUTE }],
+  AND: [{ OR: [{ aiEnabled: null }, { aiEnabled: true }] }, { NOT: PENDING_HANDOFF }],
   channel: {
     aiEnabled: { not: false },
     aiAgentChannels: {
@@ -127,12 +133,12 @@ const WITH_AI: Block = {
   },
 };
 
-/** Fase do lead: sempre conversa aberta e sem atendente; "Na fila" = etapa Distribuir. */
+/** Fase do lead: sempre conversa aberta e sem atendente; "Na fila" = transferência pendente. */
 function phaseBlock(f: InboxAdvancedFilters): Block | null {
   if (!hasAny(f.phases)) return null;
   const OR: Block[] = [];
   if (f.phases.includes('sdr')) OR.push(WITH_AI);
-  if (f.phases.includes('queue')) OR.push(DISTRIBUTE);
+  if (f.phases.includes('queue')) OR.push(PENDING_HANDOFF);
   return { status: { not: 'CLOSED' }, assignedToId: null, OR };
 }
 
