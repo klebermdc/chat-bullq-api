@@ -108,9 +108,20 @@ export class DailyScoreboardService {
     return { organizationId, isGroup: false, deletedAt: null, isArchived: false };
   }
 
+  /**
+   * Abertas = pendente/aberta/esperando, mais a distribuída que o vendedor
+   * ainda não puxou (status BOT com dono: a IA segue conversando). Ela conta
+   * como "não começou" e na carteira dele. BOT sem dono não é fila.
+   */
   private openConversations(organizationId: string) {
     return this.prisma.conversation.findMany({
-      where: { ...this.baseWhere(organizationId), status: { in: OPEN_STATUSES } },
+      where: {
+        ...this.baseWhere(organizationId),
+        OR: [
+          { status: { in: OPEN_STATUSES } },
+          { status: ConversationStatus.BOT, assignedToId: { not: null } },
+        ],
+      },
       select: {
         id: true,
         assignedToId: true,
