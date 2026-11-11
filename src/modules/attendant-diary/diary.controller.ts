@@ -78,7 +78,7 @@ export class DiaryController {
   @Roles(OrgRole.OWNER, OrgRole.ADMIN)
   @ApiOperation({ summary: 'Atendentes que participam do diário' })
   async participants(@CurrentOrg('id') orgId: string) {
-    const all = await this.repository.findParticipants(this.config.participantEmails);
+    const all = await this.repository.findParticipants(this.config.participants);
     return all
       .filter((p) => p.organizationId === orgId)
       .map(({ userId, name }) => ({ userId, name }));
@@ -106,7 +106,7 @@ export class DiaryController {
   }
 
   private async findParticipant(orgId: string, userId: string) {
-    const participants = await this.repository.findParticipants(this.config.participantEmails);
+    const participants = await this.repository.findParticipants(this.config.participants);
     return participants.find((p) => p.userId === userId && p.organizationId === orgId);
   }
 }

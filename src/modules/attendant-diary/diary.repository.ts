@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { OrgRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import type { DiaryParticipantFilter } from './diary-config.service';
 import type { BusinessHoursConfig } from '../routing/availability/business-hours.util';
 import {
   DEFAULT_DIARY_TIMEZONE,
@@ -126,15 +127,19 @@ export class DiaryRepository {
     };
   }
 
-  async findParticipants(emails: string[]): Promise<DiaryParticipant[]> {
-    if (emails.length === 0) return [];
+  async findParticipants({ emails, domains }: DiaryParticipantFilter): Promise<DiaryParticipant[]> {
+    if (emails.length === 0 && domains.length === 0) return [];
+    const byEmail = emails.length > 0
+      ? [{ user: { email: { in: emails, mode: 'insensitive' as const } } }]
+      : [];
+    const byDomain = domains.map((domain) => ({
+      role: OrgRole.AGENT,
+      user: { email: { endsWith: domain, mode: 'insensitive' as const } },
+    }));
     const members = await this.prisma.userOrganization.findMany({
       where: {
-        user: {
-          email: { in: emails, mode: 'insensitive' },
-          isActive: true,
-          deletedAt: null,
-        },
+        user: { isActive: true, deletedAt: null },
+        OR: [...byEmail, ...byDomain],
       },
       select: {
         organizationId: true,

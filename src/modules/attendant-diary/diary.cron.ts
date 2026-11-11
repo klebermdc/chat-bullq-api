@@ -72,7 +72,7 @@ export class DiaryCron extends WorkerHost implements OnModuleInit {
 
   private async enqueueYesterday(): Promise<{ queued: number }> {
     // Lista esvaziada sem reiniciar o cron: o job repetido não gasta nada.
-    const participants = await this.repository.findParticipants(this.config.participantEmails);
+    const participants = await this.repository.findParticipants(this.config.participants);
     const now = new Date();
     await Promise.all(
       participants.map((p) => {
