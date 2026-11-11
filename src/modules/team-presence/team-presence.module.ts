@@ -8,5 +8,6 @@ import { TeamPresenceService } from './team-presence.service';
   imports: [RealtimeModule],
   controllers: [TeamPresenceController],
   providers: [TeamPresenceService, PresenceSamplerService],
+  exports: [TeamPresenceService],
 })
 export class TeamPresenceModule {}
