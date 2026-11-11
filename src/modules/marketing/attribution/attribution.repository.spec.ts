@@ -31,7 +31,7 @@ describe('AttributionRepository — período pelo clique', () => {
   it('cobertura: leads com anúncio também pelo clique', async () => {
     const { repo, prisma } = make();
     await repo.coverageTotals('org-1', from, to);
-    const withAd = prisma.contact.count.mock.calls[1][0].where;
+    const withAd = prisma.contact.count.mock.calls[0][0].where;
     expect(withAd.ctwaClidAt).toEqual({ gte: from, lte: to });
     expect(withAd.createdAt).toBeUndefined();
   });

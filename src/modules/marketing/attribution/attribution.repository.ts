@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
+import { countLeads } from '../metrics/lead-count';
 
 /**
  * `Contact.ctwaSourceType` também assume `'post'` (alcance orgânico). Um
@@ -111,8 +112,8 @@ export class AttributionRepository {
   /**
    * Totais para a cobertura e para o balde não-atribuído.
    *
-   * `leadsTotal`/`leadsWithAdId` usam a mesma definição de lead do
-   * `crm-reports` (Contact por `createdAt`, `deletedAt: null`).
+   * `leadsTotal` usa a mesma definição de lead do card do painel
+   * (`countLeads`: Contact por `createdAt`, sem apagados nem importados).
    * `unattributedDeals`/`unattributedRevenue` são os cards GANHO do período
    * cujo contato foi apagado (`contactId` nulo), não veio de anúncio
    * (`ctwaSourceType` != 'ad') ou não tem `ctwaSourceId` — o `LEFT JOIN` com
@@ -120,9 +121,7 @@ export class AttributionRepository {
    */
   async coverageTotals(organizationId: string, from: Date, to: Date): Promise<CoverageTotals> {
     const [leadsTotal, leadsWithAdId, unattributedAgg] = await Promise.all([
-      this.prisma.contact.count({
-        where: { organizationId, deletedAt: null, createdAt: { gte: from, lte: to } },
-      }),
+      countLeads(this.prisma, organizationId, from, to),
       this.prisma.contact.count({
         where: {
           organizationId,
