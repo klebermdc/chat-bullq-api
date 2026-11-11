@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AdConnectionStatus, CardStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
+import { countLeads, NOT_IMPORTED_CONTACT } from './lead-count';
 
 export interface MediaAggregate {
   spend: number;
@@ -103,7 +104,7 @@ export class MarketingRepository {
     }));
   }
 
-  /** Série diária de leads (Contact.createdAt), para o gráfico. */
+  /** Série diária de leads (Contact.createdAt, sem importados), para o gráfico. */
   async dailyLeads(organizationId: string, from: Date, to: Date): Promise<DailyLeadsRow[]> {
     const rows = await this.prisma.$queryRaw<Array<{ day: Date; leads: bigint }>>(
       Prisma.sql`
@@ -113,6 +114,7 @@ export class MarketingRepository {
           AND "deleted_at" IS NULL
           AND "created_at" >= ${from}
           AND "created_at" <= ${to}
+          AND ${NOT_IMPORTED_CONTACT}
         GROUP BY day
         ORDER BY day ASC
       `,
@@ -127,9 +129,7 @@ export class MarketingRepository {
   /** Contadores do CRM no período. Mesmas definições do crm-reports. */
   async crmTotals(organizationId: string, from: Date, to: Date): Promise<CrmTotals> {
     const [leads, wonAgg] = await Promise.all([
-      this.prisma.contact.count({
-        where: { organizationId, deletedAt: null, createdAt: { gte: from, lte: to } },
-      }),
+      countLeads(this.prisma, organizationId, from, to),
       this.prisma.card.aggregate({
         where: {
           organizationId,
