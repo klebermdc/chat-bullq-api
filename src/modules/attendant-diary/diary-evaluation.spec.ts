@@ -4,6 +4,7 @@ import {
   hasForeignScript,
   parseConsolidation,
   parseDiaryEvaluation,
+  withClientNames,
 } from './diary-evaluation';
 import type { DiaryTranscript } from './diary.types';
 
@@ -257,5 +258,62 @@ describe('buildDiaryPrompt', () => {
 
     expect(prompt.user.indexOf('Contexto anterior')).toBeLessThan(prompt.user.indexOf('Falei isso antes'));
     expect(prompt.user.indexOf('Mensagens do dia')).toBeLessThan(prompt.user.indexOf('Falei isso no dia'));
+  });
+});
+
+describe('nome do cliente no lugar do código', () => {
+  test('o cabeçalho da conversa leva o nome do cliente e o texto proíbe o código', () => {
+    const prompt = buildDiaryPrompt({
+      attendantName: 'Pedro',
+      criteria: [],
+      transcripts: [{ ...transcripts[0], contactName: 'Daisy' }],
+    });
+
+    expect(prompt.user).toContain('### C1 (cliente: Daisy)');
+    expect(prompt.system).toMatch(/nunca escreva o código/i);
+  });
+
+  test('troca C1, C6 e C10 pelo nome do cliente em todo texto, menos no trecho literal', () => {
+    // Arrange
+    const names = new Map([['C1', 'Daisy'], ['C6', 'Tânia'], ['C10', 'Marcos']]);
+    const evaluation = parseDiaryEvaluation(
+      raw({
+        resumo: 'Falhas em C1 e em C6, acerto em C10.',
+        foco: 'Retomar C6 hoje.',
+        notas: [{ criterio: 'diarioDiagnostico', nota: 3, motivo: 'Em C1 faltou o total.' }],
+        conversas: [{ conversa: 'C1', assunto: 'Grupo em C1', avaliacao: 'C1 ficou confusa.', proximo: 'Mandar o total a C1.' }],
+        melhorias: [point({ titulo: 'Total em C1', explicacao: 'Em C1 o total ficou confuso.', trecho: 'Para quantas pessoas e em quais datas?' })],
+        treino: { situacao: 'Cliente de C6 pediu a Black.', resposta: 'Oi! Segue o valor.' },
+      }),
+      transcripts,
+    )!;
+
+    // Act
+    const named = withClientNames(evaluation, names);
+
+    // Assert
+    expect(named.summary).toBe('Falhas em Daisy e em Tânia, acerto em Marcos.');
+    expect(named.focus).toBe('Retomar Tânia hoje.');
+    expect(named.scores[0].reason).toBe('Em Daisy faltou o total.');
+    expect(named.conversations[0]).toMatchObject({ topic: 'Grupo em Daisy', assessment: 'Daisy ficou confusa.', nextStep: 'Mandar o total a Daisy.' });
+    expect(named.improvements[0]).toMatchObject({ title: 'Total em Daisy', explanation: 'Em Daisy o total ficou confuso.' });
+    expect(named.improvements[0].quote).toBe('Para quantas pessoas e em quais datas?');
+    expect(named.practice?.situation).toBe('Cliente de Tânia pediu a Black.');
+  });
+
+  test('código sem nome conhecido vira "um cliente" e palavras parecidas ficam intactas', () => {
+    const evaluation = parseDiaryEvaluation(raw({ resumo: 'Em C7 o CEO pediu C3PO.' }), transcripts)!;
+
+    const named = withClientNames(evaluation, new Map());
+
+    expect(named.summary).toBe('Em um cliente o CEO pediu C3PO.');
+  });
+
+  test('não altera o objeto original', () => {
+    const evaluation = parseDiaryEvaluation(raw({ resumo: 'Em C1 faltou preço.' }), transcripts)!;
+
+    withClientNames(evaluation, new Map([['C1', 'Daisy']]));
+
+    expect(evaluation.summary).toBe('Em C1 faltou preço.');
   });
 });

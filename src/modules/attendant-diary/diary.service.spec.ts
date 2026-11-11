@@ -136,6 +136,23 @@ describe('DiaryService.generate', () => {
     );
   });
 
+  test('troca o código da conversa pelo nome do cliente no texto salvo', async () => {
+    const { service, llm, repository } = setup();
+    llm.complete.mockResolvedValue(
+      llmAnswer(JSON.stringify({ resumo: 'Em C1 faltou o total.', foco: 'Mandar o total em C1.' })),
+    );
+
+    await service.generate(JOB);
+
+    expect(llm.complete.mock.calls[0][0].messages[1].content).toContain('### C1 (cliente: Ana Souza)');
+    expect(repository.saveDiary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary: 'Em Ana Souza faltou o total.',
+        details: expect.objectContaining({ focus: 'Mandar o total em Ana Souza.' }),
+      }),
+    );
+  });
+
   test('refaz uma vez quando a IA mistura outro idioma e soma o custo', async () => {
     const { service, llm, repository } = setup();
     llm.complete

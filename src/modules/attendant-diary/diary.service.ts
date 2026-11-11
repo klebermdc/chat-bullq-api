@@ -13,6 +13,7 @@ import {
   mergeParts,
   parseConsolidation,
   parseDiaryEvaluation,
+  withClientNames,
   withoutForeignScript,
 } from './diary-evaluation';
 import { computeDiaryMetrics, findUnanswered } from './diary-metrics';
@@ -42,6 +43,17 @@ const LANGUAGE_REMINDER =
 interface DiarySpend {
   costUsd: number;
   modelId?: string;
+}
+
+/** "Cliente" é o marcador de sem nome: no texto vira "um cliente". */
+function knownName(name: string | undefined): string | undefined {
+  return name && name !== UNKNOWN_CONTACT ? name : undefined;
+}
+
+function namesByRef(transcripts: DiaryTranscript[]): Map<string, string> {
+  return new Map(
+    transcripts.flatMap((t) => (t.contactName ? [[t.ref, t.contactName] as [string, string]] : [])),
+  );
 }
 
 function toBatches(transcripts: DiaryTranscript[]): DiaryTranscript[][] {
@@ -119,7 +131,10 @@ export class DiaryService {
     }
 
     const context = await this.repository.findContextMessages(conversationIds, range.from);
-    const transcripts = buildTranscripts(dayMessages, context, userId);
+    const transcripts = buildTranscripts(dayMessages, context, userId).map((t) => ({
+      ...t,
+      contactName: knownName(names.get(t.conversationId)),
+    }));
     return this.evaluate(base, member.name, loaded, transcripts, names, keepsReady);
   }
 
@@ -143,7 +158,7 @@ export class DiaryService {
       const evaluation = parts.length === 1 ? parts[0] : await this.consolidate(base, attendantName, parts, spent);
       return await this.saveEvaluation(
         { ...audit, ...spent, conversationsAnalyzed: analyzed },
-        evaluation,
+        withClientNames(evaluation, namesByRef(transcripts)),
         names,
       );
     } catch (err) {
