@@ -21,7 +21,7 @@ export interface LegacyRouteOptions {
 export type LegacyRouteResult =
   | { routed: true; userId: string; vendedor: string }
   | { routed: false; reason: 'no_phone' | 'not_found' }
-  | { routed: false; reason: 'unmapped' | 'inactive'; vendedor: string };
+  | { routed: false; reason: 'unmapped' | 'inactive' | 'other_org'; vendedor: string };
 
 interface LegacyOwnerRow {
   vendedor: string | null;
@@ -38,7 +38,8 @@ interface LegacyOwnerRow {
  *
  * O nome da planilha ("Renata", "Carol"...) vira usuário pela tabela
  * `contatos_legado_vendedores`. Sem mapeamento, ou com o vendedor inativo /
- * fora da organização, a conversa segue o fluxo normal.
+ * fora da organização, a conversa segue o fluxo normal. Fora da organização
+ * nada da carteira é aplicado, nem as etiquetas.
  */
 @Injectable()
 export class LegacyOwnerRoutingService {
@@ -77,19 +78,21 @@ export class LegacyOwnerRoutingService {
       );
       return { routed: false, reason: 'unmapped', vendedor };
     }
+    // A carteira é global (uma tabela para o banco todo). Só vale para a org
+    // da qual o vendedor é membro: noutra org o mesmo telefone é outro
+    // cliente, e as etiquetas da carteira não podem vazar para ele.
+    const member = await this.prisma.userOrganization.findFirst({
+      where: { organizationId, userId: owner.user_id },
+      select: { id: true, user: { select: { isActive: true, deletedAt: true } } },
+    });
+    if (!member) return { routed: false, reason: 'other_org', vendedor };
+
     await this.applyLegacyTags(organizationId, contactId, owner.tags);
 
-    const member = await this.prisma.userOrganization.findFirst({
-      where: {
-        organizationId,
-        userId: owner.user_id,
-        user: { isActive: true, deletedAt: null },
-      },
-      select: { id: true },
-    });
-    if (!member) {
+    const isActive = member.user.isActive && !member.user.deletedAt;
+    if (!isActive) {
       this.logger.log(
-        `legado: vendedor "${vendedor}" inativo ou fora da org — distribuição normal (conv=${conversationId})`,
+        `legado: vendedor "${vendedor}" inativo — distribuição normal (conv=${conversationId})`,
       );
       return { routed: false, reason: 'inactive', vendedor };
     }

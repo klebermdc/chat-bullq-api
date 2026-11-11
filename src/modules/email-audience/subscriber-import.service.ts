@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { HubSalesMirrorAccess } from '../../common/hub-sales-mirror';
 import { EmailSubscriberSource } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { normalizeEmail } from '../email-core/email-address.util';
@@ -144,6 +145,7 @@ export class SubscriberImportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly subscribers: SubscribersService,
+    private readonly hubAccess: HubSalesMirrorAccess,
   ) {}
 
   private async importRows(organizationId: string, rows: ImportRow[]): Promise<ImportResult> {
@@ -193,16 +195,15 @@ export class SubscriberImportService {
   }
 
   /**
-   * `OfpSalesOrder` é espelho GLOBAL do HUB — a tabela não tem
-   * `organizationId`, então esta consulta não tem por onde filtrar por
-   * organização. Isso é por desenho, não um bug: hoje só existe uma
-   * operação usando este banco. A mitigação cabível é restringir quem pode
-   * chamar esta rota (`email.view`, OWNER/ADMIN — ver `@Feature` no
-   * controller); não há como "consertar" o filtro em si. Se um dia duas
-   * operações passarem a dividir o mesmo banco, esta importação passaria a
-   * trazer clientes de uma operação para a lista de email da outra.
+   * `OfpSalesOrder` é espelho GLOBAL do HUB, sem `organizationId`. Só a
+   * org dona do HUB (`settings.hubSalesMirror`) pode importar dele; para
+   * as outras a rota recusa, senão os clientes de uma operação iriam para
+   * a lista de email de outra.
    */
   async fromSalesOrders(organizationId: string): Promise<ImportResult> {
+    if (!(await this.hubAccess.isEnabledFor(organizationId))) {
+      throw new ForbiddenException('Pedidos do HUB não estão habilitados para esta organização.');
+    }
     const orders = await this.prisma.ofpSalesOrder.findMany({
       select: { emailCliente: true, cliente: true, venda: true, produto: true, fornecedor: true, data: true },
     });

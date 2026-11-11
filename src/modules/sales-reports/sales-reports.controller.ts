@@ -8,10 +8,12 @@ import { ReportQueryDto } from './dto/report-query.dto';
 import { OfpSyncService } from './ofp-sync.service';
 import { ReconciliationService } from './reconciliation.service';
 import { PrismaService } from '../../database/prisma.service';
+import { HubSalesMirrorGuard } from '../../common/hub-sales-mirror';
 
 @ApiTags('sales-reports')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
+// Vendas do HUB: só a org dona do espelho (settings.hubSalesMirror).
+@UseGuards(JwtAuthGuard, OrgGuard, HubSalesMirrorGuard, RolesGuard)
 @Controller('sales-reports')
 export class SalesReportsController {
   constructor(
@@ -87,8 +89,11 @@ export class SalesReportsController {
   // ── E5.2b — Reconciliação (pedidos do HUB sem card) ──────────────────
   @Get('reconciliation')
   @Roles(OrgRole.OWNER, OrgRole.ADMIN)
-  listReconciliation(@Query() q: { sinceDays?: string; limit?: string; minScore?: string }) {
-    return this.reconciliation.listOrphans({
+  listReconciliation(
+    @CurrentOrg('id') orgId: string,
+    @Query() q: { sinceDays?: string; limit?: string; minScore?: string },
+  ) {
+    return this.reconciliation.listOrphans(orgId, {
       sinceDays: q.sinceDays ? Number(q.sinceDays) : undefined,
       limit: q.limit ? Number(q.limit) : undefined,
       minScore: q.minScore ? Number(q.minScore) : undefined,

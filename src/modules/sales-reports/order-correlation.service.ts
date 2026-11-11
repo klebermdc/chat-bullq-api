@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { HubSalesMirrorAccess } from '../../common/hub-sales-mirror';
 
 /**
  * E5.2a — Correlação exata pedido ↔ card.
@@ -18,11 +19,19 @@ import { PrismaService } from '../../database/prisma.service';
 export class OrderCorrelationService {
   private readonly logger = new Logger(OrderCorrelationService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly hubAccess: HubSalesMirrorAccess,
+  ) {}
 
   async correlateWonCards(): Promise<{ matched: number; checked: number }> {
     // Só cards Ganhos podem ter pedido fechado — conjunto pequeno e limitado.
-    const wonCards = await this.prisma.card.findMany({ where: { status: 'WON' } });
+    // Pedido do HUB só casa com card da org dona do HUB.
+    const ownerOrgIds = await this.hubAccess.ownerOrgIds();
+    if (ownerOrgIds.length === 0) return { matched: 0, checked: 0 };
+    const wonCards = await this.prisma.card.findMany({
+      where: { status: 'WON', organizationId: { in: ownerOrgIds } },
+    });
 
     let matched = 0;
     let checked = 0;

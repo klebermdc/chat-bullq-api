@@ -7,6 +7,7 @@ import { OfpSyncCron } from './ofp-sync.cron';
 import { OrderCorrelationService } from './order-correlation.service';
 import { ReconciliationService } from './reconciliation.service';
 import { PipelinesModule } from '../pipelines/pipelines.module';
+import { HubSalesMirrorAccess, HubSalesMirrorGuard } from '../../common/hub-sales-mirror';
 
 @Module({
   imports: [PipelinesModule],
@@ -18,6 +19,8 @@ import { PipelinesModule } from '../pipelines/pipelines.module';
     OfpSyncCron,
     OrderCorrelationService,
     ReconciliationService,
+    HubSalesMirrorAccess,
+    HubSalesMirrorGuard,
   ],
   exports: [SalesReportsService, OfpReportService, OfpSyncService],
 })
