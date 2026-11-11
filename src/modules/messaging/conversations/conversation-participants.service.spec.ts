@@ -32,6 +32,18 @@ function makeService(opts: {
     },
     user: { findUnique: jest.fn().mockResolvedValue({ name: 'Renata' }) },
     message: { create: jest.fn().mockResolvedValue({ id: 'm1' }) },
+    contact: {
+      findUnique: jest.fn().mockResolvedValue({ name: 'Cliente X', phone: '5511' }),
+    },
+    tag: {
+      findFirst: jest.fn().mockResolvedValue({ id: 'tag-k', color: '#123456' }),
+      upsert: jest.fn(),
+      update: jest.fn(),
+    },
+    conversationTag: {
+      upsert: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
   };
   const access: any = {
     assertConversationAccess: jest.fn().mockResolvedValue(opts.conversation ?? CONV),
@@ -45,14 +57,16 @@ function makeService(opts: {
   };
   const conversations: any = { broadcastById: jest.fn() };
   const realtime: any = { emitToChannel: jest.fn(), emitToConversation: jest.fn() };
+  const notifications: any = { notify: jest.fn().mockResolvedValue({}) };
   const svc = new ConversationParticipantsService(
     prisma,
     access,
     channelAccess,
     conversations,
     realtime,
+    notifications,
   );
-  return { svc, prisma, conversations, realtime };
+  return { svc, prisma, conversations, realtime, notifications };
 }
 
 const renata = { userId: 'renata', role: OrgRole.AGENT, access: 'ALL' as const };
@@ -69,6 +83,32 @@ describe('ConversationParticipantsService.add', () => {
     );
     expect(prisma.message.create.mock.calls[0][0].data.type).toBe('SYSTEM');
     expect(conversations.broadcastById).toHaveBeenCalledWith('c1');
+  });
+
+  it('põe a etiqueta do incluído só na conversa (não na ficha) e avisa ele', async () => {
+    const { svc, prisma, notifications } = makeService();
+    await svc.add('c1', 'org1', 'kleber', renata);
+    expect(prisma.conversationTag.upsert).toHaveBeenCalledWith({
+      where: { conversationId_tagId: { conversationId: 'c1', tagId: 'tag-k' } },
+      create: { conversationId: 'c1', tagId: 'tag-k' },
+      update: {},
+    });
+    expect(prisma.contactTag).toBeUndefined();
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipientId: 'kleber',
+        organizationId: 'org1',
+        title: 'Você foi incluído numa conversa',
+        body: 'Renata incluiu você na conversa com Cliente X.',
+        data: { conversationId: 'c1', kind: 'participant_added' },
+      }),
+    );
+  });
+
+  it('falha no aviso não desfaz a inclusão', async () => {
+    const { svc, notifications } = makeService();
+    notifications.notify.mockRejectedValue(new Error('fila fora'));
+    await expect(svc.add('c1', 'org1', 'kleber', renata)).resolves.toBeDefined();
   });
 
   it('não inclui o próprio dono', async () => {
@@ -111,6 +151,19 @@ describe('ConversationParticipantsService.remove', () => {
     await svc.remove('c1', 'org1', 'kleber', kleber);
     expect(prisma.conversationParticipant.deleteMany).toHaveBeenCalledWith({
       where: { conversationId: 'c1', userId: 'kleber' },
+    });
+  });
+
+  it('ao sair, a etiqueta dele some da conversa', async () => {
+    const { svc, prisma } = makeService();
+    prisma.user.findUnique.mockResolvedValue({ name: 'Kleber' });
+    const kleber = { userId: 'kleber', role: OrgRole.AGENT, access: 'ALL' as const };
+    await svc.remove('c1', 'org1', 'kleber', kleber);
+    expect(prisma.conversationTag.deleteMany).toHaveBeenCalledWith({
+      where: {
+        conversationId: 'c1',
+        tag: { organizationId: 'org1', name: { equals: 'Kleber', mode: 'insensitive' } },
+      },
     });
   });
 

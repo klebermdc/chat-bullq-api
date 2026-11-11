@@ -53,22 +53,78 @@ export async function syncAttendantTag(
     }
   }
 
-  const nextName = await userName(db, toAssigneeId);
-  if (!nextName) return;
+  const tagId = await ensureAttendantTag(db, organizationId, toAssigneeId);
+  if (!tagId) return;
+  await db.conversationTag.upsert({
+    where: { conversationId_tagId: { conversationId, tagId } },
+    create: { conversationId, tagId },
+    update: {},
+  });
+  await db.contactTag.upsert({
+    where: { contactId_tagId: { contactId, tagId } },
+    create: { contactId, tagId },
+    update: {},
+  });
+}
 
-  // Cor estável por atendente pra os selos ficarem distintos no inbox.
-  const color = attendantTagColor(toAssigneeId);
+/**
+ * Etiqueta do vendedor INCLUÍDO numa conversa (conversa compartilhada): só na
+ * conversa, nunca na ficha do contato — a ficha diz de quem é a carteira, e
+ * quem foi incluído só está ajudando.
+ */
+export async function addParticipantTag(
+  db: Db,
+  params: { conversationId: string; organizationId: string; userId: string },
+): Promise<void> {
+  const tagId = await ensureAttendantTag(db, params.organizationId, params.userId);
+  if (!tagId) return;
+  await db.conversationTag.upsert({
+    where: {
+      conversationId_tagId: { conversationId: params.conversationId, tagId },
+    },
+    create: { conversationId: params.conversationId, tagId },
+    update: {},
+  });
+}
+
+/** Tira a etiqueta do incluído da conversa quando ele sai (ou é tirado). */
+export async function removeParticipantTag(
+  db: Db,
+  params: { conversationId: string; organizationId: string; userId: string },
+): Promise<void> {
+  const name = await userName(db, params.userId);
+  if (!name) return;
+  await db.conversationTag.deleteMany({
+    where: {
+      conversationId: params.conversationId,
+      tag: {
+        organizationId: params.organizationId,
+        name: { equals: name, mode: 'insensitive' },
+      },
+    },
+  });
+}
+
+/**
+ * Etiqueta com o nome do atendente (cria se faltar), com cor estável por
+ * atendente. Devolve o id, ou null se o usuário não tem nome.
+ */
+async function ensureAttendantTag(
+  db: Db,
+  organizationId: string,
+  userId: string,
+): Promise<string | null> {
+  const name = await userName(db, userId);
+  if (!name) return null;
+  const color = attendantTagColor(userId);
   const tag =
     (await db.tag.findFirst({
-      where: {
-        organizationId,
-        name: { equals: nextName, mode: 'insensitive' },
-      },
+      where: { organizationId, name: { equals: name, mode: 'insensitive' } },
       select: { id: true, color: true },
     })) ??
     (await db.tag.upsert({
-      where: { organizationId_name: { organizationId, name: nextName } },
-      create: { organizationId, name: nextName, color },
+      where: { organizationId_name: { organizationId, name } },
+      create: { organizationId, name, color },
       update: {},
       select: { id: true, color: true },
     }));
@@ -77,16 +133,7 @@ export async function syncAttendantTag(
   if (tag.color === DEFAULT_TAG_COLOR) {
     await db.tag.update({ where: { id: tag.id }, data: { color } });
   }
-  await db.conversationTag.upsert({
-    where: { conversationId_tagId: { conversationId, tagId: tag.id } },
-    create: { conversationId, tagId: tag.id },
-    update: {},
-  });
-  await db.contactTag.upsert({
-    where: { contactId_tagId: { contactId, tagId: tag.id } },
-    create: { contactId, tagId: tag.id },
-    update: {},
-  });
+  return tag.id;
 }
 
 async function userName(db: Db, userId: string): Promise<string> {

@@ -217,7 +217,15 @@ export class ConversationsRepository {
     const andBlocks: Prisma.ConversationWhereInput[] = [];
 
     // Etiquetas, vários atendentes, funil, venda perdida, origem, parado há X.
-    andBlocks.push(...buildAdvancedBlocks(filters));
+    andBlocks.push(
+      ...buildAdvancedBlocks({
+        ...filters,
+        sharedWithUserId:
+          currentUserId && filters.assignedToIds?.includes(currentUserId)
+            ? currentUserId
+            : undefined,
+      }),
+    );
     // Com lista de atendentes, o "sem atendente" já foi para o bloco OR acima.
     const hasAssigneeList = (filters.assignedToIds?.length ?? 0) > 0;
     // AGENT: a barreira abaixo vence o "sem responsável" (como sempre foi).
