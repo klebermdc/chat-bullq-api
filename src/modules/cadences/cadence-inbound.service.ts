@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { CadenceEnrollment } from '@prisma/client';
+import { PrismaService } from '../../database/prisma.service';
 import { EnrollmentsRepository } from './enrollments.repository';
 import { CadencesRepository } from './cadences.repository';
 import {
@@ -29,6 +31,7 @@ export class CadenceInboundService {
     private readonly cadences: CadencesRepository,
     private readonly classifier: ResponseClassifierService,
     private readonly transition: CadenceTransitionService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async handleInbound(
@@ -47,6 +50,20 @@ export class CadenceInboundService {
 
     const cadence = await this.cadences.findById(enrollment.cadenceId);
     if (!cadence) return;
+
+    // Vendedor já está conversando com o cliente: a cadência não fala mais
+    // nada (nem "Já vou te encaminhar…", nem toque novo). Só encerra calada.
+    if (await this.sellerTookOver(enrollment)) {
+      this.logger.log(
+        `cadence_seller_took_over conv=${conversationId} enrollment=${enrollment.id}`,
+      );
+      await this.transition.apply(
+        enrollment,
+        'SELLER_TOOK_OVER',
+        cadence as TransitionCadence,
+      );
+      return;
+    }
 
     // Reengajamento de entrada: qualquer resposta faz a Aline reassumir; só o
     // opt-out desvia. Não classifica Sim/Não nem faz handoff a humano.
@@ -79,6 +96,29 @@ export class CadenceInboundService {
       this.toTransitionOutcome(outcome),
       cadence as TransitionCadence,
     );
+  }
+
+  /**
+   * Um humano respondeu depois da última ação da cadência (toque enviado,
+   * pausa ou início)? Então o cliente está falando com o vendedor, não com a
+   * cadência. `lastHumanReplyAt` só é gravado por mensagem de atendente (as
+   * automáticas e as do bot não contam).
+   */
+  private async sellerTookOver(enrollment: CadenceEnrollment): Promise<boolean> {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: enrollment.conversationId },
+      select: { lastHumanReplyAt: true },
+    });
+    const humanAt = conversation?.lastHumanReplyAt;
+    if (!humanAt) return false;
+
+    const lastCadenceActionAt = Math.max(
+      ...[enrollment.startedAt, enrollment.lastStepAt, enrollment.pausedAt]
+        .filter((d): d is Date => d instanceof Date)
+        .map((d) => d.getTime()),
+      0,
+    );
+    return humanAt.getTime() > lastCadenceActionAt;
   }
 
   /**
