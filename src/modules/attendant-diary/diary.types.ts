@@ -30,6 +30,8 @@ export interface DiaryTranscript {
   /** Apelido curto enviado à IA (C1, C2...). */
   ref: string;
   conversationId: string;
+  /** Nome do cliente, para a IA chamar a conversa pelo nome e não pelo código. */
+  contactName?: string;
   lines: DiaryTranscriptLine[];
 }
 

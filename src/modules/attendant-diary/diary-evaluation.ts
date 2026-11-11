@@ -48,6 +48,7 @@ export function buildDiaryPrompt(input: DiaryPromptInput): { system: string; use
     `- Em "notas", dê uma nota inteira de ${MIN_SCORE} a ${MAX_SCORE} para cada critério que as conversas permitirem avaliar. Sem evidência, não dê nota.`,
     '- Em "conversas", avalie cada conversa recebida, uma a uma. "proximo" diz o que fazer agora com aquele cliente.',
     '- "treino" transforma a melhoria mais importante em exercício: situação real do dia e a resposta modelo.',
+    '- Nos textos, chame cada conversa pelo nome do cliente do cabeçalho; nunca escreva o código (C1, C2...) fora do campo "conversa": quem lê não sabe o que ele é.',
     '- Todo ponto precisa de "trecho" copiado literalmente de uma fala do ATENDENTE.',
     '- Todo ponto de melhoria precisa de "sugestao" pronta para usar. Em acertos, "sugestao" fica vazia.',
     '- Só aponte erro de informação de produto se a regra estiver escrita nos critérios.',
@@ -68,7 +69,9 @@ function renderTranscript(transcript: DiaryTranscript): string {
   const context = transcript.lines.filter((l) => l.isContext);
   const day = transcript.lines.filter((l) => !l.isContext);
   return [
-    `### ${transcript.ref}`,
+    transcript.contactName
+      ? `### ${transcript.ref} (cliente: ${transcript.contactName})`
+      : `### ${transcript.ref}`,
     ...(context.length > 0 ? ['Contexto anterior:', renderLines(context)] : []),
     'Mensagens do dia:',
     renderLines(day),
@@ -255,36 +258,56 @@ const cleanText = (text: string): string =>
     .replace(/\s+([,.!?:;])/g, '$1')
     .trim();
 
-const cleanOptional = (text: string | null): string | null => (text ? cleanText(text) : text);
-
 /**
  * Última saída quando a IA insiste em misturar outro idioma: tira só os
  * caracteres estrangeiros e mantém o resto. Melhor que perder o dia inteiro.
  */
-export function withoutForeignScript(evaluation: DiaryEvaluation): DiaryEvaluation {
+/** Aplica a mesma limpeza em todo texto livre da avaliação; o trecho literal fica intacto. */
+function mapTexts(evaluation: DiaryEvaluation, clean: (text: string) => string): DiaryEvaluation {
+  const optional = (text: string | null): string | null => (text ? clean(text) : text);
   const cleanPoint = (p: DiaryPoint): DiaryPoint => ({
     ...p,
-    title: cleanText(p.title),
-    explanation: cleanText(p.explanation),
-    suggestion: cleanOptional(p.suggestion),
+    title: clean(p.title),
+    explanation: clean(p.explanation),
+    suggestion: optional(p.suggestion),
   });
   return {
     ...evaluation,
-    summary: cleanText(evaluation.summary),
-    focus: cleanOptional(evaluation.focus),
-    scores: evaluation.scores.map((s) => ({ ...s, reason: cleanText(s.reason) })),
+    summary: clean(evaluation.summary),
+    focus: optional(evaluation.focus),
+    scores: evaluation.scores.map((s) => ({ ...s, reason: clean(s.reason) })),
     conversations: evaluation.conversations.map((c) => ({
       ...c,
-      topic: cleanText(c.topic),
-      assessment: cleanText(c.assessment),
-      nextStep: cleanOptional(c.nextStep),
+      topic: clean(c.topic),
+      assessment: clean(c.assessment),
+      nextStep: optional(c.nextStep),
     })),
     practice: evaluation.practice
-      ? { situation: cleanText(evaluation.practice.situation), reply: cleanText(evaluation.practice.reply) }
+      ? { situation: clean(evaluation.practice.situation), reply: clean(evaluation.practice.reply) }
       : null,
     strengths: evaluation.strengths.map(cleanPoint),
     improvements: evaluation.improvements.map(cleanPoint),
   };
+}
+
+export function withoutForeignScript(evaluation: DiaryEvaluation): DiaryEvaluation {
+  return mapTexts(evaluation, cleanText);
+}
+
+const CONVERSATION_CODE = /\bC(\d{1,3})\b/g;
+const UNNAMED_CLIENT = 'um cliente';
+
+/**
+ * C1, C2... são apelidos internos enviados à IA. Quando escapam para o texto,
+ * o atendente não sabe de quem se fala: troca pelo nome do cliente.
+ */
+export function withClientNames(
+  evaluation: DiaryEvaluation,
+  namesByRef: ReadonlyMap<string, string>,
+): DiaryEvaluation {
+  return mapTexts(evaluation, (text) =>
+    text.replace(CONVERSATION_CODE, (code) => namesByRef.get(code) ?? UNNAMED_CLIENT),
+  );
 }
 
 /**
