@@ -2,12 +2,14 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
   MessageContentType,
   MessageDirection,
   MessageStatus,
+  NotificationType,
   OrgRole,
   Prisma,
 } from '@prisma/client';
@@ -17,6 +19,11 @@ import {
   ChannelAccessService,
 } from '../../iam/channel-access/channel-access.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
+import { NotificationsService } from '../../notifications/notifications.service';
+import {
+  addParticipantTag,
+  removeParticipantTag,
+} from '../../../common/utils/sync-attendant-tag';
 import { ConversationAccessService } from './conversation-access.service';
 import { ConversationsService } from './conversations.service';
 
@@ -46,12 +53,15 @@ export interface ParticipantActor {
  */
 @Injectable()
 export class ConversationParticipantsService {
+  private readonly logger = new Logger(ConversationParticipantsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ConversationAccessService,
     private readonly channelAccess: ChannelAccessService,
     private readonly conversations: ConversationsService,
     private readonly realtime: RealtimeGateway,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async list(conversationId: string, organizationId: string, actor: ParticipantActor) {
@@ -94,6 +104,9 @@ export class ConversationParticipantsService {
       throw err;
     }
 
+    const tagScope = { conversationId, organizationId, userId: targetUserId };
+    await addParticipantTag(this.prisma, tagScope);
+
     const actorName = await this.userName(actor.userId);
     await this.postSystemMessage(
       conversation,
@@ -101,6 +114,9 @@ export class ConversationParticipantsService {
       `👥 ${actorName} incluiu ${target.name} na conversa`,
     );
     await this.conversations.broadcastById(conversationId);
+    if (targetUserId !== actor.userId) {
+      await this.notifyIncluded(conversation, organizationId, targetUserId, actorName);
+    }
     return this.list(conversationId, organizationId, actor);
   }
 
@@ -131,6 +147,12 @@ export class ConversationParticipantsService {
       throw new NotFoundException('Este vendedor não está na conversa.');
     }
 
+    await removeParticipantTag(this.prisma, {
+      conversationId,
+      organizationId,
+      userId: targetUserId,
+    });
+
     const targetName = await this.userName(targetUserId);
     const text = isSelf
       ? `👋 ${targetName} saiu da conversa`
@@ -138,6 +160,39 @@ export class ConversationParticipantsService {
     await this.postSystemMessage(conversation, actor.userId, text);
     await this.conversations.broadcastById(conversationId);
     return { removed: true };
+  }
+
+  /**
+   * Avisa quem foi incluído (sino + push, conforme as preferências dele).
+   * Falha no aviso não desfaz a inclusão: só registra no log.
+   */
+  private async notifyIncluded(
+    conversation: { id: string; contactId: string },
+    organizationId: string,
+    recipientId: string,
+    actorName: string,
+  ) {
+    try {
+      const contact = await this.prisma.contact.findUnique({
+        where: { id: conversation.contactId },
+        select: { name: true, phone: true },
+      });
+      const client = contact?.name || contact?.phone || 'um cliente';
+      await this.notifications.notify({
+        recipientId,
+        organizationId,
+        type: NotificationType.CONVERSATION_ASSIGNED,
+        title: 'Você foi incluído numa conversa',
+        body: `${actorName} incluiu você na conversa com ${client}.`,
+        data: { conversationId: conversation.id, kind: 'participant_added' },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Aviso de inclusão falhou (conv ${conversation.id}, user ${recipientId}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   /** Carrega a conversa já checando org, canal e dono/incluído. */

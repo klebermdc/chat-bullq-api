@@ -7,6 +7,11 @@ import { Prisma } from '@prisma/client';
  * que entra no `AND` da consulta: OR por dentro, AND entre eles.
  */
 export interface InboxAdvancedFilters {
+  /**
+   * Quem está logado, quando ele mesmo está na lista de atendentes: entram
+   * também as conversas em que foi incluído (conversa compartilhada).
+   */
+  sharedWithUserId?: string;
   /** Etiquetas pedidas (conversa OU contato). */
   tagIds?: string[];
   /** 'any' (padrão) = pelo menos uma; 'all' = todas. */
@@ -74,6 +79,9 @@ function assigneeBlock(f: InboxAdvancedFilters): Block | null {
   if (!hasAny(f.assignedToIds)) return null;
   const OR: Block[] = [{ assignedToId: { in: f.assignedToIds } }];
   if (f.assignedToNone) OR.push({ assignedToId: null });
+  if (f.sharedWithUserId) {
+    OR.push({ participants: { some: { userId: f.sharedWithUserId } } });
+  }
   return { OR };
 }
 

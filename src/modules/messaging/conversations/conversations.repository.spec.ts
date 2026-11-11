@@ -143,6 +143,22 @@ describe('ConversationsRepository.findInbox (busca + etiqueta)', () => {
     expect(whereOf().AND).toContainEqual(agentScopeBlock('adm1', false));
   });
 
+  it('vários atendentes com "eu" na lista: entram as compartilhadas comigo', async () => {
+    const { repo, whereOf } = buildRepo();
+    await repo.findInbox(
+      { organizationId: 'org-1', assignedToIds: ['renata', 'pedro'] },
+      0,
+      30,
+      'renata',
+    );
+    expect(whereOf().AND).toContainEqual({
+      OR: [
+        { assignedToId: { in: ['renata', 'pedro'] } },
+        { participants: { some: { userId: 'renata' } } },
+      ],
+    });
+  });
+
   it('filtro por outro atendente continua só do dono', async () => {
     const { repo, whereOf } = buildRepo();
     await repo.findInbox(
