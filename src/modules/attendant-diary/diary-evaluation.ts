@@ -246,6 +246,73 @@ export function parseConsolidation(
 // Cirílico, árabe, japonês, chinês e coreano: nada disso cabe no diário.
 const FOREIGN_SCRIPT = /[\u0400-\u04FF\u0600-\u06FF\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/;
 
+const FOREIGN_SCRIPT_ALL = new RegExp(FOREIGN_SCRIPT.source, 'g');
+
+const cleanText = (text: string): string =>
+  text
+    .replace(FOREIGN_SCRIPT_ALL, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.!?:;])/g, '$1')
+    .trim();
+
+const cleanOptional = (text: string | null): string | null => (text ? cleanText(text) : text);
+
+/**
+ * Última saída quando a IA insiste em misturar outro idioma: tira só os
+ * caracteres estrangeiros e mantém o resto. Melhor que perder o dia inteiro.
+ */
+export function withoutForeignScript(evaluation: DiaryEvaluation): DiaryEvaluation {
+  const cleanPoint = (p: DiaryPoint): DiaryPoint => ({
+    ...p,
+    title: cleanText(p.title),
+    explanation: cleanText(p.explanation),
+    suggestion: cleanOptional(p.suggestion),
+  });
+  return {
+    ...evaluation,
+    summary: cleanText(evaluation.summary),
+    focus: cleanOptional(evaluation.focus),
+    scores: evaluation.scores.map((s) => ({ ...s, reason: cleanText(s.reason) })),
+    conversations: evaluation.conversations.map((c) => ({
+      ...c,
+      topic: cleanText(c.topic),
+      assessment: cleanText(c.assessment),
+      nextStep: cleanOptional(c.nextStep),
+    })),
+    practice: evaluation.practice
+      ? { situation: cleanText(evaluation.practice.situation), reply: cleanText(evaluation.practice.reply) }
+      : null,
+    strengths: evaluation.strengths.map(cleanPoint),
+    improvements: evaluation.improvements.map(cleanPoint),
+  };
+}
+
+/**
+ * Junta os blocos sem a IA, quando a consolidação falha: resumos em sequência,
+ * primeiro foco e treino, notas pela média e os primeiros apontamentos.
+ */
+export function mergeParts(parts: DiaryEvaluation[]): DiaryEvaluation {
+  const byCriterion = new Map<string, DiaryScore[]>();
+  for (const score of parts.flatMap((p) => p.scores)) {
+    byCriterion.set(score.criterion, [...(byCriterion.get(score.criterion) ?? []), score]);
+  }
+  const scores = [...byCriterion.entries()].map(([criterion, list]) => ({
+    criterion,
+    score: Math.round(list.reduce((total, s) => total + s.score, 0) / list.length),
+    reason: list[0].reason,
+  }));
+  return {
+    summary: parts.map((p) => p.summary).join(' '),
+    focus: parts.find((p) => p.focus)?.focus ?? null,
+    scores,
+    conversations: parts.flatMap((p) => p.conversations),
+    practice: parts.find((p) => p.practice)?.practice ?? null,
+    strengths: allPoints(parts, 'strengths').slice(0, MAX_POINTS_PER_SECTION),
+    improvements: allPoints(parts, 'improvements').slice(0, MAX_POINTS_PER_SECTION),
+    discarded: parts.reduce((total, p) => total + p.discarded, 0),
+  };
+}
+
 /** Confere o texto da IA; o trecho fica de fora porque é fala real do atendente. */
 export function hasForeignScript(evaluation: DiaryEvaluation): boolean {
   const points = [...evaluation.strengths, ...evaluation.improvements];

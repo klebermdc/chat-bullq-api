@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { LlmService } from '../ai-agents/llm/llm.service';
 import { SAKANA_CONVERSATION_MODEL } from '../ai-agents/llm/llm.constants';
 import type { LlmContent } from '../ai-agents/llm/llm.types';
+import { stripThinkBlocks } from '../ai-agents/runner/text-guards';
 import { isWithinHours } from '../routing/availability/business-hours.util';
 import { dayRange } from './diary-day';
 import { DiaryCriteriaService, type LoadedCriteria } from './diary-criteria.service';
@@ -9,8 +10,10 @@ import {
   buildConsolidationPrompt,
   buildDiaryPrompt,
   hasForeignScript,
+  mergeParts,
   parseConsolidation,
   parseDiaryEvaluation,
+  withoutForeignScript,
 } from './diary-evaluation';
 import { computeDiaryMetrics, findUnanswered } from './diary-metrics';
 import { buildTranscripts, selectConversationIds } from './diary-transcripts';
@@ -32,7 +35,6 @@ export type DiaryOutcome = DiaryStatus | 'SKIPPED';
 
 const NO_CRITERIA_ERROR = 'Nenhum critério ativo com instruções.';
 const UNREADABLE_ERROR = 'A IA devolveu uma resposta que não pôde ser lida.';
-const FOREIGN_SCRIPT_ERROR = 'A IA misturou outro idioma no texto. Gere de novo.';
 const LANGUAGE_REMINDER =
   'A tentativa anterior misturou outro idioma. Refaça tudo somente em português do Brasil.';
 
@@ -137,24 +139,13 @@ export class DiaryService {
     const spent: DiarySpend = { costUsd: 0 };
 
     try {
-      const parts: DiaryEvaluation[] = [];
-      for (const batch of toBatches(transcripts)) {
-        const prompt = buildDiaryPrompt({ attendantName, criteria: loaded.criteria, transcripts: batch });
-        const part = await this.askEvaluation(base.organizationId, prompt, spent, (raw) =>
-          parseDiaryEvaluation(raw, batch),
-        );
-        parts.push(part);
-      }
-      const evaluation =
-        parts.length === 1
-          ? parts[0]
-          : await this.askEvaluation(
-              base.organizationId,
-              buildConsolidationPrompt(attendantName, parts),
-              spent,
-              (raw) => parseConsolidation(raw, parts),
-            );
-      return await this.saveEvaluation({ ...audit, ...spent }, evaluation, names);
+      const { parts, analyzed } = await this.evaluateBatches(base, attendantName, loaded, transcripts, spent);
+      const evaluation = parts.length === 1 ? parts[0] : await this.consolidate(base, attendantName, parts, spent);
+      return await this.saveEvaluation(
+        { ...audit, ...spent, conversationsAnalyzed: analyzed },
+        evaluation,
+        names,
+      );
     } catch (err) {
       const message = (err as Error).message;
       this.logger.warn(
@@ -168,13 +159,73 @@ export class DiaryService {
     }
   }
 
-  /** Pede à IA e refaz uma vez se o texto vier misturado com outro idioma. */
+  /**
+   * Avalia o dia em blocos. Bloco que falha fica de fora e o resto é
+   * publicado; só falha o dia quando nenhum bloco saiu.
+   */
+  private async evaluateBatches(
+    base: Pick<DiaryRecord, 'organizationId' | 'userId' | 'day'>,
+    attendantName: string,
+    loaded: LoadedCriteria,
+    transcripts: DiaryTranscript[],
+    spent: DiarySpend,
+  ): Promise<{ parts: DiaryEvaluation[]; analyzed: number }> {
+    const parts: DiaryEvaluation[] = [];
+    let analyzed = 0;
+    let lastError: Error | null = null;
+    for (const batch of toBatches(transcripts)) {
+      const prompt = buildDiaryPrompt({ attendantName, criteria: loaded.criteria, transcripts: batch });
+      try {
+        parts.push(
+          await this.askEvaluation(base.organizationId, prompt, spent, (raw) => parseDiaryEvaluation(raw, batch)),
+        );
+        analyzed += batch.length;
+      } catch (err) {
+        lastError = err as Error;
+        this.logger.warn(
+          `diary_batch_skipped user=${base.userId} day=${base.day} size=${batch.length}: ${lastError.message}`,
+        );
+      }
+    }
+    if (parts.length === 0) throw lastError ?? new Error(UNREADABLE_ERROR);
+    return { parts, analyzed };
+  }
+
+  /** Une os blocos pela IA; se ela falhar, junta sem IA em vez de perder o dia. */
+  private async consolidate(
+    base: Pick<DiaryRecord, 'organizationId' | 'userId' | 'day'>,
+    attendantName: string,
+    parts: DiaryEvaluation[],
+    spent: DiarySpend,
+  ): Promise<DiaryEvaluation> {
+    try {
+      return await this.askEvaluation(
+        base.organizationId,
+        buildConsolidationPrompt(attendantName, parts),
+        spent,
+        (raw) => parseConsolidation(raw, parts),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `diary_consolidation_fallback user=${base.userId} day=${base.day}: ${(err as Error).message}`,
+      );
+      return mergeParts(parts);
+    }
+  }
+
+  /**
+   * Pede à IA e refaz se a resposta vier ilegível ou com outro idioma. O
+   * raciocínio <think> do MiniMax sai antes da leitura: ele traz chaves que
+   * confundem a busca pelo JSON. Outro idioma que persiste é tirado do texto.
+   */
   private async askEvaluation(
     organizationId: string,
     prompt: { system: string; user: string },
     spent: DiarySpend,
     parse: (raw: string) => DiaryEvaluation | null,
   ): Promise<DiaryEvaluation> {
+    let foreign: DiaryEvaluation | null = null;
+    let unreadable = '';
     for (let attempt = 0; attempt < MAX_EVALUATION_ATTEMPTS; attempt += 1) {
       const response = await this.llm.complete({
         organizationId,
@@ -185,17 +236,24 @@ export class DiaryService {
           { role: 'system', content: prompt.system },
           {
             role: 'user',
-            content: attempt === 0 ? prompt.user : `${prompt.user}\n\n${LANGUAGE_REMINDER}`,
+            content: attempt === 0 || !foreign ? prompt.user : `${prompt.user}\n\n${LANGUAGE_REMINDER}`,
           },
         ],
       });
       spent.modelId = response.rawModelId;
       spent.costUsd += response.usage.costUsd;
-      const evaluation = parse(contentToText(response.message.content));
-      if (!evaluation) throw new Error(UNREADABLE_ERROR);
+      const text = stripThinkBlocks(contentToText(response.message.content));
+      const evaluation = parse(text);
+      if (!evaluation) {
+        unreadable = `stop=${response.stopReason ?? '?'} chars=${text.length}`;
+        continue;
+      }
       if (!hasForeignScript(evaluation)) return evaluation;
+      foreign = evaluation;
     }
-    throw new Error(FOREIGN_SCRIPT_ERROR);
+    if (foreign) return withoutForeignScript(foreign);
+    this.logger.warn(`diary_llm_unreadable ${unreadable}`);
+    throw new Error(UNREADABLE_ERROR);
   }
 
   private saveEvaluation(
