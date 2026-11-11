@@ -34,5 +34,7 @@ import { MANAGER_ALERTS_QUEUE, MANAGER_ALERTS_THROTTLE } from './manager-alerts.
       inject: [getQueueToken(MANAGER_ALERTS_QUEUE)],
     },
   ],
+  // O gerente no Telegram reaproveita as consultas de esperas e de orgs.
+  exports: [ManagerAlertsRepository],
 })
 export class SlaManagerAlertsModule {}
