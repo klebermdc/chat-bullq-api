@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
+import { scopedUserWhere } from '../conversations/conversation-scope';
 import { findContactIdsBySearch } from './contact-search';
 
 const CONTACT_LIST_INCLUDE = {
@@ -69,7 +70,7 @@ export class ContactsRepository {
         channels: { include: { channel: { select: { id: true, type: true, name: true } } } },
         tags: { include: { tag: true } },
         conversations: {
-          where: scopedUserId ? { assignedToId: scopedUserId } : undefined,
+          where: scopedUserId ? scopedUserWhere(scopedUserId) : undefined,
           orderBy: { createdAt: 'desc' },
           take: 10,
           include: {

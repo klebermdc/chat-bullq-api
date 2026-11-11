@@ -9,7 +9,10 @@ import { OrgRole } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { AudioSourceService } from './audio-source.service';
 import { UploadsService } from './uploads.service';
-import { resolveAssignmentScope } from '../conversations/conversation-scope';
+import {
+  canAgentReachConversation,
+  resolveAssignmentScope,
+} from '../conversations/conversation-scope';
 import type { ChannelAccess } from '../../iam/channel-access/channel-access.service';
 
 export interface PlaybackResult {
@@ -56,7 +59,7 @@ export class PlaybackService {
     if (
       currentUserId &&
       resolveAssignmentScope(role, currentUserId) &&
-      message.conversation.assignedToId !== currentUserId
+      !(await canAgentReachConversation(this.prisma, message.conversation, currentUserId))
     ) {
       throw new ForbiddenException();
     }

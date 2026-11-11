@@ -1,3 +1,4 @@
+import { scopedUserWhere } from '../messaging/conversations/conversation-scope';
 import { NotFoundException } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { ProposalsService } from './proposals.service';
@@ -372,7 +373,7 @@ describe('ProposalsService.listForContact / listForConversation — escopo por a
 
     expect(result).toEqual([{ id: 'p1', conversationId: 'conv-mine', contactId: 'c1' }]);
     expect(d.prisma.conversation.findMany).toHaveBeenCalledWith({
-      where: { id: { in: ['conv-mine', 'conv-colega'] }, assignedToId: 'agent-u1' },
+      where: { id: { in: ['conv-mine', 'conv-colega'] }, ...scopedUserWhere('agent-u1') },
       select: { id: true },
     });
   });

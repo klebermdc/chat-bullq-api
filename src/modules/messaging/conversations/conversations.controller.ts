@@ -59,6 +59,8 @@ import { StartConversationService } from './start-conversation.service';
 import { StartConversationDto } from './dto/start-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { TransferConversationDto } from './dto/transfer-conversation.dto';
+import { AddParticipantDto } from './dto/add-participant.dto';
+import { ConversationParticipantsService } from './conversation-participants.service';
 import { SetOriginDto } from './dto/set-origin.dto';
 import { LeadOriginService } from '../pipeline/lead-origin.service';
 import { ConversationTranscriptService } from './conversation-transcript.service';
@@ -80,6 +82,7 @@ import type { ChannelAccess } from '../../iam/channel-access/channel-access.serv
 export class ConversationsController {
   constructor(
     private readonly service: ConversationsService,
+    private readonly participants: ConversationParticipantsService,
     private readonly startConversation: StartConversationService,
     private readonly leadOrigin: LeadOriginService,
     private readonly transcript: ConversationTranscriptService,
@@ -438,6 +441,49 @@ export class ConversationsController {
     @CurrentUserRole() role: OrgRole,
   ) {
     return this.service.transfer(id, orgId, dto.toUserId, userId, dto.reason, access, role);
+  }
+
+  @Get(':id/participants')
+  @ApiOperation({ summary: 'Vendedores incluídos na conversa (conversa compartilhada).' })
+  listParticipants(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
+  ) {
+    return this.participants.list(id, orgId, { userId, role, access });
+  }
+
+  @Post(':id/participants')
+  @ApiOperation({
+    summary:
+      'Inclui outro vendedor na conversa. Ele vê e responde; o dono não muda.',
+  })
+  addParticipant(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
+    @Body() dto: AddParticipantDto,
+  ) {
+    return this.participants.add(id, orgId, dto.userId, { userId, role, access });
+  }
+
+  @Delete(':id/participants/:userId')
+  @ApiOperation({
+    summary: 'Tira um vendedor da conversa (ele mesmo, o dono ou a gestão).',
+  })
+  removeParticipant(
+    @Param('id') id: string,
+    @Param('userId') targetUserId: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
+    @CurrentUserRole() role: OrgRole,
+  ) {
+    return this.participants.remove(id, orgId, targetUserId, { userId, role, access });
   }
 
   @Put(':id/origin')

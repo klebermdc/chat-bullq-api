@@ -73,4 +73,26 @@ describe('shouldAutoAssignOnReply', () => {
       }),
     ).toBe(true);
   });
+
+  it('vendedor incluído na conversa responde sem virar dono', () => {
+    expect(
+      shouldAutoAssignOnReply({
+        currentAssigneeId: 'renata',
+        senderId: 'kleber',
+        role: OrgRole.AGENT,
+        isParticipant: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('incluído em conversa sem dono assume normalmente', () => {
+    expect(
+      shouldAutoAssignOnReply({
+        currentAssigneeId: null,
+        senderId: 'kleber',
+        role: OrgRole.AGENT,
+        isParticipant: true,
+      }),
+    ).toBe(true);
+  });
 });

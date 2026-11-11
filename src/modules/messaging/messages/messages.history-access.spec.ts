@@ -21,6 +21,7 @@ function makeService(conversation: Record<string, unknown> | null) {
       findMany: jest.fn().mockResolvedValue([]),
     },
     contact: { findMany: jest.fn().mockResolvedValue([]) },
+    conversationParticipant: { findUnique: jest.fn().mockResolvedValue(null) },
   };
   const channelAccess = {
     hasAccess: (access: unknown, channelId: string) =>

@@ -5,7 +5,10 @@ import {
   ChannelAccess,
   ChannelAccessService,
 } from '../../iam/channel-access/channel-access.service';
-import { resolveAssignmentScope } from '../conversations/conversation-scope';
+import {
+  canAgentReachConversation,
+  resolveAssignmentScope,
+} from '../conversations/conversation-scope';
 import { phoneVariants } from './phone-identity';
 
 /** O cabeçalho de um atendimento, usado nas divisórias da timeline. */
@@ -131,7 +134,7 @@ export class ContactHistoryService {
     if (
       currentUserId &&
       resolveAssignmentScope(role, currentUserId) &&
-      conversation.assignedToId !== currentUserId
+      !(await canAgentReachConversation(this.prisma, conversation, currentUserId))
     ) {
       throw new ForbiddenException();
     }

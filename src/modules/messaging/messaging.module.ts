@@ -32,6 +32,7 @@ import { ConversationFsmService } from './conversations/conversation-fsm.service
 import { ConversationAccessModule } from './conversations/conversation-access.module';
 import { ConversationsController } from './conversations/conversations.controller';
 import { ConversationsService } from './conversations/conversations.service';
+import { ConversationParticipantsService } from './conversations/conversation-participants.service';
 import { ConversationsRepository } from './conversations/conversations.repository';
 import { StartConversationService } from './conversations/start-conversation.service';
 import { MessagesController } from './messages/messages.controller';
@@ -106,6 +107,7 @@ import { ContactsRepository } from './contacts/contacts.repository';
     OutboundMessageProcessor,
     ConversationFsmService,
     ConversationsService,
+    ConversationParticipantsService,
     ConversationsRepository,
     StartConversationService,
     MessagesService,

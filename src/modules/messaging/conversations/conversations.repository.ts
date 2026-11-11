@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ChannelType, ConversationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { attachWindowExpiry } from './attach-window-expiry';
+import { agentScopeBlock, scopedUserWhere } from './conversation-scope';
 import { buildSearchOr, SEARCH_CONTACT_LIMIT } from './inbox-search';
 import { findContactIdsBySearch } from '../contacts/contact-search';
 import {
@@ -157,7 +158,10 @@ export class ConversationsRepository {
       // (se houver) tem precedência — por isso fica no `else`.
       where.status = { not: ConversationStatus.CLOSED };
     }
-    if (filters.awaitingHumanReply !== undefined) {
+    // AGENT: o sinal "esperando humano" só vale para a conversa DELE. A
+    // conversa em que foi incluído (compartilhada) fica sempre na Caixa de
+    // entrada — o Esperando é cobrança do dono. Ver `agentScopeBlock`.
+    if (filters.awaitingHumanReply !== undefined && !filters.enforceAssignedToId) {
       where.awaitingHumanReply = filters.awaitingHumanReply;
     }
     // Resolve the effective channel filter:
@@ -208,11 +212,22 @@ export class ConversationsRepository {
     andBlocks.push(...buildAdvancedBlocks(filters));
     // Com lista de atendentes, o "sem atendente" já foi para o bloco OR acima.
     const hasAssigneeList = (filters.assignedToIds?.length ?? 0) > 0;
-    if (filters.assignedToNone && !hasAssigneeList) where.assignedToId = null;
-    else if (filters.assignedToId) where.assignedToId = filters.assignedToId;
+    // AGENT: a barreira abaixo vence o "sem responsável" (como sempre foi).
+    if (filters.assignedToNone && !hasAssigneeList && !filters.enforceAssignedToId) {
+      where.assignedToId = null;
+    } else if (
+      filters.assignedToId &&
+      // "Minhas" do próprio AGENT já é a barreira abaixo (dono OU incluído);
+      // repetir o dono aqui esconderia as compartilhadas.
+      filters.assignedToId !== filters.enforceAssignedToId
+    ) {
+      where.assignedToId = filters.assignedToId;
+    }
     if (filters.enforceAssignedToId) {
-      // Precedência sobre o filtro opcional — barreira, não preferência.
-      where.assignedToId = filters.enforceAssignedToId;
+      // Barreira, não preferência: entra como bloco AND próprio.
+      andBlocks.push(
+        agentScopeBlock(filters.enforceAssignedToId, filters.awaitingHumanReply),
+      );
     }
     if (filters.stuckOnly) where.isStuck = true;
     if (filters.dateFrom || filters.dateTo) {
@@ -327,6 +342,8 @@ export class ConversationsRepository {
           assignedTo: {
             select: { id: true, name: true, avatarUrl: true },
           },
+          // Selo "compartilhada" na lista.
+          participants: { select: { userId: true } },
           messages: {
             orderBy: { createdAt: 'desc' },
             take: 1,
@@ -520,6 +537,11 @@ export class ConversationsRepository {
         // e pra qualquer membro da org com acesso à conversa, incluindo AGENT.
         channel: { select: { id: true, type: true, name: true } },
         assignedTo: { select: { id: true, name: true, avatarUrl: true } },
+        // Vendedores incluídos (conversa compartilhada) — cabeçalho do chat.
+        participants: {
+          select: { user: { select: { id: true, name: true, avatarUrl: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
         department: true,
         tags: { include: { tag: true } },
         cards: {
@@ -560,7 +582,7 @@ export class ConversationsRepository {
         ...(accessibleChannelIds !== undefined
           ? { channelId: { in: accessibleChannelIds } }
           : {}),
-        ...(enforceAssignedToId ? { assignedToId: enforceAssignedToId } : {}),
+        ...(enforceAssignedToId ? scopedUserWhere(enforceAssignedToId) : {}),
       },
       _count: true,
     });
@@ -618,7 +640,7 @@ export class ConversationsRepository {
       _count: true,
     });
 
-    return rows.reduce((acc, r) => {
+    const counts = rows.reduce((acc, r) => {
       if (r.status === ConversationStatus.CLOSED) {
         acc.closed += r._count;
       } else if (r.awaitingHumanReply) {
@@ -628,5 +650,30 @@ export class ConversationsRepository {
       }
       return acc;
     }, { ...empty });
+    if (!opts.enforceAssignedToId) return counts;
+
+    // Compartilhadas com o AGENT: abertas contam na Caixa de entrada (nunca no
+    // Esperando), fechadas em Finalizados — mesma regra da lista.
+    const shared = await this.prisma.conversation.groupBy({
+      by: ['status'],
+      where: {
+        organizationId,
+        deletedAt: null,
+        isArchived: false,
+        ...(channelFilter !== undefined ? { channelId: channelFilter } : {}),
+        participants: { some: { userId: opts.enforceAssignedToId } },
+        // Sem as dele (já contadas acima); `not` sozinho perderia as sem dono.
+        OR: [
+          { assignedToId: null },
+          { assignedToId: { not: opts.enforceAssignedToId } },
+        ],
+      },
+      _count: true,
+    });
+    return shared.reduce((acc, r) => {
+      if (r.status === ConversationStatus.CLOSED) acc.closed += r._count;
+      else acc.inbox += r._count;
+      return acc;
+    }, counts);
   }
 }

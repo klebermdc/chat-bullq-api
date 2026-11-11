@@ -8,7 +8,10 @@ import {
 import { OrgRole } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { ChannelAdapterRegistry } from '../../channel-hub/channel-adapter.registry';
-import { resolveAssignmentScope } from '../conversations/conversation-scope';
+import {
+  canAgentReachConversation,
+  resolveAssignmentScope,
+} from '../conversations/conversation-scope';
 import { UploadsService } from './uploads.service';
 
 /**
@@ -63,7 +66,7 @@ export class MediaResolverService {
     if (
       currentUserId &&
       resolveAssignmentScope(role, currentUserId) &&
-      message.conversation.assignedToId !== currentUserId
+      !(await canAgentReachConversation(this.prisma, message.conversation, currentUserId))
     ) {
       throw new ForbiddenException();
     }

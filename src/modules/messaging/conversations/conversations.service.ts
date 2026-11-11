@@ -23,7 +23,10 @@ import {
   UNASSIGNED_TOKENS,
   type ParsedAdvancedQuery,
 } from './inbox-advanced-query';
-import { resolveAssignmentScope } from './conversation-scope';
+import {
+  canAgentReachConversation,
+  resolveAssignmentScope,
+} from './conversation-scope';
 import { ConversationAccessService } from './conversation-access.service';
 import { ConversationFsmService } from './conversation-fsm.service';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
@@ -335,7 +338,7 @@ export class ConversationsService {
     if (
       currentUserId &&
       resolveAssignmentScope(role, currentUserId) &&
-      conversation.assignedToId !== currentUserId
+      !(await canAgentReachConversation(this.prisma, conversation, currentUserId))
     ) {
       throw new ForbiddenException();
     }

@@ -74,4 +74,31 @@ describe('ConversationAccessService.assertConversationAccess', () => {
       where: { id: 'conv1', organizationId: 'org1' },
     });
   });
+
+  it('incluído na conversa: só passa onde a rota permite (enviar/ler)', async () => {
+    const { svc, prisma } = makeService({ id: 'conv1' });
+    await svc.assertConversationAccess('conv1', 'org1', OrgRole.AGENT, 'kleber', {
+      allowParticipant: true,
+    });
+    expect(prisma.conversation.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'conv1',
+        organizationId: 'org1',
+        OR: [
+          { assignedToId: 'kleber' },
+          { participants: { some: { userId: 'kleber' } } },
+        ],
+      },
+    });
+  });
+
+  it('sem allowParticipant a guarda é do dono (assumir, encerrar, transferir)', async () => {
+    const { svc, prisma } = makeService(null);
+    await expect(
+      svc.assertConversationAccess('conv1', 'org1', OrgRole.AGENT, 'kleber'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.conversation.findFirst.mock.calls[0][0].where.assignedToId).toBe(
+      'kleber',
+    );
+  });
 });

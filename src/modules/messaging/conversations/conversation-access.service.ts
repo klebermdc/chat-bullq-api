@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
-import { resolveAssignmentScope } from './conversation-scope';
+import { resolveAssignmentScope, scopedUserWhere } from './conversation-scope';
 
 /**
  * Guarda de acesso a conversas — extraída de `ConversationsService` pra ser
@@ -31,6 +31,12 @@ export class ConversationAccessService {
     organizationId: string,
     role?: OrgRole,
     currentUserId?: string,
+    /**
+     * Conversa compartilhada: o vendedor incluído passa só onde a rota pede
+     * (enviar, reagir, apagar mensagem, ver participantes). Sem isto a guarda
+     * é do dono — assumir, editar, encerrar, transferir e IA seguem dele.
+     */
+    opts: { allowParticipant?: boolean } = {},
   ) {
     // Sem currentUserId = chamador de sistema (cadência, webhook, automação,
     // agente de IA) — mantém irrestrito, igual ao resto do arquivo.
@@ -41,7 +47,10 @@ export class ConversationAccessService {
       where: {
         id,
         organizationId,
-        ...(scoped ? { assignedToId: scoped } : {}),
+        // Dono ou vendedor incluído na conversa (compartilhada).
+        ...(scoped
+          ? scopedUserWhere(scoped, { ownedOnly: !opts.allowParticipant })
+          : {}),
       },
     });
     if (!conversation) throw new NotFoundException('Conversation not found');

@@ -15,11 +15,17 @@ export function shouldAutoAssignOnReply(params: {
   currentAssigneeId: string | null;
   senderId: string;
   role?: OrgRole;
+  /** Remetente foi incluído na conversa (compartilhada): ajuda, não assume. */
+  isParticipant?: boolean;
 }): boolean {
-  const { currentAssigneeId, senderId, role } = params;
+  const { currentAssigneeId, senderId, role, isParticipant } = params;
 
   // Já é o dono → no-op.
   if (currentAssigneeId === senderId) return false;
+
+  // Vendedor incluído na conversa de um colega responde sem tirar o dono.
+  // Para passar de vez, existe a transferência.
+  if (isParticipant && currentAssigneeId != null) return false;
 
   const isPrivileged = role === OrgRole.OWNER || role === OrgRole.ADMIN;
   const conversationHasOwner = currentAssigneeId != null;

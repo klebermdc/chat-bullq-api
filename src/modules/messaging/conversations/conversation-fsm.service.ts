@@ -182,6 +182,13 @@ export class ConversationFsmService {
         );
       }
 
+      // Quem era incluído e virou dono deixa de ser participante (vale para
+      // todo caminho de atribuição: transferência, assumir, roteamento). Na
+      // mesma transação: se a troca abortar, o participante fica.
+      await tx.conversationParticipant.deleteMany({
+        where: { conversationId, userId: agentId },
+      });
+
       await tx.conversationAuditLog.create({
         data: {
           conversationId,

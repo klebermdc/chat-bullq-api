@@ -13,7 +13,10 @@ import { ExtractionService } from './extraction.service';
 import { ProposalsRepository } from './proposals.repository';
 import { MessagesService } from '../messaging/messages/messages.service';
 import { ConversationAccessService } from '../messaging/conversations/conversation-access.service';
-import { resolveAssignmentScope } from '../messaging/conversations/conversation-scope';
+import {
+  resolveAssignmentScope,
+  scopedUserWhere,
+} from '../messaging/conversations/conversation-scope';
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { buildOtherProposalMessage, buildProposalMessage } from './message-builder';
 import { CreateProposalDto, ProposalImageDto } from './dto/create-proposal.dto';
@@ -611,7 +614,7 @@ export class ProposalsService {
 
     const conversationIds = [...new Set(proposals.map((p) => p.conversationId))];
     const owned = await this.prisma.conversation.findMany({
-      where: { id: { in: conversationIds }, assignedToId: scopedUserId },
+      where: { id: { in: conversationIds }, ...scopedUserWhere(scopedUserId) },
       select: { id: true },
     });
     const ownedIds = new Set(owned.map((c) => c.id));

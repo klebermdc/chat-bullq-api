@@ -4,7 +4,10 @@ import { OrgRole } from '@prisma/client';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentOrg, CurrentUser, CurrentUserRole } from '../../common/decorators';
 import { PrismaService } from '../../database/prisma.service';
-import { resolveAssignmentScope } from '../messaging/conversations/conversation-scope';
+import {
+  resolveAssignmentScope,
+  scopedUserWhere,
+} from '../messaging/conversations/conversation-scope';
 import { OrderFichaRepository } from './order-ficha.repository';
 
 @ApiTags('Order Ficha')
@@ -47,7 +50,7 @@ export class OrderFichaController {
     const scoped = userId ? resolveAssignmentScope(role, userId) : undefined;
     if (scoped) {
       const conversation = await this.prisma.conversation.findFirst({
-        where: { id: conversationId, organizationId: orgId, assignedToId: scoped },
+        where: { id: conversationId, organizationId: orgId, ...scopedUserWhere(scoped) },
         select: { id: true },
       });
       if (!conversation) return null;

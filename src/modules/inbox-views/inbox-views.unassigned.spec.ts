@@ -1,3 +1,4 @@
+import { scopedUserWhere } from '../messaging/conversations/conversation-scope';
 import { InboxViewsService } from './inbox-views.service';
 import { ConversationsRepository } from '../messaging/conversations/conversations.repository';
 
@@ -96,6 +97,8 @@ describe('ConversationsRepository.findInbox — filtro "sem responsável"', () =
       30,
     );
 
-    expect(findMany.mock.calls[0][0].where.assignedToId).toBe('user-agent');
+    const where = findMany.mock.calls[0][0].where;
+    expect(where.assignedToId).toBeUndefined();
+    expect(where.AND).toContainEqual(scopedUserWhere('user-agent'));
   });
 });
