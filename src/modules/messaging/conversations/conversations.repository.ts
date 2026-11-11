@@ -161,7 +161,15 @@ export class ConversationsRepository {
     // AGENT: o sinal "esperando humano" só vale para a conversa DELE. A
     // conversa em que foi incluído (compartilhada) fica sempre na Caixa de
     // entrada — o Esperando é cobrança do dono. Ver `agentScopeBlock`.
-    if (filters.awaitingHumanReply !== undefined && !filters.enforceAssignedToId) {
+    // "Minhas" de quem está logado (qualquer papel): dono OU incluído, com a
+    // aba resolvida dentro de `agentScopeBlock`.
+    const isMineFilter =
+      !!currentUserId && filters.assignedToId === currentUserId;
+    if (
+      filters.awaitingHumanReply !== undefined &&
+      !filters.enforceAssignedToId &&
+      !isMineFilter
+    ) {
       where.awaitingHumanReply = filters.awaitingHumanReply;
     }
     // Resolve the effective channel filter:
@@ -221,7 +229,15 @@ export class ConversationsRepository {
       // repetir o dono aqui esconderia as compartilhadas.
       filters.assignedToId !== filters.enforceAssignedToId
     ) {
-      where.assignedToId = filters.assignedToId;
+      if (isMineFilter) {
+        // "Minhas" de ADM/Owner: as dele + as compartilhadas com ele. Sem isto
+        // a gestão incluída numa conversa não a achava com o filtro ligado.
+        andBlocks.push(
+          agentScopeBlock(currentUserId, filters.awaitingHumanReply),
+        );
+      } else {
+        where.assignedToId = filters.assignedToId;
+      }
     }
     if (filters.enforceAssignedToId) {
       // Barreira, não preferência: entra como bloco AND próprio.

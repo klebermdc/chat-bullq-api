@@ -130,6 +130,30 @@ describe('ConversationsRepository.findInbox (busca + etiqueta)', () => {
     expect(whereOf().AND).toContainEqual(agentScopeBlock('u9', false));
   });
 
+  it('"Minhas" de ADM/Owner inclui as compartilhadas com ele', async () => {
+    const { repo, whereOf } = buildRepo();
+    await repo.findInbox(
+      { organizationId: 'org-1', assignedToId: 'adm1', awaitingHumanReply: false },
+      0,
+      30,
+      'adm1',
+    );
+    expect(whereOf().assignedToId).toBeUndefined();
+    expect(whereOf().awaitingHumanReply).toBeUndefined();
+    expect(whereOf().AND).toContainEqual(agentScopeBlock('adm1', false));
+  });
+
+  it('filtro por outro atendente continua só do dono', async () => {
+    const { repo, whereOf } = buildRepo();
+    await repo.findInbox(
+      { organizationId: 'org-1', assignedToId: 'renata' },
+      0,
+      30,
+      'adm1',
+    );
+    expect(whereOf().assignedToId).toBe('renata');
+  });
+
   it('"Minhas" do próprio AGENT não esconde as compartilhadas', async () => {
     const { repo, whereOf } = buildRepo();
     await repo.findInbox(
