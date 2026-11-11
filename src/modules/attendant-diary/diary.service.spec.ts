@@ -33,6 +33,15 @@ function setup(overrides: { existing?: object | null; messages?: DiaryMessage[] 
   return { service, repository, llm, criteriaService };
 }
 
+const elevenConversations = (): DiaryMessage[] =>
+  Array.from({ length: 11 }, (_, i) => ({
+    conversationId: `c${i + 1}`,
+    direction: 'OUTBOUND' as const,
+    senderId: 'u1',
+    text: `Mensagem da conversa número ${i + 1}`,
+    at: new Date('2026-10-30T13:00:00Z'),
+  }));
+
 describe('DiaryService.generate', () => {
   test('não refaz (nem paga de novo) um dia já avaliado', async () => {
     const { service, llm, repository } = setup({ existing: { status: 'READY' } });
@@ -60,7 +69,7 @@ describe('DiaryService.generate', () => {
     expect(result).toBe('FAILED');
     expect(repository.saveDiary).not.toHaveBeenCalled();
     expect(repository.recordFailure).toHaveBeenCalledWith(
-      expect.objectContaining({ day: JOB.day, errorMessage: expect.any(String), costUsd: 0.01 }),
+      expect.objectContaining({ day: JOB.day, errorMessage: expect.any(String), costUsd: 0.02 }),
     );
   });
 
@@ -141,15 +150,29 @@ describe('DiaryService.generate', () => {
     );
   });
 
-  test('falha sem publicar quando o outro idioma persiste', async () => {
+  test('outro idioma que persiste é tirado do texto e o diário sai', async () => {
     const { service, llm, repository } = setup();
     llm.complete.mockResolvedValue(llmAnswer(JSON.stringify({ resumo: 'Ajuste é 直接 responder.' })));
 
-    await expect(service.generate(JOB)).resolves.toBe('FAILED');
+    await expect(service.generate(JOB)).resolves.toBe('READY');
 
     expect(llm.complete).toHaveBeenCalledTimes(2);
     expect(repository.saveDiary).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'FAILED', errorMessage: expect.stringMatching(/idioma/) }),
+      expect.objectContaining({ status: 'READY', summary: 'Ajuste é responder.' }),
+    );
+  });
+
+  test('ignora o raciocínio <think> do modelo, mesmo com chaves dentro', async () => {
+    const { service, llm, repository } = setup();
+    llm.complete.mockResolvedValue(
+      llmAnswer('<think>The user wants {json}. Let me plan {a: 1}.</think>\n{"resumo":"Bom dia de trabalho."}'),
+    );
+
+    await expect(service.generate(JOB)).resolves.toBe('READY');
+
+    expect(llm.complete).toHaveBeenCalledTimes(1);
+    expect(repository.saveDiary).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: 'Bom dia de trabalho.' }),
     );
   });
 
@@ -183,24 +206,43 @@ describe('DiaryService.generate', () => {
     expect(saved.costUsd).toBeCloseTo(0.03);
   });
 
-  test('uma falha em qualquer bloco não publica diário pela metade', async () => {
-    const messages: DiaryMessage[] = Array.from({ length: 11 }, (_, i) => ({
-      conversationId: `c${i + 1}`,
-      direction: 'OUTBOUND' as const,
-      senderId: 'u1',
-      text: 'Mensagem do atendente',
-      at: new Date('2026-10-30T13:00:00Z'),
-    }));
-    const { service, llm, repository } = setup({ messages });
+  test('bloco que falha fica de fora e o resto do dia é publicado', async () => {
+    const { service, llm, repository } = setup({ messages: elevenConversations() });
     llm.complete
       .mockResolvedValueOnce(llmAnswer(JSON.stringify({ resumo: 'Parcial.' })))
       .mockRejectedValueOnce(new Error('timeout'));
 
+    await expect(service.generate(JOB)).resolves.toBe('READY');
+
+    expect(repository.saveDiary).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'READY', summary: 'Parcial.', conversationsAnalyzed: 10 }),
+    );
+  });
+
+  test('todos os blocos falhando salva FAILED', async () => {
+    const { service, llm, repository } = setup({ messages: elevenConversations() });
+    llm.complete.mockRejectedValue(new Error('timeout'));
+
     await expect(service.generate(JOB)).resolves.toBe('FAILED');
 
     expect(repository.saveDiary).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'FAILED', errorMessage: 'timeout', costUsd: 0.01 }),
+      expect.objectContaining({ status: 'FAILED', errorMessage: 'timeout' }),
     );
+  });
+
+  test('consolidação ilegível junta os blocos sem a IA', async () => {
+    const { service, llm, repository } = setup({ messages: elevenConversations() });
+    llm.complete
+      .mockResolvedValueOnce(llmAnswer(JSON.stringify({ resumo: 'Manhã boa.', foco: 'Responder rápido.' })))
+      .mockResolvedValueOnce(llmAnswer(JSON.stringify({ resumo: 'Tarde boa.' })))
+      .mockResolvedValue(llmAnswer('não sei'));
+
+    await expect(service.generate(JOB)).resolves.toBe('READY');
+
+    const saved = repository.saveDiary.mock.calls[0][0];
+    expect(saved.status).toBe('READY');
+    expect(saved.summary).toBe('Manhã boa. Tarde boa.');
+    expect(saved.details.focus).toBe('Responder rápido.');
   });
 
   test('falha da IA salva FAILED e preserva as métricas', async () => {
@@ -219,15 +261,16 @@ describe('DiaryService.generate', () => {
     );
   });
 
-  test('resposta ilegível da IA salva FAILED e registra o custo gasto', async () => {
+  test('resposta ilegível tenta de novo e só então salva FAILED com o custo gasto', async () => {
     const { service, llm, repository } = setup();
     llm.complete.mockResolvedValue(llmAnswer('desculpe, não consigo'));
 
     const result = await service.generate(JOB);
 
     expect(result).toBe('FAILED');
+    expect(llm.complete).toHaveBeenCalledTimes(2);
     expect(repository.saveDiary).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'FAILED', costUsd: 0.01 }),
+      expect.objectContaining({ status: 'FAILED', costUsd: 0.02 }),
     );
   });
 
