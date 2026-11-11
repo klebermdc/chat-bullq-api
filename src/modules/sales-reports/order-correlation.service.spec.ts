@@ -6,7 +6,7 @@ import { OrderCorrelationService } from './order-correlation.service';
  * (OfpSalesOrder.pedido). Match → liga (grava ofpOrderExternalId) + enriquece o
  * valor do card. Idempotente.
  */
-function make(opts: { wonCards?: any[]; order?: any } = {}) {
+function make(opts: { wonCards?: any[]; order?: any; owners?: string[] } = {}) {
   const prisma = {
     card: {
       findMany: jest.fn().mockResolvedValue(opts.wonCards ?? []),
@@ -20,7 +20,8 @@ function make(opts: { wonCards?: any[]; order?: any } = {}) {
       ),
     },
   } as any;
-  return { service: new OrderCorrelationService(prisma), prisma };
+  const hubAccess = { ownerOrgIds: jest.fn().mockResolvedValue(opts.owners ?? ['org-ofp']) } as any;
+  return { service: new OrderCorrelationService(prisma, hubAccess), prisma };
 }
 
 describe('OrderCorrelationService.correlateWonCards (E5.2a)', () => {
@@ -83,5 +84,19 @@ describe('OrderCorrelationService.correlateWonCards (E5.2a)', () => {
 
     expect(prisma.ofpSalesOrder.findFirst).not.toHaveBeenCalled();
     expect(res).toEqual({ matched: 0, checked: 0 });
+  });
+
+  it('só olha cards ganhos das orgs donas do HUB', async () => {
+    const { service, prisma } = make();
+    await service.correlateWonCards();
+    expect(prisma.card.findMany).toHaveBeenCalledWith({
+      where: { status: 'WON', organizationId: { in: ['org-ofp'] } },
+    });
+  });
+
+  it('não faz nada quando nenhuma org é dona do HUB', async () => {
+    const { service, prisma } = make({ owners: [] });
+    await expect(service.correlateWonCards()).resolves.toEqual({ matched: 0, checked: 0 });
+    expect(prisma.card.findMany).not.toHaveBeenCalled();
   });
 });

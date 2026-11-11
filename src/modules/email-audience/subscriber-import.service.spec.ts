@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { EmailSubscriberSource } from '@prisma/client';
 import { SubscriberImportService, aggregateSalesOrders, parseCsv, SalesOrderRow } from './subscriber-import.service';
 
@@ -129,7 +130,11 @@ describe('SubscriberImportService', () => {
         ]),
       },
     };
-    return { service: new SubscriberImportService(prisma as any, subscribers as any), upserted };
+    const hubAccess = { isEnabledFor: jest.fn(async (orgId: string) => orgId === 'org_1') };
+    return {
+      service: new SubscriberImportService(prisma as any, subscribers as any, hubAccess as any),
+      upserted,
+    };
   }
 
   it('importa contatos do CRM ignorando quem não tem email', async () => {
@@ -137,6 +142,12 @@ describe('SubscriberImportService', () => {
     expect(await service.fromContacts('org_1')).toEqual({ imported: 1, skipped: 1, errors: [] });
     expect(upserted[0].source).toBe(EmailSubscriberSource.CRM_CONTACT);
     expect(upserted[0].contactId).toBe('c1');
+  });
+
+  it('recusa importar pedidos do HUB para org que não é dona dele', async () => {
+    const { service, upserted } = make();
+    await expect(service.fromSalesOrders('org_outra')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(upserted).toHaveLength(0);
   });
 
   it('importa pedidos do HUB já enriquecidos e carimbando a procedência', async () => {

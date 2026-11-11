@@ -1,6 +1,6 @@
 import { CheckPurchaseTool, phoneTail } from './check-purchase.tool';
 
-function make(opts: { rows?: any[]; contact?: any } = {}) {
+function make(opts: { rows?: any[]; contact?: any; hubEnabled?: boolean } = {}) {
   const prisma = {
     $queryRaw: jest.fn().mockResolvedValue(opts.rows ?? []),
     contact: {
@@ -19,7 +19,8 @@ function make(opts: { rows?: any[]; contact?: any } = {}) {
     agentId: 'a1',
     runId: 'r1',
   } as any;
-  return { tool: new CheckPurchaseTool(prisma), prisma, ctx };
+  const hubAccess = { isEnabledFor: jest.fn().mockResolvedValue(opts.hubEnabled ?? true) } as any;
+  return { tool: new CheckPurchaseTool(prisma, hubAccess), prisma, ctx, hubAccess };
 }
 
 const ORDER = {
@@ -48,6 +49,17 @@ describe('phoneTail', () => {
 });
 
 describe('CheckPurchaseTool', () => {
+  it('não consulta o espelho do HUB em org que não é dona dele', async () => {
+    const { tool, ctx, prisma, hubAccess } = make({ rows: [ORDER], hubEnabled: false });
+    const res: any = await tool.execute({ phone: '11982015967' }, ctx);
+
+    expect(hubAccess.isEnabledFor).toHaveBeenCalledWith('org1');
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(res.output.ok).toBe(true);
+    expect(res.output.alreadyCustomer).toBe(false);
+    expect(res.output.purchases).toEqual([]);
+  });
+
   it('encontra pedidos e marca o cliente como comprador', async () => {
     const { tool, ctx } = make({ rows: [ORDER] });
     const res: any = await tool.execute({ phone: '11982015967' }, ctx);

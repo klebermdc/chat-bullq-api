@@ -32,7 +32,9 @@ function make(
       findFirst: jest
         .fn()
         .mockResolvedValue(
-          overrides.member === undefined ? { id: 'uo-1' } : overrides.member,
+          overrides.member === undefined
+            ? { id: 'uo-1', user: { isActive: true, deletedAt: null } }
+            : overrides.member,
         ),
     },
     conversation: {
@@ -85,18 +87,14 @@ describe('LegacyOwnerRoutingService.routeNewConversation', () => {
     );
   });
 
-  it('só aceita vendedor ativo e membro da organização da conversa', async () => {
+  it('procura o vendedor como membro da organização da conversa', async () => {
     const { service, prisma } = make();
 
     await service.routeNewConversation(PARAMS);
 
     expect(prisma.userOrganization.findFirst).toHaveBeenCalledWith({
-      where: {
-        organizationId: 'org-1',
-        userId: 'user-renata',
-        user: { isActive: true, deletedAt: null },
-      },
-      select: { id: true },
+      where: { organizationId: 'org-1', userId: 'user-renata' },
+      select: { id: true, user: { select: { isActive: true, deletedAt: true } } },
     });
   });
 
@@ -128,14 +126,39 @@ describe('LegacyOwnerRoutingService.routeNewConversation', () => {
     expect(fsm.assign).not.toHaveBeenCalled();
   });
 
-  it('segue a distribuição normal quando o vendedor está inativo ou fora da org', async () => {
-    const { service, fsm, prisma } = make({ member: null });
+  it('segue a distribuição normal, com as etiquetas, quando o vendedor está inativo na org', async () => {
+    const { service, fsm, prisma } = make({
+      member: { id: 'uo-1', user: { isActive: false, deletedAt: null } },
+    });
 
     const result = await service.routeNewConversation(PARAMS);
 
     expect(result).toEqual({ routed: false, reason: 'inactive', vendedor: 'Renata' });
     expect(fsm.assign).not.toHaveBeenCalled();
     expect(prisma.conversation.update).not.toHaveBeenCalled();
+    expect(prisma.contactTag.upsert).toHaveBeenCalled();
+  });
+
+  it('trata vendedor excluído como inativo', async () => {
+    const { service, fsm } = make({
+      member: { id: 'uo-1', user: { isActive: true, deletedAt: new Date('2026-10-01') } },
+    });
+
+    const result = await service.routeNewConversation(PARAMS);
+
+    expect(result).toEqual({ routed: false, reason: 'inactive', vendedor: 'Renata' });
+    expect(fsm.assign).not.toHaveBeenCalled();
+  });
+
+  it('não aplica etiquetas nem roteia quando o vendedor é de outra organização', async () => {
+    const { service, fsm, prisma } = make({ member: null });
+
+    const result = await service.routeNewConversation(PARAMS);
+
+    expect(result).toEqual({ routed: false, reason: 'other_org', vendedor: 'Renata' });
+    expect(fsm.assign).not.toHaveBeenCalled();
+    expect(prisma.tag.upsert).not.toHaveBeenCalled();
+    expect(prisma.contactTag.upsert).not.toHaveBeenCalled();
   });
 
   it('aplica no contato as etiquetas da planilha', async () => {

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../../database/prisma.service';
 import { phoneDigits } from '../../../sales-reports/reconciliation.match';
 import { AiTool, ToolContext, ToolResult } from '../tool.types';
+import { HubSalesMirrorAccess } from '../../../../common/hub-sales-mirror';
 
 /** Teto de pedidos devolvidos — a IA só precisa saber o panorama, não o extrato. */
 const MAX_ROWS = 20;
@@ -87,12 +88,27 @@ export class CheckPurchaseTool implements AiTool {
     },
   };
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly hubAccess: HubSalesMirrorAccess,
+  ) {}
 
   async execute(
     input: Record<string, unknown>,
     ctx: ToolContext,
   ): Promise<ToolResult> {
+    // O espelho é da org dona do HUB. Noutra org não há histórico a consultar.
+    if (!(await this.hubAccess.isEnabledFor(ctx.organizationId))) {
+      return {
+        output: {
+          ok: true,
+          alreadyCustomer: false,
+          purchases: [],
+          guidance: 'Sem histórico de compras disponível. Siga o fluxo normal de venda.',
+        },
+      };
+    }
+
     const argPhone = String(input.phone ?? '').trim();
     const argEmail = String(input.email ?? '').trim().toLowerCase();
 

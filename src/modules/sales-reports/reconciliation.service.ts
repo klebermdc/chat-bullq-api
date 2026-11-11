@@ -40,9 +40,9 @@ export class ReconciliationService {
   ) {}
 
   /** externalIds de pedidos que já têm um card apontando pra eles. */
-  private async correlatedExternalIds(): Promise<Set<string>> {
+  private async correlatedExternalIds(organizationId: string): Promise<Set<string>> {
     const cards = await this.prisma.card.findMany({
-      where: { status: 'WON' },
+      where: { organizationId, status: 'WON' },
       select: { metadata: true },
     });
     const ids = new Set<string>();
@@ -54,6 +54,7 @@ export class ReconciliationService {
   }
 
   async listOrphans(
+    organizationId: string,
     opts: { sinceDays?: number; limit?: number; minScore?: number } = {},
   ): Promise<OrphanEntry[]> {
     const sinceDays = opts.sinceDays ?? 120;
@@ -61,7 +62,7 @@ export class ReconciliationService {
     const minScore = opts.minScore ?? 20;
     const since = new Date(Date.now() - sinceDays * 86_400_000);
 
-    const correlated = await this.correlatedExternalIds();
+    const correlated = await this.correlatedExternalIds(organizationId);
 
     const orders = await this.prisma.ofpSalesOrder.findMany({
       where: { data: { gte: since } },
@@ -74,7 +75,7 @@ export class ReconciliationService {
 
     // Candidatos: cards do funil com contato (conjunto de leads, pequeno).
     const cards = await this.prisma.card.findMany({
-      where: { contactId: { not: null } },
+      where: { organizationId, contactId: { not: null } },
       include: {
         contact: { select: { id: true, name: true, phone: true, email: true } },
       },

@@ -69,7 +69,7 @@ describe('ReconciliationService', () => {
         ],
       });
 
-      const res = await service.listOrphans();
+      const res = await service.listOrphans('org1');
       // ext-corr é descartado (já correlacionado); sobra ext-new
       expect(res).toHaveLength(1);
       expect(res[0].order.externalId).toBe('ext-new');
@@ -114,5 +114,14 @@ describe('ReconciliationService', () => {
         BadRequestException,
       );
     });
+  });
+
+  it('sugere só cards da própria org', async () => {
+    const { service, prisma } = make();
+    await service.listOrphans('org1');
+    for (const [args] of prisma.card.findMany.mock.calls) {
+      expect(args.where.organizationId).toBe('org1');
+    }
+    expect(prisma.card.findMany).toHaveBeenCalled();
   });
 });

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { HubSalesMirrorAccess } from '../../../common/hub-sales-mirror';
 import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from '../../../database/prisma.module';
 import { RealtimeModule } from '../../realtime/realtime.module';
@@ -50,6 +51,7 @@ import { OutboundGuardsModule } from '../outbound-guards/outbound-guards.module'
     BullModule.registerQueue({ name: 'outbound-messages' }),
   ],
   providers: [
+    HubSalesMirrorAccess,
     ReplyToConversationTool,
     TransferToHumanTool,
     TagConversationTool,
