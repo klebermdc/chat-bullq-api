@@ -40,7 +40,8 @@ export type TransitionOutcome =
   | 'ENGAGED'
   | 'AMBIGUO'
   | 'EXHAUSTED'
-  | 'RESUMED';
+  | 'RESUMED'
+  | 'SELLER_TOOK_OVER';
 
 /** Subset mínimo da Cadence necessário para aplicar os efeitos. */
 export interface TransitionCadence {
@@ -154,6 +155,13 @@ export class CadenceTransitionService {
         // enrollment — a Aline (autônoma) reassume naturalmente pelo inbound.
         // Sem handoff a humano, sem tag, sem mover card.
         await this.runner.stop(enrollment.id, 'client_replied');
+        break;
+      }
+
+      case 'SELLER_TOOK_OVER': {
+        // O vendedor já está na conversa. Encerra sem mandar nada ao cliente,
+        // sem handoff (já é dele), sem tag e sem mexer no card.
+        await this.runner.stop(enrollment.id, 'seller_took_over');
         break;
       }
 

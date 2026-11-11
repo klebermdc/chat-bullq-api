@@ -302,6 +302,19 @@ describe('CadenceTransitionService', () => {
     expect(messages.send).not.toHaveBeenCalled();
   });
 
+  it('SELLER_TOOK_OVER → stop(seller_took_over) calado: sem mensagem, handoff, tag ou card', async () => {
+    const { runner, prisma, notifications, messages, service } = makeDeps();
+    await service.apply(enrollment(), 'SELLER_TOOK_OVER', cadence());
+
+    expect(runner.stop).toHaveBeenCalledWith('enr1', 'seller_took_over');
+    expect(messages.send).not.toHaveBeenCalled();
+    expect(prisma.conversation.update).not.toHaveBeenCalled();
+    expect(prisma.card.update).not.toHaveBeenCalled();
+    expect(prisma.conversationTag.create).not.toHaveBeenCalled();
+    expect(notifications.notify).not.toHaveBeenCalled();
+    expect(notifications.notifyOrgAgents).not.toHaveBeenCalled();
+  });
+
   it('RESUMED com claim perdido (stop devolve null) → nenhum efeito colateral', async () => {
     const { runner, prisma, notifications, service } = makeDeps();
     runner.stop.mockResolvedValueOnce(null as any);
