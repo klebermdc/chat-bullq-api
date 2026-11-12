@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { PipelinesController } from './pipelines.controller';
 import { PipelinesService } from './pipelines.service';
 import { LostSaleService } from './lost-sale.service';
+import { StalledLeadCloseService } from './stalled-lead/stalled-lead-close.service';
 import { LostRecoveryService } from './lost-recovery.service';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { CadencesModule } from '../cadences/cadences.module';
@@ -25,7 +26,12 @@ import { MessagingModule } from '../messaging/messaging.module';
     forwardRef(() => MessagingModule),
   ],
   controllers: [PipelinesController],
-  providers: [PipelinesService, LostSaleService, LostRecoveryService],
+  providers: [
+    PipelinesService,
+    LostSaleService,
+    LostRecoveryService,
+    StalledLeadCloseService,
+  ],
   exports: [PipelinesService],
 })
 export class PipelinesModule {}
