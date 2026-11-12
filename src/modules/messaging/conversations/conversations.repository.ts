@@ -6,6 +6,7 @@ import { agentScopeBlock, scopedUserWhere } from './conversation-scope';
 import { buildSearchOr, SEARCH_CONTACT_LIMIT } from './inbox-search';
 import { findContactIdsBySearch } from '../contacts/contact-search';
 import {
+  AUTONOMOUS_AGENT_LINK,
   buildAdvancedBlocks,
   type InboxAdvancedFilters,
 } from './inbox-advanced-where';
@@ -361,7 +362,14 @@ export class ConversationsRepository {
             },
           },
           channel: {
-            select: { id: true, type: true, name: true },
+            select: {
+              id: true,
+              type: true,
+              name: true,
+              // Cor "Com a IA" na lista: mesma regra do filtro (canal com Aline).
+              aiEnabled: true,
+              aiAgentChannels: { where: AUTONOMOUS_AGENT_LINK, select: { id: true }, take: 1 },
+            },
           },
           assignedTo: {
             select: { id: true, name: true, avatarUrl: true },
