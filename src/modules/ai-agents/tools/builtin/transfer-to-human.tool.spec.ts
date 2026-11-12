@@ -194,3 +194,33 @@ describe('TransferToHumanTool — lead do site com dono (Aline até o handoff)',
     expect(pendingActions.create).toHaveBeenCalled();
   });
 });
+
+describe('TransferToHumanTool — queueStalledHandoff (vigia de lead parado)', () => {
+  it('cria a pendência rosa e marca Esperando, sem mandar mensagem ao cliente', async () => {
+    const { tool, prisma, pendingActions, replyTool, ctx } = make();
+
+    const res = await tool.queueStalledHandoff(ctx, 'cliente parou de responder');
+
+    expect(replyTool.execute).not.toHaveBeenCalled();
+    expect(pendingActions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolName: 'transferToHuman',
+        args: { reason: 'cliente parou de responder', summary: null },
+      }),
+    );
+    expect(prisma.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { awaitingHumanReply: true } }),
+    );
+    expect(res.finalAction).toBe('TRANSFERRED_TO_HUMAN');
+  });
+
+  it('não duplica quando já existe transferência pendente', async () => {
+    const { tool, pendingActions, ctx } = make({
+      pending: [{ id: 'pa0', toolName: 'transferToHuman' }],
+    });
+
+    await tool.queueStalledHandoff(ctx, 'cliente parou de responder');
+
+    expect(pendingActions.create).not.toHaveBeenCalled();
+  });
+});

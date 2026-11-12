@@ -56,3 +56,16 @@ describe('PromptBuilderService — catálogo com blockCommercialTalk', () => {
     expect(text).toContain('a partir de R$ 699 em 10x');
   });
 });
+
+describe('PromptBuilderService — qualificação sem beco sem saída', () => {
+  it('modo SDR: transferir é o fim normal e toda resposta termina com pergunta ou transferência', () => {
+    const text = systemText(true);
+
+    expect(text).toContain('`transferToHuman` é o FIM NORMAL da qualificação');
+    expect(text).toContain('Nunca termine só confirmando');
+  });
+
+  it('fora do modo SDR: o bloco não aparece', () => {
+    expect(systemText(false)).not.toContain('FIM NORMAL da qualificação');
+  });
+});

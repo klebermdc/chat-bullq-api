@@ -78,6 +78,25 @@ export class TransferToHumanTool implements AiTool {
     input: Record<string, unknown>,
     ctx: ToolContext,
   ): Promise<ToolResult> {
+    return this.handOff(input, ctx, { notifyCustomer: true });
+  }
+
+  /**
+   * Rede de segurança: põe na fila de distribuição um lead que parou de
+   * responder no meio da qualificação sem a IA ter transferido. Mesmo caminho
+   * do handoff normal (dedupe, card em "Distribuir", Esperando, pendência
+   * rosa), mas SEM a mensagem de transição: o cliente sumiu há horas e o
+   * "Já tenho tudo que preciso" chegaria fora de contexto.
+   */
+  async queueStalledHandoff(ctx: ToolContext, reason: string): Promise<ToolResult> {
+    return this.handOff({ reason }, ctx, { notifyCustomer: false });
+  }
+
+  private async handOff(
+    input: Record<string, unknown>,
+    ctx: ToolContext,
+    opts: { notifyCustomer: boolean },
+  ): Promise<ToolResult> {
     const reason = String(input.reason ?? '').trim() || 'Handoff sem motivo informado';
     const summary = input.summary ? String(input.summary).trim() : null;
 
@@ -119,15 +138,17 @@ export class TransferToHumanTool implements AiTool {
     // 1) Avisa o cliente (mensagem de transição garantida). Fora do horário,
     //    troca o "em instantes alguém continua" por um aviso de retorno — senão
     //    a Aline promete atendimento imediato com a agência fechada.
-    try {
-      // A própria transferência é a ação: o aviso ("vou te passar pra um
-      // consultor") não cai na trava de promessa de humano sem ação.
-      await this.replyTool.execute(
-        { text: await this.buildTransitionMessage(ctx) },
-        withHumanActionTaken(ctx, this.name),
-      );
-    } catch (e) {
-      this.logger.warn(`transfer: falha ao avisar cliente (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
+    if (opts.notifyCustomer) {
+      try {
+        // A própria transferência é a ação: o aviso ("vou te passar pra um
+        // consultor") não cai na trava de promessa de humano sem ação.
+        await this.replyTool.execute(
+          { text: await this.buildTransitionMessage(ctx) },
+          withHumanActionTaken(ctx, this.name),
+        );
+      } catch (e) {
+        this.logger.warn(`transfer: falha ao avisar cliente (conv=${ctx.conversationId}): ${(e as Error)?.message}`);
+      }
     }
     // 2) Card no funil "Vendas OFP", etapa "Distribuir" (a ETAPA é o status do
     //    funil — não usamos mais tag "distribuir", que era redundante).
