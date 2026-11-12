@@ -119,4 +119,53 @@ describe('CreateProposalDto sob o ValidationPipe global', () => {
     expect((await validate({ ...base, text: 'x'.repeat(4096) }) as any).text).toHaveLength(4096);
     expect(await messagesFor({ ...base, text: 'x'.repeat(4097) })).toMatch(/4096/);
   });
+
+  describe('storeLink (carrinho da loja)', () => {
+    const LINK = 'https://reservas.orlandofastpass.com.br/pt/checkout/ce6098a76c64497384c1874896d64317';
+    const STORE_ERROR = /link do carrinho da loja/;
+
+    it('é opcional', async () => {
+      const out: any = await validate({ ...base, images: [image(1)] });
+
+      expect(out.storeLink).toBeUndefined();
+    });
+
+    it.each([
+      LINK,
+      'https://reservas.orlandofastpass.com.br/en/checkout/ce6098a76c64497384c1874896d64317',
+      'https://reservas.orlandofastpass.com.br/pt/checkout/ce6098a76c64497384c1874896d64317/',
+      'https://reservas.orlandofastpass.com.br/pt/checkout/abc-123?utm_source=x',
+    ])('aceita o carrinho da loja: %s', async (storeLink) => {
+      const out: any = await validate({ ...base, storeLink });
+
+      expect(out.storeLink).toBe(storeLink);
+    });
+
+    it.each([
+      ['http em vez de https', LINK.replace('https:', 'http:')],
+      ['outro host', 'https://evil.com/pt/checkout/abc'],
+      ['subdomínio parecido', 'https://reservas.orlandofastpass.com.br.evil.com/pt/checkout/abc'],
+      ['usuário embutido', 'https://evil.com@reservas.orlandofastpass.com.br/pt/checkout/abc'],
+      ['host com usuário', 'https://x@reservas.orlandofastpass.com.br/pt/checkout/abc'],
+      ['porta', 'https://reservas.orlandofastpass.com.br:8443/pt/checkout/abc'],
+      ['outro caminho', 'https://reservas.orlandofastpass.com.br/pt/minha-conta'],
+      ['checkout sem id', 'https://reservas.orlandofastpass.com.br/pt/checkout/'],
+      ['idioma com 3 letras', 'https://reservas.orlandofastpass.com.br/por/checkout/abc'],
+      ['IP interno', 'https://169.254.169.254/pt/checkout/abc'],
+      ['file://', 'file:///etc/passwd'],
+      ['texto qualquer', 'carrinho'],
+    ])('recusa %s com mensagem amigável', async (_, storeLink) => {
+      expect(await messagesFor({ ...base, storeLink })).toMatch(STORE_ERROR);
+    });
+
+    it('recusa link com mais de 500 caracteres', async () => {
+      const storeLink = `${LINK}?x=${'a'.repeat(500)}`;
+
+      expect(await messagesFor({ ...base, storeLink })).toMatch(/500/);
+    });
+
+    it('recusa storeLink que não é texto', async () => {
+      expect(await messagesFor({ ...base, storeLink: 123 })).toMatch(STORE_ERROR);
+    });
+  });
 });

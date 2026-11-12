@@ -4,6 +4,7 @@ import { ConversationAccessService } from '../messaging/conversations/conversati
 import { PROPOSAL_NEW_FOLLOWUPS_OTHER } from './proposal-followups';
 import { QUOTE_TOKEN_RE } from './quote/quote.constants';
 import type { QuoteData } from './quote/quote.types';
+import { STORE_CART_TEXT } from './quote/store-cart.fixture';
 
 const PNG_BYTES = Buffer.concat([
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -66,7 +67,10 @@ function deps() {
       contact: { findUnique: jest.fn().mockResolvedValue({ name: 'Ana Souza' }) },
       messageTemplate: { findFirst: jest.fn().mockResolvedValue(null) },
     } as any,
-    render: { render: jest.fn().mockResolvedValue('TEXTO RENDER') } as any,
+    render: {
+      render: jest.fn().mockResolvedValue('TEXTO RENDER'),
+      renderWhenText: jest.fn().mockResolvedValue(STORE_CART_TEXT),
+    } as any,
     extraction: {
       extract: jest.fn(),
       extractFromImages: jest.fn(),
@@ -610,4 +614,107 @@ describe('ProposalsService — cotação por link', () => {
       expect(out.items[0].sellerName).toBeNull();
     });
   });
+
+  describe('link da loja (Just Travel)', () => {
+    const STORE_LINK = 'https://reservas.orlandofastpass.com.br/pt/checkout/ce6098a76c64497384c1874896d64317';
+    const storeBody = (over: Record<string, unknown> = {}) => linkBody({ images: [], storeLink: STORE_LINK, ...over });
+
+    it('preview sem prints: renderiza o carrinho, lê sem modelo e devolve a cotação + storeOffer', async () => {
+      const d = deps();
+
+      const out: any = await makeService(d).create(storeBody({ preview: true }), 'user-1', 'org-1', 'ALL' as any);
+
+      expect(d.render.renderWhenText).toHaveBeenCalledWith(STORE_LINK, expect.any(RegExp), 30_000);
+      const [, ready] = d.render.renderWhenText.mock.calls[0];
+      expect(ready.test(STORE_CART_TEXT)).toBe(true);
+      expect(ready.test('Total do pedido\nR$ 0,00\nMeio de pagamento')).toBe(false);
+      expect(out).toMatchObject({
+        preview: true,
+        customerName: 'Ana Souza',
+        unreadPrints: [],
+        storeOffer: { pixTotal: 5888.19, installmentsTotal: 6189.12, installmentsCount: 10 },
+      });
+      expect(out.quote.items).toHaveLength(4);
+      expect(out.quote).toMatchObject({ total: 6189.12, pixTotal: 5888.19, installments: { count: 10, value: 618.91 } });
+      expect(d.extraction.extractQuoteFromImages).not.toHaveBeenCalled();
+      expect(d.hotels.enrich).not.toHaveBeenCalled();
+      expect(d.storage.getBuffer).not.toHaveBeenCalled();
+      expect(d.repo.create).not.toHaveBeenCalled();
+      expect(d.messages.send).not.toHaveBeenCalled();
+    });
+
+    it('preview com link e prints segue lendo os prints', async () => {
+      const d = deps();
+
+      await makeService(d).create(storeBody({ preview: true, images: [image] }), 'user-1', 'org-1', 'ALL' as any);
+
+      expect(d.extraction.extractQuoteFromImages).toHaveBeenCalled();
+      expect(d.render.renderWhenText).not.toHaveBeenCalled();
+    });
+
+    it('carrinho que não carrega a tempo é 400 amigável', async () => {
+      const d = deps();
+      d.render.renderWhenText.mockRejectedValue(new Error('Timeout 30000ms exceeded'));
+
+      const { err } = await rejection(storeBody({ preview: true }), d);
+
+      expect(err.message).toBe(
+        'Não consegui ler o link da loja. Confere se o carrinho abre no navegador e tenta de novo.',
+      );
+    });
+
+    it('página sem carrinho é 400 com o motivo da leitura', async () => {
+      const d = deps();
+      d.render.renderWhenText.mockResolvedValue('Detalhes do pedido\nTotal do pedido\nR$ 10,00');
+
+      const { err } = await rejection(storeBody({ preview: true }), d);
+
+      expect(err.message).toMatch(/nenhum item/);
+    });
+
+    it.each([
+      'https://evil.com/pt/checkout/abc',
+      'http://reservas.orlandofastpass.com.br/pt/checkout/abc',
+      'https://reservas.orlandofastpass.com.br/pt/minha-conta',
+    ])('host/caminho fora da loja é 400 sem abrir o navegador: %s', async (storeLink) => {
+      const d = deps();
+
+      const { err } = await rejection(storeBody({ preview: true, storeLink }), d);
+
+      expect(err.message).toMatch(/link do carrinho da loja/);
+      expect(d.render.renderWhenText).not.toHaveBeenCalled();
+    });
+
+    it('envio sem prints com o link: grava details.images vazio, mantém o storeUrl e segue o fluxo de sempre', async () => {
+      const d = deps();
+      const reviewed = { ...quote, storeUrl: STORE_LINK };
+
+      const out: any = await makeService(d).create(storeBody({ quote: reviewed }), 'user-1', 'org-1', 'ALL' as any);
+
+      const input = d.repo.create.mock.calls[0][0];
+      expect(input.details.images).toEqual([]);
+      expect(input.details.quote.storeUrl).toBe(STORE_LINK);
+      expect(d.storage.getBuffer).not.toHaveBeenCalled();
+      expect(d.render.renderWhenText).not.toHaveBeenCalled();
+      const texts = d.messages.send.mock.calls.map((c: any[]) => c[0].content.text);
+      expect(texts[0]).toContain(out.quoteUrl);
+      expect(texts.slice(1)).toEqual(PROPOSAL_NEW_FOLLOWUPS_OTHER);
+      expect(JSON.stringify(d.messages.send.mock.calls)).not.toContain(STORE_LINK);
+      expect(d.pipelines.ensureConversationAtStageByName).toHaveBeenCalled();
+    });
+
+    it('envio com o link ainda exige a cotação conferida', async () => {
+      const { err, d } = await rejection(storeBody());
+
+      expect(err.message).toMatch(/Confira a cotação/);
+      expect(d.repo.create).not.toHaveBeenCalled();
+    });
+
+    it('sem o link, LINK sem prints continua 400', async () => {
+      const { err } = await rejection(linkBody({ images: [], preview: true }));
+
+      expect(err.message).toMatch(/print/i);
+    });
+  });
 });
+

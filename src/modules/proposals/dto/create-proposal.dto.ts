@@ -9,12 +9,13 @@ import {
   IsOptional,
   IsString,
   IsUrl,
+  Matches,
   Max,
   MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   PROPOSAL_IMAGE_MIME_TYPES,
@@ -27,9 +28,16 @@ import {
   QUOTE_MIN_VALIDITY_HOURS,
 } from '../quote/quote.constants';
 import { QuoteDto } from './quote.dto';
+import {
+  STORE_LINK_ERROR,
+  STORE_LINK_MAX,
+  STORE_LINK_RE,
+  STORE_LINK_TOO_LONG,
+} from '../quote/store-link';
 
 const INVALID_IMAGE = 'Imagem inválida.';
 const MAX_IMAGE_FILENAME_LENGTH = 255;
+const trimIfText = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 const VALIDITY_MESSAGE = `A validade precisa ser de ${QUOTE_MIN_VALIDITY_HOURS} a ${QUOTE_MAX_VALIDITY_HOURS} horas.`;
 
 /**
@@ -175,4 +183,21 @@ export class CreateProposalDto {
   @Min(QUOTE_MIN_VALIDITY_HOURS, { message: VALIDITY_MESSAGE })
   @Max(QUOTE_MAX_VALIDITY_HOURS, { message: VALIDITY_MESSAGE })
   validityHours?: number;
+
+  /**
+   * LINK: carrinho da loja (Just Travel) de onde os itens da cotação são lidos,
+   * sem modelo. Com ele, o preview dispensa prints e o envio aceita `images`
+   * vazio. Só o carrinho da nossa loja passa (trava de SSRF: o servidor abre
+   * esse endereço num navegador).
+   */
+  @ApiPropertyOptional({
+    maxLength: STORE_LINK_MAX,
+    example: 'https://reservas.orlandofastpass.com.br/pt/checkout/ce6098a76c64497384c1874896d64317',
+  })
+  @IsOptional()
+  @Transform(trimIfText)
+  @IsString({ message: STORE_LINK_ERROR })
+  @MaxLength(STORE_LINK_MAX, { message: STORE_LINK_TOO_LONG })
+  @Matches(STORE_LINK_RE, { message: STORE_LINK_ERROR })
+  storeLink?: string;
 }
