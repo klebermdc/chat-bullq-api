@@ -32,6 +32,21 @@ export class TelegramClient {
     return { ok: true };
   }
 
+  /** Mostra "digitando…" por ~5 s. Nunca lança. */
+  async sendTyping(chatId: string): Promise<void> {
+    if (!this.token) return;
+    try {
+      await this.fetchFn(`${API_BASE}/bot${this.token}/sendChatAction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, action: 'typing' }),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+    } catch {
+      // indicador visual apenas
+    }
+  }
+
   private async post(chatId: string, text: string): Promise<TelegramSendResult> {
     try {
       const response = await this.fetchFn(`${API_BASE}/bot${this.token}/sendMessage`, {

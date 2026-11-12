@@ -39,6 +39,22 @@ export class ManagerBotRepository {
     }));
   }
 
+  async lostByAgent(organizationId: string, range: Range): Promise<Array<{ vendedor: string; count: number }>> {
+    const groups = await this.prisma.conversation.groupBy({
+      by: ['lostById'],
+      where: { organizationId, deletedAt: null, lostAt: { gte: range.from, lt: range.to } },
+      _count: { _all: true },
+    });
+    const ids = groups.flatMap((g) => (g.lostById ? [g.lostById] : []));
+    const users = ids.length
+      ? await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+      : [];
+    const names = new Map(users.map((u) => [u.id, u.name]));
+    return groups
+      .map((g) => ({ vendedor: (g.lostById && names.get(g.lostById)) || 'Sem autor', count: g._count._all }))
+      .sort((a, b) => b.count - a.count);
+  }
+
   /**
    * Cadastra o chat e troca o código de uso único, numa transação que relê
    * as settings (não perde alteração feita entre a leitura e a escrita).

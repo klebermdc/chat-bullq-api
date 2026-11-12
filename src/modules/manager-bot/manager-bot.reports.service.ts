@@ -7,7 +7,7 @@ import {
   summarizeScoreboard,
   type OverdueWait,
 } from '../response-sla/manager-alerts/manager-alerts.selection';
-import { TeamPresenceService } from '../team-presence/team-presence.service';
+import { TeamPresenceService, type TeamPresenceRow } from '../team-presence/team-presence.service';
 import type { PresenceLine } from './alerts/manager-bot.alerts';
 import { ManagerBotRepository } from './manager-bot.repository';
 import { previousWeeks, type Range } from './manager-bot.rules';
@@ -80,6 +80,10 @@ export class ManagerBotReportsService {
   }
 
   async team(org: AlertOrg, now: Date): Promise<PresenceLine[]> {
+    return this.teamDetail(org, now);
+  }
+
+  teamDetail(org: AlertOrg, now: Date): Promise<TeamPresenceRow[]> {
     return this.presence.getTeamPresence(org.id, { from: localDayStart(now, org.tz), to: now });
   }
 

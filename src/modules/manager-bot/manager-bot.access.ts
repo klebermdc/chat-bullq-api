@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { AssistantService } from './assistant/assistant.service';
+import { escapeHtml } from './manager-bot.format';
 import { ManagerBotRepository } from './manager-bot.repository';
 import { ManagerBotService, type BotTarget } from './manager-bot.service';
 import type { ManagerReportKind } from './manager-bot.types';
@@ -24,9 +26,14 @@ export const HELP_TEXT = [
   '/placar — números do dia até agora',
   '/manha — fila e quem está esperando',
   '/semana — resumo da semana passada',
+  '/nova — começa uma conversa nova (esquece o contexto)',
   '',
-  'Perguntas livres chegam na próxima versão.',
+  'Ou pergunte em texto livre, por exemplo:',
+  '• como está o SLA da Bárbara esta semana?',
+  '• quem está esperando há mais tempo agora?',
+  '• quantas vendas perdemos por preço em novembro?',
 ].join('\n');
+const RESET_COMMAND = '/nova';
 
 export function sameCode(a: string, b: string): boolean {
   const left = Buffer.from(a);
@@ -45,6 +52,7 @@ export class ManagerBotAccess {
   constructor(
     private readonly bot: ManagerBotService,
     private readonly repository: ManagerBotRepository,
+    private readonly assistant: AssistantService,
   ) {}
 
   async handleUpdate(update: TelegramUpdate, now: Date): Promise<void> {
@@ -80,17 +88,27 @@ export class ManagerBotAccess {
     this.logger.log(`gerente_tg_chat_cadastrado org=${target.org.id} chat=${chatId} nome=${chat.name}`);
     await this.bot.broadcast(
       target,
-      `Olá, ${chat.name}! Você vai receber a abertura (9h), o fechamento (22h10), o resumo de segunda e os alertas do dia.\n\n${HELP_TEXT}`,
+      `Olá, ${escapeHtml(chat.name)}! Você vai receber a abertura (9h), o fechamento (22h10), o resumo de segunda e os alertas do dia.\n\n${escapeHtml(HELP_TEXT)}`,
       [chat],
     );
   }
 
   private async answer(target: BotTarget, chatId: string, text: string, now: Date) {
     const chat = target.config.chats.filter((c) => c.chatId === chatId);
+    if (!text.startsWith('/')) {
+      await this.bot.typing(chatId);
+      await this.bot.broadcast(target, await this.assistant.ask(target.org, chatId, text, now), chat, false);
+      return;
+    }
     const command = text.split(/[\s@]/)[0].toLowerCase();
+    if (command === RESET_COMMAND) {
+      await this.assistant.reset(target.org.id, chatId);
+      await this.bot.broadcast(target, 'Pronto, conversa nova. Pode perguntar.', chat);
+      return;
+    }
     const kind = COMMANDS[command];
     if (!kind) {
-      await this.bot.broadcast(target, HELP_TEXT, chat);
+      await this.bot.broadcast(target, escapeHtml(HELP_TEXT), chat);
       return;
     }
     try {

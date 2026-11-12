@@ -23,6 +23,7 @@ function setup(opts: { settings?: unknown; telegramOk?: boolean; claim?: boolean
   const telegram = {
     isConfigured: jest.fn(() => opts.telegramOk ?? true),
     sendMessage: jest.fn(async () => ({ ok: true })),
+    sendTyping: jest.fn(async () => undefined),
   };
   const errors = { report: jest.fn() };
   const throttle = { claim: jest.fn(async () => opts.claim ?? true) };
@@ -34,8 +35,12 @@ function setup(opts: { settings?: unknown; telegramOk?: boolean; claim?: boolean
     throttle as never,
   );
   const repository = { addChat: jest.fn(async () => undefined) };
-  const access = new ManagerBotAccess(service, repository as never);
-  return { service, access, reports, telegram, errors, throttle, repository };
+  const assistant = {
+    ask: jest.fn(async () => 'SLA de hoje: 90% <bom>'),
+    reset: jest.fn(async () => undefined),
+  };
+  const access = new ManagerBotAccess(service, repository as never, assistant as never);
+  return { service, access, reports, telegram, errors, throttle, repository, assistant };
 }
 
 // 11/11/2026 (quarta). SP = UTC-3.
@@ -138,10 +143,26 @@ describe('ManagerBotAccess', () => {
     expect(s.telegram.sendMessage).toHaveBeenCalledWith('1', 'PARCIAL');
   });
 
-  it('texto livre recebe a ajuda', async () => {
+  it('texto livre vai para o assistente, com "digitando" e resposta escapada', async () => {
     const s = setup();
     await s.access.handleUpdate(msg(1, 'como foi hoje?'), AT_1500);
+    expect(s.telegram.sendTyping).toHaveBeenCalledWith('1');
+    expect(s.assistant.ask).toHaveBeenCalledWith(expect.objectContaining({ id: ORG }), '1', 'como foi hoje?', AT_1500);
+    expect(s.telegram.sendMessage).toHaveBeenCalledWith('1', 'SLA de hoje: 90% &lt;bom&gt;');
+  });
+
+  it('comando desconhecido recebe a ajuda; /nova zera o contexto', async () => {
+    const s = setup();
+    await s.access.handleUpdate(msg(1, '/xyz'), AT_1500);
     expect(s.telegram.sendMessage).toHaveBeenCalledWith('1', expect.stringContaining('/placar'));
+    await s.access.handleUpdate(msg(1, '/nova'), AT_1500);
+    expect(s.assistant.reset).toHaveBeenCalledWith(ORG, '1');
+  });
+
+  it('chat desconhecido não chega ao assistente', async () => {
+    const s = setup();
+    await s.access.handleUpdate(msg(99, 'quanto vendemos?'), AT_1500);
+    expect(s.assistant.ask).not.toHaveBeenCalled();
   });
 
   it('erro ao montar o relatório responde com aviso, sem número inventado', async () => {
