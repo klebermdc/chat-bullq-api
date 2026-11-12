@@ -36,11 +36,11 @@ export class TelegramWebhookController {
       this.logger.warn('gerente_tg_webhook_segredo_invalido');
       return { ok: true };
     }
-    try {
-      await this.access.handleUpdate(update ?? {}, new Date());
-    } catch (err) {
+    // Responde já: uma pergunta à IA pode passar do tempo do webhook, e o
+    // Telegram reenviaria a mesma mensagem (resposta em dobro).
+    void this.access.handleUpdate(update ?? {}, new Date()).catch((err: unknown) => {
       this.logger.error(`gerente_tg_webhook_falhou: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    });
     return { ok: true };
   }
 }

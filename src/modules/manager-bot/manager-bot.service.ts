@@ -5,6 +5,7 @@ import { ErrorReporterService } from '../error-reporter/error-reporter.service';
 import { ManagerAlertsRepository, type AlertOrg } from '../response-sla/manager-alerts/manager-alerts.repository';
 import { isQuietHours, localDateKey } from '../response-sla/manager-alerts/manager-alerts.rules';
 import { formatOfflineAlert, formatQueueAlert, formatSlaAlert, selectOfflineAgents } from './alerts/manager-bot.alerts';
+import { escapeHtml } from './manager-bot.format';
 import { parseManagerBotConfig, type ManagerBotConfig, type ManagerChat } from './manager-bot.config';
 import { ManagerBotReportsService } from './manager-bot.reports.service';
 import { isMonday, isReportDue } from './manager-bot.rules';
@@ -133,14 +134,26 @@ export class ManagerBotService {
     await this.broadcast(target, text);
   }
 
-  async broadcast(target: BotTarget, text: string, chats: ManagerChat[] = target.config.chats): Promise<BroadcastResult[]> {
+  /** `html=false`: texto da IA, escapado aqui (não pode quebrar o parse do Telegram). */
+  async broadcast(
+    target: BotTarget,
+    text: string,
+    chats: ManagerChat[] = target.config.chats,
+    html = true,
+  ): Promise<BroadcastResult[]> {
+    const body = html ? text : escapeHtml(text);
     const results: BroadcastResult[] = [];
     for (const chat of chats) {
-      const sent = await this.telegram.sendMessage(chat.chatId, text);
+      const sent = await this.telegram.sendMessage(chat.chatId, body);
       results.push({ chatId: chat.chatId, ...sent });
     }
     this.reportFailures(target.org.id, results);
     return results;
+  }
+
+  /** "digitando…" enquanto a IA pensa; falha aqui não importa. */
+  async typing(chatId: string): Promise<void> {
+    await this.telegram.sendTyping(chatId);
   }
 
   private configFor(org: AlertOrg): ManagerBotConfig | null {

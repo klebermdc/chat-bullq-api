@@ -1,7 +1,10 @@
 import { BullModule, getQueueToken } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import type { Queue } from 'bullmq';
+import { LlmModule } from '../ai-agents/llm/llm.module';
 import { DashboardModule } from '../dashboard/dashboard.module';
+import { AssistantService, MANAGER_BOT_HISTORY, type HistoryStore } from './assistant/assistant.service';
+import { AssistantTools } from './assistant/assistant.tools';
 import { SlaManagerAlertsModule } from '../response-sla/manager-alerts/manager-alerts.module';
 import type { ThrottleStore } from '../response-sla/manager-alerts/manager-alerts.throttle';
 import { TeamPresenceModule } from '../team-presence/team-presence.module';
@@ -26,6 +29,7 @@ import { TelegramWebhookController } from './telegram/telegram.webhook.controlle
     DashboardModule,
     SlaManagerAlertsModule,
     TeamPresenceModule,
+    LlmModule,
   ],
   controllers: [ManagerBotController, TelegramWebhookController],
   providers: [
@@ -33,6 +37,14 @@ import { TelegramWebhookController } from './telegram/telegram.webhook.controlle
     ManagerBotReportsService,
     ManagerBotService,
     ManagerBotAccess,
+    AssistantTools,
+    AssistantService,
+    {
+      provide: MANAGER_BOT_HISTORY,
+      // Memória curta das perguntas no mesmo Redis da fila.
+      useFactory: (queue: Queue) => () => queue.client as unknown as Promise<HistoryStore>,
+      inject: [getQueueToken(MANAGER_BOT_QUEUE)],
+    },
     ManagerBotCron,
     ManagerBotProcessor,
     { provide: TelegramClient, useFactory: () => new TelegramClient(process.env.TELEGRAM_BOT_TOKEN) },
