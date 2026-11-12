@@ -135,7 +135,6 @@ describe('buildAdvancedBlocks (filtros avançados da inbox)', () => {
       aiPendingActions: { some: { toolName: 'transferToHuman', status: 'PENDING' } },
     };
     const withAi = {
-      awaitingHumanReply: false,
       AND: [{ OR: [{ aiEnabled: null }, { aiEnabled: true }] }, { NOT: pendingHandoff }],
       channel: {
         aiEnabled: { not: false },
@@ -151,7 +150,7 @@ describe('buildAdvancedBlocks (filtros avançados da inbox)', () => {
       expect(block).toEqual({ status: { not: 'CLOSED' }, assignedToId: null, OR: [pendingHandoff] });
     });
 
-    it('"Com a IA" exige a IA de fato no comando: sem esperar humano, IA ligada e canal com agente', () => {
+    it('"Com a IA" = IA ligada, sem transferência pendente e canal com agente, mesmo com o cliente esperando resposta', () => {
       const [block] = buildAdvancedBlocks({ phases: ['sdr'] });
 
       expect(block).toEqual({ status: { not: 'CLOSED' }, assignedToId: null, OR: [withAi] });

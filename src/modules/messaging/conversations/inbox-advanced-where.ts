@@ -125,13 +125,15 @@ export const PENDING_HANDOFF: Block = {
 };
 
 /**
- * "Com a IA" = a Aline está de fato no comando — mesma regra de isAiParked
- * (não espera humano, IA não desligada na conversa) + o canal tem um agente
- * autônomo ativo e não está com a IA desligada. Sem isso entravam conversas
- * já passadas para a fila de espera e de canais sem Aline.
+ * "Com a IA" = a Aline está de fato no comando: sem atendente (no phaseBlock),
+ * sem transferência pendente, IA não desligada na conversa e canal com agente
+ * autônomo ativo e IA ligada. Sem o canal entravam conversas de canais sem Aline.
+ *
+ * Não olha `awaitingHumanReply`: toda mensagem do cliente liga o flag e a
+ * resposta da IA não desliga, então quem conversou com a Aline (e os leads na
+ * cadência de reengajamento) sumia de "Com a IA" e de "Na fila" (12/11/2026).
  */
 const WITH_AI: Block = {
-  awaitingHumanReply: false,
   AND: [{ OR: [{ aiEnabled: null }, { aiEnabled: true }] }, { NOT: PENDING_HANDOFF }],
   channel: {
     aiEnabled: { not: false },
