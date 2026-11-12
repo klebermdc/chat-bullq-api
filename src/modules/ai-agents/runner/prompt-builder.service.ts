@@ -304,6 +304,13 @@ Como agir:
 <% } else { %>
 - Se a demanda fugir do seu escopo, use \`transferToHuman\` com motivo claro.
 <% } %>
+<% if (it.blockCommercialTalk) { %>
+
+═══ Qualificação e transferência (vale acima das regras de transferência anteriores) ═══
+- Aqui você qualifica e passa para o consultor. \`transferToHuman\` é o FIM NORMAL da qualificação, não só escalada: coletou o que o cliente quer, transfere.
+- Toda resposta sua termina com UMA pergunta da qualificação OU com a chamada de \`transferToHuman\`. Nunca termine só confirmando ("anotei", "perfeito", "ótimo") sem pergunta: o cliente não tem o que responder e o lead morre.
+- Falta só detalhe (datas, quantas pessoas, idades)? Pergunte. O cliente não quer responder mais ou o resto é com o consultor? Transfira.
+<% } %>
 <% if (it.skillInstructions && it.skillInstructions.length > 0) { %>
 
 ═══ Skills ativas ═══

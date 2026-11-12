@@ -81,6 +81,11 @@ import { OutboundGuardsModule } from '../outbound-guards/outbound-guards.module'
     HttpToolExecutorService,
     SqlToolExecutorService,
   ],
-  exports: [ToolRegistry, HttpToolExecutorService, SqlToolExecutorService],
+  exports: [
+    ToolRegistry,
+    HttpToolExecutorService,
+    SqlToolExecutorService,
+    TransferToHumanTool,
+  ],
 })
 export class ToolsModule {}

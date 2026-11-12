@@ -10,6 +10,7 @@ import { PromptBuilderService } from './runner/prompt-builder.service';
 import { AiAgentRunnerService } from './runner/agent-runner.service';
 import { ModelRouterService } from './runner/model-router.service';
 import { AgentRunJanitorService } from './runner/agent-run-janitor.service';
+import { StalledHandoffService } from './stalled-handoff/stalled-handoff.service';
 import { CatalogSyncService } from './runner/catalog-sync.service';
 import { MediaUrlResolverService } from './runner/media-url-resolver.service';
 import { AgentRouterService } from './router/agent-router.service';
@@ -56,6 +57,7 @@ import { ShadowLearningModule } from './shadow-learning/shadow-learning.module';
     AiAgentRunnerService,
     ModelRouterService,
     AgentRunJanitorService,
+    StalledHandoffService,
     AgentRouterService,
     OnCallService,
     AgentsService,
