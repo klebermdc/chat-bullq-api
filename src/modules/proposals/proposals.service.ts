@@ -67,6 +67,8 @@ import {
 } from './quote/quote-update-notice';
 import { computeWhatsappWindow } from '../messaging/conversations/whatsapp-window.util';
 import type { QuoteData, StoredQuoteData } from './quote/quote.types';
+import { readStoreCart } from './quote/store-cart-reader';
+import { storeLinkOrNull } from './quote/store-link';
 
 const INVALID_IMAGE = 'Imagem inválida.';
 const QUOTE_NEEDS_LINK_OFF =
@@ -347,27 +349,54 @@ export class ProposalsService {
 
   /**
    * Cotação por link. Preview: lê os prints com o prompt de cotação e devolve
-   * o rascunho. Envio: grava a cotação CONFERIDA (nunca uma segunda leitura do
+   * o rascunho — ou, sem prints e com `storeLink`, lê o carrinho da loja sem
+   * modelo. Envio: grava a cotação CONFERIDA (nunca uma segunda leitura do
    * modelo), manda a mensagem curta com o link — sem os prints — e segue
    * follow-ups e funil como a proposta sem link.
    */
   private async createQuote(dto: CreateProposalDto, conversation: Conversation, ctx: SendContext) {
-    const images = this.quoteImagesOrThrow(dto);
+    // Conferido de novo aqui (além do DTO): o servidor abre esse endereço num navegador.
+    const storeLink = storeLinkOrNull(dto.storeLink);
+    const images = this.quoteImagesOrThrow(dto, storeLink !== null);
     const keys = images.map((image) => this.imageKeyOrThrow(image));
     if (!dto.preview && !dto.quote) throw new BadRequestException(QUOTE_NEEDS_REVIEW);
-    const loaded = await this.loadImages(images, keys);
 
+    if (dto.preview && storeLink && images.length === 0) {
+      return this.previewStoreQuote(conversation.contactId, storeLink);
+    }
+    const loaded = await this.loadImages(images, keys);
     if (dto.preview) {
       return this.previewQuote(ctx.organizationId, conversation.contactId, loaded, dto.checkoutUrl ?? '');
     }
     return this.sendQuote(dto, normalizeQuote(dto.quote!), conversation, ctx, loaded);
   }
 
-  private quoteImagesOrThrow(dto: CreateProposalDto): ProposalImageDto[] {
+  /** Com o link do carrinho da loja, os prints viram opcionais. */
+  private quoteImagesOrThrow(dto: CreateProposalDto, hasStoreLink: boolean): ProposalImageDto[] {
     if (dto.includeLink !== false) throw new BadRequestException(QUOTE_NEEDS_LINK_OFF);
     const images = dto.images ?? [];
-    if (images.length === 0) throw new BadRequestException(QUOTE_NEEDS_IMAGES);
+    if (images.length === 0 && !hasStoreLink) throw new BadRequestException(QUOTE_NEEDS_IMAGES);
     return images;
+  }
+
+  /**
+   * Preview a partir do carrinho da loja (Just Travel): itens e totais saem do
+   * texto da página, sem modelo e sem ficha de hotel. `storeOffer` traz os
+   * totais da loja para comparar com o outro fornecedor.
+   */
+  private async previewStoreQuote(contactId: string, storeLink: string) {
+    const { quote, storeOffer } = await readStoreCart(this.render, storeLink, this.logger);
+    const customerName = await this.contactCustomerName(contactId);
+    return { preview: true as const, quote, customerName, unreadPrints: [] as number[], storeOffer };
+  }
+
+  /** Como chamar o cliente na cotação: o nome do contato, se for nome mesmo. */
+  private async contactCustomerName(contactId: string): Promise<string | null> {
+    const contact = await this.prisma.contact.findUnique({
+      where: { id: contactId },
+      select: { name: true },
+    });
+    return contactDisplayName(contact?.name);
   }
 
   private async previewQuote(
@@ -396,11 +425,8 @@ export class ProposalsService {
     const quote = await this.hotels.enrich(mergeQuotes(parts), (name, text) =>
       this.extraction.summarizeHotel(organizationId, name, text),
     );
-    const contact = await this.prisma.contact.findUnique({
-      where: { id: contactId },
-      select: { name: true },
-    });
-    return { preview: true as const, quote, customerName: contactDisplayName(contact?.name), unreadPrints };
+    const customerName = await this.contactCustomerName(contactId);
+    return { preview: true as const, quote, customerName, unreadPrints };
   }
 
   private async sendQuote(

@@ -4,6 +4,11 @@ export const PROPOSAL_RENDER_DELAY_MS = Number(
 export const PROPOSAL_RENDER_TIMEOUT_MS = Number(
   process.env.PROPOSAL_RENDER_TIMEOUT_MS ?? 20000,
 );
+// Carrinho da loja (cotação lida do link): os preços chegam ~10 s depois do
+// load e a página nunca fica em networkidle (contador de 25 min).
+export const PROPOSAL_STORE_RENDER_TIMEOUT_MS = Number(
+  process.env.PROPOSAL_STORE_RENDER_TIMEOUT_MS ?? 30000,
+);
 // Nome da etapa do pipeline pra onde o card vai quando uma proposta é enviada.
 export const PROPOSAL_SENT_STAGE_NAME =
   process.env.PROPOSAL_SENT_STAGE_NAME ?? 'PROPOSTA ENVIADA';
