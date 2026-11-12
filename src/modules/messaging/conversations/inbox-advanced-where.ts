@@ -124,6 +124,12 @@ export const PENDING_HANDOFF: Block = {
   aiPendingActions: { some: { toolName: 'transferToHuman', status: 'PENDING' } },
 };
 
+/** Vínculo canal → agente autônomo ativo (a Aline atende o canal). */
+export const AUTONOMOUS_AGENT_LINK = {
+  mode: 'AUTONOMOUS' as const,
+  agent: { isActive: true, deletedAt: null },
+};
+
 /**
  * "Com a IA" = a Aline está de fato no comando: sem atendente (no phaseBlock),
  * sem transferência pendente, IA não desligada na conversa e canal com agente
@@ -137,9 +143,7 @@ const WITH_AI: Block = {
   AND: [{ OR: [{ aiEnabled: null }, { aiEnabled: true }] }, { NOT: PENDING_HANDOFF }],
   channel: {
     aiEnabled: { not: false },
-    aiAgentChannels: {
-      some: { mode: 'AUTONOMOUS', agent: { isActive: true, deletedAt: null } },
-    },
+    aiAgentChannels: { some: AUTONOMOUS_AGENT_LINK },
   },
 };
 
