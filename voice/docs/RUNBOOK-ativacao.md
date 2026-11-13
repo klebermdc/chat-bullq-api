@@ -4,6 +4,16 @@ Hoje tudo está **desligado**: a chave "Ligações da Aline" vem desligada por a
 mesmo ligada, a API não disca sem a configuração do LiveKit. Esta é a ordem para ligar
 de verdade. Cada passo é reversível.
 
+## Estado (13/11/2026)
+
+- Passos 1, 2 e 3 **feitos** no 5198-4190 (calling + SIP SDES ligados, ícone de ligar **escondido** com `call_icon_visibility: DISABLE_ALL`; troncos `meta-whatsapp-saida`/`meta-whatsapp-entrada`; `LIVEKIT_*` na API).
+- **Primeira ligação real OK** para um número da equipe (permissão permanente): autenticou (407 → reenvio), áudio OPUS/SRTP, Aline conduziu a missão, cliente desligou (`bye`).
+- Chave "Ligações da Aline" ainda **desligada** — ligar só quando decidido.
+- Para mostrar o ícone de ligar aos clientes (ligação de entrada): `call_icon_visibility: DEFAULT`.
+
+**Pegadinha resolvida:** a Meta recusa o ALPN `sip` do livekit/sip (`tls: no application protocol`).
+O `sip.yaml` precisa de `tls.alpn: []` (já no template).
+
 ## 0. Antes de começar
 
 - Horário de atendimento dos vendedores conferido (a Aline só liga no expediente do dono da conversa).

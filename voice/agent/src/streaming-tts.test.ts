@@ -1,7 +1,7 @@
 import { initializeLogger } from '@livekit/agents';
 import type { OpenAI } from 'openai';
 import { beforeAll, describe, expect, test } from 'vitest';
-import { StreamingTTS } from './streaming-tts.js';
+import { isAbortError, StreamingTTS } from './streaming-tts.js';
 
 const RATE = 24000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -51,5 +51,17 @@ describe('StreamingTTS', () => {
     expect(frames).toBeGreaterThanOrEqual(5);
     expect(ultimoFinal).toBe(true);
     expect(primeiro).toBeLessThan(total / 2);
+  });
+});
+
+describe('isAbortError', () => {
+  test('interrupção do cliente não é erro (AbortError e APIUserAbortError do SDK)', () => {
+    class APIUserAbortError extends Error {}
+    const e = new Error('x');
+    e.name = 'AbortError';
+    expect(isAbortError(e)).toBe(true);
+    expect(isAbortError(new APIUserAbortError('Request was aborted.'))).toBe(true);
+    expect(isAbortError(new Error('Connection error.'))).toBe(false);
+    expect(isAbortError('x')).toBe(false);
   });
 });
