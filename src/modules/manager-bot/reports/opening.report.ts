@@ -22,6 +22,8 @@ export interface OpeningInput {
   queue: { unassigned: number; oldestSince: string | null };
   waitingSinceYesterday: WaitLine[];
   team: TeamLine[];
+  /** Linhas de custo do WhatsApp (já formatadas). */
+  costLines?: string[];
 }
 
 export function waitLines(waits: ReadonlyArray<WaitLine>, now: Date): string[] {
@@ -66,5 +68,6 @@ export function buildOpeningReport(input: OpeningInput): string {
     '',
     '<b>Equipe</b>',
     ...teamLines(input.team),
+    ...(input.costLines?.length ? ['', ...input.costLines] : []),
   ].join('\n');
 }

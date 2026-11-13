@@ -9,6 +9,10 @@ function settings(over: Record<string, unknown> = {}) {
   return { managerBot: { enabled: true, chats: [{ chatId: '1', name: 'Kleber' }], linkCode: 'segredo', ...over } };
 }
 
+function costsReport(cost: number) {
+  return { from: '2026-11-11', to: '2026-11-11', tz: TZ, channels: [], totalsByCurrency: [{ currency: 'BRL', cost }] };
+}
+
 function setup(opts: { settings?: unknown; telegramOk?: boolean; claim?: boolean } = {}) {
   const org = { id: ORG, settings: opts.settings ?? settings(), tz: TZ, orgHours: null };
   const orgs = { listActiveOrgs: jest.fn(async () => [org]) };
@@ -19,6 +23,8 @@ function setup(opts: { settings?: unknown; telegramOk?: boolean; claim?: boolean
     overdue: jest.fn(async () => [] as Array<{ contactName: string; agentName: string | null; businessMinutes: number }>),
     queue: jest.fn(async () => ({ unassigned: 0, oldestSince: null })),
     team: jest.fn(async () => []),
+    costs: jest.fn(async () => 'CUSTOS'),
+    todayCosts: jest.fn(async () => costsReport(0)),
   };
   const telegram = {
     isConfigured: jest.fn(() => opts.telegramOk ?? true),
@@ -103,6 +109,25 @@ describe('ManagerBotService.runTick', () => {
     expect(s.telegram.sendMessage).toHaveBeenCalledWith('1', expect.stringContaining('Fila sem dono com 50'));
   });
 
+  it('custo do dia acima do teto avisa uma vez por dia', async () => {
+    const s = setup();
+    s.reports.todayCosts.mockResolvedValue(costsReport(130.5));
+    await s.service.runTick(AT_1500);
+    expect(s.telegram.sendMessage).toHaveBeenCalledWith('1', expect.stringContaining('passou do teto'));
+    expect(s.throttle.claim).toHaveBeenCalledWith(`custo:${ORG}:2026-11-11`, expect.any(Number));
+  });
+
+  it('custo abaixo do teto ou teto zero não avisa', async () => {
+    const s = setup();
+    s.reports.todayCosts.mockResolvedValue(costsReport(119.99));
+    await s.service.runTick(AT_1500);
+    const z = setup({ settings: settings({ costAlertDaily: 0 }) });
+    z.reports.todayCosts.mockResolvedValue(costsReport(999));
+    await z.service.runTick(AT_1500);
+    expect(s.telegram.sendMessage).not.toHaveBeenCalled();
+    expect(z.reports.todayCosts).not.toHaveBeenCalled();
+  });
+
   it('envio que falha vira aviso no painel de erros', async () => {
     const s = setup();
     s.telegram.sendMessage.mockResolvedValue({ ok: false, error: 'blocked' } as never);
@@ -134,6 +159,13 @@ describe('ManagerBotAccess', () => {
     const s = setup();
     await s.access.handleUpdate(msg(99, '/placar'), AT_1500);
     expect(s.telegram.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('/custos devolve o relatório de custos', async () => {
+    const s = setup();
+    await s.access.handleUpdate(msg(1, '/custos'), AT_1500);
+    expect(s.reports.costs).toHaveBeenCalled();
+    expect(s.telegram.sendMessage).toHaveBeenCalledWith('1', 'CUSTOS');
   });
 
   it('/placar devolve o placar parcial só para quem pediu', async () => {

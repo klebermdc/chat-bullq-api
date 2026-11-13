@@ -23,7 +23,17 @@ describe('parseManagerBotConfig', () => {
         alertIntervalMinutes: 30,
         queueThreshold: 10,
         offlineMinutes: 30,
+        costAlertDaily: 120,
       },
+    });
+  });
+
+  it('teto de custo aceita zero (desliga) e recusa negativo', () => {
+    const off = parseManagerBotConfig({ managerBot: { enabled: true, costAlertDaily: 0 } });
+    expect(off.ok && off.config.costAlertDaily).toBe(0);
+    expect(parseManagerBotConfig({ managerBot: { enabled: true, costAlertDaily: -1 } })).toEqual({
+      ok: false,
+      reason: 'costAlertDaily inválido',
     });
   });
 

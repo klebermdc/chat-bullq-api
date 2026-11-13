@@ -20,18 +20,21 @@ const COMMANDS: Record<string, ManagerReportKind> = {
   '/placar': 'closing',
   '/manha': 'opening',
   '/semana': 'weekly',
+  '/custos': 'costs',
 };
 export const HELP_TEXT = [
   'Comandos:',
   '/placar — números do dia até agora',
   '/manha — fila e quem está esperando',
   '/semana — resumo da semana passada',
+  '/custos — custo do WhatsApp (hoje, mês e quem gera)',
   '/nova — começa uma conversa nova (esquece o contexto)',
   '',
   'Ou pergunte em texto livre, por exemplo:',
   '• como está o SLA da Bárbara esta semana?',
   '• quem está esperando há mais tempo agora?',
   '• quantas vendas perdemos por preço em novembro?',
+  '• quanto gastamos de WhatsApp esta semana?',
 ].join('\n');
 const RESET_COMMAND = '/nova';
 

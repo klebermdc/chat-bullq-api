@@ -6,6 +6,7 @@ import { ManagerAlertsRepository, type AlertOrg } from '../response-sla/manager-
 import { isQuietHours, localDateKey } from '../response-sla/manager-alerts/manager-alerts.rules';
 import { formatOfflineAlert, formatQueueAlert, formatSlaAlert, selectOfflineAgents } from './alerts/manager-bot.alerts';
 import { escapeHtml } from './manager-bot.format';
+import { formatCostAlert } from './reports/costs.report';
 import { parseManagerBotConfig, type ManagerBotConfig, type ManagerChat } from './manager-bot.config';
 import { ManagerBotReportsService } from './manager-bot.reports.service';
 import { isMonday, isReportDue } from './manager-bot.rules';
@@ -66,6 +67,7 @@ export class ManagerBotService {
       await this.guarded('alerta_sla', target, () => this.tickSla(target, now));
       await this.guarded('alerta_fila', target, () => this.tickQueue(target, now));
       await this.guarded('alerta_offline', target, () => this.tickOffline(target, now));
+      await this.guarded('alerta_custo', target, () => this.tickCost(target, now));
     }
   }
 
@@ -79,6 +81,7 @@ export class ManagerBotService {
   buildReport(org: AlertOrg, kind: ManagerReportKind, now: Date, partial = false): Promise<string> {
     if (kind === 'opening') return this.reports.opening(org, now);
     if (kind === 'weekly') return this.reports.weekly(org, now);
+    if (kind === 'costs') return this.reports.costs(org, now);
     return this.reports.closing(org, now, partial);
   }
 
@@ -124,6 +127,15 @@ export class ManagerBotService {
     }
     const text = formatOfflineAlert(fresh, now);
     if (text) await this.broadcast({ org, config }, text);
+  }
+
+  /** Custo do WhatsApp passou do teto do dia: avisa uma vez por dia. */
+  private async tickCost({ org, config }: BotTarget, now: Date): Promise<void> {
+    if (config.costAlertDaily <= 0) return;
+    const text = formatCostAlert(await this.reports.todayCosts(org, now), config.costAlertDaily);
+    if (!text) return;
+    if (!(await this.throttle.claim(`custo:${org.id}:${localDateKey(now, org.tz)}`, DAILY_KEY_TTL_MS))) return;
+    await this.broadcast({ org, config }, text);
   }
 
   /** Monta antes de travar: falha na montagem deixa o próximo tique tentar. */
