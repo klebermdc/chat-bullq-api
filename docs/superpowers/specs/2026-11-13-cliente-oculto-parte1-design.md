@@ -31,15 +31,22 @@ Configuração fica em `Organization.settings` (nada fixo da OFP no código).
 
 - `Contact.isMysteryShopper Boolean @default(false) @map("is_mystery_shopper")`, com índice
   `(organization_id, is_mystery_shopper)`.
-- Marcado pela aba **Números** da página: o viewer informa o telefone (normalizado como no
-  restante do sistema); o contato existente é marcado ou um novo é criado já marcado.
-- Desmarcar vale só para visitas futuras; visitas antigas permanecem.
+- Marcado pela aba **Números** da página: o viewer informa o telefone (normalizado com
+  `normalizePhone`/`phoneVariants`); o contato existente é marcado ou um novo é criado já
+  marcado, **sem nome** (o apelido nunca vai para o contato, senão o vendedor o veria).
+- Tabela `mystery_shopper_numbers` (id, org, contact_id, label, created_by_id, created_at,
+  removed_at) guarda o apelido e a data de cadastro: só conversas criadas **depois** do
+  cadastro viram visita.
+- Remover = `removed_at` preenchido: para de abrir visitas. O contato **continua marcado**,
+  para que as conversas antigas sigam fora do placar/Diário/Gerente/Marketing.
 
 ### Sigilo
 
-- O campo **nunca** sai em resposta da API nem em evento em tempo real para quem não é viewer.
-  Implementação: retirar o campo no ponto de serialização de contato (select explícito /
-  omissão), não confiar em filtro no front.
+- O campo **nunca** sai em resposta da API nem em evento em tempo real.
+  Implementação: **omissão global do Prisma** (`new PrismaClient({ omit: { contact:
+  { isMysteryShopper: true } } })`, Prisma 6.19). Todos os ~15 pontos que devolvem contato
+  (`include: { contact: true }`, inbox, ligações, tempo real) ficam cobertos de uma vez. Filtros
+  `where` continuam funcionando. Não há `SELECT *` de `contacts` em SQL bruto.
 - Nenhuma etiqueta, nome ou sinal visual no contato.
 
 ### Visita
@@ -52,10 +59,10 @@ Tabela `mystery_shopper_visits`:
 | organization_id | FK | |
 | contact_id | FK | |
 | conversation_id | FK, único | uma visita por conversa |
-| seller_user_id | FK nullable | dono da conversa quando a visita fecha |
+| number_id | FK | número que fez a visita |
+| seller_user_id | text nullable (sem FK) | dono da conversa quando a visita é avaliada |
 | scenario | text nullable | texto livre ("família de 4, julho, objeção de preço") |
 | status | enum | `OPEN`, `EVALUATING`, `DONE`, `FAILED`, `DISCARDED` |
-| last_shopper_message_at | timestamptz | base das 72h |
 | closed_at, evaluated_at | timestamptz nullable | |
 | metrics | jsonb | métricas calculadas por código |
 | scores | jsonb | nota por critério + trecho de prova |
@@ -67,10 +74,14 @@ Tabela `mystery_shopper_visits`:
 
 ### Ciclo
 
-1. Mensagem INBOUND de contato marcado em conversa sem visita → cria visita `OPEN`.
-   Mensagens seguintes do cliente atualizam `last_shopper_message_at`.
-2. Rotina periódica (mesmo padrão das rotinas existentes, ex.: a cada 15 min): visitas `OPEN`
-   com `last_shopper_message_at` há mais de **72h** → `EVALUATING`.
+Uma rotina a cada **15 min** (BullMQ `upsertJobScheduler`, como o Diário) faz tudo; o
+caminho de entrada de mensagens **não é tocado** (não existe evento de mensagem recebida e
+mexer ali arrisca o atendimento).
+
+1. Conversa de número ativo, criada depois do cadastro e sem visita → cria visita `OPEN`
+   (atraso de até 15 min, irrelevante).
+2. Visitas `OPEN` cuja conversa tem `last_inbound_at` há mais de **72h** → `EVALUATING` e
+   enfileira a avaliação.
 3. Viewer pode forçar: **Encerrar e avaliar agora**.
 4. Avaliador roda → `DONE` (ou `FAILED` com `error`). **Reavaliar** volta para `EVALUATING`.
 5. **Descartar** → `DISCARDED`, fora do ranking.
