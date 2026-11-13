@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, test } from 'vitest';
-import { waitUntilAnswered } from './answer-wait.js';
+import { describe, expect, it, test } from 'vitest';
+import { waitUntilAnswered, waitUntilAnyAttemptAnswered } from './answer-wait.js';
 
 const p = (status?: string) => ({ identity: 'cliente', attributes: status ? { 'sip.callStatus': status } : {} });
 
@@ -36,5 +36,22 @@ describe('waitUntilAnswered', () => {
     const r = waitUntilAnswered(room, p('dialing'), 50);
     room.emit('participantAttributesChanged', { 'sip.callStatus': 'active' }, { identity: 'outro', attributes: {} });
     await expect(r).resolves.toBe(false);
+  });
+});
+
+describe('waitUntilAnyAttemptAnswered', () => {
+  it('ignora a tentativa recusada e devolve o cliente da tentativa que atendeu', async () => {
+    const room = new EventEmitter();
+    const recusada = { identity: 'cliente', attributes: { 'sip.callStatus': 'hangup' } };
+    const atendida = { identity: 'cliente', attributes: { 'sip.callStatus': 'active' } };
+    const fila = [recusada, atendida];
+    const r = await waitUntilAnyAttemptAnswered(room, async () => fila.shift() ?? null, 5_000);
+    expect(r).toBe(atendida);
+  });
+
+  it('sem nenhum atendimento no prazo: null', async () => {
+    const room = new EventEmitter();
+    expect(await waitUntilAnyAttemptAnswered(room, async () => null, 5_000)).toBeNull();
+    expect(await waitUntilAnyAttemptAnswered(room, async () => ({ identity: 'cliente', attributes: {} }), 0)).toBeNull();
   });
 });

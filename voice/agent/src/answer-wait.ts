@@ -42,3 +42,28 @@ export function waitUntilAnswered(room: RoomLike, participant: ParticipantLike, 
     room.on('participantDisconnected', onLeft);
   });
 }
+
+/** Pausa entre tentativas (o participante da tentativa recusada pode demorar a sair da sala). */
+const RETRY_PAUSE_MS = 250;
+
+/**
+ * A API disca de novo na MESMA sala quando a Meta recusa antes de tocar: o
+ * "cliente" entra, sai e entra outra vez. Espera até algum deles atender,
+ * dentro do prazo total. `next` devolve o próximo cliente (ou null no prazo).
+ */
+export async function waitUntilAnyAttemptAnswered(
+  room: RoomLike,
+  next: (remainingMs: number) => Promise<ParticipantLike | null>,
+  totalMs: number,
+  now: () => number = Date.now,
+): Promise<ParticipantLike | null> {
+  const deadline = now() + totalMs;
+  for (;;) {
+    const remaining = deadline - now();
+    if (remaining <= 0) return null;
+    const participant = await next(remaining);
+    if (!participant) return null;
+    if (await waitUntilAnswered(room, participant, Math.max(1, deadline - now()))) return participant;
+    await new Promise((resolve) => setTimeout(resolve, RETRY_PAUSE_MS));
+  }
+}
