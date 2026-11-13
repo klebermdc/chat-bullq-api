@@ -178,8 +178,9 @@ export function noReplyEvaluation(criteria: VisitCriterion[]): VisitEvaluation {
   };
 }
 
-// Cirílico, japonês, chinês e coreano: o MiniMax às vezes mistura.
-const FOREIGN_SCRIPT = /[Ѐ-ӿ぀-ヿ㐀-鿿가-힯]/;
+// Cirílico, árabe, japonês, chinês e coreano (+ pontuação CJK e formas de largura total): o MiniMax às vezes mistura.
+const FOREIGN_SCRIPT =
+  /[\u0400-\u04FF\u0600-\u06FF\u3000-\u303F\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF\uFF00-\uFFEF]/;
 const FOREIGN_SCRIPT_ALL = new RegExp(FOREIGN_SCRIPT.source, 'g');
 const clean = (t: string) => t.replace(FOREIGN_SCRIPT_ALL, '').replace(/\s+/g, ' ').trim();
 

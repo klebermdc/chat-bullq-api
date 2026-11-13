@@ -122,4 +122,17 @@ describe('idioma', () => {
     expect(evaluation && hasForeignScript(evaluation)).toBe(true);
     expect(evaluation && withoutForeignScript(evaluation).summary.summary).toBe('Bom começo');
   });
+
+  test.each([
+    ['Bom 很好。', 'Bom'],
+    ['Bom مرحبا', 'Bom'],
+    ['Bom ｏｋ！', 'Bom'],
+    ['Bom привет', 'Bom'],
+    ['Bom ありがとう', 'Bom'],
+    ['Bom 안녕', 'Bom'],
+  ])('remove %s', (input, expected) => {
+    const evaluation = parseVisitEvaluation(answer.replace('Bom começo.', input), criteria, lines);
+    expect(evaluation && hasForeignScript(evaluation)).toBe(true);
+    expect(evaluation && withoutForeignScript(evaluation).summary.summary).toBe(expected);
+  });
 });
