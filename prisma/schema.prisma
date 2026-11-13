@@ -136,34 +136,34 @@ enum ErrorInvestigationStatus {
 model User {
   appointmentsOwned   Appointment[] @relation("AppointmentOwner")
   appointmentsCreated Appointment[] @relation("AppointmentCreator")
-  id                  String        @id @default(cuid())
-  name                String
-  email               String        @unique
-  password            String
-  avatarUrl           String?       @map("avatar_url")
-  isActive            Boolean       @default(true) @map("is_active")
-  isSuperAdmin        Boolean       @default(false) @map("is_super_admin")
-  createdAt           DateTime      @default(now()) @map("created_at")
-  updatedAt           DateTime      @updatedAt @map("updated_at")
-  deletedAt           DateTime?     @map("deleted_at")
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  password     String
+  avatarUrl    String?   @map("avatar_url")
+  isActive     Boolean   @default(true) @map("is_active")
+  isSuperAdmin Boolean   @default(false) @map("is_super_admin")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
 
   organizations            UserOrganization[]
-  quickReplies             QuickReply[]              @relation("QuickReplyOwner")
-  assignedConversations    Conversation[]            @relation("AssignedAgent")
-  projectsResponsible      Project[]                 @relation("ProjectResponsible")
+  quickReplies             QuickReply[]            @relation("QuickReplyOwner")
+  assignedConversations    Conversation[]          @relation("AssignedAgent")
+  projectsResponsible      Project[]               @relation("ProjectResponsible")
   contatosLegadoVendedores ContatoLegadoVendedor[]
-  sentMessages             Message[]                 @relation("MessageSender")
-  revokedMessages          Message[]                 @relation("MessageRevoker")
+  sentMessages             Message[]               @relation("MessageSender")
+  revokedMessages          Message[]               @relation("MessageRevoker")
   notifications            Notification[]
   pushSubscriptions        PushSubscription[]
   sentInvitations          Invitation[]
   apiKeys                  ApiKey[]
   inboxViews               InboxView[]
   conversationReads        ConversationRead[]
-  assignedCards            Card[]                    @relation("CardAssignee")
-  scheduledMessages        ScheduledMessage[]        @relation("ScheduledMessageCreator")
-  initiatedCalls           Call[]                    @relation("CallAgent")
-  responseSlaRecords       ResponseSlaRecord[]       @relation("ResponseSlaAgent")
+  assignedCards            Card[]                  @relation("CardAssignee")
+  scheduledMessages        ScheduledMessage[]      @relation("ScheduledMessageCreator")
+  initiatedCalls           Call[]                  @relation("CallAgent")
+  responseSlaRecords       ResponseSlaRecord[]     @relation("ResponseSlaAgent")
   sharedConversations      ConversationParticipant[] @relation("ParticipantUser")
   addedParticipants        ConversationParticipant[] @relation("ParticipantAddedBy")
 
@@ -172,18 +172,18 @@ model User {
 
 model Organization {
   appointments Appointment[]
-  id           String        @id @default(cuid())
-  name         String
-  slug         String        @unique
-  logoUrl      String?       @map("logo_url")
-  plan         String        @default("free")
-  settings     Json          @default("{}")
-  createdAt    DateTime      @default(now()) @map("created_at")
-  updatedAt    DateTime      @updatedAt @map("updated_at")
-  deletedAt    DateTime?     @map("deleted_at")
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  logoUrl     String?   @map("logo_url")
+  plan        String    @default("free")
+  settings    Json      @default("{}")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
   /// Suspensão reversível pela plataforma (super-admin). null = ativa.
   /// Quando preenchida, o OrgGuard bloqueia todo uso da org (403).
-  suspendedAt  DateTime?     @map("suspended_at")
+  suspendedAt DateTime? @map("suspended_at")
 
   // ─── AI settings ────────────────────────────────
   aiEnabled               Boolean  @default(true) @map("ai_enabled")
@@ -548,25 +548,25 @@ model ChannelSyncJob {
 // ─── Contacts ────────────────────────────────────
 
 model Contact {
-  appointments   Appointment[]
-  id             String        @id @default(cuid())
-  organizationId String        @map("organization_id")
+  appointments Appointment[]
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
   name           String?
   phone          String?
   email          String?
-  avatarUrl      String?       @map("avatar_url")
+  avatarUrl      String?   @map("avatar_url")
   notes          String?
-  metadata       Json          @default("{}")
+  metadata       Json      @default("{}")
   // Atribuição Click-to-WhatsApp (Meta CAPI). Preenchido quando a 1ª mensagem
   // do lead traz message.referral (veio de anúncio CTWA). Usado no evento
   // Purchase enviado à Conversions API quando o card fecha em GANHO.
-  ctwaClid       String?       @map("ctwa_clid")
-  ctwaSourceId   String?       @map("ctwa_source_id")
-  ctwaSourceType String?       @map("ctwa_source_type")
-  ctwaClidAt     DateTime?     @map("ctwa_clid_at")
-  createdAt      DateTime      @default(now()) @map("created_at")
-  updatedAt      DateTime      @updatedAt @map("updated_at")
-  deletedAt      DateTime?     @map("deleted_at")
+  ctwaClid       String?   @map("ctwa_clid")
+  ctwaSourceId   String?   @map("ctwa_source_id")
+  ctwaSourceType String?   @map("ctwa_source_type")
+  ctwaClidAt     DateTime? @map("ctwa_clid_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
 
   organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   channels          ContactChannel[]
@@ -646,7 +646,7 @@ model SocialComment {
 // ─── Conversations ───────────────────────────────
 
 model Conversation {
-  appointments        Appointment[]
+  appointments Appointment[]
   id                  String             @id @default(cuid())
   organizationId      String             @map("organization_id")
   channelId           String             @map("channel_id")
@@ -699,10 +699,10 @@ model Conversation {
   // mensagem). Fica na conversa, e não só no Card, porque nem todo lead tem
   // card no funil. Códigos em pipelines/lost-sale.constants.ts. Limpo ao
   // desfazer ou quando a venda é marcada como ganha depois.
-  lostReason String?   @map("lost_reason")
-  lostNote   String?   @map("lost_note")
-  lostAt     DateTime? @map("lost_at")
-  lostById   String?   @map("lost_by_id")
+  lostReason          String?            @map("lost_reason")
+  lostNote            String?            @map("lost_note")
+  lostAt              DateTime?          @map("lost_at")
+  lostById            String?            @map("lost_by_id")
 
   // ─── Archive state ──────────────────────────────
   // Orthogonal to `status` — archived conversations are hidden from the
@@ -766,7 +766,7 @@ model Conversation {
   /// vendedor da carteira — e sai quando transfere ou quando um humano
   /// responde. Diferente de `aiEnabled=true` "na mão", que um humano respondendo
   /// não desliga.
-  aiUntilHandoff Boolean @default(false) @map("ai_until_handoff")
+  aiUntilHandoff      Boolean   @default(false) @map("ai_until_handoff")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   channel      Channel      @relation(fields: [channelId], references: [id])
@@ -776,20 +776,20 @@ model Conversation {
   department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   activeAgent  AiAgent?     @relation("ActiveAgent", fields: [activeAgentId], references: [id], onDelete: SetNull)
 
-  messages           Message[]
-  tags               ConversationTag[]
-  internalNotes      InternalNote[]
-  auditLogs          ConversationAuditLog[]
-  rating             ConversationRating?
-  aiRuns             AiAgentRun[]
-  aiHandoffs         AiAgentHandoff[]
-  aiPendingActions   AiPendingAction[]
-  reads              ConversationRead[]
-  cards              Card[]                    @relation("CardConversation")
-  scheduledMessages  ScheduledMessage[]
-  calls              Call[]
+  messages          Message[]
+  tags              ConversationTag[]
+  internalNotes     InternalNote[]
+  auditLogs         ConversationAuditLog[]
+  rating            ConversationRating?
+  aiRuns            AiAgentRun[]
+  aiHandoffs        AiAgentHandoff[]
+  aiPendingActions  AiPendingAction[]
+  reads             ConversationRead[]
+  cards             Card[]                 @relation("CardConversation")
+  scheduledMessages ScheduledMessage[]
+  calls             Call[]
   responseSlaRecords ResponseSlaRecord[]
-  participants       ConversationParticipant[]
+  participants      ConversationParticipant[]
 
   @@index([organizationId, status], name: "idx_conv_org_status")
   @@index([organizationId, status, awaitingHumanReply], name: "idx_conv_org_status_awaiting")
@@ -1806,17 +1806,17 @@ model PipelineStage {
 }
 
 model Card {
-  appointments   Appointment[]
-  id             String        @id @default(cuid())
-  organizationId String        @map("organization_id")
-  pipelineId     String        @map("pipeline_id")
-  stageId        String        @map("stage_id")
+  appointments Appointment[]
+  id             String     @id @default(cuid())
+  organizationId String     @map("organization_id")
+  pipelineId     String     @map("pipeline_id")
+  stageId        String     @map("stage_id")
   title          String
   description    String?
-  value          Decimal?      @db.Decimal(14, 2)
-  currency       String        @default("BRL")
-  status         CardStatus    @default(OPEN)
-  order          Int           @default(0)
+  value          Decimal?   @db.Decimal(14, 2)
+  currency       String     @default("BRL")
+  status         CardStatus @default(OPEN)
+  order          Int        @default(0)
 
   contactId      String? @map("contact_id")
   conversationId String? @map("conversation_id")
@@ -1839,11 +1839,11 @@ model Card {
   conversation Conversation? @relation("CardConversation", fields: [conversationId], references: [id], onDelete: SetNull)
   assignedTo   User?         @relation("CardAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
 
-  @@unique([organizationId, ticketNumber])
   @@index([pipelineId, stageId, order])
   @@index([organizationId, status])
   @@index([contactId])
   @@index([conversationId])
+  @@unique([organizationId, ticketNumber])
   @@map("cards")
 }
 
@@ -2504,29 +2504,29 @@ model CadenceEnrollment {
 }
 
 model Proposal {
-  id             String    @id @default(cuid())
-  organizationId String    @map("organization_id")
-  contactId      String    @map("contact_id")
-  conversationId String    @map("conversation_id")
-  checkoutUrl    String    @map("checkout_url")
-  adults         Int       @default(0)
-  children       Int       @default(0)
-  startDate      DateTime  @map("start_date")
-  endDate        DateTime  @map("end_date")
-  parks          Json      @default("[]")
-  totalValue     Decimal   @default(0) @map("total_value") @db.Decimal(12, 2)
-  currency       String    @default("BRL")
-  rawText        String    @map("raw_text")
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  contactId      String   @map("contact_id")
+  conversationId String   @map("conversation_id")
+  checkoutUrl    String   @map("checkout_url")
+  adults         Int      @default(0)
+  children       Int      @default(0)
+  startDate      DateTime @map("start_date")
+  endDate        DateTime @map("end_date")
+  parks          Json     @default("[]")
+  totalValue     Decimal  @default(0) @map("total_value") @db.Decimal(12, 2)
+  currency       String   @default("BRL")
+  rawText        String   @map("raw_text")
   // PARKS = ingressos (os campos acima). OTHER = qualquer outro produto
   // (carro, hotel, transfer…): os campos de ingresso ficam zerados e o
   // conteúdo mora em `details` ({ title, lines }). Nos dois tipos `details`
   // guarda os prints enviados ({ images }).
   // QUOTE = cotação por link: itens estruturados em `details.quote` e página
   // pública aberta pelo `publicToken` até `expiresAt`.
-  kind           String    @default("PARKS")
+  kind           String   @default("PARKS")
   details        Json?
-  createdById    String    @map("created_by_id")
-  createdAt      DateTime  @default(now()) @map("created_at")
+  createdById    String   @map("created_by_id")
+  createdAt      DateTime @default(now()) @map("created_at")
   publicToken    String?   @unique @map("public_token")
   expiresAt      DateTime? @map("expires_at")
   viewCount      Int       @default(0) @map("view_count")
@@ -2616,20 +2616,20 @@ model OrderAcceptance {
   contactId      String  @map("contact_id")
   cardId         String? @map("card_id")
 
-  token      String           @unique
-  items      Json             @default("[]")
-  termText   String           @map("term_text")
+  token    String           @unique
+  items    Json             @default("[]")
+  termText String           @map("term_text")
   /// Snapshot da `Organization.cancellationPolicy` no momento da criação.
   /// É cópia, e não leitura por relação, pelo mesmo motivo de `termText` e
   /// `items`: um aceite assinado tem que continuar mostrando o que aquela
   /// pessoa aceitou, mesmo depois de o dono editar a política. NULL nos
   /// aceites anteriores a esta coluna — ninguém assinou política nenhuma.
-  policyText String?          @map("policy_text") @db.Text
-  status     AcceptanceStatus @default(PENDING)
+  policyText String?         @map("policy_text") @db.Text
+  status   AcceptanceStatus @default(PENDING)
   /// Vouchers entregues: [{ url, filename, size, sha256 }].
-  vouchers   Json?            @default("[]")
+  vouchers Json?            @default("[]")
   /// Nº do pedido lido do voucher, exibido no cabeçalho da página pública.
-  orderRef   String?          @map("order_ref")
+  orderRef String?          @map("order_ref")
 
   createdById String    @map("created_by_id")
   createdAt   DateTime  @default(now()) @map("created_at")
@@ -3092,12 +3092,12 @@ model AdDailyStat {
 model MarketingGoal {
   id                  String   @id @default(cuid())
   organizationId      String   @unique @map("organization_id")
-  monthlyBudget       Decimal? @map("monthly_budget") @db.Decimal(14, 2)
-  targetCpl           Decimal? @map("target_cpl") @db.Decimal(14, 2)
-  targetCtrPct        Decimal? @map("target_ctr_pct") @db.Decimal(6, 2)
+  monthlyBudget       Decimal? @db.Decimal(14, 2) @map("monthly_budget")
+  targetCpl           Decimal? @db.Decimal(14, 2) @map("target_cpl")
+  targetCtrPct        Decimal? @db.Decimal(6, 2)  @map("target_ctr_pct")
   targetLeadsPerDay   Int?     @map("target_leads_per_day")
-  targetFrequencyMax  Decimal? @map("target_frequency_max") @db.Decimal(6, 2)
-  targetConversionPct Decimal? @map("target_conversion_pct") @db.Decimal(6, 2)
+  targetFrequencyMax  Decimal? @db.Decimal(6, 2)  @map("target_frequency_max")
+  targetConversionPct Decimal? @db.Decimal(6, 2)  @map("target_conversion_pct")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -3263,16 +3263,16 @@ model Contract {
 
   /// Datas estruturadas: [{ parkId, date: "YYYY-MM-DD" }]. Contratos importados
   /// do Lovable têm `[]` e a data só no texto `requestedDates` (sem ano).
-  parkDates             Json      @default("[]") @map("park_dates")
-  datesToBeDefined      Boolean   @default(false) @map("dates_to_be_defined")
-  notes                 String?   @db.Text
+  parkDates         Json    @default("[]") @map("park_dates")
+  datesToBeDefined  Boolean @default(false) @map("dates_to_be_defined")
+  notes             String? @db.Text
   /// "pix" | "cartao-Nx" | "dolar" — só registro; o valor final está em `amount`.
-  paymentMethod         String?   @map("payment_method")
+  paymentMethod     String? @map("payment_method")
   /// Termos exatamente como o cliente aceitou (snapshot).
-  acceptedTermsText     String?   @map("accepted_terms_text") @db.Text
+  acceptedTermsText String? @map("accepted_terms_text") @db.Text
   /// PDF gerado no aceite, com assinatura e evidência. Chave MinIO privada.
-  acceptancePdfKey      String?   @map("acceptance_pdf_key")
-  createdById           String?   @map("created_by_id")
+  acceptancePdfKey  String? @map("acceptance_pdf_key")
+  createdById       String? @map("created_by_id")
   /// Senha do login do cliente no Planejador OFP, criptografada (CryptoService).
   planejadorPasswordEnc String?   @map("planejador_password_enc") @db.Text
   planejadorSyncedAt    DateTime? @map("planejador_synced_at")
@@ -3306,21 +3306,21 @@ model ContractBlockedDate {
 
 /// Termos do contrato (texto que o cliente aceita), um por organização.
 model ContractSettings {
-  organizationId         String   @id @map("organization_id")
-  terms                  String   @db.Text
+  organizationId String   @id @map("organization_id")
+  terms          String   @db.Text
   /// Chaves PIX oferecidas no formulário: [{ value, label }].
-  pixKeys                Json     @default("[]") @map("pix_keys")
-  defaultPixKey          String?  @map("default_pix_key")
+  pixKeys                Json    @default("[]") @map("pix_keys")
+  defaultPixKey          String? @map("default_pix_key")
   /// Quem recebe o aviso de comprovante enviado pelo cliente.
-  receiptNotifyEmail     String?  @map("receipt_notify_email")
+  receiptNotifyEmail     String? @map("receipt_notify_email")
   /// Instruções de pagamento em dólar (Wise/ACH) mostradas no aceite.
-  usdPaymentInstructions String?  @map("usd_payment_instructions") @db.Text
-  guides                 Json     @default("[]")
-  sellers                Json     @default("[]")
-  companyName            String?  @map("company_name")
-  companyDocument        String?  @map("company_document")
-  companyAddress         String?  @map("company_address")
-  updatedAt              DateTime @updatedAt @map("updated_at")
+  usdPaymentInstructions String? @map("usd_payment_instructions") @db.Text
+  guides                 Json    @default("[]")
+  sellers                Json    @default("[]")
+  companyName            String? @map("company_name")
+  companyDocument        String? @map("company_document")
+  companyAddress         String? @map("company_address")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
