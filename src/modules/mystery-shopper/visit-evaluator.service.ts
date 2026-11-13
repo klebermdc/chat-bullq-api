@@ -77,9 +77,9 @@ export class VisitEvaluatorService {
     ]);
     if (criteria.length === 0) throw new Error(NO_CRITERIA_ERROR);
 
-    const metrics = computeVisitMetrics({ messages, assignedAt, proposalCount });
-    const lines = buildVisitLines(messages);
     const sellerUserId = visit.assignedToId;
+    const metrics = computeVisitMetrics({ messages, assignedAt, proposalCount, sellerUserId });
+    const lines = buildVisitLines(messages, sellerUserId);
     const names = await this.repository.findUserNames(sellerUserId ? [sellerUserId] : []);
     const sellerName = (sellerUserId && names.get(sellerUserId)) || null;
 

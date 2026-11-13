@@ -116,7 +116,7 @@ export class MysteryShopperService {
       metrics: isFilled(row.metrics) ? (row.metrics as unknown as VisitMetrics) : null,
       scores: Array.isArray(row.scores) ? (row.scores as unknown as CriterionScore[]) : [],
       summary: isFilled(row.summary) ? (row.summary as unknown as VisitSummary) : null,
-      lines: buildVisitLines(messages),
+      lines: buildVisitLines(messages, sellerId),
     };
   }
 

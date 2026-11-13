@@ -45,6 +45,7 @@ describe('buildVisitPrompt', () => {
     expect(prompt.user).toContain('família de 4');
     expect(prompt.user).toContain('[VENDEDOR]');
     expect(prompt.user).toContain('Proposta enviada: não');
+    expect(prompt.system).toContain('[EQUIPE]');
   });
 });
 
@@ -81,6 +82,14 @@ describe('parseVisitEvaluation', () => {
 
   test('null na objeção continua valendo', () => {
     expect(parseVisitEvaluation(answer, criteria, lines)?.scores[1].score).toBeNull();
+  });
+
+  test('trecho de fala da EQUIPE (outro colega) é descartado', () => {
+    const team: VisitLine[] = [
+      lines[0],
+      { messageId: 'm3', role: 'EQUIPE', text: 'Colega: Quantas pessoas vão e quais as idades?', createdAt: new Date('2026-11-13T10:06:00Z') },
+    ];
+    expect(parseVisitEvaluation(answer, criteria, team)?.scores[0].evidence).toBe('');
   });
 
   test('resposta ilegível ou sem resumo = null', () => {

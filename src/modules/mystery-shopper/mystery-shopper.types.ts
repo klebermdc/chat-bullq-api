@@ -9,7 +9,8 @@ export interface VisitMessage {
   createdAt: Date;
 }
 
-export type VisitRole = 'CLIENTE' | 'VENDEDOR' | 'AUTOMATICA';
+/** EQUIPE = outra pessoa da equipe (não o vendedor avaliado): só contexto. */
+export type VisitRole = 'CLIENTE' | 'VENDEDOR' | 'EQUIPE' | 'AUTOMATICA';
 
 export interface VisitLine {
   messageId: string;

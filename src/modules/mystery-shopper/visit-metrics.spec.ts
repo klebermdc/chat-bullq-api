@@ -22,7 +22,7 @@ describe('computeVisitMetrics', () => {
       msg({ direction: 'OUTBOUND', senderId: 'u1', createdAt: at('10:30') }),
     ];
 
-    const metrics = computeVisitMetrics({ messages, assignedAt: at('10:10'), proposalCount: 0 });
+    const metrics = computeVisitMetrics({ messages, assignedAt: at('10:10'), proposalCount: 0, sellerUserId: null });
 
     expect(metrics.firstHumanReplyMinutes).toBe(20);
     expect(metrics.humanMessages).toBe(1);
@@ -30,7 +30,7 @@ describe('computeVisitMetrics', () => {
 
   test('sem distribuição, conta desde a 1ª mensagem do cliente', () => {
     const messages = [msg({ createdAt: at('10:00') }), msg({ direction: 'OUTBOUND', senderId: 'u1', createdAt: at('10:45') })];
-    expect(computeVisitMetrics({ messages, assignedAt: null, proposalCount: 1 })).toMatchObject({
+    expect(computeVisitMetrics({ messages, assignedAt: null, proposalCount: 1, sellerUserId: null })).toMatchObject({
       firstHumanReplyMinutes: 45,
       proposalSent: true,
     });
@@ -45,7 +45,7 @@ describe('computeVisitMetrics', () => {
       msg({ direction: 'OUTBOUND', senderId: 'u1', createdAt: at('15:00') }),
     ];
 
-    const metrics = computeVisitMetrics({ messages, assignedAt: null, proposalCount: 0 });
+    const metrics = computeVisitMetrics({ messages, assignedAt: null, proposalCount: 0, sellerUserId: null });
 
     expect(metrics.followUps).toBe(2);
     expect(metrics.firstFollowUpHours).toBe(2);
@@ -53,8 +53,32 @@ describe('computeVisitMetrics', () => {
   });
 
   test('vendedor que não respondeu', () => {
-    const metrics = computeVisitMetrics({ messages: [msg({})], assignedAt: null, proposalCount: 0 });
+    const metrics = computeVisitMetrics({ messages: [msg({})], assignedAt: null, proposalCount: 0, sellerUserId: null });
     expect(metrics).toMatchObject({ firstHumanReplyMinutes: null, humanMessages: 0, followUps: 0 });
+  });
+});
+
+describe('computeVisitMetrics com vendedor conhecido', () => {
+  const messages = [
+    msg({ createdAt: at('10:00') }),
+    msg({ direction: 'OUTBOUND', senderId: 'colega', createdAt: at('10:05') }),
+    msg({ direction: 'OUTBOUND', senderId: 'u1', createdAt: at('10:30') }),
+    msg({ text: 'vou pensar', createdAt: at('11:00') }),
+    msg({ direction: 'OUTBOUND', senderId: 'colega', createdAt: at('15:00') }),
+    msg({ direction: 'OUTBOUND', senderId: 'u1', createdAt: at('16:00') }),
+  ];
+
+  test('mensagens e follow-ups contam só o vendedor; 1ª resposta é de qualquer humano', () => {
+    const metrics = computeVisitMetrics({ messages, assignedAt: null, proposalCount: 0, sellerUserId: 'u1' });
+    expect(metrics.humanMessages).toBe(2);
+    expect(metrics.followUps).toBe(1);
+    expect(metrics.firstHumanReplyMinutes).toBe(5);
+  });
+
+  test('sem vendedor conhecido, todo humano conta', () => {
+    const metrics = computeVisitMetrics({ messages, assignedAt: null, proposalCount: 0, sellerUserId: null });
+    expect(metrics.humanMessages).toBe(4);
+    expect(metrics.followUps).toBe(2);
   });
 });
 

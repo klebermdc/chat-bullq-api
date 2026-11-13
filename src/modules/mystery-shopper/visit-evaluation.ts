@@ -39,7 +39,7 @@ export function buildVisitPrompt(input: PromptInput): { system: string; user: st
   const criteria = input.criteria.map((c) => `- ${c.name} (${c.description}): ${c.instructions}`).join('\n');
   const system = [
     'Você avalia atendimentos de uma agência de turismo para Orlando a partir de uma visita de cliente oculto.',
-    `Avalie APENAS as falas marcadas [VENDEDOR] (${input.sellerName ?? 'o vendedor'}). Falas [AUTOMATICA] são da IA ou de robôs: só contexto, sem nota.`,
+    `Avalie APENAS as falas marcadas [VENDEDOR] (${input.sellerName ?? 'o vendedor'}). Falas [EQUIPE] são de outras pessoas da equipe e falas [AUTOMATICA] são da IA ou de robôs: só contexto, sem nota.`,
     'Escreva tudo somente em português do Brasil: nenhuma palavra ou caractere de outro idioma.',
     'Critérios:',
     criteria,
