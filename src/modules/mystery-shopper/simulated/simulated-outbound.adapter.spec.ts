@@ -3,10 +3,14 @@ import { SimulatedOutboundAdapter } from './simulated-outbound.adapter';
 describe('SimulatedOutboundAdapter', () => {
   const channel: any = { id: 'ch1', organizationId: 'org1', type: 'WHATSAPP_OFFICIAL' };
 
-  function build() {
+  function build(run: unknown = null, existingJob: unknown = undefined) {
     const queue = { add: jest.fn().mockResolvedValue(undefined) };
-    return { adapter: new SimulatedOutboundAdapter(queue as any), queue };
+    const botQueue = { add: jest.fn().mockResolvedValue(undefined), getJob: jest.fn().mockResolvedValue(existingJob) };
+    const prisma = { mysteryShopperBotRun: { findFirst: jest.fn().mockResolvedValue(run) } };
+    return { adapter: new SimulatedOutboundAdapter(queue as any, botQueue as any, prisma as any), queue, botQueue, prisma };
   }
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  const text = { type: 'TEXT', content: { text: 'oi' } } as any;
 
   it('devolve id sim.out. e marca a resposta como simulada', async () => {
     const { adapter } = build();
@@ -51,5 +55,73 @@ describe('SimulatedOutboundAdapter', () => {
     await expect(adapter.deleteMessage(channel, 'id')).resolves.toBeUndefined();
     await expect(adapter.getMediaUrl(channel, 'm')).rejects.toThrow('Mídia indisponível em contato simulado');
     await expect(adapter.downloadMedia(channel, 'm')).rejects.toThrow('Mídia indisponível em contato simulado');
+  });
+
+  describe('acordar o robô do cliente oculto', () => {
+    it('com execução ativa agenda bot-turn com jobId por execução e espera de 40–90 s', async () => {
+      const { adapter, botQueue, prisma } = build({ id: 'r1' });
+      await adapter.sendMessage(channel, '5525912345678', text);
+      await flush();
+      expect(prisma.mysteryShopperBotRun.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: 'org1',
+            status: { in: ['ACTIVE', 'CLOSING'] },
+            number: expect.objectContaining({ isSimulated: true, channelId: 'ch1', contact: { phone: '5525912345678' } }),
+          }),
+        }),
+      );
+      expect(botQueue.add).toHaveBeenCalledTimes(1);
+      const [name, data, opts] = botQueue.add.mock.calls[0];
+      expect(name).toBe('bot-turn');
+      expect(data).toEqual({ runId: 'r1' });
+      expect(opts.jobId).toBe('bot-turn:r1');
+      expect(opts.delay).toBeGreaterThanOrEqual(40_000);
+      expect(opts.delay).toBeLessThanOrEqual(90_000);
+      expect(opts).toEqual(expect.objectContaining({ removeOnComplete: true, removeOnFail: true }));
+    });
+
+    it('debounce: job anterior pendente é removido antes de recriar', async () => {
+      const order: string[] = [];
+      const job = { remove: jest.fn().mockImplementation(async () => void order.push('remove')) };
+      const { adapter, botQueue } = build({ id: 'r1' }, job);
+      botQueue.add.mockImplementation(async () => void order.push('add'));
+      await adapter.sendMessage(channel, '5525912345678', text);
+      await flush();
+      expect(botQueue.getJob).toHaveBeenCalledWith('bot-turn:r1');
+      expect(order).toEqual(['remove', 'add']);
+    });
+
+    it('job que não pode ser removido (em execução) não impede o envio nem o agendamento', async () => {
+      const job = { remove: jest.fn().mockRejectedValue(new Error('locked')) };
+      const { adapter, botQueue } = build({ id: 'r1' }, job);
+      await expect(adapter.sendMessage(channel, '5525912345678', text)).resolves.toMatchObject({ externalId: expect.stringMatching(/^sim\.out\./) });
+      await flush();
+      expect(botQueue.add).toHaveBeenCalled();
+    });
+
+    it('sem execução ativa não agenda', async () => {
+      const { adapter, botQueue } = build(null);
+      await adapter.sendMessage(channel, '5525912345678', text);
+      await flush();
+      expect(botQueue.add).not.toHaveBeenCalled();
+      expect(botQueue.getJob).not.toHaveBeenCalled();
+    });
+
+    it('erro ao agendar nunca quebra o envio', async () => {
+      const { adapter, botQueue, queue } = build({ id: 'r1' });
+      botQueue.add.mockRejectedValue(new Error('redis fora'));
+      const r = await adapter.sendMessage(channel, '5525912345678', text);
+      await flush();
+      expect(r.externalId).toMatch(/^sim\.out\./);
+      expect(queue.add).toHaveBeenCalledTimes(2);
+    });
+
+    it('erro na consulta ao banco nunca quebra o envio', async () => {
+      const { adapter, prisma } = build();
+      prisma.mysteryShopperBotRun.findFirst.mockRejectedValue(new Error('db fora'));
+      await expect(adapter.sendMessage(channel, '5525912345678', text)).resolves.toMatchObject({ providerResponse: { simulated: true } });
+      await flush();
+    });
   });
 });

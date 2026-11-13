@@ -1,6 +1,6 @@
 import { InjectQueue, OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger, OnModuleInit } from '@nestjs/common';
-import { Job, Queue } from 'bullmq';
+import { DelayedError, Job, Queue } from 'bullmq';
 import {
   EVALUATE_JOB,
   KEEP_FINISHED_JOBS,
@@ -10,6 +10,8 @@ import {
   SWEEP_SCHEDULER_ID,
   SWEEP_TIMEZONE,
 } from './mystery-shopper.constants';
+import { BOT_TURN_JOB } from './bot/bot.constants';
+import { BotTurnService } from './bot/bot-turn.service';
 import { MysteryShopperService } from './mystery-shopper.service';
 import { VisitEvaluatorService } from './visit-evaluator.service';
 
@@ -25,6 +27,7 @@ export class MysteryShopperProcessor extends WorkerHost implements OnModuleInit 
   constructor(
     private readonly service: MysteryShopperService,
     private readonly evaluator: VisitEvaluatorService,
+    private readonly botTurn: BotTurnService,
     @InjectQueue(MYSTERY_SHOPPER_QUEUE) private readonly queue: Queue,
   ) {
     super();
@@ -44,9 +47,25 @@ export class MysteryShopperProcessor extends WorkerHost implements OnModuleInit 
     }
   }
 
-  async process(job: Job): Promise<unknown> {
+  async process(job: Job, token?: string): Promise<unknown> {
+    if (job.name === BOT_TURN_JOB) return this.processBotTurn(job, token);
     if (job.name === EVALUATE_JOB) return this.evaluator.evaluate((job.data as { visitId: string }).visitId);
     return this.service.sweep();
+  }
+
+  /** Fora do horário o mesmo job volta a ser atrasado (mantém o jobId, então o debounce continua valendo). */
+  private async processBotTurn(job: Job, token?: string): Promise<unknown> {
+    const runId = (job.data as { runId: string }).runId;
+    try {
+      const outcome = await this.botTurn.run(runId);
+      if (outcome.kind !== 'DELAYED') return outcome.kind;
+      await job.moveToDelayed(Date.now() + outcome.delayMs, token);
+    } catch (err) {
+      // Qualquer falha (menos o atraso) encerra a execução: ela não pode ficar ACTIVE sem job.
+      await this.botTurn.markFailed(runId, (err as Error).message).catch(() => undefined);
+      throw err;
+    }
+    throw new DelayedError();
   }
 
   // O job de avaliação é apagado ao falhar: sem este log, o erro some.

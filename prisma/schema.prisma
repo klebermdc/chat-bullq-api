@@ -175,6 +175,7 @@ model Organization {
   appointments Appointment[]
   mysteryShopperNumbers MysteryShopperNumber[]
   mysteryShopperVisits  MysteryShopperVisit[]
+  mysteryShopperBotRuns MysteryShopperBotRun[]
   id          String    @id @default(cuid())
   name        String
   slug        String    @unique
@@ -3485,6 +3486,7 @@ model MysteryShopperNumber {
   contact      Contact               @relation(fields: [contactId], references: [id], onDelete: Cascade)
   channel      Channel?              @relation(fields: [channelId], references: [id], onDelete: SetNull)
   visits       MysteryShopperVisit[]
+  botRuns      MysteryShopperBotRun[]
 
   @@index([organizationId, removedAt])
   @@index([contactId])
@@ -3521,4 +3523,34 @@ model MysteryShopperVisit {
   @@index([organizationId, status])
   @@index([organizationId, sellerUserId, evaluatedAt])
   @@map("mystery_shopper_visits")
+}
+
+enum MysteryShopperBotStatus {
+  ACTIVE
+  CLOSING
+  ENDED
+  STOPPED
+  FAILED
+}
+
+/// Uma execução do robô de IA que faz o papel do cliente simulado (só uma ativa por número).
+model MysteryShopperBotRun {
+  id               String                  @id @default(cuid())
+  organizationId   String                  @map("organization_id")
+  numberId         String                  @map("number_id")
+  persona          String
+  status           MysteryShopperBotStatus @default(ACTIVE)
+  clientMessages   Int                     @default(0) @map("client_messages")
+  followUpAnswered Boolean                 @default(false) @map("follow_up_answered")
+  lastError        String?                 @map("last_error")
+  costUsd          Decimal                 @default(0) @map("cost_usd") @db.Decimal(10, 4)
+  createdAt        DateTime                @default(now()) @map("created_at")
+  updatedAt        DateTime                @updatedAt @map("updated_at")
+  endedAt          DateTime?               @map("ended_at")
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  number       MysteryShopperNumber @relation(fields: [numberId], references: [id], onDelete: Cascade)
+
+  @@index([numberId, status])
+  @@map("mystery_shopper_bot_runs")
 }

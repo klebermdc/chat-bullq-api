@@ -4,10 +4,12 @@ import { JwtAuthGuard, OrgGuard } from '../../common/guards';
 import { CurrentOrg, CurrentUser } from '../../common/decorators';
 import { AddNumberDto } from './dto/add-number.dto';
 import { AddSimulatedNumberDto } from './dto/add-simulated-number.dto';
+import { StartBotDto } from './dto/start-bot.dto';
 import { SimulatorMessageDto } from './dto/simulator-message.dto';
 import { ScenarioDto } from './dto/scenario.dto';
 import { MysteryShopperAccess } from './mystery-shopper.access';
 import { MysteryShopperService } from './mystery-shopper.service';
+import { BotService } from './bot/bot.service';
 import { SimulatorService } from './simulated/simulator.service';
 
 /**
@@ -23,6 +25,7 @@ export class MysteryShopperController {
     private readonly service: MysteryShopperService,
     private readonly accessControl: MysteryShopperAccess,
     private readonly simulator: SimulatorService,
+    private readonly bot: BotService,
   ) {}
 
   /** Única rota que responde a todos: diz só se o menu aparece. */
@@ -120,7 +123,28 @@ export class MysteryShopperController {
   @Get('simulator/:numberId')
   async getSimulator(@CurrentOrg('id') orgId: string, @CurrentUser('email') email: string, @Param('numberId') numberId: string) {
     await this.accessControl.assertViewer(orgId, email);
-    return this.simulator.getConversation(orgId, numberId);
+    const [conversation, bot] = await Promise.all([
+      this.simulator.getConversation(orgId, numberId),
+      this.bot.getState(orgId, numberId),
+    ]);
+    return { ...conversation, bot };
+  }
+
+  @Post('simulator/:numberId/bot')
+  async startBot(
+    @CurrentOrg('id') orgId: string,
+    @CurrentUser('email') email: string,
+    @Param('numberId') numberId: string,
+    @Body() dto: StartBotDto,
+  ) {
+    await this.accessControl.assertViewer(orgId, email);
+    return this.bot.start(orgId, numberId, dto.persona);
+  }
+
+  @Delete('simulator/:numberId/bot')
+  async stopBot(@CurrentOrg('id') orgId: string, @CurrentUser('email') email: string, @Param('numberId') numberId: string) {
+    await this.accessControl.assertViewer(orgId, email);
+    return this.bot.stop(orgId, numberId);
   }
 
   @Delete('numbers/:id')

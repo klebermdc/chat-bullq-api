@@ -52,6 +52,26 @@ describe('computeVisitMetrics', () => {
     expect(metrics.lastShopperMessageAt).toBe(at('11:00').toISOString());
   });
 
+  test('resposta do cliente ao follow-up não apaga o follow-up', () => {
+    const messages = [
+      msg({ text: 'vou pensar', createdAt: new Date('2026-11-13T10:00:00Z') }),
+      msg({ direction: 'OUTBOUND', senderId: 'u1', createdAt: new Date('2026-11-14T10:00:00Z') }),
+      msg({ text: 'ainda estou vendo', createdAt: new Date('2026-11-14T10:01:00Z') }),
+    ];
+    const metrics = computeVisitMetrics({ messages, assignedAt: null, proposalCount: 0, sellerUserId: null });
+    expect(metrics.followUps).toBe(1);
+    expect(metrics.firstFollowUpHours).toBe(24);
+    expect(metrics.lastShopperMessageAt).toBe('2026-11-14T10:01:00.000Z');
+  });
+
+  test('só conta depois do cliente que o precede: mensagem após inbound mais recente fora da janela não conta', () => {
+    const messages = [
+      msg({ createdAt: new Date('2026-11-10T10:00:00Z') }),
+      msg({ direction: 'OUTBOUND', senderId: 'u1', createdAt: new Date('2026-11-13T11:00:00Z') }), // 73h
+    ];
+    expect(computeVisitMetrics({ messages, assignedAt: null, proposalCount: 0, sellerUserId: null }).followUps).toBe(0);
+  });
+
   test('vendedor que não respondeu', () => {
     const metrics = computeVisitMetrics({ messages: [msg({})], assignedAt: null, proposalCount: 0, sellerUserId: null });
     expect(metrics).toMatchObject({ firstHumanReplyMinutes: null, humanMessages: 0, followUps: 0 });

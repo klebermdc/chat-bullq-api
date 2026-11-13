@@ -2,6 +2,9 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { LlmModule } from '../ai-agents/llm/llm.module';
 import { TelegramClient } from '../manager-bot/telegram/telegram.client';
+import { BotRepository } from './bot/bot.repository';
+import { BotTurnService } from './bot/bot-turn.service';
+import { BotService } from './bot/bot.service';
 import { MYSTERY_SHOPPER_QUEUE } from './mystery-shopper.constants';
 import { MysteryShopperAccess } from './mystery-shopper.access';
 import { MysteryShopperController } from './mystery-shopper.controller';
@@ -10,6 +13,7 @@ import { MysteryShopperNotifier } from './mystery-shopper.notifier';
 import { MysteryShopperProcessor } from './mystery-shopper.processor';
 import { MysteryShopperRepository } from './mystery-shopper.repository';
 import { MysteryShopperService } from './mystery-shopper.service';
+import { SimulatedModule } from './simulated/simulated.module';
 import { SimulatorService } from './simulated/simulator.service';
 import { VisitEvaluatorService } from './visit-evaluator.service';
 
@@ -19,7 +23,7 @@ import { VisitEvaluatorService } from './visit-evaluator.service';
  * Prisma é @Global.
  */
 @Module({
-  imports: [LlmModule, BullModule.registerQueue({ name: MYSTERY_SHOPPER_QUEUE }, { name: 'inbound-messages' })],
+  imports: [LlmModule, SimulatedModule, BullModule.registerQueue({ name: MYSTERY_SHOPPER_QUEUE }, { name: 'inbound-messages' })],
   controllers: [MysteryShopperController],
   providers: [
     MysteryShopperAccess,
@@ -28,6 +32,9 @@ import { VisitEvaluatorService } from './visit-evaluator.service';
     MysteryShopperNotifier,
     MysteryShopperService,
     SimulatorService,
+    BotRepository,
+    BotService,
+    BotTurnService,
     VisitEvaluatorService,
     MysteryShopperProcessor,
     { provide: TelegramClient, useFactory: () => new TelegramClient(process.env.TELEGRAM_BOT_TOKEN) },

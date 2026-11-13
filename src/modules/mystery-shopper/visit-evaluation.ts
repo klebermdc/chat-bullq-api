@@ -57,7 +57,7 @@ export function buildVisitPrompt(input: PromptInput): { system: string; user: st
     `Cenário do cliente oculto: ${input.scenario?.trim() || 'não informado'}`,
     'Fatos medidos pelo sistema:',
     `- Proposta enviada: ${input.metrics.proposalSent ? 'sim' : 'não'}`,
-    `- Mensagens do vendedor depois da última do cliente (follow-up em ${FOLLOW_UP_WINDOW_HOURS}h): ${input.metrics.followUps}`,
+    `- Follow-ups do vendedor (mensagem de 2h a ${FOLLOW_UP_WINDOW_HOURS}h depois de uma do cliente): ${input.metrics.followUps}`,
   ].join('\n');
   const transcript = input.lines
     .map((l) => `[${l.createdAt.toISOString().slice(0, 16).replace('T', ' ')}] [${l.role}] ${l.text}`)
@@ -147,7 +147,7 @@ export function applyCodeRules(scores: CriterionScore[], metrics: VisitMetrics):
           ...s,
           score: 0 as Score,
           evidence: '',
-          comment: `Sem follow-up em ${FOLLOW_UP_WINDOW_HOURS}h depois da última mensagem do cliente.`,
+          comment: `Sem follow-up em ${FOLLOW_UP_WINDOW_HOURS}h depois de uma mensagem do cliente.`,
           measuredBy: 'CODE' as const,
         }
       : s,
@@ -193,8 +193,13 @@ function texts(e: VisitEvaluation): string[] {
   ];
 }
 
+/** Texto simples com cirílico, árabe, japonês, chinês ou coreano. */
+export function hasForeignScriptText(text: string): boolean {
+  return FOREIGN_SCRIPT.test(text);
+}
+
 export function hasForeignScript(e: VisitEvaluation): boolean {
-  return texts(e).some((t) => FOREIGN_SCRIPT.test(t));
+  return texts(e).some(hasForeignScriptText);
 }
 
 export function withoutForeignScript(e: VisitEvaluation): VisitEvaluation {

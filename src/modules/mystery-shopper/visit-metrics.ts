@@ -27,6 +27,25 @@ interface MetricsInput {
   sellerUserId: string | null;
 }
 
+/**
+ * Follow-up = mensagem do vendedor enviada de 2h a 72h depois do último INBOUND que a precede
+ * (sem INBOUND no meio). A resposta do cliente ao follow-up não o apaga.
+ */
+function findFollowUps(ordered: VisitMessage[], sellerUserId: string | null): Array<{ gapHours: number }> {
+  const found: Array<{ gapHours: number }> = [];
+  let lastInboundAt: Date | null = null;
+  for (const m of ordered) {
+    if (m.direction === 'INBOUND') {
+      lastInboundAt = m.createdAt;
+      continue;
+    }
+    if (!lastInboundAt || !isSellerReply(m, sellerUserId)) continue;
+    const gapHours = (m.createdAt.getTime() - lastInboundAt.getTime()) / HOUR_MS;
+    if (gapHours >= FOLLOW_UP_MIN_GAP_HOURS && gapHours <= FOLLOW_UP_WINDOW_HOURS) found.push({ gapHours });
+  }
+  return found;
+}
+
 export function computeVisitMetrics(input: MetricsInput): VisitMetrics {
   const ordered = [...input.messages].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   const human = ordered.filter(isHumanReply); // tempo de resposta: qualquer pessoa da empresa
@@ -35,10 +54,7 @@ export function computeVisitMetrics(input: MetricsInput): VisitMetrics {
   const lastInbound = [...ordered].reverse().find((m) => m.direction === 'INBOUND');
   const start = input.assignedAt ?? firstInbound?.createdAt ?? null;
   const firstReply = start ? human.find((m) => m.createdAt >= start) : undefined;
-  const followUps = lastInbound ? seller.filter((m) => {
-        const gapHours = (m.createdAt.getTime() - lastInbound.createdAt.getTime()) / HOUR_MS;
-        return gapHours >= FOLLOW_UP_MIN_GAP_HOURS && gapHours <= FOLLOW_UP_WINDOW_HOURS;
-      }) : [];
+  const followUps = findFollowUps(ordered, input.sellerUserId);
 
   return {
     firstHumanReplyMinutes:
@@ -46,9 +62,7 @@ export function computeVisitMetrics(input: MetricsInput): VisitMetrics {
     humanMessages: seller.length,
     followUps: followUps.length,
     firstFollowUpHours:
-      lastInbound && followUps[0]
-        ? oneDecimal((followUps[0].createdAt.getTime() - lastInbound.createdAt.getTime()) / HOUR_MS)
-        : null,
+      followUps[0] ? oneDecimal(followUps[0].gapHours) : null,
     proposalSent: input.proposalCount > 0,
     lastShopperMessageAt: lastInbound ? lastInbound.createdAt.toISOString() : null,
   };
