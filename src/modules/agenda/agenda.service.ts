@@ -116,6 +116,38 @@ export class AgendaService {
     return created;
   }
 
+  /**
+   * Marcado pela Aline (voz/chat) na agenda do vendedor dono da conversa.
+   * Mesmas regras (expediente, conflito); sem pessoa como autora.
+   */
+  async createForAline(
+    orgId: string,
+    ownerUserId: string,
+    input: Omit<CreateInput, 'ownerUserId'>,
+    source: AppointmentSource,
+  ) {
+    const startsAt = parseInstant(input.startsAt, 'startsAt');
+    const durationMin = input.durationMin ?? DEFAULT_DURATION_MIN;
+    await this.assertBookable(orgId, ownerUserId, startsAt, durationMin);
+    const created = await this.repo.create({
+      organizationId: orgId,
+      ownerUserId,
+      contactId: input.contactId,
+      conversationId: input.conversationId ?? null,
+      cardId: input.cardId ?? null,
+      startsAt,
+      durationMin,
+      kind: input.kind ?? RETORNO_LIGACAO,
+      status: MARCADO,
+      source,
+      notes: input.notes ?? null,
+      callId: input.callId ?? null,
+      createdByUserId: null,
+    });
+    await this.reminders.schedule(created, this.clock());
+    return created;
+  }
+
   async reschedule(orgId: string, viewer: AgendaViewer, id: string, input: { startsAt: string; durationMin?: number }) {
     const current = await this.findOwned(orgId, viewer, id);
     if (current.status !== MARCADO) {

@@ -100,6 +100,22 @@ describe('AgendaService lembretes', () => {
   });
 });
 
+describe('AgendaService.createForAline', () => {
+  it('marca na agenda do vendedor com origem da Aline e sem autor humano', async () => {
+    const { svc, repo, reminders } = make();
+    await svc.createForAline('org1', 'renata', novo(), 'ALINE_VOZ');
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerUserId: 'renata', source: 'ALINE_VOZ', createdByUserId: null }),
+    );
+    expect(reminders.schedule).toHaveBeenCalled();
+  });
+
+  it('respeita as mesmas recusas (conflito)', async () => {
+    const { svc } = make({ busy: [{ startsAt: sp('2026-11-16T10:00:00'), durationMin: 30 }] });
+    await expect(svc.createForAline('org1', 'renata', novo(), 'ALINE_VOZ')).rejects.toMatchObject({ response: { code: 'CONFLITO' } });
+  });
+});
+
 describe('AgendaService.reschedule / setStatus', () => {
   const existente = {
     id: 'a1', organizationId: 'org1', ownerUserId: 'renata', startsAt: sp('2026-11-16T10:00:00'), durationMin: 15, status: 'MARCADO',

@@ -17,6 +17,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { RoutingModule } from './modules/routing/routing.module';
 import { QuickRepliesModule } from './modules/quick-replies/quick-replies.module';
 import { AgendaModule } from './modules/agenda/agenda.module';
+import { VoiceModule } from './modules/voice/voice.module';
 import { ContractsModule } from './modules/contracts/contracts.module';
 import { MediaLibraryModule } from './modules/media-library/media-library.module';
 import { TagsModule } from './modules/tags/tags.module';
@@ -104,6 +105,7 @@ import redisConfig from './config/redis.config';
     RoutingModule,
     QuickRepliesModule,
     AgendaModule,
+    VoiceModule,
     ContractsModule,
     MediaLibraryModule,
     TagsModule,
