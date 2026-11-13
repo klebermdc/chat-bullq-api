@@ -171,6 +171,7 @@ model User {
 }
 
 model Organization {
+  voiceOutreach VoiceOutreach[]
   appointments Appointment[]
   id          String    @id @default(cuid())
   name        String
@@ -2504,6 +2505,7 @@ model CadenceEnrollment {
 }
 
 model Proposal {
+  voiceOutreach VoiceOutreach?
   id             String   @id @default(cuid())
   organizationId String   @map("organization_id")
   contactId      String   @map("contact_id")
@@ -3416,4 +3418,33 @@ model Appointment {
   @@index([conversationId])
   @@index([contactId])
   @@map("appointments")
+}
+
+// ─── Ligação de retorno de cotação (Aline por voz, F6) ────────────
+// Uma linha por cotação: pedido de permissão de ligação e a tentativa de
+// ligação, com o motivo de cada decisão. Situações em TEXTO (sem enum: evita
+// ALTER TYPE no futuro). Só age com organizations.settings.voiceCalls.enabled.
+model VoiceOutreach {
+  id                    String    @id @default(cuid())
+  organizationId        String    @map("organization_id")
+  proposalId            String    @unique @map("proposal_id")
+  conversationId        String    @map("conversation_id")
+  contactId             String    @map("contact_id")
+  /// PEDIDA | PULADA | FALHOU
+  permissionStatus      String?   @map("permission_status")
+  permissionRequestedAt DateTime? @map("permission_requested_at")
+  permissionNote        String?   @map("permission_note")
+  /// LIGOU | SEM_PERMISSAO | PULADA | FALHOU
+  callStatus            String?   @map("call_status")
+  calledAt              DateTime? @map("called_at")
+  room                  String?
+  callNote              String?   @map("call_note")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  proposal     Proposal     @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, callStatus])
+  @@map("voice_outreach")
 }
