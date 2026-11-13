@@ -166,6 +166,18 @@ describe('MysteryShopperRepository', () => {
       expect(r.messages.map((x) => x.id)).toEqual(['a', 'b']);
     });
 
+    test('mensagens: esconde saída FAILED/QUEUED (cliente real nunca as recebe)', async () => {
+      const conversation = { findFirst: jest.fn().mockResolvedValue({ id: 'cv1' }) };
+      const message = { findMany: jest.fn().mockResolvedValue([]) };
+      const repository = new MysteryShopperRepository({ conversation, message } as never);
+
+      await repository.findSimulatorMessages('k1', 'ch1', 200);
+
+      expect(message.findMany.mock.calls[0][0].where).toMatchObject({
+        NOT: { direction: 'OUTBOUND', status: { in: ['FAILED', 'QUEUED'] } },
+      });
+    });
+
     test('mensagens: sem conversa, não consulta mensagens', async () => {
       const message = { findMany: jest.fn() };
       const repository = new MysteryShopperRepository({ conversation: { findFirst: jest.fn().mockResolvedValue(null) }, message } as never);

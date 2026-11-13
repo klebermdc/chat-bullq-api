@@ -463,7 +463,13 @@ export class MysteryShopperRepository {
     });
     if (!conversation) return { conversationId: null, messages: [] };
     const rows = await this.prisma.message.findMany({
-      where: { conversationId: conversation.id, revokedAt: null, type: { notIn: [...NON_CONVERSATIONAL_TYPES] } },
+      where: {
+        conversationId: conversation.id,
+        revokedAt: null,
+        type: { notIn: [...NON_CONVERSATIONAL_TYPES] },
+        // Saída que falhou (inclui bloqueio da janela de 24h) ou ainda não saiu: o cliente real nunca a recebe.
+        NOT: { direction: 'OUTBOUND', status: { in: ['FAILED', 'QUEUED'] } },
+      },
       orderBy: { createdAt: 'desc' },
       take: limit,
       select: { id: true, direction: true, status: true, content: true, createdAt: true },
