@@ -23,10 +23,13 @@ export function liveKitToken(
   grants: { video?: Record<string, unknown>; sip?: Record<string, unknown> },
   now = new Date(),
   ttlSec = 300,
+  who: { identity?: string; name?: string } = {},
 ): string {
   const iat = Math.floor(now.getTime() / 1000);
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payload = b64url(JSON.stringify({ iss: cfg.apiKey, sub: 'sendtur-api', nbf: iat, exp: iat + ttlSec, ...grants }));
+  const payload = b64url(
+    JSON.stringify({ iss: cfg.apiKey, sub: who.identity ?? 'sendtur-api', ...(who.name && { name: who.name }), nbf: iat, exp: iat + ttlSec, ...grants }),
+  );
   const sig = b64url(crypto.createHmac('sha256', cfg.apiSecret).update(`${header}.${payload}`).digest());
   return `${header}.${payload}.${sig}`;
 }
@@ -109,5 +112,43 @@ export class LiveKitDialer {
       liveKitToken(this.cfg, { sip: { call: true }, video: { roomAdmin: true, room: input.room } }),
     );
     this.logger.log(`Ligação disparada na sala ${input.room}`);
+  }
+
+  /** Vendedor liga: só disca para o cliente (sem despachar a Aline). */
+  async dialForSeller(input: { room: string; phoneE164: string; contactName: string }): Promise<void> {
+    if (!this.cfg) throw new Error('LiveKit não configurado (LIVEKIT_URL/API_KEY/API_SECRET/SIP_OUTBOUND_TRUNK_ID)');
+    if (!/^\+\d{10,15}$/.test(input.phoneE164)) throw new Error('Telefone inválido para discagem');
+    await this.twirp(
+      'SIP',
+      'CreateSIPParticipant',
+      {
+        sipTrunkId: this.cfg.outboundTrunkId,
+        sipCallTo: input.phoneE164,
+        roomName: input.room,
+        participantIdentity: 'cliente',
+        participantName: input.contactName.slice(0, 60),
+        playDialtone: false,
+      },
+      liveKitToken(this.cfg, { sip: { call: true }, video: { roomAdmin: true, room: input.room } }),
+    );
+  }
+
+  /** Acesso do navegador do vendedor à sala (fala e escuta; vale 2 h). */
+  joinAccess(input: { room: string; identity: string; name: string }): { url: string; token: string } {
+    if (!this.cfg) throw new Error('LiveKit não configurado');
+    const token = liveKitToken(
+      this.cfg,
+      { video: { roomJoin: true, room: input.room, canPublish: true, canSubscribe: true } },
+      new Date(),
+      2 * 3600,
+      { identity: input.identity, name: input.name },
+    );
+    return { url: this.cfg.url.replace(/^https:/, 'wss:'), token };
+  }
+
+  /** Encerra a ligação: apaga a sala (derruba o cliente e o vendedor). */
+  async endRoom(room: string): Promise<void> {
+    if (!this.cfg) return;
+    await this.twirp('RoomService', 'DeleteRoom', { room }, liveKitToken(this.cfg, { video: { roomCreate: true } }));
   }
 }

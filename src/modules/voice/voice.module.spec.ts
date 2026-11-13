@@ -14,13 +14,15 @@ import { VoiceAuthGuard } from './voice-auth.guard';
 import { VoiceSettingsController } from './voice-settings.controller';
 import { VoiceToolsController } from './voice-tools.controller';
 import { VoiceToolsService } from './voice-tools.service';
+import { SellerCallsController } from './seller-calls.controller';
+import { SellerCallsService } from './seller-calls.service';
 
 // Garante que o Nest monta a voz (ferramentas + ligação de retorno) sem dependência faltando.
 describe('VoiceModule (injeção)', () => {
   it('monta controllers, discador, cliente da Meta e a varredura', async () => {
     const queue = { add: jest.fn(), upsertJobScheduler: jest.fn() };
     const mod = await Test.createTestingModule({
-      controllers: [VoiceToolsController, VoiceSettingsController],
+      controllers: [VoiceToolsController, VoiceSettingsController, SellerCallsController],
       providers: [
         VoiceToolsService,
         VoiceAuthGuard,
@@ -29,6 +31,7 @@ describe('VoiceModule (injeção)', () => {
         OutreachService,
         OutreachCron,
         OutreachProcessor,
+        SellerCallsService,
         { provide: ConfigService, useValue: { get: () => undefined } },
         { provide: PrismaService, useValue: {} },
         { provide: AgendaService, useValue: {} },

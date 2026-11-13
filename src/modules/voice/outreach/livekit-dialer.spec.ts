@@ -50,3 +50,29 @@ describe('LiveKitDialer.dial', () => {
     await expect(erro.dial({ room: 'r', phoneE164: '+5511999990000', missionMetadata: '{}', contactName: 'x' })).rejects.toThrow('CreateDispatch 500');
   });
 });
+
+describe('LiveKitDialer (vendedor)', () => {
+  it('liga só para o cliente (sem despachar a Aline) e dá acesso do vendedor à sala', async () => {
+    const urls: string[] = [];
+    const d = LiveKitDialer.withConfig(CFG, async (url) => {
+      urls.push(url);
+      return new Response('{}');
+    });
+    await d.dialForSeller({ room: 'vendedor-cv1-1', phoneE164: '+5511999990000', contactName: 'Kleber' });
+    expect(urls).toEqual(['https://lk.exemplo/twirp/livekit.SIP/CreateSIPParticipant']);
+    const { url, token } = d.joinAccess({ room: 'vendedor-cv1-1', identity: 'vendedor-u1', name: 'Renata' });
+    expect(url).toBe('wss://lk.exemplo');
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+    expect(payload).toMatchObject({ sub: 'vendedor-u1', name: 'Renata', video: { roomJoin: true, room: 'vendedor-cv1-1', canPublish: true } });
+  });
+
+  it('encerrar apaga a sala', async () => {
+    const calls: string[] = [];
+    const d = LiveKitDialer.withConfig(CFG, async (url) => {
+      calls.push(url);
+      return new Response('{}');
+    });
+    await d.endRoom('vendedor-cv1-1');
+    expect(calls).toEqual(['https://lk.exemplo/twirp/livekit.RoomService/DeleteRoom']);
+  });
+});
