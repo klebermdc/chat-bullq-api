@@ -15,6 +15,10 @@ import { createLlm, createStt, createTts } from './providers.js';
 import { SendturVoiceClient } from './sendtur-client.js';
 import { quoteFollowUpTools } from './tools.js';
 import { filterSpeechStream } from './speech-filter.js';
+import { waitUntilAnswered } from './answer-wait.js';
+
+/** Ligação de saída: quanto tempo espera o cliente atender. */
+const ANSWER_TIMEOUT_MS = 60_000;
 
 const config = loadConfig();
 
@@ -79,6 +83,13 @@ export default defineAgent({
     log('missao', { sala: ctx.room.name, comFerramentas: !!tools });
     await session.start({ agent: new AlineAgent({ instructions: mission.prompt, tools }), room: ctx.room });
     await ctx.connect();
+    // Na ligação de saída o cliente entra na sala ainda "chamando": só cumprimenta quando atender.
+    const participant = await ctx.waitForParticipant();
+    if (!(await waitUntilAnswered(ctx.room, participant, ANSWER_TIMEOUT_MS))) {
+      log('nao_atendeu', { sala: ctx.room.name });
+      ctx.shutdown('cliente não atendeu');
+      return;
+    }
     // Saudação fixa (sem LLM): sai na hora e garante o aviso de gravação.
     // O MiniMax recusa conversa sem fala do cliente ("chat content is empty").
     session.say(mission.greeting);
