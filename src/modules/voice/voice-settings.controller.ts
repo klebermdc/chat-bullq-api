@@ -10,10 +10,15 @@ import { PrismaService } from '../../database/prisma.service';
 import { CallingGraphClient } from './outreach/calling-graph.client';
 import { LiveKitDialer } from './outreach/livekit-dialer';
 import { parseVoiceCallSettings } from './outreach/outreach.rules';
+import { parseSellerCallSettings } from './seller-calls.service';
 
 class UpdateVoiceSettingsDto {
   @IsBoolean() enabled!: boolean;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(168) delayHours?: number;
+}
+
+class SellerCallsSettingsDto {
+  @IsBoolean() enabled!: boolean;
 }
 
 class WhatsappCallingDto {
@@ -39,7 +44,23 @@ export class VoiceSettingsController {
   @Get()
   async get(@CurrentOrg('id') orgId: string) {
     const org = await this.prisma.organization.findUnique({ where: { id: orgId }, select: { settings: true } });
-    return { ...parseVoiceCallSettings(org?.settings), dialerConfigured: this.dialer.configured };
+    return {
+      ...parseVoiceCallSettings(org?.settings),
+      sellerCallsEnabled: parseSellerCallSettings(org?.settings).enabled,
+      dialerConfigured: this.dialer.configured,
+    };
+  }
+
+  /** Chave "Vendedores ligam pelo WhatsApp" (desligada por padrão). */
+  @Patch('seller-calls')
+  async updateSellerCalls(@CurrentOrg('id') orgId: string, @Body() dto: SellerCallsSettingsDto) {
+    const org = await this.prisma.organization.findUnique({ where: { id: orgId }, select: { settings: true } });
+    const current = (org?.settings && typeof org.settings === 'object' && !Array.isArray(org.settings) ? org.settings : {}) as Record<string, unknown>;
+    await this.prisma.organization.update({
+      where: { id: orgId },
+      data: { settings: { ...current, sellerCalls: { enabled: dto.enabled } } as Prisma.InputJsonValue },
+    });
+    return this.get(orgId);
   }
 
   @Patch()
@@ -51,7 +72,7 @@ export class VoiceSettingsController {
       where: { id: orgId },
       data: { settings: { ...current, voiceCalls: { enabled: next.enabled, delayHours: next.delayHours } } as Prisma.InputJsonValue },
     });
-    return { ...next, dialerConfigured: this.dialer.configured };
+    return this.get(orgId);
   }
 
   /** Liga/desliga o calling + SIP no número da Meta. Ação explícita; nada chama isto sozinho. */
