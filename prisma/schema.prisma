@@ -134,6 +134,8 @@ enum ErrorInvestigationStatus {
 // ─── Core: Auth + Multi-tenancy ──────────────────
 
 model User {
+  appointmentsOwned   Appointment[] @relation("AppointmentOwner")
+  appointmentsCreated Appointment[] @relation("AppointmentCreator")
   id           String    @id @default(cuid())
   name         String
   email        String    @unique
@@ -169,6 +171,7 @@ model User {
 }
 
 model Organization {
+  appointments Appointment[]
   id          String    @id @default(cuid())
   name        String
   slug        String    @unique
@@ -545,6 +548,7 @@ model ChannelSyncJob {
 // ─── Contacts ────────────────────────────────────
 
 model Contact {
+  appointments Appointment[]
   id             String    @id @default(cuid())
   organizationId String    @map("organization_id")
   name           String?
@@ -642,6 +646,7 @@ model SocialComment {
 // ─── Conversations ───────────────────────────────
 
 model Conversation {
+  appointments Appointment[]
   id                  String             @id @default(cuid())
   organizationId      String             @map("organization_id")
   channelId           String             @map("channel_id")
@@ -1801,6 +1806,7 @@ model PipelineStage {
 }
 
 model Card {
+  appointments Appointment[]
   id             String     @id @default(cuid())
   organizationId String     @map("organization_id")
   pipelineId     String     @map("pipeline_id")
@@ -3358,4 +3364,56 @@ model ResponseSlaRecord {
   @@index([organizationId, waitingSince])
   @@index([agentId, waitingSince])
   @@map("response_sla_records")
+}
+
+// ─── Agenda do vendedor ───────────────────────────────────────────
+// Compromissos (retorno de ligação, reunião) marcados pelo vendedor ou pela
+// Aline (voz/chat). Regras de expediente/conflito em agenda.rules.ts.
+enum AppointmentKind {
+  RETORNO_LIGACAO
+  REUNIAO
+}
+
+enum AppointmentStatus {
+  MARCADO
+  FEITO
+  CANCELADO
+  NAO_ATENDEU
+}
+
+enum AppointmentSource {
+  ALINE_VOZ
+  ALINE_CHAT
+  MANUAL
+}
+
+model Appointment {
+  id              String            @id @default(cuid())
+  organizationId  String            @map("organization_id")
+  ownerUserId     String            @map("owner_user_id")
+  contactId       String            @map("contact_id")
+  conversationId  String?           @map("conversation_id")
+  cardId          String?           @map("card_id")
+  startsAt        DateTime          @map("starts_at") @db.Timestamptz(3)
+  durationMin     Int               @default(15) @map("duration_min")
+  kind            AppointmentKind   @default(RETORNO_LIGACAO)
+  status          AppointmentStatus @default(MARCADO)
+  source          AppointmentSource @default(MANUAL)
+  notes           String?           @db.Text
+  callId          String?           @map("call_id")
+  createdByUserId String?           @map("created_by_user_id")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner        User          @relation("AppointmentOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  createdBy    User?         @relation("AppointmentCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  contact      Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  card         Card?         @relation(fields: [cardId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, ownerUserId, startsAt], name: "idx_appointment_owner_time")
+  @@index([conversationId])
+  @@index([contactId])
+  @@map("appointments")
 }
