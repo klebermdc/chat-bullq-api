@@ -42,6 +42,7 @@ import { ConversationAutoCloseModule } from './modules/conversation-auto-close/c
 import { ResponseSlaModule } from './modules/response-sla/response-sla.module';
 import { SlaManagerAlertsModule } from './modules/response-sla/manager-alerts/manager-alerts.module';
 import { ManagerBotModule } from './modules/manager-bot/manager-bot.module';
+import { MysteryShopperModule } from './modules/mystery-shopper/mystery-shopper.module';
 import { AutomationsModule } from './modules/automations/automations.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { SalesReportsModule } from './modules/sales-reports/sales-reports.module';
@@ -129,6 +130,7 @@ import redisConfig from './config/redis.config';
     ResponseSlaModule,
     SlaManagerAlertsModule,
     ManagerBotModule,
+    MysteryShopperModule,
     WebhooksModule,
     SalesReportsModule,
     ProposalsModule,
