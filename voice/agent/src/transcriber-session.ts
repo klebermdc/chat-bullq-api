@@ -10,7 +10,7 @@ import {
   type RemoteParticipant,
   type RemoteTrack,
 } from '@livekit/rtc-node';
-import { waitUntilAnswered } from './answer-wait.js';
+import { waitUntilAnyAttemptAnswered } from './answer-wait.js';
 import type { SendturVoiceClient } from './sendtur-client.js';
 import { CLIENT_IDENTITY, RECORDING_NOTICE, speakerOf, TranscriptCollector } from './transcript.js';
 
@@ -103,15 +103,24 @@ export async function runTranscriber(deps: TranscriberDeps): Promise<void> {
     if (track.kind !== TrackKind.KIND_AUDIO || finished) return;
     tracks.push(transcribeTrack(track, speakerOf(participant.identity), deps, collector));
   });
+  // Só encerra quando sai o cliente que ATENDEU (o de uma tentativa recusada pela Meta sai na hora).
+  let answeredClient: RemoteParticipant | null = null;
   ctx.room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
-    if (participant.identity === CLIENT_IDENTITY) ctx.shutdown('cliente desligou');
+    if (answeredClient && participant.sid === answeredClient.sid) ctx.shutdown('cliente desligou');
   });
 
   await ctx.connect();
   log('transcricao_inicio', { sala: ctx.room.name, callId });
-  const cliente = await ctx.waitForParticipant(CLIENT_IDENTITY);
-  if (!(await waitUntilAnswered(ctx.room, cliente, ANSWER_TIMEOUT_MS))) {
+  const nextClient = (remainingMs: number) =>
+    Promise.race([ctx.waitForParticipant(CLIENT_IDENTITY), new Promise<null>((resolve) => setTimeout(() => resolve(null), remainingMs))]);
+  answeredClient = (await waitUntilAnyAttemptAnswered(ctx.room, nextClient, ANSWER_TIMEOUT_MS)) as RemoteParticipant | null;
+  if (!answeredClient) {
     ctx.shutdown('cliente não atendeu');
+    return;
+  }
+  // Pode ter desligado enquanto esperávamos: aí já encerra.
+  if (!ctx.room.remoteParticipants.has(answeredClient.identity)) {
+    ctx.shutdown('cliente desligou');
     return;
   }
   collector.markAnswered(Date.now());
