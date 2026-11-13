@@ -59,7 +59,7 @@ export class SimulatedOutboundAdapter implements OutboundChannelPort {
       {
         channelId: channel.id,
         organizationId: channel.organizationId,
-        status: { externalMessageId, status, timestamp: new Date() },
+        status: { externalMessageId, status, timestamp: new Date(Date.now() + delay) },
       },
       { delay, attempts: 3, backoff: { type: 'exponential', delay: 1000 }, removeOnComplete: true, removeOnFail: false },
     );

@@ -32,6 +32,19 @@ describe('SimulatedOutboundAdapter', () => {
     expect(second[2]).toEqual(expect.objectContaining({ delay: 6000 }));
   });
 
+  it('timestamp dos status é o instante em que o status acontece (envio + atraso)', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-01-01T12:00:00.000Z'));
+    try {
+      const { adapter, queue } = build();
+      await adapter.sendMessage(channel, '5525912345678', { type: 'TEXT', content: { text: 'oi' } } as any);
+      const [first, second] = queue.add.mock.calls;
+      expect(first[1].status.timestamp).toEqual(new Date('2026-01-01T12:00:02.000Z'));
+      expect(second[1].status.timestamp).toEqual(new Date('2026-01-01T12:00:06.000Z'));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('digitando e delete são no-op; mídia lança', async () => {
     const { adapter } = build();
     await expect(adapter.sendTypingIndicator(channel, 'x')).resolves.toBeUndefined();
