@@ -86,4 +86,91 @@ describe('MysteryShopperRepository', () => {
     const repository = new MysteryShopperRepository({ $transaction: (fn: (t: typeof tx) => unknown) => fn(tx) } as never);
     await expect(repository.addNumber('org', '5511982015967', 'Chip', 'u1')).rejects.toBeInstanceOf(ConflictException);
   });
+
+  describe('simulado', () => {
+    const INPUT = { phone: '5511987654321', label: 'Teste', profileName: 'Maria', channelId: 'ch1', userId: 'u1' };
+    const txFor = (over: { contact?: unknown; link?: unknown } = {}) => ({
+      contact: {
+        findFirst: jest.fn().mockResolvedValue(over.contact ?? null),
+        create: jest.fn().mockResolvedValue({ id: 'k1' }),
+      },
+      contactChannel: {
+        findFirst: jest.fn().mockResolvedValue(over.link ?? null),
+        create: jest.fn().mockResolvedValue({}),
+      },
+      mysteryShopperNumber: {
+        create: jest.fn().mockResolvedValue({ id: 'n1', label: 'Teste', createdAt: new Date(), isSimulated: true, channelId: 'ch1', contact: { phone: '5511987654321' } }),
+      },
+    });
+    const repoFor = (tx: ReturnType<typeof txFor>) =>
+      new MysteryShopperRepository({ $transaction: (fn: (t: typeof tx) => unknown) => fn(tx) } as never);
+
+    test('cria contato marcado, vínculo com o canal e número simulado', async () => {
+      const tx = txFor();
+      const row = await repoFor(tx).createSimulatedNumber('org', INPUT);
+      expect(tx.contact.findFirst.mock.calls[0][0].where.phone.in).toEqual(['5511987654321', '551187654321']);
+      expect(tx.contactChannel.findFirst.mock.calls[0][0].where).toMatchObject({ channelId: 'ch1', externalId: { in: ['5511987654321', '551187654321'] } });
+      expect(tx.contact.create.mock.calls[0][0].data).toMatchObject({ organizationId: 'org', phone: '5511987654321', name: 'Maria', isMysteryShopper: true });
+      expect(tx.contactChannel.create.mock.calls[0][0].data).toEqual({ contactId: 'k1', channelId: 'ch1', externalId: '5511987654321', profileName: 'Maria' });
+      expect(tx.mysteryShopperNumber.create.mock.calls[0][0].data).toMatchObject({
+        organizationId: 'org', contactId: 'k1', label: 'Teste', createdById: 'u1', isSimulated: true, channelId: 'ch1',
+      });
+      expect(row).toMatchObject({ id: 'n1', isSimulated: true });
+    });
+
+    test('colisão com contato existente: devolve null e não cria nada', async () => {
+      const tx = txFor({ contact: { id: 'x' } });
+      expect(await repoFor(tx).createSimulatedNumber('org', INPUT)).toBeNull();
+      expect(tx.contact.create).not.toHaveBeenCalled();
+      expect(tx.mysteryShopperNumber.create).not.toHaveBeenCalled();
+    });
+
+    test('colisão com vínculo do canal: devolve null', async () => {
+      const tx = txFor({ link: { id: 'l' } });
+      expect(await repoFor(tx).createSimulatedNumber('org', INPUT)).toBeNull();
+      expect(tx.contact.create).not.toHaveBeenCalled();
+    });
+
+    test('canais: só WHATSAPP_OFFICIAL ativos e não apagados da org', async () => {
+      const findMany = jest.fn().mockResolvedValue([{ id: 'ch1', name: 'Oficial' }]);
+      const repository = new MysteryShopperRepository({ channel: { findMany } } as never);
+      await repository.findOfficialChannels('org');
+      expect(findMany.mock.calls[0][0].where).toEqual({ organizationId: 'org', type: 'WHATSAPP_OFFICIAL', isActive: true, deletedAt: null });
+    });
+
+    test('número do simulador: da org e ativo (removedAt nulo)', async () => {
+      const findFirst = jest.fn().mockResolvedValue(null);
+      const repository = new MysteryShopperRepository({ mysteryShopperNumber: { findFirst } } as never);
+      expect(await repository.findNumberForSimulator('org', 'n1')).toBeNull();
+      expect(findFirst.mock.calls[0][0].where).toEqual({ id: 'n1', organizationId: 'org', removedAt: null });
+    });
+
+    test('mensagens: conversa mais recente do contato no canal, últimas N em ordem cronológica, sem reação/sistema/revogadas', async () => {
+      const m = (id: string) => ({ id, direction: 'INBOUND', status: 'SENT', content: {}, createdAt: new Date() });
+      const conversation = { findFirst: jest.fn().mockResolvedValue({ id: 'cv1' }) };
+      const message = { findMany: jest.fn().mockResolvedValue([m('b'), m('a')]) };
+      const repository = new MysteryShopperRepository({ conversation, message } as never);
+
+      const r = await repository.findSimulatorMessages('k1', 'ch1', 200);
+
+      expect(conversation.findFirst.mock.calls[0][0]).toMatchObject({
+        where: { contactId: 'k1', channelId: 'ch1', deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(message.findMany.mock.calls[0][0]).toMatchObject({
+        where: { conversationId: 'cv1', revokedAt: null, type: { notIn: ['REACTION', 'SYSTEM'] } },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      });
+      expect(r.conversationId).toBe('cv1');
+      expect(r.messages.map((x) => x.id)).toEqual(['a', 'b']);
+    });
+
+    test('mensagens: sem conversa, não consulta mensagens', async () => {
+      const message = { findMany: jest.fn() };
+      const repository = new MysteryShopperRepository({ conversation: { findFirst: jest.fn().mockResolvedValue(null) }, message } as never);
+      expect(await repository.findSimulatorMessages('k1', 'ch1', 200)).toEqual({ conversationId: null, messages: [] });
+      expect(message.findMany).not.toHaveBeenCalled();
+    });
+  });
 });
