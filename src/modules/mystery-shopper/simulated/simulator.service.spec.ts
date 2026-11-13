@@ -21,8 +21,8 @@ function build(repoOver: Record<string, jest.Mock> = {}) {
 }
 
 describe('generateSimulatedPhone', () => {
-  it('13 dígitos começando 55119 e o celular começa em 6-9', () => {
-    for (let i = 0; i < 200; i++) expect(generateSimulatedPhone()).toMatch(/^55119[6-9]\d{7}$/);
+  it('13 dígitos começando 55259 e o celular começa em 6-9', () => {
+    for (let i = 0; i < 200; i++) expect(generateSimulatedPhone()).toMatch(/^55259[6-9]\d{7}$/);
   });
 });
 
@@ -47,13 +47,13 @@ describe('SimulatorService.listChannels', () => {
 describe('SimulatorService.createNumber', () => {
   const input = { label: ' Teste ', profileName: ' Maria ', channelId: 'ch1' };
 
-  it('cria com número 55119… sem colisão e devolve o item com isSimulated', async () => {
+  it('cria com número 55259… sem colisão e devolve o item com isSimulated', async () => {
     const { service, repository } = build();
     const row = await service.createNumber('org', input, 'u1');
     const call = repository.createSimulatedNumber.mock.calls[0];
     expect(call[0]).toBe('org');
     expect(call[1]).toMatchObject({ label: 'Teste', profileName: 'Maria', channelId: 'ch1', userId: 'u1' });
-    expect(call[1].phone).toMatch(/^55119[6-9]\d{7}$/);
+    expect(call[1].phone).toMatch(/^55259[6-9]\d{7}$/);
     expect(row).toMatchObject({ id: 'n1', isSimulated: true });
   });
 
@@ -164,5 +164,19 @@ describe('SimulatorService.getConversation', () => {
     await expect(outra.service.getConversation('org', 'n1')).rejects.toBeInstanceOf(NotFoundException);
     const chip = build({ findNumberForSimulator: jest.fn().mockResolvedValue({ id: 'n1', isSimulated: false, channel: null, contact: {} }) });
     await expect(chip.service.getConversation('org', 'n1')).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('número simulado e utilitários de telefone', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { normalizePhone, phoneVariants } = require('../../../common/utils/phone.util');
+  it('normalizePhone preserva e phoneVariants gera a variante sem o 9', () => {
+    const phone = generateSimulatedPhone();
+    expect(phone).toHaveLength(13);
+    expect(phone.startsWith('55259')).toBe(true);
+    expect(normalizePhone(phone)).toBe(phone);
+    const variants = phoneVariants(phone);
+    expect(variants).toContain(phone);
+    expect(variants).toContain(`5525${phone.slice(5)}`);
   });
 });

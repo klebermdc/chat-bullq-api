@@ -7,10 +7,12 @@ import { MysteryShopperRepository, type NumberRow, type SimulatorMessageRow } fr
 
 export const SIMULATOR_MAX_MESSAGES = 200;
 const MAX_PHONE_ATTEMPTS = 5;
-const PHONE_PREFIX = '55119'; // DDI 55 + DDD 11 + 9
+// DDI 55 + DDD 25 + 9. O DDD 25 não existe no plano de numeração brasileiro: o número
+// simulado nunca colide com um cliente real (nem com a carteira importada).
+const PHONE_PREFIX = '55259';
 const LOCAL_LENGTH = 8;
 
-/** Celular de SP falso: 55 11 9 + 8 dígitos (o primeiro 6-9, como no plano de numeração real). */
+/** Celular falso em DDD inexistente: 55 25 9 + 8 dígitos (o primeiro 6-9, como no plano de numeração real). */
 export function generateSimulatedPhone(): string {
   let local = String(randomInt(6, 10));
   for (let i = 1; i < LOCAL_LENGTH; i++) local += String(randomInt(0, 10));
