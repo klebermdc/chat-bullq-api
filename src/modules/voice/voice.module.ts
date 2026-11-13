@@ -1,6 +1,7 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { AgendaModule } from '../agenda/agenda.module';
+import { SimulatedModule } from '../mystery-shopper/simulated/simulated.module';
 import { CallsModule } from '../calls/calls.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { CallingGraphClient } from './outreach/calling-graph.client';
@@ -17,7 +18,7 @@ import { VoiceToolsController } from './voice-tools.controller';
 import { VoiceToolsService } from './voice-tools.service';
 
 @Module({
-  imports: [AgendaModule, CallsModule, RealtimeModule, BullModule.registerQueue({ name: 'outbound-messages' }, { name: VOICE_OUTREACH_QUEUE })],
+  imports: [AgendaModule, SimulatedModule, CallsModule, RealtimeModule, BullModule.registerQueue({ name: 'outbound-messages' }, { name: VOICE_OUTREACH_QUEUE })],
   controllers: [VoiceToolsController, VoiceSettingsController, SellerCallsController],
   providers: [VoiceToolsService, VoiceAuthGuard, CallingGraphClient, LiveKitDialer, OutreachService, OutreachCron, OutreachProcessor, SellerCallsService, SellerCallRecordService],
 })

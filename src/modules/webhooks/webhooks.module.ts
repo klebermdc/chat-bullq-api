@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
+import { SimulatedModule } from '../mystery-shopper/simulated/simulated.module';
 import { PrismaModule } from '../../database/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { WEBHOOK_QUEUE } from './webhooks.constants';
@@ -12,6 +13,7 @@ import { WebhooksController } from './webhooks.controller';
 @Module({
   imports: [
     PrismaModule,
+    SimulatedModule,
     NotificationsModule,
     BullModule.registerQueue({ name: WEBHOOK_QUEUE }),
   ],

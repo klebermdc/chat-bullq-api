@@ -17,6 +17,7 @@ import { VoiceToolsService } from './voice-tools.service';
 import { SellerCallsController } from './seller-calls.controller';
 import { SellerCallsService } from './seller-calls.service';
 import { SellerCallRecordService } from './seller-call-record.service';
+import { SimulatedRecipients } from '../mystery-shopper/simulated/simulated-recipients.service';
 import { CallInsightService } from '../calls/call-insight.service';
 
 // Garante que o Nest monta a voz (ferramentas + ligação de retorno) sem dependência faltando.
@@ -36,6 +37,7 @@ describe('VoiceModule (injeção)', () => {
         SellerCallsService,
         SellerCallRecordService,
         { provide: CallInsightService, useValue: {} },
+        { provide: SimulatedRecipients, useValue: {} },
         { provide: ConfigService, useValue: { get: () => undefined } },
         { provide: PrismaService, useValue: {} },
         { provide: AgendaService, useValue: {} },

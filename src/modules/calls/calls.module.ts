@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
+import { SimulatedModule } from '../mystery-shopper/simulated/simulated.module';
 import { PrismaModule } from '../../database/prisma.module';
 import { CryptoModule } from '../../common/crypto/crypto.module';
 import { RealtimeModule } from '../realtime/realtime.module';
@@ -21,6 +22,7 @@ import { CALL_INSIGHT_QUEUE } from './call-insight.constants';
 @Module({
   imports: [
     PrismaModule,
+    SimulatedModule,
     CryptoModule,
     RealtimeModule,
     MessagingModule,

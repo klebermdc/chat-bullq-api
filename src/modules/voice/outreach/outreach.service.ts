@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { MessageContentType, MessageDirection, MessageStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { computeWhatsappWindow } from '../../messaging/conversations/whatsapp-window.util';
+import { SimulatedRecipients } from '../../mystery-shopper/simulated/simulated-recipients.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { DEFAULT_TIMEZONE, resolveHours, toHoursConfig } from '../../response-sla/response-sla.rules';
 import { isWithinHours } from '../../routing/availability/business-hours.util';
@@ -62,6 +63,7 @@ export class OutreachService {
     private readonly graph: CallingGraphClient,
     private readonly dialer: LiveKitDialer,
     private readonly realtime: RealtimeGateway,
+    private readonly simulated: SimulatedRecipients,
   ) {}
 
   /** Agências com a chave ligada. */
@@ -102,6 +104,10 @@ export class OutreachService {
       const row = { organizationId, proposalId: p.id, conversationId: p.conversationId, contactId: p.contactId };
       if (!conv || conv.channel?.type !== OFFICIAL || !conv.contact?.phone) {
         await this.prisma.voiceOutreach.create({ data: { ...row, permissionStatus: 'PULADA', permissionNote: 'CANAL_SEM_LIGACAO' } });
+        continue;
+      }
+      if (await this.simulated.isSimulatedContact(conv.contactId)) {
+        await this.prisma.voiceOutreach.create({ data: { ...row, permissionStatus: 'PULADA', permissionNote: 'CONTATO_SIMULADO' } });
         continue;
       }
       const window = computeWhatsappWindow({
@@ -161,6 +167,10 @@ export class OutreachService {
       const conv = await this.prisma.conversation.findFirst({ where: { id: p.conversationId, organizationId: org.id }, select: CONVERSATION_SELECT });
       if (!conv || conv.channel?.type !== OFFICIAL || !conv.contact?.phone) {
         await this.markCall(org.id, p, 'PULADA', 'CANAL_SEM_LIGACAO');
+        continue;
+      }
+      if (await this.simulated.isSimulatedContact(conv.contactId)) {
+        await this.markCall(org.id, p, 'PULADA', 'CONTATO_SIMULADO');
         continue;
       }
       const ownerHours = conv.assignedToId

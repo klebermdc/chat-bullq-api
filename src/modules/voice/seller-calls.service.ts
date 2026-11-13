@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { OrgRole, type MessageContentType, type MessageDirection, type MessageStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { computeWhatsappWindow } from '../messaging/conversations/whatsapp-window.util';
+import { SimulatedRecipients } from '../mystery-shopper/simulated/simulated-recipients.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { CallingGraphClient } from './outreach/calling-graph.client';
 import { LiveKitDialer } from './outreach/livekit-dialer';
@@ -44,6 +45,7 @@ export class SellerCallsService {
     private readonly dialer: LiveKitDialer,
     private readonly realtime: RealtimeGateway,
     private readonly records: SellerCallRecordService,
+    private readonly simulated: SimulatedRecipients,
   ) {}
 
   private async load(orgId: string, conversationId: string, viewer: SellerViewer) {
@@ -73,7 +75,10 @@ export class SellerCallsService {
   /** Estado para o botão: pode ligar? pode pedir permissão? */
   async check(orgId: string, conversationId: string, viewer: SellerViewer) {
     const conv = await this.load(orgId, conversationId, viewer);
-    const permission = await this.graph.getPermission(conv.channel!, conv.contact!.phone!);
+    // Simulado: a Meta nunca é consultada; o cliente "nunca concedeu" a permissão.
+    const permission = (await this.simulated.isSimulatedContact(conv.contactId))
+      ? { canCall: false, canRequest: true, status: 'no_permission' }
+      : await this.graph.getPermission(conv.channel!, conv.contact!.phone!);
     const window = computeWhatsappWindow({
       channelType: conv.channel!.type,
       lastInboundAt: conv.lastInboundAt ?? null,
@@ -96,7 +101,10 @@ export class SellerCallsService {
       throw new BadRequestException(state.windowOpen ? 'A Meta não permite novo pedido agora (limite de 1 por dia)' : 'Janela de 24h fechada: o cliente precisa mandar mensagem antes');
     }
     const conv = await this.load(orgId, conversationId, viewer);
-    await this.graph.requestPermission(conv.channel!, conv.contact!.phone!, PERMISSION_TEXT);
+    // Simulado: só a nota de sistema; nada é enviado à Meta.
+    if (!(await this.simulated.isSimulatedContact(conv.contactId))) {
+      await this.graph.requestPermission(conv.channel!, conv.contact!.phone!, PERMISSION_TEXT);
+    }
     await this.note(conv, `📞 ${viewer.name} pediu permissão para ligar pelo WhatsApp.`);
     return { ok: true };
   }
@@ -104,6 +112,9 @@ export class SellerCallsService {
   /** Disca para o cliente e devolve o acesso do navegador do vendedor à ligação. */
   async start(orgId: string, conversationId: string, viewer: SellerViewer) {
     const conv = await this.load(orgId, conversationId, viewer);
+    if (await this.simulated.isSimulatedContact(conv.contactId)) {
+      throw new BadRequestException({ code: 'SEM_PERMISSAO', message: 'O cliente ainda não permitiu ligações' });
+    }
     if (!this.dialer.configured) throw new BadRequestException('Conexão de ligações ainda não configurada');
     const permission = await this.graph.getPermission(conv.channel!, conv.contact!.phone!);
     if (!permission.canCall) throw new BadRequestException({ code: 'SEM_PERMISSAO', message: 'O cliente ainda não permitiu ligações' });

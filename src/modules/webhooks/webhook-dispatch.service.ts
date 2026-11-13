@@ -5,6 +5,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { WEBHOOK_QUEUE, MAX_WEBHOOK_ATTEMPTS, WEBHOOK_BACKOFF_MS } from './webhooks.constants';
 import { mapWebhookData } from './webhook-payload.mapper';
 import { LeadQualifiedPayloadBuilder } from './payloads/lead-qualified.builder';
+import { SimulatedRecipients } from '../mystery-shopper/simulated/simulated-recipients.service';
 
 interface DispatchEvent {
   outboxEventId: string;
@@ -19,6 +20,7 @@ export class WebhookDispatchService {
     private readonly prisma: PrismaService,
     @InjectQueue(WEBHOOK_QUEUE) private readonly queue: Queue,
     private readonly leadQualified: LeadQualifiedPayloadBuilder,
+    private readonly simulated: SimulatedRecipients,
   ) {}
 
   async dispatch(event: DispatchEvent): Promise<void> {
@@ -26,6 +28,11 @@ export class WebhookDispatchService {
       where: { organizationId: event.organizationId, isActive: true, events: { has: event.trigger as any } },
     });
     if (!subs.length) return;
+
+    // Cliente oculto simulado nunca gera entrega para endpoint externo (Make/n8n).
+    // Só consultamos com assinante ativo; erro do detector falha fechado (o
+    // chamador registra e não entrega).
+    if (await this.refersToSimulated(event.payload)) return;
 
     // LEAD_QUALIFIED precisa ir enriquecido (ver o builder). Só montamos
     // depois de saber que existe assinante — evita ida ao banco à toa.
@@ -66,5 +73,11 @@ export class WebhookDispatchService {
         },
       );
     }
+  }
+
+  private async refersToSimulated(payload: any): Promise<boolean> {
+    if (typeof payload?.contactId === 'string') return this.simulated.isSimulatedContact(payload.contactId);
+    if (typeof payload?.conversationId === 'string') return this.simulated.isSimulatedConversation(payload.conversationId);
+    return false;
   }
 }
