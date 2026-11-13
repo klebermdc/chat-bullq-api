@@ -37,7 +37,7 @@ describe('SellerCallRecordService.open', () => {
     const { svc, prisma, realtime } = make();
     const id = await svc.open({ organizationId: 'org1', conversation: CONV, agentId: 'renata', numero: '5511999990000' });
     expect(id).toBe('call1');
-    expect(prisma.call.create).toHaveBeenCalledWith({ data: expect.objectContaining({ ramal: 'whatsapp', status: 'DIALING', agentId: 'renata', conversationId: 'cv1' }) });
+    expect(prisma.call.create).toHaveBeenCalledWith({ data: expect.objectContaining({ ramal: 'whatsapp', status: 'DIALING', insightState: null, agentId: 'renata', conversationId: 'cv1' }) });
     expect(prisma.message.create).toHaveBeenCalledWith({ data: expect.objectContaining({ type: 'SYSTEM', senderId: 'renata', content: expect.objectContaining({ kind: 'call', via: 'whatsapp', callId: 'call1' }) }) });
     expect(prisma.call.update).toHaveBeenCalledWith({ where: { id: 'call1' }, data: { messageId: 'm1' } });
     expect(realtime.emitToConversation).toHaveBeenCalledWith('cv1', 'message:new', expect.anything());
