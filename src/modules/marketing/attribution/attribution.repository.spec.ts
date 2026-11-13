@@ -35,4 +35,18 @@ describe('AttributionRepository — período pelo clique', () => {
     expect(withAd.ctwaClidAt).toEqual({ gte: from, lte: to });
     expect(withAd.createdAt).toBeUndefined();
   });
+
+  it('leadsByAd exclui cliente oculto', async () => {
+    const { repo, prisma } = make();
+    await repo.leadsByAd('org-1', from, to);
+    expect(prisma.contact.groupBy.mock.calls[0][0].where).toMatchObject({ isMysteryShopper: false });
+  });
+
+  it('cobertura exclui cliente oculto em todas as contagens de contato', async () => {
+    const { repo, prisma } = make();
+    await repo.coverageTotals('org-1', from, to);
+    const calls = prisma.contact.count.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    for (const [args] of calls) expect(args.where).toMatchObject({ isMysteryShopper: false });
+  });
 });
