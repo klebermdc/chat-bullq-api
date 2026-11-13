@@ -6,6 +6,7 @@ const MARCADO: AppointmentStatus = 'MARCADO';
 const MANUAL: AppointmentSource = 'MANUAL';
 const RETORNO_LIGACAO: AppointmentKind = 'RETORNO_LIGACAO';
 import { AgendaRepository } from './agenda.repository';
+import { AgendaReminderScheduler } from './agenda.scheduler';
 import { checkNewAppointment, DEFAULT_HORIZON_DAYS, freeSlots, type AppointmentRefusal } from './agenda.rules';
 
 export interface AgendaViewer {
@@ -68,6 +69,7 @@ export class AgendaService {
 
   constructor(
     private readonly repo: AgendaRepository,
+    private readonly reminders: AgendaReminderScheduler,
     @Optional() @Inject(AGENDA_CLOCK) clock?: () => Date,
   ) {
     this.clock = clock ?? (() => new Date());
@@ -95,7 +97,7 @@ export class AgendaService {
     const startsAt = parseInstant(input.startsAt, 'startsAt');
     const durationMin = input.durationMin ?? DEFAULT_DURATION_MIN;
     await this.assertBookable(orgId, ownerUserId, startsAt, durationMin);
-    return this.repo.create({
+    const created = await this.repo.create({
       organizationId: orgId,
       ownerUserId,
       contactId: input.contactId,
@@ -110,6 +112,8 @@ export class AgendaService {
       callId: input.callId ?? null,
       createdByUserId: viewer.userId,
     });
+    await this.reminders.schedule(created, this.clock());
+    return created;
   }
 
   async reschedule(orgId: string, viewer: AgendaViewer, id: string, input: { startsAt: string; durationMin?: number }) {
@@ -120,7 +124,9 @@ export class AgendaService {
     const startsAt = parseInstant(input.startsAt, 'startsAt');
     const durationMin = input.durationMin ?? current.durationMin;
     await this.assertBookable(orgId, current.ownerUserId, startsAt, durationMin, id);
-    return this.repo.update(id, { startsAt, durationMin });
+    const updated = await this.repo.update(id, { startsAt, durationMin });
+    await this.reminders.schedule(updated, this.clock());
+    return updated;
   }
 
   async setStatus(orgId: string, viewer: AgendaViewer, id: string, status: AppointmentStatus) {

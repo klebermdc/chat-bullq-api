@@ -3,6 +3,7 @@ import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { PrismaService } from '../../database/prisma.service';
 import { AgendaController } from './agenda.controller';
 import { AgendaRepository } from './agenda.repository';
+import { AgendaReminderScheduler } from './agenda.scheduler';
 import { AgendaService } from './agenda.service';
 
 // Garante que o Nest consegue montar a agenda (o relógio do serviço é opcional).
@@ -10,7 +11,12 @@ describe('AgendaModule (injeção)', () => {
   it('monta controller, serviço e repositório', async () => {
     const mod = await Test.createTestingModule({
       controllers: [AgendaController],
-      providers: [AgendaRepository, AgendaService, { provide: PrismaService, useValue: {} }],
+      providers: [
+        AgendaRepository,
+        AgendaService,
+        { provide: AgendaReminderScheduler, useValue: { schedule: jest.fn() } },
+        { provide: PrismaService, useValue: {} },
+      ],
     })
       .overrideGuard(JwtAuthGuard).useValue({ canActivate: () => true })
       .overrideGuard(OrgGuard).useValue({ canActivate: () => true })

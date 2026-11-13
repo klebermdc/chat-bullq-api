@@ -22,8 +22,9 @@ function make(opts: { existing?: any; busy?: any[]; isMember?: boolean; contactO
     create: jest.fn().mockImplementation(async (d: any) => ({ id: 'a1', ...d })),
     update: jest.fn().mockImplementation(async (_id: string, d: any) => ({ id: 'a1', ...opts.existing, ...d })),
   } as any;
-  const svc = new AgendaService(repo, () => NOW);
-  return { svc, repo };
+  const reminders = { schedule: jest.fn().mockResolvedValue(undefined) } as any;
+  const svc = new AgendaService(repo, reminders, () => NOW);
+  return { svc, repo, reminders };
 }
 
 const novo = (extra: Record<string, unknown> = {}) => ({ contactId: 'c1', startsAt: '2026-11-16T10:00:00-03:00', ...extra });
@@ -84,6 +85,18 @@ describe('AgendaService.create', () => {
   it('data inválida dá 400', async () => {
     const { svc } = make();
     await expect(svc.create('org1', AGENT, novo({ startsAt: 'amanhã' }))).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('AgendaService lembretes', () => {
+  it('agenda lembretes ao marcar e ao remarcar', async () => {
+    const { svc, reminders } = make({
+      existing: { id: 'a1', organizationId: 'org1', ownerUserId: 'renata', startsAt: sp('2026-11-16T10:00:00'), durationMin: 15, status: 'MARCADO' },
+    });
+    await svc.create('org1', AGENT, novo());
+    expect(reminders.schedule).toHaveBeenCalledWith(expect.objectContaining({ id: 'a1' }), NOW);
+    await svc.reschedule('org1', AGENT, 'a1', { startsAt: '2026-11-16T11:00:00-03:00' });
+    expect(reminders.schedule).toHaveBeenCalledTimes(2);
   });
 });
 

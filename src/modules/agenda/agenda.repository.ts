@@ -63,6 +63,20 @@ export class AgendaRepository {
     });
   }
 
+  async findForReminder(organizationId: string, id: string) {
+    return this.prisma.appointment.findFirst({
+      where: { id, organizationId },
+      select: {
+        status: true,
+        startsAt: true,
+        ownerUserId: true,
+        conversationId: true,
+        contactId: true,
+        contact: { select: { name: true } },
+      },
+    });
+  }
+
   async findById(organizationId: string, id: string) {
     return this.prisma.appointment.findFirst({ where: { id, organizationId } });
   }
