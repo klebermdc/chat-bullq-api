@@ -8,6 +8,8 @@ export const KEEP_FINISHED_JOBS = 10;
 
 /** Espera depois da última mensagem do cliente oculto, para medir o follow-up. */
 export const FOLLOW_UP_WINDOW_HOURS = 72;
+/** Resposta mais rápida que isso ainda é continuação da conversa, não follow-up. */
+export const FOLLOW_UP_MIN_GAP_HOURS = 2;
 
 /** Categoria das skills que são critério do cliente oculto. */
 export const MYSTERY_SKILL_CATEGORY = 'cliente-oculto';

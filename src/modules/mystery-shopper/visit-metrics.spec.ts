@@ -58,6 +58,40 @@ describe('computeVisitMetrics', () => {
   });
 });
 
+describe('follow-up: janela de 2h a 72h depois da última do cliente', () => {
+  const HOUR = 3_600_000;
+  const lastInboundAt = at('10:00');
+  const withReplyAfter = (hours: number) =>
+    computeVisitMetrics({
+      messages: [
+        msg({ createdAt: lastInboundAt }),
+        msg({ direction: 'OUTBOUND', senderId: 'u1', createdAt: new Date(lastInboundAt.getTime() + hours * HOUR) }),
+      ],
+      assignedAt: null,
+      proposalCount: 0,
+      sellerUserId: 'u1',
+    });
+
+  test('resposta 5 minutos depois não é follow-up', () => {
+    expect(withReplyAfter(5 / 60).followUps).toBe(0);
+  });
+
+  test('resposta 3h depois é follow-up', () => {
+    const metrics = withReplyAfter(3);
+    expect(metrics.followUps).toBe(1);
+    expect(metrics.firstFollowUpHours).toBe(3);
+  });
+
+  test('resposta 80h depois fica fora da janela', () => {
+    expect(withReplyAfter(80).followUps).toBe(0);
+  });
+
+  test('limites 2h e 72h entram', () => {
+    expect(withReplyAfter(2).followUps).toBe(1);
+    expect(withReplyAfter(72).followUps).toBe(1);
+  });
+});
+
 describe('computeVisitMetrics com vendedor conhecido', () => {
   const messages = [
     msg({ createdAt: at('10:00') }),

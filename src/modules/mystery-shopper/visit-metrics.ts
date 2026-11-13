@@ -1,4 +1,9 @@
-import { FIRST_REPLY_GOOD_MINUTES, FIRST_REPLY_OK_MINUTES } from './mystery-shopper.constants';
+import {
+  FIRST_REPLY_GOOD_MINUTES,
+  FIRST_REPLY_OK_MINUTES,
+  FOLLOW_UP_MIN_GAP_HOURS,
+  FOLLOW_UP_WINDOW_HOURS,
+} from './mystery-shopper.constants';
 import type { Score, VisitMessage, VisitMetrics } from './mystery-shopper.types';
 
 const MINUTE_MS = 60_000;
@@ -30,7 +35,10 @@ export function computeVisitMetrics(input: MetricsInput): VisitMetrics {
   const lastInbound = [...ordered].reverse().find((m) => m.direction === 'INBOUND');
   const start = input.assignedAt ?? firstInbound?.createdAt ?? null;
   const firstReply = start ? human.find((m) => m.createdAt >= start) : undefined;
-  const followUps = lastInbound ? seller.filter((m) => m.createdAt > lastInbound.createdAt) : [];
+  const followUps = lastInbound ? seller.filter((m) => {
+        const gapHours = (m.createdAt.getTime() - lastInbound.createdAt.getTime()) / HOUR_MS;
+        return gapHours >= FOLLOW_UP_MIN_GAP_HOURS && gapHours <= FOLLOW_UP_WINDOW_HOURS;
+      }) : [];
 
   return {
     firstHumanReplyMinutes:
