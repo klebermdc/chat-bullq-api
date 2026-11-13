@@ -13,7 +13,8 @@ function roleOf(m: VisitMessage, sellerUserId: string | null): VisitRole {
 /** Em uma linha só: quebra de linha do cliente não pode forjar outra fala no prompt. */
 /** sellerUserId null = vendedor desconhecido: toda fala humana conta como VENDEDOR. */
 export function buildVisitLines(messages: VisitMessage[], sellerUserId: string | null): VisitLine[] {
-  return messages.slice(-MAX_TRANSCRIPT_LINES).map((m) => ({
+  const ordered = [...messages].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return ordered.slice(-MAX_TRANSCRIPT_LINES).map((m) => ({
     messageId: m.id,
     role: roleOf(m, sellerUserId),
     text: m.text.replace(/\s+/g, ' ').trim().slice(0, MAX_LINE_CHARS) || EMPTY_TEXT,

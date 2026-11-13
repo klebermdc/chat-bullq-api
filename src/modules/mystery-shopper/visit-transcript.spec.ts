@@ -33,6 +33,17 @@ describe('buildVisitLines', () => {
     expect(lines.map((l) => l.role)).toEqual(['VENDEDOR', 'EQUIPE', 'AUTOMATICA']);
   });
 
+  test('ordena por data antes de cortar, sem mutar a entrada', () => {
+    const late = { ...base, id: 'late', text: 'tarde', createdAt: new Date('2026-11-13T12:00:00Z') };
+    const early = { ...base, id: 'early', text: 'cedo', createdAt: new Date('2026-11-13T09:00:00Z') };
+    const input = [late, early];
+
+    const lines = buildVisitLines(input, null);
+
+    expect(lines.map((l) => l.messageId)).toEqual(['early', 'late']);
+    expect(input.map((m) => m.id)).toEqual(['late', 'early']);
+  });
+
   test('quebra de linha vira espaço e mídia sem texto ganha marcador', () => {
     const lines = buildVisitLines([base, { ...base, id: 'm2', text: '' }], null);
     expect(lines[0].text).toBe('Oi, quero Orlando');
