@@ -15,6 +15,7 @@ import { CadencesModule } from '../cadences/cadences.module';
 import { AttendantGreetingModule } from './attendant-greeting/attendant-greeting.module';
 import { OrderFichaModule } from '../order-ficha/order-ficha.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { SimulatedModule } from '../mystery-shopper/simulated/simulated.module';
 import { IdempotencyService } from './pipeline/idempotency.service';
 import { MetaWindowGate } from './pipeline/meta-window-gate.service';
 import { ContactResolverService } from './pipeline/contact-resolver.service';
@@ -88,6 +89,8 @@ import { ContactsRepository } from './contacts/contacts.repository';
     // Aresta one-way (messaging → notifications): NotificationsModule só
     // importa BullModule e não referencia MessagingModule, então sem ciclo.
     NotificationsModule,
+    // Cliente oculto simulado: módulo-folha (só Prisma + fila), sem ciclo.
+    SimulatedModule,
     // Leads do site: o inbound consulta o WebsiteLeadInboundService e o
     // retorno automático usa start-conversation/carteira daqui → ciclo.
     forwardRef(() => WebsiteLeadsModule),

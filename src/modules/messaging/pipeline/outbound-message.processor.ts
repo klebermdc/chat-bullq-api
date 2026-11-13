@@ -9,6 +9,8 @@ import { NormalizedOutboundMessage } from '../../channel-hub/ports/types';
 import { IdempotencyService } from './idempotency.service';
 import { MetaWindowGate } from './meta-window-gate.service';
 import { CadenceRunner } from '../../cadences/cadence-runner.service';
+import { SimulatedRecipients } from '../../mystery-shopper/simulated/simulated-recipients.service';
+import { SimulatedOutboundAdapter } from '../../mystery-shopper/simulated/simulated-outbound.adapter';
 
 interface OutboundJobData {
   messageId: string;
@@ -29,6 +31,8 @@ export class OutboundMessageProcessor extends WorkerHost {
     private readonly windowGate: MetaWindowGate,
     @Inject(forwardRef(() => CadenceRunner))
     private readonly cadenceRunner: CadenceRunner,
+    private readonly simulated: SimulatedRecipients,
+    private readonly simulatedAdapter: SimulatedOutboundAdapter,
   ) {
     super();
   }
@@ -40,7 +44,11 @@ export class OutboundMessageProcessor extends WorkerHost {
       where: { id: channelId },
     });
 
-    const adapter = this.adapterRegistry.getOutbound(channel.type);
+    // Cliente oculto simulado: nada sai para a Meta. Se a detecção falhar o
+    // job falha (retry) — nunca cai no adaptador real por engano.
+    const adapter = (await this.simulated.isSimulated(channel.id, contactExternalId))
+      ? this.simulatedAdapter
+      : this.adapterRegistry.getOutbound(channel.type);
 
     // Backstop de janela: não deixa texto livre sair fora das 24h/72h num
     // canal oficial (a Meta rejeitaria com 131047). Marca a msg e encerra o
