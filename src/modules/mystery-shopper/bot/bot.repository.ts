@@ -63,10 +63,37 @@ export class BotRepository {
     return this.prisma.mysteryShopperBotRun.findUnique({ where: { id: runId }, select: RUN_SELECT });
   }
 
-  async failRun(runId: string, error: string): Promise<void> {
+  async failRun(runId: string, error: string, costUsd = 0): Promise<void> {
     await this.prisma.mysteryShopperBotRun.updateMany({
       where: { id: runId, status: { in: BOT_LIVE_STATUSES } },
-      data: { status: 'FAILED', lastError: error.slice(0, 500), endedAt: new Date() },
+      data: { status: 'FAILED', lastError: error.slice(0, 500), endedAt: new Date(), costUsd: { increment: costUsd } },
+    });
+  }
+
+  findRun(runId: string): Promise<BotRunRow | null> {
+    return this.prisma.mysteryShopperBotRun.findUnique({ where: { id: runId }, select: RUN_SELECT });
+  }
+
+  async findTimezone(organizationId: string): Promise<string | null> {
+    const org = await this.prisma.organization.findUnique({ where: { id: organizationId }, select: { aiTimezone: true } });
+    return org?.aiTimezone ?? null;
+  }
+
+  /** Registra o resultado de um turno; só mexe em execução ainda viva (parar durante o turno vence). */
+  async recordTurn(
+    runId: string,
+    turn: { status: MysteryShopperBotStatus; sent: boolean; followUpAnswered: boolean; costUsd: number },
+  ): Promise<void> {
+    const ended = turn.status === 'ENDED';
+    await this.prisma.mysteryShopperBotRun.updateMany({
+      where: { id: runId, status: { in: BOT_LIVE_STATUSES } },
+      data: {
+        status: turn.status,
+        followUpAnswered: turn.followUpAnswered,
+        clientMessages: turn.sent ? { increment: 1 } : undefined,
+        costUsd: { increment: turn.costUsd },
+        endedAt: ended ? new Date() : undefined,
+      },
     });
   }
 }

@@ -193,8 +193,13 @@ function texts(e: VisitEvaluation): string[] {
   ];
 }
 
+/** Texto simples com cirílico, árabe, japonês, chinês ou coreano. */
+export function hasForeignScriptText(text: string): boolean {
+  return FOREIGN_SCRIPT.test(text);
+}
+
 export function hasForeignScript(e: VisitEvaluation): boolean {
-  return texts(e).some((t) => FOREIGN_SCRIPT.test(t));
+  return texts(e).some(hasForeignScriptText);
 }
 
 export function withoutForeignScript(e: VisitEvaluation): VisitEvaluation {
