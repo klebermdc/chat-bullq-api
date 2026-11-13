@@ -6,6 +6,7 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { CallingGraphClient } from './outreach/calling-graph.client';
 import { LiveKitDialer } from './outreach/livekit-dialer';
 import { PERMISSION_TEXT } from './outreach/outreach.service';
+import { SellerCallRecordService } from './seller-call-record.service';
 
 const OUTBOUND: MessageDirection = 'OUTBOUND';
 const SYSTEM: MessageContentType = 'SYSTEM';
@@ -42,6 +43,7 @@ export class SellerCallsService {
     private readonly graph: CallingGraphClient,
     private readonly dialer: LiveKitDialer,
     private readonly realtime: RealtimeGateway,
+    private readonly records: SellerCallRecordService,
   ) {}
 
   private async load(orgId: string, conversationId: string, viewer: SellerViewer) {
@@ -106,11 +108,22 @@ export class SellerCallsService {
     const permission = await this.graph.getPermission(conv.channel!, conv.contact!.phone!);
     if (!permission.canCall) throw new BadRequestException({ code: 'SEM_PERMISSAO', message: 'O cliente ainda não permitiu ligações' });
     const room = sellerRoom(conv.id);
+    const numero = conv.contact!.phone!.replace(/\D/g, '');
     const access = this.dialer.joinAccess({ room, identity: `vendedor-${viewer.userId}`, name: viewer.name });
-    await this.dialer.dialForSeller({ room, phoneE164: `+${conv.contact!.phone!.replace(/\D/g, '')}`, contactName: conv.contact!.name ?? 'Cliente' });
-    await this.note(conv, `📞 ${viewer.name} ligou para o cliente pelo WhatsApp.`);
-    this.logger.log(`Vendedor ${viewer.userId} ligou na conversa ${conv.id} (sala ${room})`);
-    return { room, ...access };
+    const callId = await this.records.open({ organizationId: orgId, conversation: conv, agentId: viewer.userId, numero });
+    // Transcritor (aviso de gravação + transcrição); se não entrar, a ligação segue sem resumo.
+    await this.dialer
+      .dispatchAgent(room, JSON.stringify({ missao: 'transcrever_vendedor', callId }))
+      .catch((err: Error) => this.logger.warn(`Transcritor não entrou na sala ${room}: ${err.message}`));
+    try {
+      await this.dialer.dialForSeller({ room, phoneE164: `+${numero}`, contactName: conv.contact!.name ?? 'Cliente' });
+    } catch (err) {
+      await this.records.fail(callId).catch(() => undefined);
+      await this.dialer.endRoom(room).catch(() => undefined);
+      throw err;
+    }
+    this.logger.log(`Vendedor ${viewer.userId} ligou na conversa ${conv.id} (sala ${room}, ligação ${callId})`);
+    return { room, callId, ...access };
   }
 
   /** Encerra: só salas desta conversa. */

@@ -55,6 +55,8 @@ const TWIRP_TIMEOUT_MS = 30_000;
 /** A recusa de SDP da Meta chega ~2 s depois do INVITE; passado isso, está chamando. */
 const EARLY_FAILURE_MS = 4_000;
 const RINGING_TIMEOUT_S = 50;
+/** 13/11: 3 de 6 ligações levaram o 403 de SDP na 1ª tentativa. */
+const MAX_DIAL_ATTEMPTS = 3;
 
 export function isSdpRejection(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -139,43 +141,49 @@ export class LiveKitDialer {
     }
   }
 
+  /** Põe o agente de voz na sala com a missão (a Aline, ou o transcritor da ligação do vendedor). */
+  async dispatchAgent(room: string, metadata: string): Promise<void> {
+    if (!this.cfg) throw new Error('LiveKit não configurado (LIVEKIT_URL/API_KEY/API_SECRET/SIP_OUTBOUND_TRUNK_ID)');
+    await this.twirp(
+      'AgentDispatchService',
+      'CreateDispatch',
+      { room, agentName: this.cfg.agentName, metadata },
+      liveKitToken(this.cfg, { video: { roomAdmin: true, room } }),
+    );
+  }
+
   /**
    * Despacha a Aline na sala (com a missão) e liga para o cliente.
    * `phoneE164` no formato +55DDDNUMERO. Devolve a sala usada (muda se precisou
-   * discar de novo: a Aline encerra a sala quando a primeira tentativa cai).
+   * discar de novo: a Aline encerra a sala quando a tentativa cai).
    */
   async dial(input: { room: string; phoneE164: string; missionMetadata: string; contactName: string }): Promise<string> {
     const cfg = this.requireConfig(input.phoneE164);
-    const attempt = async (room: string) => {
-      await this.twirp(
-        'AgentDispatchService',
-        'CreateDispatch',
-        { room, agentName: cfg.agentName, metadata: input.missionMetadata },
-        liveKitToken(cfg, { video: { roomAdmin: true, room } }),
-      );
-      await this.callClient(cfg, room, input.phoneE164, input.contactName);
-      return room;
-    };
-    const room = await this.withSdpRetry(input.room, () => attempt(input.room), () => attempt(`${input.room}-2`));
+    const room = await this.withSdpRetry(input.room, async (attempt) => {
+      const target = attempt === 1 ? input.room : `${input.room}-${attempt}`;
+      await this.dispatchAgent(target, input.missionMetadata);
+      await this.callClient(cfg, target, input.phoneE164, input.contactName);
+      return target;
+    });
     this.logger.log(`Ligação disparada na sala ${room}`);
     return room;
   }
 
-  /** Vendedor liga: só disca para o cliente (sem despachar a Aline). */
+  /** Vendedor liga: só disca para o cliente (o transcritor é despachado à parte). */
   async dialForSeller(input: { room: string; phoneE164: string; contactName: string }): Promise<void> {
     const cfg = this.requireConfig(input.phoneE164);
-    const attempt = () => this.callClient(cfg, input.room, input.phoneE164, input.contactName);
-    await this.withSdpRetry(input.room, attempt, attempt);
+    await this.withSdpRetry(input.room, () => this.callClient(cfg, input.room, input.phoneE164, input.contactName));
   }
 
-  /** A Meta às vezes recusa o SDP antes de tocar (403); uma nova tentativa passa. */
-  private async withSdpRetry<T>(room: string, first: () => Promise<T>, retry: () => Promise<T>): Promise<T> {
-    try {
-      return await first();
-    } catch (err) {
-      if (!isSdpRejection(err)) throw err;
-      this.logger.warn(`Meta recusou o SDP na sala ${room}; discando de novo`);
-      return retry();
+  /** A Meta às vezes recusa o SDP antes de tocar (403); novas tentativas costumam passar. */
+  private async withSdpRetry<T>(room: string, attempt: (n: number) => Promise<T>): Promise<T> {
+    for (let n = 1; ; n++) {
+      try {
+        return await attempt(n);
+      } catch (err) {
+        if (!isSdpRejection(err) || n >= MAX_DIAL_ATTEMPTS) throw err;
+        this.logger.warn(`Meta recusou o SDP na sala ${room} (tentativa ${n}); discando de novo`);
+      }
     }
   }
 

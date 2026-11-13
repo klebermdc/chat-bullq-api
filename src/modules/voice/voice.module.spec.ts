@@ -16,6 +16,8 @@ import { VoiceToolsController } from './voice-tools.controller';
 import { VoiceToolsService } from './voice-tools.service';
 import { SellerCallsController } from './seller-calls.controller';
 import { SellerCallsService } from './seller-calls.service';
+import { SellerCallRecordService } from './seller-call-record.service';
+import { CallInsightService } from '../calls/call-insight.service';
 
 // Garante que o Nest monta a voz (ferramentas + ligação de retorno) sem dependência faltando.
 describe('VoiceModule (injeção)', () => {
@@ -32,6 +34,8 @@ describe('VoiceModule (injeção)', () => {
         OutreachCron,
         OutreachProcessor,
         SellerCallsService,
+        SellerCallRecordService,
+        { provide: CallInsightService, useValue: {} },
         { provide: ConfigService, useValue: { get: () => undefined } },
         { provide: PrismaService, useValue: {} },
         { provide: AgendaService, useValue: {} },

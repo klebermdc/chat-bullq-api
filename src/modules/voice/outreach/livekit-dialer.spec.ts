@@ -121,8 +121,11 @@ describe('recusa de SDP da Meta (403 antes de tocar)', () => {
     expect(calls.map((c) => c.body.roomName)).toEqual(['vendedor-cv1-1', 'vendedor-cv1-1']);
   });
 
-  it('tenta de novo só uma vez e não repete outros erros', async () => {
-    await expect(fakeLiveKit(['sdp403', 'sdp403', 'ok']).dialer.dialForSeller({ room: 'r', phoneE164: '+5511999990000', contactName: 'x' })).rejects.toThrow('SDP');
+  it('tenta até 3 vezes e não repete outros erros', async () => {
+    const terceira = fakeLiveKit(['sdp403', 'sdp403', 'ok']);
+    await terceira.dialer.dialForSeller({ room: 'r', phoneE164: '+5511999990000', contactName: 'x' });
+    expect(terceira.calls).toHaveLength(3);
+    await expect(fakeLiveKit(['sdp403', 'sdp403', 'sdp403', 'ok']).dialer.dialForSeller({ room: 'r', phoneE164: '+5511999990000', contactName: 'x' })).rejects.toThrow('SDP');
     const ocupado = fakeLiveKit(['outro', 'ok']);
     await expect(ocupado.dialer.dialForSeller({ room: 'r', phoneE164: '+5511999990000', contactName: 'x' })).rejects.toThrow('486');
     expect(ocupado.calls).toHaveLength(1);
@@ -131,5 +134,16 @@ describe('recusa de SDP da Meta (403 antes de tocar)', () => {
   it('chamando sem recusa: não espera o cliente atender', async () => {
     const { dialer } = fakeLiveKit(['chamando']);
     await expect(dialer.dial({ room: 'r', phoneE164: '+5511999990000', missionMetadata: '{}', contactName: 'x' })).resolves.toBe('r');
+  });
+});
+
+describe('dispatchAgent', () => {
+  it('despacha o agente com a missão na sala', async () => {
+    const { calls, dialer } = fakeLiveKit([]);
+    await dialer.dispatchAgent('vendedor-cv1-1', '{"missao":"transcrever_vendedor","callId":"c1"}');
+    expect(calls[0]).toEqual({
+      url: 'https://lk.exemplo/twirp/livekit.AgentDispatchService/CreateDispatch',
+      body: { room: 'vendedor-cv1-1', agentName: 'aline-voz', metadata: '{"missao":"transcrever_vendedor","callId":"c1"}' },
+    });
   });
 });

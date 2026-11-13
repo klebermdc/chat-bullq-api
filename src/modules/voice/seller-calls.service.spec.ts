@@ -6,7 +6,7 @@ const RENATA = { userId: 'renata', role: OrgRole.AGENT, name: 'Renata' };
 const PEDRO = { userId: 'pedro', role: OrgRole.AGENT, name: 'Pedro' };
 const ADMIN = { userId: 'adm', role: OrgRole.ADMIN, name: 'Gestão' };
 
-function make(opts: { enabled?: boolean; permission?: any; configured?: boolean; lastInboundAt?: Date | null } = {}) {
+function make(opts: { enabled?: boolean; permission?: any; configured?: boolean; lastInboundAt?: Date | null; dialError?: Error } = {}) {
   const prisma = {
     organization: { findUnique: jest.fn().mockResolvedValue({ settings: { sellerCalls: { enabled: opts.enabled ?? true } } }) },
     conversation: {
@@ -25,12 +25,14 @@ function make(opts: { enabled?: boolean; permission?: any; configured?: boolean;
   } as any;
   const dialer = {
     configured: opts.configured ?? true,
-    dialForSeller: jest.fn().mockResolvedValue(undefined),
+    dialForSeller: opts.dialError ? jest.fn().mockRejectedValue(opts.dialError) : jest.fn().mockResolvedValue(undefined),
+    dispatchAgent: jest.fn().mockResolvedValue(undefined),
     joinAccess: jest.fn().mockReturnValue({ url: 'wss://lk', token: 'tok' }),
     endRoom: jest.fn().mockResolvedValue(undefined),
   } as any;
   const realtime = { emitToChannel: jest.fn(), emitToConversation: jest.fn() } as any;
-  return { svc: new SellerCallsService(prisma, graph, dialer, realtime), prisma, graph, dialer };
+  const records = { open: jest.fn().mockResolvedValue('call1'), fail: jest.fn().mockResolvedValue(undefined) } as any;
+  return { svc: new SellerCallsService(prisma, graph, dialer, realtime, records), prisma, graph, dialer, records };
 }
 
 describe('regras', () => {
@@ -50,12 +52,33 @@ describe('SellerCallsService', () => {
   });
 
   it('com permissão: disca para o cliente e devolve o acesso do vendedor à sala', async () => {
-    const { svc, dialer, prisma } = make();
+    const { svc, dialer } = make();
     const r = await svc.start('org1', 'cv1', RENATA);
     expect(dialer.dialForSeller).toHaveBeenCalledWith(expect.objectContaining({ phoneE164: '+5511999990000', room: expect.stringMatching(/^vendedor-cv1-\d+$/) }));
     expect(dialer.joinAccess).toHaveBeenCalledWith(expect.objectContaining({ identity: 'vendedor-renata', name: 'Renata' }));
-    expect(r).toMatchObject({ url: 'wss://lk', token: 'tok', room: expect.stringMatching(/^vendedor-cv1-/) });
-    expect(prisma.message.create).toHaveBeenCalled();
+    expect(r).toMatchObject({ url: 'wss://lk', token: 'tok', callId: 'call1', room: expect.stringMatching(/^vendedor-cv1-/) });
+  });
+
+  it('abre o registro da ligação e põe o transcritor na sala antes de discar', async () => {
+    const { svc, dialer, records } = make();
+    const r = await svc.start('org1', 'cv1', RENATA);
+    expect(records.open).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org1', agentId: 'renata', numero: '5511999990000' }));
+    expect(dialer.dispatchAgent).toHaveBeenCalledWith(r.room, JSON.stringify({ missao: 'transcrever_vendedor', callId: 'call1' }));
+    expect(dialer.dispatchAgent.mock.invocationCallOrder[0]).toBeLessThan(dialer.dialForSeller.mock.invocationCallOrder[0]);
+  });
+
+  it('transcritor fora do ar não impede a ligação', async () => {
+    const { svc, dialer } = make();
+    dialer.dispatchAgent.mockRejectedValue(new Error('LiveKit fora'));
+    await expect(svc.start('org1', 'cv1', RENATA)).resolves.toMatchObject({ callId: 'call1' });
+    expect(dialer.dialForSeller).toHaveBeenCalled();
+  });
+
+  it('discagem falhou: marca a ligação como falha, fecha a sala e repassa o erro', async () => {
+    const { svc, dialer, records } = make({ dialError: new Error('Meta 403') });
+    await expect(svc.start('org1', 'cv1', RENATA)).rejects.toThrow('Meta 403');
+    expect(records.fail).toHaveBeenCalledWith('call1');
+    expect(dialer.endRoom).toHaveBeenCalled();
   });
 
   it('sem permissão do cliente: não disca', async () => {
