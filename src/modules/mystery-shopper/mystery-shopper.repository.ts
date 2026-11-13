@@ -272,6 +272,7 @@ export class MysteryShopperRepository {
         evaluatedAt: { gte: since },
       },
       select: { sellerUserId: true, totalScore: true, scores: true },
+      orderBy: { evaluatedAt: 'asc' }, // o ranking usa o rótulo da visita mais recente (a última)
     });
     return rows.map((r) => ({
       sellerUserId: r.sellerUserId as string,

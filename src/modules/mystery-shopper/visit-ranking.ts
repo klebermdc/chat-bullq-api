@@ -19,13 +19,17 @@ export interface RankingRow {
 
 const average = (values: number[]) => values.reduce((a, v) => a + v, 0) / values.length;
 
+/**
+ * Agrupa pela chave do critério (o rótulo pode ter sido renomeado) e mostra o rótulo
+ * da visita mais recente. Premissa: `visits` chega em ordem cronológica, a mais nova por último.
+ */
 function criterionAverages(visits: RankingVisit[]): Record<string, number> {
   const rated = visits.flatMap((v) => v.scores).filter((s) => s.score !== null);
-  const labels = [...new Set(rated.map((s) => s.label))];
+  const latestLabel = new Map(rated.map((s) => [s.criterion, s.label]));
   return Object.fromEntries(
-    labels.map((label) => [
+    [...latestLabel].map(([criterion, label]) => [
       label,
-      Math.round(average(rated.filter((s) => s.label === label).map((s) => s.score ?? 0)) * 10) / 10,
+      Math.round(average(rated.filter((s) => s.criterion === criterion).map((s) => s.score ?? 0)) * 10) / 10,
     ]),
   );
 }

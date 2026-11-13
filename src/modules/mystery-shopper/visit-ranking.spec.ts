@@ -21,4 +21,18 @@ describe('buildRanking', () => {
     expect(rows[1].byCriterion).toEqual({ Descoberta: 1.7, Objeção: 0 });
     expect(rows[0].isSmallSample).toBe(true);
   });
+
+  test('critério renomeado vira uma coluna só, com o rótulo da visita mais recente', () => {
+    const renamed = (label: string, value: CriterionScore['score']): CriterionScore => ({ ...score(label, value), criterion: 'ocultoDescoberta' });
+
+    const [row] = buildRanking(
+      [
+        { sellerUserId: 'u1', totalScore: 50, scores: [renamed('Descoberta', 1)] },
+        { sellerUserId: 'u1', totalScore: 100, scores: [renamed('Descoberta de necessidades', 2)] },
+      ],
+      new Map([['u1', 'Pedro']]),
+    );
+
+    expect(row.byCriterion).toEqual({ 'Descoberta de necessidades': 1.5 });
+  });
 });
