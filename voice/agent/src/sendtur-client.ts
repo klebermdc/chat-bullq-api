@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import type { CallTranscriptPayload } from './transcript.js';
 
 /**
  * Cliente das ferramentas de voz da API do Sendtur (/voice/tools/*).
@@ -65,5 +66,11 @@ export class SendturVoiceClient {
     const codigo = String(json?.code ?? json?.message?.code ?? `HTTP_${status}`);
     const mensagem = String(json?.message?.message ?? json?.message ?? 'Não consegui marcar esse horário.');
     return { ok: false, codigo, mensagem };
+  }
+
+  /** Fim da ligação do vendedor: a API grava a transcrição e gera o resumo. */
+  async callTranscript(payload: CallTranscriptPayload): Promise<void> {
+    const { status } = await this.post('/voice/tools/call-transcript', payload as unknown as Record<string, unknown>);
+    if (status !== 200) throw new Error(`call-transcript falhou (${status})`);
   }
 }

@@ -16,6 +16,8 @@ import { SendturVoiceClient } from './sendtur-client.js';
 import { quoteFollowUpTools } from './tools.js';
 import { filterSpeechStream } from './speech-filter.js';
 import { waitUntilAnswered } from './answer-wait.js';
+import { transcriberCallId } from './transcript.js';
+import { runTranscriber } from './transcriber-session.js';
 
 /** Ligação de saída: quanto tempo espera o cliente atender. */
 const ANSWER_TIMEOUT_MS = 60_000;
@@ -47,6 +49,24 @@ export default defineAgent({
     proc.userData.vad = await silero.VAD.load({ minSilenceDuration: config.VAD_MIN_SILENCE_MS });
   },
   entry: async (ctx: JobContext) => {
+    // Ligação de vendedor (pessoa): só aviso de gravação + transcrição, sem a Aline falar.
+    const callId = transcriberCallId(ctx.job.metadata);
+    if (callId) {
+      if (!config.SENDTUR_API_URL || !config.VOICE_SERVICE_SECRET) {
+        log('transcricao_desligada', { sala: ctx.room.name, motivo: 'SENDTUR_API_URL/VOICE_SERVICE_SECRET ausentes' });
+        return;
+      }
+      await runTranscriber({
+        ctx,
+        callId,
+        stt: createStt(config),
+        vad: ctx.proc.userData.vad as silero.VAD,
+        tts: createTts(config),
+        client: new SendturVoiceClient(config.SENDTUR_API_URL, config.VOICE_SERVICE_SECRET),
+        log,
+      });
+      return;
+    }
     const session = new voice.AgentSession({
       vad: ctx.proc.userData.vad as silero.VAD,
       stt: createStt(config),

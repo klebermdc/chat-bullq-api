@@ -38,6 +38,6 @@ import { CALL_INSIGHT_QUEUE } from './call-insight.constants';
     RecordingDownloader,
     CallInsightProcessor,
   ],
-  exports: [SonaxSettingsService],
+  exports: [SonaxSettingsService, CallInsightService],
 })
 export class CallsModule {}
