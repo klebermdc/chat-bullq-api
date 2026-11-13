@@ -5,6 +5,7 @@ import { LOST_REASONS } from '../pipelines/lost-sale.constants';
 import type { ManagerChat } from './manager-bot.config';
 import type { Range } from './manager-bot.rules';
 import type { LostCount } from './reports/closing.report';
+import { REAL_CONVERSATION } from '../../common/mystery-shopper.filters';
 
 type Raw = Record<string, unknown>;
 
@@ -17,20 +18,20 @@ export class ManagerBotRepository {
 
   countEntered(organizationId: string, range: Range): Promise<number> {
     return this.prisma.conversation.count({
-      where: { organizationId, deletedAt: null, createdAt: { gte: range.from, lt: range.to } },
+      where: { organizationId, deletedAt: null, ...REAL_CONVERSATION, createdAt: { gte: range.from, lt: range.to } },
     });
   }
 
   countClosed(organizationId: string, range: Range): Promise<number> {
     return this.prisma.conversation.count({
-      where: { organizationId, deletedAt: null, closedAt: { gte: range.from, lt: range.to } },
+      where: { organizationId, deletedAt: null, ...REAL_CONVERSATION, closedAt: { gte: range.from, lt: range.to } },
     });
   }
 
   async lostByReason(organizationId: string, range: Range): Promise<LostCount[]> {
     const groups = await this.prisma.conversation.groupBy({
       by: ['lostReason'],
-      where: { organizationId, deletedAt: null, lostAt: { gte: range.from, lt: range.to } },
+      where: { organizationId, deletedAt: null, ...REAL_CONVERSATION, lostAt: { gte: range.from, lt: range.to } },
       _count: { _all: true },
     });
     return groups.map((g) => ({
@@ -42,7 +43,7 @@ export class ManagerBotRepository {
   async lostByAgent(organizationId: string, range: Range): Promise<Array<{ vendedor: string; count: number }>> {
     const groups = await this.prisma.conversation.groupBy({
       by: ['lostById'],
-      where: { organizationId, deletedAt: null, lostAt: { gte: range.from, lt: range.to } },
+      where: { organizationId, deletedAt: null, ...REAL_CONVERSATION, lostAt: { gte: range.from, lt: range.to } },
       _count: { _all: true },
     });
     const ids = groups.flatMap((g) => (g.lostById ? [g.lostById] : []));

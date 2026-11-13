@@ -15,6 +15,7 @@ import type {
   DiaryPoint,
   DiaryStatus,
 } from './diary.types';
+import { REAL_CONVERSATION } from '../../common/mystery-shopper.filters';
 
 const LIST_LIMIT = 60;
 export const UNKNOWN_CONTACT = 'Cliente';
@@ -168,7 +169,7 @@ export class DiaryRepository {
       where: {
         ...CONVERSATIONAL,
         createdAt,
-        conversation: { organizationId },
+        conversation: { organizationId, ...REAL_CONVERSATION },
         OR: [{ senderId: userId }, { conversation: { assignedToId: userId } }],
       },
       select: { conversationId: true },

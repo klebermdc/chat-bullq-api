@@ -25,12 +25,15 @@ describe('DiaryRepository', () => {
     expect(messages).toHaveLength(1);
   });
 
-  test('só busca conversas da própria organização', async () => {
+  test('só busca conversas da própria organização e deixa o cliente oculto de fora', async () => {
     const { repository, findMany } = setup();
 
     await repository.findDayMessages('org', 'u1', RANGE);
 
-    expect(findMany.mock.calls[0][0].where.conversation).toEqual({ organizationId: 'org' });
+    expect(findMany.mock.calls[0][0].where.conversation).toEqual({
+      organizationId: 'org',
+      contact: { isMysteryShopper: false },
+    });
   });
 
   test('contexto anterior também ignora ligação e reação', async () => {

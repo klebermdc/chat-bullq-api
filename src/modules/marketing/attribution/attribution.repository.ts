@@ -57,6 +57,7 @@ export class AttributionRepository {
       where: {
         organizationId,
         deletedAt: null,
+        isMysteryShopper: false,
         // Período pelo CLIQUE no anúncio, não pela criação do contato: cliente
         // antigo que volta por um anúncio conta para ele.
         ctwaClidAt: { gte: from, lte: to },
@@ -126,6 +127,7 @@ export class AttributionRepository {
         where: {
           organizationId,
           deletedAt: null,
+          isMysteryShopper: false,
           ctwaClidAt: { gte: from, lte: to },
           ctwaSourceType: CTWA_SOURCE_TYPE_AD,
           ctwaSourceId: { not: null },
