@@ -55,9 +55,16 @@ export class MysteryShopperProcessor extends WorkerHost implements OnModuleInit 
 
   /** Fora do horário o mesmo job volta a ser atrasado (mantém o jobId, então o debounce continua valendo). */
   private async processBotTurn(job: Job, token?: string): Promise<unknown> {
-    const outcome = await this.botTurn.run((job.data as { runId: string }).runId);
-    if (outcome.kind !== 'DELAYED') return outcome.kind;
-    await job.moveToDelayed(Date.now() + outcome.delayMs, token);
+    const runId = (job.data as { runId: string }).runId;
+    try {
+      const outcome = await this.botTurn.run(runId);
+      if (outcome.kind !== 'DELAYED') return outcome.kind;
+      await job.moveToDelayed(Date.now() + outcome.delayMs, token);
+    } catch (err) {
+      // Qualquer falha (menos o atraso) encerra a execução: ela não pode ficar ACTIVE sem job.
+      await this.botTurn.markFailed(runId, (err as Error).message).catch(() => undefined);
+      throw err;
+    }
     throw new DelayedError();
   }
 

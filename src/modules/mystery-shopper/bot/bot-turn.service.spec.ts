@@ -3,11 +3,12 @@ import { BotTurnService } from './bot-turn.service';
 const NOW = new Date('2026-11-13T15:00:00Z'); // 12:00 em São Paulo
 const NIGHT = new Date('2026-11-13T04:00:00Z'); // 01:00 em São Paulo
 const NUMBER = { id: 'n1', isSimulated: true, contactId: 'k1', contact: { phone: '5525912345678' }, channel: { id: 'ch1', type: 'WHATSAPP_OFFICIAL' } };
-const RUN = { id: 'r1', organizationId: 'org', numberId: 'n1', persona: 'Maria quer Orlando', status: 'ACTIVE', clientMessages: 2, followUpAnswered: false, lastError: null };
+const RUN_AT = new Date('2026-11-13T10:00:00Z');
+const RUN = { createdAt: RUN_AT, id: 'r1', organizationId: 'org', numberId: 'n1', persona: 'Maria quer Orlando', status: 'ACTIVE', clientMessages: 2, followUpAnswered: false, lastError: null };
 const CONVERSATION = {
   messages: [
-    { id: 'm1', from: 'CLIENTE', text: 'Olá! Vi esse anúncio e quero solicitar uma cotação.' },
-    { id: 'm2', from: 'EMPRESA', text: 'Oi Maria! Quantas pessoas vão viajar?' },
+    { id: 'm1', createdAt: new Date('2026-11-13T10:00:01Z'), from: 'CLIENTE', text: 'Olá! Vi esse anúncio e quero solicitar uma cotação.' },
+    { id: 'm2', createdAt: new Date('2026-11-13T10:05:00Z'), from: 'EMPRESA', text: 'Oi Maria! Quantas pessoas vão viajar?' },
   ],
 };
 const answer = (obj: unknown) => ({ message: { content: typeof obj === 'string' ? obj : JSON.stringify(obj) }, usage: { costUsd: 0.01 } });
@@ -17,6 +18,7 @@ function build(over: { run?: unknown; conversation?: unknown; simulated?: boolea
     findRun: jest.fn().mockResolvedValue('run' in over ? over.run : RUN),
     findTimezone: jest.fn().mockResolvedValue('America/Sao_Paulo'),
     recordTurn: jest.fn().mockResolvedValue(undefined),
+    addCost: jest.fn().mockResolvedValue(undefined),
     failRun: jest.fn().mockResolvedValue(undefined),
   };
   const numbers = { findNumberForSimulator: jest.fn().mockResolvedValue('number' in over ? over.number : NUMBER) };
@@ -132,16 +134,46 @@ describe('BotTurnService.run', () => {
   });
 
   it('se a última mensagem já é do cliente (nada novo da equipe) = SKIPPED', async () => {
-    const { service, llm } = build({ conversation: { messages: [...CONVERSATION.messages, { id: 'm3', from: 'CLIENTE', text: 'somos em 4' }] } });
+    const { service, llm } = build({ conversation: { messages: [...CONVERSATION.messages, { id: 'm3', createdAt: new Date('2026-11-13T10:06:00Z'), from: 'CLIENTE', text: 'somos em 4' }] } });
     await expect(service.run('r1', NOW)).resolves.toEqual({ kind: 'SKIPPED' });
     expect(llm.complete).not.toHaveBeenCalled();
   });
 
-  it('parado durante a chamada da IA: não envia', async () => {
+  it('parado durante a chamada da IA: não envia, mas o custo é registrado', async () => {
     const { service, repo, simulator } = build();
     repo.findRun.mockResolvedValueOnce(RUN).mockResolvedValueOnce({ ...RUN, status: 'STOPPED' });
     await expect(service.run('r1', NOW)).resolves.toEqual({ kind: 'SKIPPED' });
     expect(simulator.sendMessage).not.toHaveBeenCalled();
+    expect(repo.addCost).toHaveBeenCalledWith('r1', 0.01);
+  });
+
+  it('execução nova só alimenta a IA com mensagens criadas a partir dela', async () => {
+    const old = { id: 'old', createdAt: new Date('2026-11-12T09:00:00Z'), from: 'EMPRESA', text: 'conversa antiga do outro teste' };
+    const { service, llm } = build({ conversation: { messages: [old, ...CONVERSATION.messages] } });
+    await service.run('r1', NOW);
+    const user = llm.complete.mock.calls[0][0].messages[1].content as string;
+    expect(user).not.toContain('conversa antiga');
+    expect(user).toContain('Quantas pessoas vão viajar?');
+  });
+
+  it('só histórico antigo (nada desta execução) = SKIPPED sem IA', async () => {
+    const old = { id: 'old', createdAt: new Date('2026-11-12T09:00:00Z'), from: 'EMPRESA', text: 'antiga' };
+    const { service, llm } = build({ conversation: { messages: [old] } });
+    await expect(service.run('r1', NOW)).resolves.toEqual({ kind: 'SKIPPED' });
+    expect(llm.complete).not.toHaveBeenCalled();
+  });
+
+  it('erro depois da IA (ex.: envio) marca FAILED com o custo e repassa o erro', async () => {
+    const { service, repo, simulator } = build();
+    simulator.sendMessage.mockRejectedValue(new Error('fila fora'));
+    await expect(service.run('r1', NOW)).rejects.toThrow('fila fora');
+    expect(repo.failRun).toHaveBeenCalledWith('r1', 'fila fora', 0.01);
+  });
+
+  it('markFailed registra a falha sem custo', async () => {
+    const { service, repo } = build();
+    await service.markFailed('r1', 'boom');
+    expect(repo.failRun).toHaveBeenCalledWith('r1', 'boom', 0);
   });
 
   it('contato que não é simulado: FAILED e nada enviado', async () => {
@@ -159,7 +191,7 @@ describe('BotTurnService.run', () => {
   });
 
   it('envia só as últimas 60 mensagens para a IA', async () => {
-    const many = Array.from({ length: 100 }, (_, i) => ({ id: `m${i}`, from: i % 2 ? 'EMPRESA' : 'CLIENTE', text: `msg-${i}` }));
+    const many = Array.from({ length: 100 }, (_, i) => ({ id: `m${i}`, createdAt: new Date('2026-11-13T10:10:00Z'), from: i % 2 ? 'EMPRESA' : 'CLIENTE', text: `msg-${i}` }));
     const { service, llm } = build({ conversation: { messages: many } });
     await service.run('r1', NOW);
     const user = llm.complete.mock.calls[0][0].messages[1].content as string;
@@ -169,13 +201,13 @@ describe('BotTurnService.run', () => {
   });
 
   describe('mensagem da equipe durante o turno', () => {
-    const NEW_TEAM = { id: 'm3', from: 'EMPRESA', text: 'Posso mandar a cotação?' };
+    const NEW_TEAM = { createdAt: new Date('2026-11-13T10:07:00Z'), id: 'm3', from: 'EMPRESA', text: 'Posso mandar a cotação?' };
 
     it('agenda novo turno (mesmo job, 40–90 s) se a equipe escreveu durante a chamada da IA', async () => {
       const { service, simulator } = build();
       simulator.getConversation
         .mockResolvedValueOnce(CONVERSATION)
-        .mockResolvedValueOnce({ messages: [...CONVERSATION.messages, { id: 'm-bot', from: 'CLIENTE', text: 'somos em 4' }, NEW_TEAM] });
+        .mockResolvedValueOnce({ messages: [...CONVERSATION.messages, { id: 'm-bot', createdAt: new Date('2026-11-13T10:06:00Z'), from: 'CLIENTE', text: 'somos em 4' }, NEW_TEAM] });
       const outcome = await service.run('r1', NOW);
       expect(simulator.sendMessage).toHaveBeenCalledTimes(1);
       expect(outcome.kind).toBe('DELAYED');
@@ -197,7 +229,7 @@ describe('BotTurnService.run', () => {
       const { service, simulator } = build();
       simulator.getConversation
         .mockResolvedValueOnce(CONVERSATION)
-        .mockResolvedValueOnce({ messages: [...CONVERSATION.messages, { id: 'm-bot', from: 'CLIENTE', text: 'somos em 4' }] });
+        .mockResolvedValueOnce({ messages: [...CONVERSATION.messages, { id: 'm-bot', createdAt: new Date('2026-11-13T10:06:00Z'), from: 'CLIENTE', text: 'somos em 4' }] });
       await expect(service.run('r1', NOW)).resolves.toEqual({ kind: 'SENT' });
     });
 

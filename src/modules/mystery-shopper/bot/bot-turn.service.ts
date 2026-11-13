@@ -67,21 +67,36 @@ export class BotTurnService {
     if (!(await this.recipients.isSimulatedContact(number.contactId))) return this.fail(run, NOT_SIMULATED_ERROR, 0);
 
     const conversation = await this.simulator.getConversation(run.organizationId, run.numberId);
-    const lines = conversation.messages.slice(-BOT_HISTORY_LIMIT).map((m): BotLine => ({ from: m.from, text: m.text }));
+    // Execução nova não herda a conversa de testes anteriores no mesmo número.
+    const own = conversation.messages.filter((m) => m.createdAt >= run.createdAt);
+    const lines = own.slice(-BOT_HISTORY_LIMIT).map((m): BotLine => ({ from: m.from, text: m.text }));
     // Nada novo da equipe desde a última fala do cliente: não responde duas vezes.
     if (lines.length === 0 || lines[lines.length - 1].from !== 'EMPRESA') return { kind: 'SKIPPED' };
 
     const forceEnd = run.status === 'ACTIVE' && run.clientMessages >= BOT_MAX_CLIENT_MESSAGES;
     const prompt = buildBotPrompt({ persona: run.persona, status: run.status, clientMessages: run.clientMessages, forceEnd, lines });
     const { reply, costUsd } = await this.ask(run.organizationId, prompt);
+
+    // Parar durante a chamada da IA vence (o custo já foi gasto e fica registrado).
+    if (!isLive(await this.repository.findRun(runId))) {
+      await this.repository.addCost(runId, costUsd);
+      return { kind: 'SKIPPED' };
+    }
     if (!reply) return this.fail(run, UNREADABLE_ERROR, costUsd);
 
-    // Parar durante a chamada da IA vence.
-    if (!isLive(await this.repository.findRun(runId))) return { kind: 'SKIPPED' };
+    const snapshotLastId = own[own.length - 1].id;
+    try {
+      const outcome = await this.apply(run, reply, forceEnd, costUsd);
+      return (await this.followUpIfTeamWrote(run, snapshotLastId)) ?? outcome;
+    } catch (err) {
+      await this.repository.failRun(runId, (err as Error).message, costUsd);
+      throw err;
+    }
+  }
 
-    const snapshotLastId = conversation.messages[conversation.messages.length - 1].id;
-    const outcome = await this.apply(run, reply, forceEnd, costUsd);
-    return (await this.followUpIfTeamWrote(run, snapshotLastId)) ?? outcome;
+  /** Rede de segurança do processor: a execução nunca fica ACTIVE sem job. */
+  async markFailed(runId: string, error: string): Promise<void> {
+    await this.repository.failRun(runId, error, 0);
   }
 
   /**

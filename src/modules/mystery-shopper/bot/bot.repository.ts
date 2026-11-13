@@ -13,6 +13,7 @@ const RUN_SELECT = {
   clientMessages: true,
   followUpAnswered: true,
   lastError: true,
+  createdAt: true,
 } as const;
 
 export interface BotRunRow {
@@ -24,6 +25,7 @@ export interface BotRunRow {
   clientMessages: number;
   followUpAnswered: boolean;
   lastError: string | null;
+  createdAt: Date;
 }
 
 @Injectable()
@@ -86,6 +88,11 @@ export class BotRepository {
       where: { id: runId, status: { in: BOT_LIVE_STATUSES } },
       data: { status: 'FAILED', lastError: error.slice(0, 500), endedAt: new Date(), costUsd: { increment: costUsd } },
     });
+  }
+
+  /** Só soma custo (sem filtro de status): a IA foi paga mesmo que a execução tenha sido parada. */
+  async addCost(runId: string, costUsd: number): Promise<void> {
+    await this.prisma.mysteryShopperBotRun.update({ where: { id: runId }, data: { costUsd: { increment: costUsd } } });
   }
 
   findRun(runId: string): Promise<BotRunRow | null> {
