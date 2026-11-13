@@ -50,9 +50,19 @@ async function playNotice(ctx: JobContext, voice: tts.TTS): Promise<void> {
 /** Transcreve uma trilha de áudio até ela acabar; devolve quando o STT esvaziar. */
 function transcribeTrack(track: RemoteTrack, quem: ReturnType<typeof speakerOf>, deps: TranscriberDeps, collector: TranscriptCollector) {
   const recognizer = new stt.StreamAdapter(deps.stt, deps.vad).stream();
-  const pump = (async () => {
-    for await (const frame of new AudioStream(track)) recognizer.pushFrame(frame);
+  // A trilha pode acabar sozinha (cliente desligou) e o fim da ligação fechar de novo: fecha uma vez só.
+  let inputClosed = false;
+  const closeInput = () => {
+    if (inputClosed) return;
+    inputClosed = true;
     recognizer.endInput();
+  };
+  const pump = (async () => {
+    for await (const frame of new AudioStream(track)) {
+      if (inputClosed) break;
+      recognizer.pushFrame(frame);
+    }
+    closeInput();
   })().catch((err) => deps.log('erro_transcricao', { quem, erro: (err as Error).message }));
   const read = (async () => {
     for await (const ev of recognizer) {
@@ -61,7 +71,7 @@ function transcribeTrack(track: RemoteTrack, quem: ReturnType<typeof speakerOf>,
     }
   })().catch((err) => deps.log('erro_transcricao', { quem, erro: (err as Error).message }));
   return {
-    stop: () => recognizer.endInput(),
+    stop: closeInput,
     done: Promise.all([pump, read]),
   };
 }
@@ -75,7 +85,13 @@ export async function runTranscriber(deps: TranscriberDeps): Promise<void> {
   const finish = async () => {
     if (finished) return;
     finished = true;
-    tracks.forEach((t) => t.stop());
+    tracks.forEach((t) => {
+      try {
+        t.stop();
+      } catch (err) {
+        log('erro_transcricao', { callId, erro: (err as Error).message });
+      }
+    });
     await Promise.race([Promise.all(tracks.map((t) => t.done)), new Promise((r) => setTimeout(r, FLUSH_TIMEOUT_MS))]);
     const payload = collector.payload(callId, Date.now());
     log('transcricao_fim', { sala: ctx.room.name, callId, atendeu: payload.answered, falas: payload.segments.length, segundos: payload.durationSec });
