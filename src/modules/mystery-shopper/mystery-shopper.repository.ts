@@ -119,6 +119,15 @@ export class MysteryShopperRepository {
     return rows.map((r) => r.id);
   }
 
+  /** Visitas em EVALUATING sem andar desde `before` (job perdido ou removido). */
+  async findStuckEvaluatingIds(before: Date): Promise<string[]> {
+    const rows = await this.prisma.mysteryShopperVisit.findMany({
+      where: { status: 'EVALUATING', updatedAt: { lt: before } },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
+  }
+
   /** Troca para EVALUATING só se ainda estiver num dos status esperados. */
   async markEvaluating(input: {
     id: string;

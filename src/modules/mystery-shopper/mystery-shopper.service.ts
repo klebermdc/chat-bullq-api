@@ -8,6 +8,7 @@ import {
   FOLLOW_UP_WINDOW_HOURS,
   MYSTERY_SHOPPER_QUEUE,
   RANKING_DAYS,
+  STUCK_EVALUATING_MINUTES,
   evaluateJobOptions,
 } from './mystery-shopper.constants';
 import { MysteryShopperRepository, type NumberRow, type VisitRow } from './mystery-shopper.repository';
@@ -16,6 +17,7 @@ import { buildRanking, type RankingRow } from './visit-ranking';
 import { buildVisitLines } from './visit-transcript';
 
 const HOUR_MS = 3_600_000;
+const MINUTE_MS = 60_000;
 const DAY_MS = 24 * HOUR_MS;
 const RE_EVALUABLE: MysteryShopperVisitStatus[] = ['OPEN', 'DONE', 'FAILED'];
 
@@ -50,23 +52,52 @@ export class MysteryShopperService {
     @InjectQueue(MYSTERY_SHOPPER_QUEUE) private readonly queue: Queue,
   ) {}
 
-  async sweep(now: Date = new Date()): Promise<{ opened: number; queued: number }> {
-    let opened = 0;
-    for (const number of await this.repository.findActiveNumbers()) {
-      for (const conversationId of await this.repository.findConversationsWithoutVisit(number)) {
-        if (await this.repository.createVisit(number, conversationId)) opened += 1;
-      }
-    }
+  async sweep(now: Date = new Date()): Promise<{ opened: number; queued: number; requeued: number }> {
+    const opened = await this.openNewVisits();
     const cutoff = new Date(now.getTime() - FOLLOW_UP_WINDOW_HOURS * HOUR_MS);
     let queued = 0;
     for (const id of await this.repository.findDueOpenVisitIds(cutoff)) {
-      if (await this.repository.markEvaluating({ id, from: ['OPEN'], closedAt: now })) {
-        await this.enqueue(id);
-        queued += 1;
+      try {
+        if (await this.repository.markEvaluating({ id, from: ['OPEN'], closedAt: now })) {
+          await this.enqueue(id);
+          queued += 1;
+        }
+      } catch (err) {
+        this.logSweepFailure(`visit=${id}`, err);
       }
     }
-    if (opened || queued) this.logger.log(`mystery_sweep opened=${opened} queued=${queued}`);
-    return { opened, queued };
+    const stuckBefore = new Date(now.getTime() - STUCK_EVALUATING_MINUTES * MINUTE_MS);
+    let requeued = 0;
+    for (const id of await this.repository.findStuckEvaluatingIds(stuckBefore)) {
+      try {
+        await this.enqueue(id);
+        requeued += 1;
+      } catch (err) {
+        this.logSweepFailure(`visit=${id}`, err);
+      }
+    }
+    if (opened || queued || requeued) {
+      this.logger.log(`mystery_sweep opened=${opened} queued=${queued} requeued=${requeued}`);
+    }
+    return { opened, queued, requeued };
+  }
+
+  private async openNewVisits(): Promise<number> {
+    let opened = 0;
+    for (const number of await this.repository.findActiveNumbers()) {
+      try {
+        for (const conversationId of await this.repository.findConversationsWithoutVisit(number)) {
+          if (await this.repository.createVisit(number, conversationId)) opened += 1;
+        }
+      } catch (err) {
+        this.logSweepFailure(`number=${number.id}`, err);
+      }
+    }
+    return opened;
+  }
+
+  private logSweepFailure(item: string, err: unknown) {
+    this.logger.warn(`mystery_sweep_item_failed ${item}: ${(err as Error).message}`);
   }
 
   async requestEvaluation(organizationId: string, id: string, now: Date = new Date()): Promise<{ queued: true }> {
@@ -82,6 +113,8 @@ export class MysteryShopperService {
       closedAt: visit.closedAt ?? now,
     });
     if (!changed) throw new BadRequestException('A visita mudou de estado. Atualize a página.');
+    // Se o enqueue falhar, o erro sobe de propósito: a visita fica em EVALUATING e a varredura
+    // a reenfileira depois de STUCK_EVALUATING_MINUTES.
     await this.enqueue(id);
     return { queued: true };
   }

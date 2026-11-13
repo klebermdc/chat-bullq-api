@@ -25,6 +25,15 @@ describe('MysteryShopperRepository', () => {
     });
   });
 
+  test('visitas paradas: EVALUATING com updatedAt antes do limite', async () => {
+    const findMany = jest.fn().mockResolvedValue([{ id: 'v1' }]);
+    const repository = new MysteryShopperRepository({ mysteryShopperVisit: { findMany } } as never);
+    const before = new Date('2026-11-16T11:30:00Z');
+
+    expect(await repository.findStuckEvaluatingIds(before)).toEqual(['v1']);
+    expect(findMany.mock.calls[0][0].where).toEqual({ status: 'EVALUATING', updatedAt: { lt: before } });
+  });
+
   test('cadastro reaproveita o contato pelo telefone (com e sem o 9) e marca sem nome', async () => {
     const tx = {
       contact: {

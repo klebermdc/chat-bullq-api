@@ -40,7 +40,14 @@ export const VISIT_LIST_LIMIT = 200;
 
 export const NON_CONVERSATIONAL_TYPES = ['REACTION', 'SYSTEM'] as const;
 
-/** Mesmo id por visita: dois cliques não pagam a IA duas vezes. */
+/** Visita em EVALUATING há mais que isso sem andar = job perdido; a varredura reenfileira. */
+export const STUCK_EVALUATING_MINUTES = 30;
+
+/**
+ * jobId único por tentativa: um id fixo faria o BullMQ descartar em silêncio um pedido feito
+ * enquanto o job anterior ainda está ativo. Pagar a IA duas vezes é evitado pela troca condicional
+ * para EVALUATING e pelo SKIPPED do avaliador quando a visita não está mais EVALUATING.
+ */
 export function evaluateJobOptions(visitId: string) {
-  return { jobId: `mystery-eval-${visitId}`, removeOnComplete: true, removeOnFail: true };
+  return { jobId: `mystery-eval-${visitId}-${Date.now()}`, removeOnComplete: true, removeOnFail: true };
 }
