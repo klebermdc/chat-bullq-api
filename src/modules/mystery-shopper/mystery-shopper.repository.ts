@@ -211,7 +211,13 @@ export class MysteryShopperRepository {
     return new Map(users.map((u) => [u.id, u.name]));
   }
 
+  /**
+   * O custo acumula entre avaliações. `increment` não serve: em coluna Decimal nula o SQL
+   * devolve NULL (NULL + n). Só um job roda por visita (gate EVALUATING), então ler e somar é seguro.
+   */
   async saveEvaluation(id: string, result: EvaluationResult): Promise<void> {
+    const previous = await this.prisma.mysteryShopperVisit.findUnique({ where: { id }, select: { costUsd: true } });
+    const costUsd = new Prisma.Decimal(previous?.costUsd ?? 0).plus(result.costUsd);
     await this.prisma.mysteryShopperVisit.update({
       where: { id },
       data: {
@@ -221,7 +227,7 @@ export class MysteryShopperRepository {
         scores: json(result.scores),
         totalScore: result.totalScore,
         summary: json(result.summary),
-        costUsd: result.costUsd,
+        costUsd,
         evaluatedAt: new Date(),
         error: null,
       },

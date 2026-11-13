@@ -34,6 +34,29 @@ describe('MysteryShopperRepository', () => {
     expect(findMany.mock.calls[0][0].where).toEqual({ status: 'EVALUATING', updatedAt: { lt: before } });
   });
 
+  test.each([
+    ['sem custo anterior', null, '0.02'],
+    ['soma ao custo anterior', new Prisma.Decimal('0.0123'), '0.0323'],
+  ])('salvar avaliação: %s', async (_name, previous, expected) => {
+    const findUnique = jest.fn().mockResolvedValue({ costUsd: previous });
+    const update = jest.fn().mockResolvedValue({});
+    const repository = new MysteryShopperRepository({ mysteryShopperVisit: { findUnique, update } } as never);
+
+    await repository.saveEvaluation('v1', {
+      sellerUserId: 'u1',
+      sellerName: 'Pedro',
+      metrics: {},
+      scores: [],
+      totalScore: 80,
+      summary: {},
+      costUsd: 0.02,
+    } as never);
+
+    const data = update.mock.calls[0][0].data;
+    expect(data.status).toBe('DONE');
+    expect(data.costUsd.toString()).toBe(expected);
+  });
+
   test('cadastro reaproveita o contato pelo telefone (com e sem o 9) e marca sem nome', async () => {
     const tx = {
       contact: {
