@@ -50,6 +50,10 @@ const schema = z.object({
   /** Campos extras no JSON do pedido ao LLM (ex.: {"output_config":{"effort":"low"}} no Claude). */
   LLM_EXTRA_BODY: jsonObject,
 
+  /** API do Sendtur para as ferramentas da ligação (agenda). Sem os dois, a Aline não marca no sistema. */
+  SENDTUR_API_URL: z.string().url().optional(),
+  VOICE_SERVICE_SECRET: z.string().min(16).optional(),
+
   /** Silêncio (ms) que o VAD espera para considerar que a pessoa parou de falar (mín. 250). */
   VAD_MIN_SILENCE_MS: z.coerce.number().int().min(250).max(2000).default(400),
   /** Espera mínima (ms) antes de responder depois do fim da fala (padrão do LiveKit: 500). */

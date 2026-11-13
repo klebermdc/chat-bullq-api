@@ -12,6 +12,8 @@ import { loadConfig } from './config.js';
 import { LatencyTracker } from './latency.js';
 import { missionFromMetadata } from './missions.js';
 import { createLlm, createStt, createTts } from './providers.js';
+import { SendturVoiceClient } from './sendtur-client.js';
+import { quoteFollowUpTools } from './tools.js';
 import { filterSpeechStream } from './speech-filter.js';
 
 const config = loadConfig();
@@ -69,7 +71,13 @@ export default defineAgent({
     ctx.addShutdownCallback(async () => log('latencia_resumo', { sala: ctx.room.name, ...latency.summary() }));
 
     const mission = missionFromMetadata(ctx.job.metadata);
-    await session.start({ agent: new AlineAgent({ instructions: mission.prompt }), room: ctx.room });
+    const client =
+      config.SENDTUR_API_URL && config.VOICE_SERVICE_SECRET
+        ? new SendturVoiceClient(config.SENDTUR_API_URL, config.VOICE_SERVICE_SECRET)
+        : null;
+    const tools = client && mission.conversationId ? quoteFollowUpTools(client, mission.conversationId) : undefined;
+    log('missao', { sala: ctx.room.name, comFerramentas: !!tools });
+    await session.start({ agent: new AlineAgent({ instructions: mission.prompt, tools }), room: ctx.room });
     await ctx.connect();
     // Saudação fixa (sem LLM): sai na hora e garante o aviso de gravação.
     // O MiniMax recusa conversa sem fala do cliente ("chat content is empty").

@@ -11,6 +11,22 @@ describe('missionFromMetadata', () => {
     expect(m.prompt).toContain('NÃO fala de preço');
   });
 
+  test('com conversationId válido, liga as ferramentas de agenda no prompt', () => {
+    const m = missionFromMetadata(
+      JSON.stringify({ missao: 'retorno_cotacao', cliente: 'Kleber', vendedor: 'Renata', conversationId: 'cmwe1qgjd09e1qr07uobi80vm' }),
+    );
+    expect(m.conversationId).toBe('cmwe1qgjd09e1qr07uobi80vm');
+    expect(m.prompt).toContain('horarios_livres');
+    expect(m.prompt).toContain('agendar_retorno');
+    expect(m.prompt).not.toContain('NÃO tem acesso ao sistema');
+  });
+
+  test('conversationId inválido é ignorado (sem ferramentas)', () => {
+    const m = missionFromMetadata(JSON.stringify({ missao: 'retorno_cotacao', cliente: 'Kleber', vendedor: 'Renata', conversationId: '../x' }));
+    expect(m.conversationId).toBeUndefined();
+    expect(m.prompt).toContain('NÃO tem acesso ao sistema');
+  });
+
   test('sem metadata, JSON inválido ou missão desconhecida: atendimento padrão', () => {
     expect(missionFromMetadata(undefined)).toBe(DEFAULT_MISSION);
     expect(missionFromMetadata('{quebrado')).toBe(DEFAULT_MISSION);
