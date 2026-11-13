@@ -34,16 +34,14 @@ function billableCount(report: CostsReport): number {
   return report.channels.reduce((sum, ch) => sum + ch.totals.billable, 0);
 }
 
-function failedChannels(report: CostsReport): string[] {
-  return report.channels.filter((c) => c.status === 'error').map((c) => escapeHtml(c.channelName));
-}
-
-/** Uma linha para a abertura: custo de ontem e acumulado do mês. */
+/**
+ * Uma linha para a abertura: custo de ontem e acumulado do mês. Canal sem
+ * acesso à Meta não entra aqui (contas antigas fariam ruído todo dia); aparece
+ * no /custos e na tela.
+ */
 export function buildCostOpeningLines(yesterday: CostsReport, month: CostsReport): string[] {
-  const failed = failedChannels(month);
   return [
     `<b>WhatsApp ontem:</b> ${costByCurrency(yesterday)} (${fmtInt(billableCount(yesterday))} cobradas) · <b>no mês:</b> ${costByCurrency(month)}`,
-    ...(failed.length ? [`⚠️ Sem custo da Meta para: ${failed.join(', ')}`] : []),
   ];
 }
 

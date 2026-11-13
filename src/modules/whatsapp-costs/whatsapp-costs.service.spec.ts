@@ -53,6 +53,18 @@ describe('WhatsappCostsService', () => {
     expect(s.meta.fetchDaily).toHaveBeenCalledTimes(2); // 2 canais com conta; a 2ª leitura vem do cache
   });
 
+  it('erro da Meta fica em cache por 1h', async () => {
+    const meta = jest.fn(async () => {
+      throw new Error('Meta 401');
+    });
+    const s = setup(meta);
+    await s.service.getCosts('org', NOW, '2026-11-12', '2026-11-12');
+    await s.service.getCosts('org', new Date(NOW.getTime() + 30 * 60_000), '2026-11-12', '2026-11-12');
+    expect(meta).toHaveBeenCalledTimes(2);
+    await s.service.getCosts('org', new Date(NOW.getTime() + 61 * 60_000), '2026-11-12', '2026-11-12');
+    expect(meta).toHaveBeenCalledTimes(4);
+  });
+
   it('detalhe usa o preço médio da Meta no período', async () => {
     const detail = await setup().service.getBreakdown('org', 'novo', NOW, '2026-11-12', '2026-11-13');
     expect(detail.unitPrices).toEqual({ SERVICE: 0.035 });
