@@ -61,6 +61,28 @@ describe('parseVisitEvaluation', () => {
     expect(parseVisitEvaluation(fake, criteria, lines)?.scores[0].evidence).toBe('');
   });
 
+  test('critério ausente na resposta = null (não infla a nota)', () => {
+    const missing = JSON.parse(answer);
+    missing.notas = missing.notas.filter((n: { criterio: string }) => n.criterio !== 'ocultoDescoberta');
+    expect(parseVisitEvaluation(JSON.stringify(missing), criteria, lines)).toBeNull();
+  });
+
+  test('nota em string numérica é aceita', () => {
+    const asString = answer.replace('"nota":2', '"nota":"2"');
+    expect(parseVisitEvaluation(asString, criteria, lines)?.scores[0].score).toBe(2);
+  });
+
+  test('null fora da objeção = null; nota inválida também', () => {
+    const nullOnDiscovery = answer.replace('"nota":2', '"nota":null');
+    expect(parseVisitEvaluation(nullOnDiscovery, criteria, lines)).toBeNull();
+    expect(parseVisitEvaluation(answer.replace('"nota":2', '"nota":1.5'), criteria, lines)).toBeNull();
+    expect(parseVisitEvaluation(answer.replace('"nota":2', '"nota":3'), criteria, lines)).toBeNull();
+  });
+
+  test('null na objeção continua valendo', () => {
+    expect(parseVisitEvaluation(answer, criteria, lines)?.scores[1].score).toBeNull();
+  });
+
   test('resposta ilegível ou sem resumo = null', () => {
     expect(parseVisitEvaluation('não sei', criteria, lines)).toBeNull();
     expect(parseVisitEvaluation('{"notas":[]}', criteria, lines)).toBeNull();

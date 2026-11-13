@@ -8,6 +8,7 @@ import {
   MAX_SCORE_PER_CRITERION,
   MAX_SUMMARY_POINTS,
   MIN_QUOTE_CHARS,
+  OBJECTION_CRITERION,
 } from './mystery-shopper.constants';
 import type {
   CriterionScore,
@@ -69,7 +70,12 @@ const asTexts = (v: unknown): string[] =>
   Array.isArray(v) ? v.map(asText).filter((t) => t !== '').slice(0, MAX_SUMMARY_POINTS) : [];
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const normalize = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
-const asScore = (v: unknown): Score | null => (v === 0 || v === 1 || v === 2 ? v : null);
+/** Aceita 0|1|2 e strings numéricas ("2"); qualquer outra coisa é inválida (null). */
+const asScore = (v: unknown): Score | null => {
+  if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) return null;
+  const n = typeof v === 'number' || typeof v === 'string' ? Number(v) : Number.NaN;
+  return n === 0 || n === 1 || n === 2 ? n : null;
+};
 
 function isSellerQuote(lines: VisitLine[], quote: string): boolean {
   const needle = normalize(quote);
@@ -77,13 +83,18 @@ function isSellerQuote(lines: VisitLine[], quote: string): boolean {
   return lines.some((l) => l.role === 'VENDEDOR' && normalize(l.text).includes(needle));
 }
 
-function toScore(criterion: VisitCriterion, item: unknown, lines: VisitLine[]): CriterionScore {
-  const raw = isRecord(item) ? item : {};
+/** Só a objeção pode ser "não se aplica" (null); nos demais, nota ausente ou inválida = ilegível. */
+function toScore(criterion: VisitCriterion, item: unknown, lines: VisitLine[]): CriterionScore | null {
+  if (!isRecord(item)) return null;
+  const raw = item;
+  const score = asScore(raw.nota);
+  const isNotApplicable = raw.nota === null && criterion.name === OBJECTION_CRITERION;
+  if (score === null && !isNotApplicable) return null;
   const quote = asText(raw.trecho);
   return {
     criterion: criterion.name,
     label: criterion.description,
-    score: asScore(raw.nota),
+    score,
     evidence: isSellerQuote(lines, quote) ? quote : '',
     comment: asText(raw.comentario),
     measuredBy: 'AI',
@@ -101,8 +112,14 @@ export function parseVisitEvaluation(
   const summary = asText(parsed.resumo);
   if (!summary) return null;
   const notas = parsed.notas as unknown[];
+  const scores: CriterionScore[] = [];
+  for (const c of criteria) {
+    const score = toScore(c, notas.find((n) => isRecord(n) && n.criterio === c.name), lines);
+    if (!score) return null;
+    scores.push(score);
+  }
   return {
-    scores: criteria.map((c) => toScore(c, notas.find((n) => isRecord(n) && n.criterio === c.name), lines)),
+    scores,
     summary: { summary, strengths: asTexts(parsed.fortes), improvements: asTexts(parsed.melhorar) },
   };
 }

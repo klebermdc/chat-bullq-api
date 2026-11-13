@@ -18,6 +18,8 @@ export const PRODUCT_RULES_SKILL = 'diarioRegrasProduto';
 /** Critérios medidos por código (nomes fixos). */
 export const FIRST_REPLY_CRITERION = 'primeiraResposta';
 export const FOLLOW_UP_CRITERION = 'ocultoFollowUp';
+/** Único critério que pode ser "não se aplica" (nota null). */
+export const OBJECTION_CRITERION = 'ocultoObjecao';
 export const FIRST_REPLY_GOOD_MINUTES = 15;
 export const FIRST_REPLY_OK_MINUTES = 60;
 
