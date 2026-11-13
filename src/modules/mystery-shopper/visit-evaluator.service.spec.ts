@@ -9,6 +9,7 @@ const VISIT = {
   scenario: 'família de 4',
   evaluatedAt: null as Date | null,
   assignedToId: 'u1',
+  sellerUserId: null as string | null,
 };
 const MESSAGES = [
   { id: 'm1', direction: 'INBOUND' as const, senderId: null, isAutomated: false, text: 'Quero Orlando em julho', createdAt: new Date('2026-11-13T10:00:00Z') },
@@ -77,6 +78,17 @@ describe('VisitEvaluatorService', () => {
     expect(await service.evaluate('v1')).toBe('DONE');
     expect(llm.complete).not.toHaveBeenCalled();
     expect(repository.saveEvaluation.mock.calls[0][1].totalScore).toBe(0);
+  });
+
+  test('reavaliação mantém o vendedor já gravado, não o dono atual', async () => {
+    const messages = MESSAGES.map((m) => (m.senderId === 'u1' ? { ...m, senderId: 'u9' } : m));
+    const { service, repository } = setup({
+      visit: { ...VISIT, evaluatedAt: new Date(), sellerUserId: 'u9' },
+      messages,
+    });
+
+    expect(await service.evaluate('v1')).toBe('DONE');
+    expect(repository.saveEvaluation.mock.calls[0][1].sellerUserId).toBe('u9');
   });
 
   test('visita que não está em EVALUATING é ignorada', async () => {

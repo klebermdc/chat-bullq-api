@@ -77,7 +77,8 @@ export class VisitEvaluatorService {
     ]);
     if (criteria.length === 0) throw new Error(NO_CRITERIA_ERROR);
 
-    const sellerUserId = visit.assignedToId;
+    // Reavaliação mantém quem foi avaliado; a primeira usa o dono atual da conversa.
+    const sellerUserId = visit.evaluatedAt ? (visit.sellerUserId ?? visit.assignedToId) : visit.assignedToId;
     const metrics = computeVisitMetrics({ messages, assignedAt, proposalCount, sellerUserId });
     const lines = buildVisitLines(messages, sellerUserId);
     const names = await this.repository.findUserNames(sellerUserId ? [sellerUserId] : []);

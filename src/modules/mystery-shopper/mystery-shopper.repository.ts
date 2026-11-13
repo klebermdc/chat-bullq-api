@@ -21,6 +21,7 @@ export interface VisitForEvaluation {
   scenario: string | null;
   evaluatedAt: Date | null;
   assignedToId: string | null;
+  sellerUserId: string | null;
 }
 
 const VISIT_SELECT = {
@@ -158,6 +159,7 @@ export class MysteryShopperRepository {
         status: true,
         scenario: true,
         evaluatedAt: true,
+        sellerUserId: true,
         conversation: { select: { assignedToId: true } },
       },
     });
