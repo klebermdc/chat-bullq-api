@@ -14,3 +14,5 @@ uploads
 tmp
 temp
 README.md
+# Serviço de voz: imagem e deploy próprios (voice/docker-compose.yml)
+voice
