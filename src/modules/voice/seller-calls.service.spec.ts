@@ -6,7 +6,7 @@ const RENATA = { userId: 'renata', role: OrgRole.AGENT, name: 'Renata' };
 const PEDRO = { userId: 'pedro', role: OrgRole.AGENT, name: 'Pedro' };
 const ADMIN = { userId: 'adm', role: OrgRole.ADMIN, name: 'Gestão' };
 
-function make(opts: { enabled?: boolean; permission?: any; configured?: boolean; lastInboundAt?: Date | null; dialError?: Error } = {}) {
+function make(opts: { enabled?: boolean; permission?: any; configured?: boolean; lastInboundAt?: Date | null; dialError?: Error; simulated?: boolean } = {}) {
   const prisma = {
     organization: { findUnique: jest.fn().mockResolvedValue({ settings: { sellerCalls: { enabled: opts.enabled ?? true } } }) },
     conversation: {
@@ -32,7 +32,8 @@ function make(opts: { enabled?: boolean; permission?: any; configured?: boolean;
   } as any;
   const realtime = { emitToChannel: jest.fn(), emitToConversation: jest.fn() } as any;
   const records = { open: jest.fn().mockResolvedValue('call1'), fail: jest.fn().mockResolvedValue(undefined) } as any;
-  return { svc: new SellerCallsService(prisma, graph, dialer, realtime, records), prisma, graph, dialer, records };
+  const simulated = { isSimulatedContact: jest.fn().mockResolvedValue(opts.simulated ?? false) } as any;
+  return { svc: new SellerCallsService(prisma, graph, dialer, realtime, records, simulated), prisma, graph, dialer, records, simulated };
 }
 
 describe('regras', () => {
@@ -100,5 +101,51 @@ describe('SellerCallsService', () => {
     await svc.end('org1', 'cv1', 'vendedor-cv1-123', RENATA);
     expect(dialer.endRoom).toHaveBeenCalledWith('vendedor-cv1-123');
     await expect(svc.end('org1', 'cv1', 'vendedor-outra-1', RENATA)).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('SellerCallsService com contato simulado (nada chega à Meta)', () => {
+  it('check: sem permissão, pedido possível com a janela aberta, sem consultar a Meta', async () => {
+    const { svc, graph, simulated } = make({ simulated: true });
+    const r = await svc.check('org1', 'cv1', RENATA);
+    expect(simulated.isSimulatedContact).toHaveBeenCalledWith('c1');
+    expect(graph.getPermission).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ canCall: false, canRequest: true, permission: 'no_permission', windowOpen: true });
+  });
+
+  it('check com janela fechada: não deixa pedir', async () => {
+    const { svc } = make({ simulated: true, lastInboundAt: new Date(Date.now() - 48 * 3600_000) });
+    expect(await svc.check('org1', 'cv1', RENATA)).toMatchObject({ canCall: false, canRequest: false, windowOpen: false });
+  });
+
+  it('requestPermission: responde ok e grava a nota, sem chamar a Meta', async () => {
+    const { svc, graph, prisma } = make({ simulated: true });
+    await expect(svc.requestPermission('org1', 'cv1', RENATA)).resolves.toEqual({ ok: true });
+    expect(graph.getPermission).not.toHaveBeenCalled();
+    expect(graph.requestPermission).not.toHaveBeenCalled();
+    expect(prisma.message.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ type: 'SYSTEM', content: { text: '📞 Renata pediu permissão para ligar pelo WhatsApp.' } }),
+    });
+  });
+
+  it('requestPermission com janela fechada: mesma recusa do caminho real', async () => {
+    const { svc, graph } = make({ simulated: true, lastInboundAt: new Date(Date.now() - 48 * 3600_000) });
+    await expect(svc.requestPermission('org1', 'cv1', RENATA)).rejects.toThrow('Janela de 24h fechada');
+    expect(graph.requestPermission).not.toHaveBeenCalled();
+  });
+
+  it('start: SEM_PERMISSAO, sem Meta, sem registro e sem LiveKit', async () => {
+    const { svc, graph, dialer, records } = make({ simulated: true });
+    await expect(svc.start('org1', 'cv1', RENATA)).rejects.toMatchObject({ response: { code: 'SEM_PERMISSAO' } });
+    expect(graph.getPermission).not.toHaveBeenCalled();
+    expect(records.open).not.toHaveBeenCalled();
+    expect(dialer.dialForSeller).not.toHaveBeenCalled();
+    expect(dialer.dispatchAgent).not.toHaveBeenCalled();
+  });
+
+  it('contato normal segue pela Meta', async () => {
+    const { svc, graph } = make();
+    await svc.check('org1', 'cv1', RENATA);
+    expect(graph.getPermission).toHaveBeenCalled();
   });
 });

@@ -68,6 +68,8 @@ describe('OutboundMessageProcessor — gatilho de reengajamento NO_REPLY', () =>
       idempotency as any,
       windowGate as any,
       cadenceRunner as any,
+      { isSimulated: jest.fn().mockResolvedValue(false) } as any,
+      {} as any,
     );
 
     return { processor, prisma, adapter, adapterRegistry, realtimeGateway, idempotency, windowGate, cadenceRunner };

@@ -6,6 +6,7 @@ import { SonaxClient } from './sonax-client';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { normalizeBrazilNumber } from './phone.util';
 import { ConversationAccessService } from '../messaging/conversations/conversation-access.service';
+import { SimulatedRecipients } from '../mystery-shopper/simulated/simulated-recipients.service';
 
 @Injectable()
 export class CallsService {
@@ -17,6 +18,7 @@ export class CallsService {
     // Leaf service (só PrismaService) — sem o ciclo de DI que injetar
     // ConversationsService inteiro aqui abria via AiAgentsModule.
     private readonly conversationAccess: ConversationAccessService,
+    private readonly simulated: SimulatedRecipients,
   ) {}
 
   async initiateCall(
@@ -38,6 +40,12 @@ export class CallsService {
       include: { contact: true },
     });
     if (!conversation) throw new NotFoundException('Conversa não encontrada');
+
+    // Cliente oculto simulado: o telefone é inventado e pode existir de verdade.
+    // Recusa antes de Sonax, Call ou mensagem — erro genérico, sem revelar o motivo.
+    if (await this.simulated.isSimulatedContact(conversation.contactId)) {
+      throw new BadRequestException('Não foi possível completar a ligação.');
+    }
 
     const rawPhone = conversation.contact?.phone;
     if (!rawPhone) throw new BadRequestException('Conversa sem telefone para discar');

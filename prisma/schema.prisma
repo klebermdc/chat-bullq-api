@@ -376,6 +376,7 @@ model Channel {
 
   organization       Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   contactChannels    ContactChannel[]
+  mysteryShopperNumbers MysteryShopperNumber[]
   conversations      Conversation[]
   chatbotFlows       ChatbotFlowChannel[]
   syncJobs           ChannelSyncJob[]
@@ -3475,13 +3476,19 @@ model MysteryShopperNumber {
   createdById    String?   @map("created_by_id")
   createdAt      DateTime  @default(now()) @map("created_at")
   removedAt      DateTime? @map("removed_at")
+  /// Cliente simulado: número falso, 100% interno (nunca sai para a Meta).
+  isSimulated    Boolean   @default(false) @map("is_simulated")
+  /// Canal onde o cliente simulado "existe" (só simulados).
+  channelId      String?   @map("channel_id")
 
   organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   contact      Contact               @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  channel      Channel?              @relation(fields: [channelId], references: [id], onDelete: SetNull)
   visits       MysteryShopperVisit[]
 
   @@index([organizationId, removedAt])
   @@index([contactId])
+  @@index([channelId])
   @@map("mystery_shopper_numbers")
 }
 

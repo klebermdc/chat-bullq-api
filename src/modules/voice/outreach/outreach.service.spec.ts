@@ -19,7 +19,7 @@ function conv(over: Record<string, unknown> = {}) {
   };
 }
 
-function make(opts: { orgs?: any[]; proposals?: any[]; conv?: any; permission?: any; claimed?: number; dialerConfigured?: boolean } = {}) {
+function make(opts: { orgs?: any[]; proposals?: any[]; conv?: any; permission?: any; claimed?: number; dialerConfigured?: boolean; simulated?: boolean } = {}) {
   const prisma = {
     organization: { findMany: jest.fn().mockResolvedValue(opts.orgs ?? []) },
     proposal: { findMany: jest.fn().mockResolvedValue(opts.proposals ?? []) },
@@ -39,7 +39,8 @@ function make(opts: { orgs?: any[]; proposals?: any[]; conv?: any; permission?: 
   } as any;
   const dialer = { configured: opts.dialerConfigured ?? true, dial: jest.fn().mockImplementation(async (i: any) => i.room) } as any;
   const realtime = { emitToChannel: jest.fn(), emitToConversation: jest.fn() } as any;
-  return { svc: new OutreachService(prisma, graph, dialer, realtime), prisma, graph, dialer };
+  const simulated = { isSimulatedContact: jest.fn().mockResolvedValue(opts.simulated ?? false) } as any;
+  return { svc: new OutreachService(prisma, graph, dialer, realtime, simulated), prisma, graph, dialer, simulated };
 }
 
 const ORG = { id: 'org1', settings: { enabled: true, delayHours: 24 }, tz: 'America/Sao_Paulo', hours: null };
@@ -90,6 +91,32 @@ describe('OutreachService.requestPermissions', () => {
     await jaTem.svc.requestPermissions('org1', NOW);
     expect(jaTem.graph.requestPermission).not.toHaveBeenCalled();
     expect(jaTem.prisma.voiceOutreach.create).toHaveBeenCalledWith({ data: expect.objectContaining({ permissionNote: 'JA_TEM_PERMISSAO' }) });
+  });
+});
+
+describe('OutreachService com contato simulado', () => {
+  it('requestPermissions: pula (PULADA/CONTATO_SIMULADO), sem Meta e sem nota', async () => {
+    const { svc, prisma, graph } = make({
+      simulated: true,
+      proposals: [{ id: 'pr1', conversationId: 'cv1', contactId: 'c1', createdAt: new Date(NOW.getTime() - 5 * 60_000) }],
+      conv: conv({ lastInboundAt: new Date(NOW.getTime() - H) }),
+    });
+    await svc.requestPermissions('org1', NOW);
+    expect(graph.getPermission).not.toHaveBeenCalled();
+    expect(graph.requestPermission).not.toHaveBeenCalled();
+    expect(prisma.message.create).not.toHaveBeenCalled();
+    expect(prisma.voiceOutreach.create).toHaveBeenCalledWith({ data: expect.objectContaining({ proposalId: 'pr1', permissionStatus: 'PULADA', permissionNote: 'CONTATO_SIMULADO' }) });
+  });
+
+  it('callDue: pula (PULADA/CONTATO_SIMULADO), sem Meta e sem discar', async () => {
+    const { svc, prisma, graph, dialer } = make({
+      simulated: true,
+      proposals: [{ id: 'pr1', conversationId: 'cv1', contactId: 'c1', createdAt: new Date(NOW.getTime() - 25 * H) }],
+    });
+    await svc.callDue(ORG, NOW);
+    expect(graph.getPermission).not.toHaveBeenCalled();
+    expect(dialer.dial).not.toHaveBeenCalled();
+    expect(prisma.voiceOutreach.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { callStatus: 'PULADA', callNote: 'CONTATO_SIMULADO' } }));
   });
 });
 

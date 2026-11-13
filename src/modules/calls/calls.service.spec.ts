@@ -19,7 +19,7 @@ function makeDeps(over: any = {}) {
   const prisma = {
     conversation: {
       findFirst: jest.fn(async () => over.conversation ?? {
-        id: 'conv1', organizationId: 'org1',
+        id: 'conv1', organizationId: 'org1', contactId: 'c1',
         contact: { phone: '11999998888' },
       }),
     },
@@ -43,9 +43,10 @@ function makeDeps(over: any = {}) {
   const { conversationAccess, guardPrisma } = makeConversationAccessService(
     'conversationsGuardFinds' in over ? over.conversationsGuardFinds : { id: 'conv1' },
   );
+  const simulated = { isSimulatedContact: jest.fn(async () => over.simulated ?? false) } as any;
   return {
-    prisma, settings, sonax, realtime, created, guardPrisma,
-    svc: new CallsService(prisma, settings, sonax, realtime, conversationAccess),
+    prisma, settings, sonax, realtime, created, guardPrisma, simulated,
+    svc: new CallsService(prisma, settings, sonax, realtime, conversationAccess, simulated),
   };
 }
 
@@ -56,6 +57,17 @@ describe('CallsService.initiateCall', () => {
     expect(res.status).toBe('DIALING');
     expect(d.sonax.click2call).toHaveBeenCalledWith(expect.objectContaining({ ramal: '101', var1: 'call1', numero: '5511999998888' }));
     expect(d.prisma.message.create).toHaveBeenCalled();
+  });
+
+  it('contato simulado: 400 genérico, sem Call, sem mensagem e sem click2call', async () => {
+    const d = makeDeps({ simulated: true });
+    await expect(d.svc.initiateCall('conv1', 'user1', 'org1')).rejects.toThrow('Não foi possível completar a ligação.');
+    await expect(d.svc.initiateCall('conv1', 'user1', 'org1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(d.simulated.isSimulatedContact).toHaveBeenCalledWith('c1');
+    expect(d.settings.getDecryptedForDial).not.toHaveBeenCalled();
+    expect(d.prisma.call.create).not.toHaveBeenCalled();
+    expect(d.prisma.message.create).not.toHaveBeenCalled();
+    expect(d.sonax.click2call).not.toHaveBeenCalled();
   });
 
   it('400 quando a conversa não tem telefone', async () => {

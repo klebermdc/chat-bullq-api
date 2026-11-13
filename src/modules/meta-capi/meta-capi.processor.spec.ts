@@ -31,6 +31,23 @@ function cardWith(contact: any, value: any = 1500) {
 const job = (data = { cardId: 'card1', organizationId: 'org1' }) => ({ data }) as any;
 
 describe('MetaCapiProcessor', () => {
+  it('não envia Purchase de contato cliente oculto (simulado ou chip real)', async () => {
+    const { proc, prisma, config, http } = makeProcessor();
+    prisma.metaCapiEvent.findUnique.mockResolvedValue(null);
+    config.resolveConfig.mockResolvedValue(CFG);
+    prisma.card.findUnique.mockResolvedValue(
+      cardWith({ phone: '+5511999999999', ctwaClid: 'CLID1', ctwaClidAt: new Date(), isMysteryShopper: true }),
+    );
+
+    await proc.process(job());
+
+    expect(http.sendEvents).not.toHaveBeenCalled();
+    expect(prisma.metaCapiEvent.upsert).not.toHaveBeenCalled();
+    // o campo é omitido globalmente: a consulta precisa pedi-lo explicitamente
+    const query = prisma.card.findUnique.mock.calls[0][0];
+    expect(query.include.contact.select.isMysteryShopper).toBe(true);
+  });
+
   it('não envia quando a org está sem config/desligada', async () => {
     const { proc, prisma, config, http } = makeProcessor();
     prisma.metaCapiEvent.findUnique.mockResolvedValue(null);

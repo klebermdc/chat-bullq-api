@@ -6,6 +6,7 @@ import {
   BadRequestException,
   Optional,
 } from '@nestjs/common';
+import { SimulatedRecipients } from '../../mystery-shopper/simulated/simulated-recipients.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { ResponseSlaService } from '../../response-sla/response-sla.service';
 import { Queue } from 'bullmq';
@@ -56,6 +57,7 @@ export class MessagesService {
     private readonly contactHistory: ContactHistoryService,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
     @Optional() private readonly responseSla?: ResponseSlaService,
+    @Optional() private readonly simulated?: SimulatedRecipients,
   ) {}
 
   async send(
@@ -673,7 +675,12 @@ export class MessagesService {
     let succeededRemote = false;
     let remoteError: string | null = null;
 
-    if (typeof adapter.deleteMessage === 'function') {
+    // Cliente oculto simulado: o id da mensagem é falso, nada existe no gateway. Só revoga local.
+    const isSimulated = await this.simulated?.isSimulatedConversation(message.conversation.id);
+
+    if (isSimulated) {
+      this.logger.log(`Revogação remota ignorada (contato simulado) msg=${message.id}`);
+    } else if (typeof adapter.deleteMessage === 'function') {
       try {
         await adapter.deleteMessage(channel, message.externalId);
         succeededRemote = true;

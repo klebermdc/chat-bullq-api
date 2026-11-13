@@ -39,12 +39,26 @@ export class MetaCapiProcessor extends WorkerHost {
       where: { id: cardId },
       include: {
         contact: {
-          select: { id: true, phone: true, email: true, ctwaClid: true, ctwaClidAt: true },
+          select: {
+            id: true,
+            phone: true,
+            email: true,
+            ctwaClid: true,
+            ctwaClidAt: true,
+            // Omitido globalmente pelo PrismaService; select explícito o traz de volta.
+            isMysteryShopper: true,
+          },
         },
         conversation: { select: { channel: { select: { config: true } } } },
       },
     });
     if (!card || card.organizationId !== organizationId) return;
+
+    // Cliente oculto (número simulado ou chip real) nunca vira compra na Meta.
+    if (card.contact?.isMysteryShopper) {
+      this.logger.log(`capi_skip_mystery_shopper card=${cardId}`);
+      return;
+    }
 
     const value = card.value != null ? Number(card.value) : 0;
     const currency = card.currency || 'BRL';

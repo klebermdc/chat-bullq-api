@@ -13,14 +13,20 @@ describe('WebhookDispatchService', () => {
     const leadQualified = {
       build: jest.fn().mockResolvedValue({ event: 'LEAD_QUALIFIED' }),
     };
+    const simulated = {
+      isSimulatedContact: jest.fn().mockResolvedValue(false),
+      isSimulatedConversation: jest.fn().mockResolvedValue(false),
+    };
     return {
       prisma,
       queue,
       leadQualified,
+      simulated,
       service: new WebhookDispatchService(
         prisma as any,
         queue as any,
         leadQualified as any,
+        simulated as any,
       ),
     };
   };
@@ -35,6 +41,31 @@ describe('WebhookDispatchService', () => {
     });
     expect(prisma.webhookDelivery.create).toHaveBeenCalledTimes(2);
     expect(queue.add).toHaveBeenCalledTimes(2);
+  });
+
+  it('contato simulado: nenhuma delivery nem job (nada sai para webhook externo)', async () => {
+    const { prisma, queue, simulated, service } = build();
+    simulated.isSimulatedContact.mockResolvedValue(true);
+    await service.dispatch(event as any);
+    expect(simulated.isSimulatedContact).toHaveBeenCalledWith('c');
+    expect(prisma.webhookDelivery.create).not.toHaveBeenCalled();
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('payload só com conversationId: confere pela conversa', async () => {
+    const { prisma, queue, simulated, service } = build();
+    simulated.isSimulatedConversation.mockResolvedValue(true);
+    await service.dispatch({ ...event, payload: { conversationId: 'cv' } } as any);
+    expect(simulated.isSimulatedConversation).toHaveBeenCalledWith('cv');
+    expect(prisma.webhookDelivery.create).not.toHaveBeenCalled();
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('sem assinante não consulta o detector', async () => {
+    const { prisma, simulated, service } = build();
+    prisma.webhookSubscription.findMany.mockResolvedValue([]);
+    await service.dispatch(event as any);
+    expect(simulated.isSimulatedContact).not.toHaveBeenCalled();
   });
 
   it('usa jobId idempotente subscriptionId:outboxEventId', async () => {

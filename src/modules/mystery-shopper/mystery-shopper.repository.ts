@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { MysteryShopperVisitStatus, Prisma } from '@prisma/client';
+import { ChannelType, MessageDirection, MessageStatus, MysteryShopperVisitStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { phoneVariants } from '../../common/utils/phone.util';
 import { messageText } from '../messaging/messages/message-search';
@@ -49,11 +49,31 @@ const NUMBER_SELECT = {
   id: true,
   label: true,
   createdAt: true,
+  isSimulated: true,
+  channelId: true,
   contact: { select: { phone: true } },
 } satisfies Prisma.MysteryShopperNumberSelect;
 
 export type VisitRow = Prisma.MysteryShopperVisitGetPayload<{ select: typeof VISIT_SELECT }>;
 export type VisitDetailRow = Prisma.MysteryShopperVisitGetPayload<{ select: typeof VISIT_DETAIL_SELECT }>;
+export interface SimulatorNumber {
+  id: string;
+  label: string;
+  isSimulated: boolean;
+  contactId: string;
+  profileName: string | null;
+  contact: { phone: string | null };
+  channel: { id: string; type: ChannelType } | null;
+}
+
+export interface SimulatorMessageRow {
+  id: string;
+  direction: MessageDirection;
+  status: MessageStatus;
+  content: Prisma.JsonValue;
+  createdAt: Date;
+}
+
 export type NumberRow = Prisma.MysteryShopperNumberGetPayload<{ select: typeof NUMBER_SELECT }>;
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -340,5 +360,120 @@ export class MysteryShopperRepository {
       data: { removedAt: new Date() },
     });
     return count > 0;
+  }
+
+  // ── Cliente simulado ────────────────────────────────────
+
+  findOfficialChannels(organizationId: string): Promise<Array<{ id: string; name: string }>> {
+    return this.prisma.channel.findMany({
+      where: { organizationId, type: ChannelType.WHATSAPP_OFFICIAL, isActive: true, deletedAt: null },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    });
+  }
+
+  findActiveOfficialChannel(organizationId: string, channelId: string): Promise<{ id: string } | null> {
+    return this.prisma.channel.findFirst({
+      where: { id: channelId, organizationId, type: ChannelType.WHATSAPP_OFFICIAL, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+  }
+
+  /**
+   * Contato + vínculo com o canal + número, numa transação. null = o número
+   * sorteado já existe (contato da org ou vínculo no canal; com e sem o 9).
+   */
+  createSimulatedNumber(
+    organizationId: string,
+    input: { phone: string; label: string; profileName: string | null; channelId: string; userId: string },
+  ): Promise<NumberRow | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const variants = phoneVariants(input.phone);
+      const [contact, link] = await Promise.all([
+        tx.contact.findFirst({ where: { organizationId, phone: { in: variants } }, select: { id: true } }),
+        tx.contactChannel.findFirst({
+          where: { channelId: input.channelId, externalId: { in: variants } },
+          select: { id: true },
+        }),
+      ]);
+      if (contact || link) return null;
+      const created = await tx.contact.create({
+        data: { organizationId, phone: input.phone, name: input.profileName, isMysteryShopper: true },
+        select: { id: true },
+      });
+      await tx.contactChannel.create({
+        data: { contactId: created.id, channelId: input.channelId, externalId: input.phone, profileName: input.profileName },
+      });
+      return tx.mysteryShopperNumber.create({
+        data: {
+          organizationId,
+          contactId: created.id,
+          label: input.label,
+          createdById: input.userId,
+          isSimulated: true,
+          channelId: input.channelId,
+        },
+        select: NUMBER_SELECT,
+      });
+    });
+  }
+
+  /** Número ativo da org, simulado ou não (quem chama decide). */
+  async findNumberForSimulator(organizationId: string, id: string): Promise<SimulatorNumber | null> {
+    const row = await this.prisma.mysteryShopperNumber.findFirst({
+      where: { id, organizationId, removedAt: null },
+      select: {
+        id: true,
+        label: true,
+        isSimulated: true,
+        contactId: true,
+        channelId: true,
+        contact: { select: { phone: true } },
+        channel: { select: { id: true, type: true } },
+      },
+    });
+    if (!row) return null;
+    const link = row.channelId
+      ? await this.prisma.contactChannel.findFirst({
+          where: { contactId: row.contactId, channelId: row.channelId },
+          select: { profileName: true },
+        })
+      : null;
+    return {
+      id: row.id,
+      label: row.label,
+      isSimulated: row.isSimulated,
+      contactId: row.contactId,
+      profileName: link?.profileName ?? null,
+      contact: row.contact,
+      channel: row.channel,
+    };
+  }
+
+  /** Conversa mais recente do contato no canal; últimas `limit` mensagens em ordem cronológica. */
+  async findSimulatorMessages(
+    contactId: string,
+    channelId: string,
+    limit: number,
+  ): Promise<{ conversationId: string | null; messages: SimulatorMessageRow[] }> {
+    const conversation = await this.prisma.conversation.findFirst({
+      where: { contactId, channelId, isGroup: false, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    if (!conversation) return { conversationId: null, messages: [] };
+    const rows = await this.prisma.message.findMany({
+      where: {
+        conversationId: conversation.id,
+        revokedAt: null,
+        type: { notIn: [...NON_CONVERSATIONAL_TYPES] },
+        // Saída que falhou (inclui bloqueio da janela de 24h) ou ainda não saiu: o cliente real nunca a recebe.
+        NOT: { direction: 'OUTBOUND', status: { in: ['FAILED', 'QUEUED'] } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: { id: true, direction: true, status: true, content: true, createdAt: true },
+    });
+    return { conversationId: conversation.id, messages: [...rows].reverse() };
   }
 }

@@ -10,6 +10,7 @@ import { MysteryShopperNotifier } from './mystery-shopper.notifier';
 import { MysteryShopperProcessor } from './mystery-shopper.processor';
 import { MysteryShopperRepository } from './mystery-shopper.repository';
 import { MysteryShopperService } from './mystery-shopper.service';
+import { SimulatorService } from './simulated/simulator.service';
 import { VisitEvaluatorService } from './visit-evaluator.service';
 
 /**
@@ -18,7 +19,7 @@ import { VisitEvaluatorService } from './visit-evaluator.service';
  * Prisma é @Global.
  */
 @Module({
-  imports: [LlmModule, BullModule.registerQueue({ name: MYSTERY_SHOPPER_QUEUE })],
+  imports: [LlmModule, BullModule.registerQueue({ name: MYSTERY_SHOPPER_QUEUE }, { name: 'inbound-messages' })],
   controllers: [MysteryShopperController],
   providers: [
     MysteryShopperAccess,
@@ -26,6 +27,7 @@ import { VisitEvaluatorService } from './visit-evaluator.service';
     MysteryShopperRepository,
     MysteryShopperNotifier,
     MysteryShopperService,
+    SimulatorService,
     VisitEvaluatorService,
     MysteryShopperProcessor,
     { provide: TelegramClient, useFactory: () => new TelegramClient(process.env.TELEGRAM_BOT_TOKEN) },
