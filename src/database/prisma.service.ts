@@ -7,6 +7,7 @@ import { PrismaClient } from '@prisma/client';
  * de cliente oculto não pode vazar por nenhum deles. Filtros `where`
  * continuam funcionando; quem precisar ler o campo usa `omit: { isMysteryShopper: false }`.
  */
+// O TS ainda tipa isMysteryShopper como boolean, mas em runtime o campo é omitido (não confie no tipo).
 export const PRISMA_CLIENT_OPTIONS = {
   omit: { contact: { isMysteryShopper: true } },
 } as const;
