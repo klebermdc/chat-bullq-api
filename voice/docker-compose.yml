@@ -1,0 +1,122 @@
+# Voz da Aline — F1. Roda em /opt/voz, separado do /opt/chat-ofp.
+# LiveKit e SIP em rede do host (recomendação do LiveKit para mídia UDP).
+name: voz
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--bind", "127.0.0.1", "--port", "${VOICE_REDIS_PORT}", "--save", "", "--appendonly", "no"]
+    network_mode: host
+    cpus: ${VOICE_CPUS_REDIS}
+    mem_limit: ${VOICE_MEM_REDIS}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "${VOICE_REDIS_PORT}", "ping"]
+      interval: 10s
+      retries: 5
+
+  livekit:
+    image: livekit/livekit-server:v1.13.11
+    command: ["--config", "/etc/livekit.yaml"]
+    network_mode: host
+    volumes:
+      - ./infra/generated/livekit.yaml:/etc/livekit.yaml:ro
+    cpus: ${VOICE_CPUS_LIVEKIT}
+    mem_limit: ${VOICE_MEM_LIVEKIT}
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  sip:
+    image: livekit/sip:v1.24.0
+    network_mode: host
+    volumes:
+      - ./infra/generated/sip.yaml:/sip/config.yaml:ro
+      - ${CADDY_DATA_DIR}/caddy/certificates/acme-v02.api.letsencrypt.org-directory:/certs:ro
+    cpus: ${VOICE_CPUS_SIP}
+    mem_limit: ${VOICE_MEM_SIP}
+    restart: unless-stopped
+    depends_on:
+      - livekit
+
+  # STT + TTS open-source (Speaches, CPU). API compatível com OpenAI em
+  # http://speaches:8000/v1 — sem porta publicada; só quem está na rede voz_ia alcança.
+  # STT: faster-whisper small int8. TTS: Kokoro 82M ONNX.
+  # Trocar de motor/provedor = mudar STT_*/TTS_* (URL + modelo) no agente.
+  speaches:
+    image: ghcr.io/speaches-ai/speaches:0.9.0-rc.3-cpu
+    networks: [voz_ia]
+    environment:
+      API_KEY: ${SPEACHES_API_KEY}
+      ENABLE_UI: "false"
+      WHISPER__INFERENCE_DEVICE: cpu
+      WHISPER__COMPUTE_TYPE: int8
+      # Threads = limite de CPU do container (com 0 ele usa os 4 núcleos e é freado).
+      WHISPER__CPU_THREADS: ${SPEACHES_THREADS}
+      STT_MODEL_TTL: "-1"
+      TTS_MODEL_TTL: "-1"
+      LOG_LEVEL: info
+    volumes:
+      - speaches_hf:/home/ubuntu/.cache/huggingface/hub
+    cpus: ${VOICE_CPUS_SPEACHES}
+    mem_limit: ${VOICE_MEM_SPEACHES}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  # Agente "aline-voz" (agents-js): VAD Silero → STT → LLM → TTS.
+  # Fala com o Speaches pela rede voz_ia e com o LiveKit pelo domínio público.
+  agent:
+    build: ./agent
+    image: voz-agent:local
+    networks: [voz_ia]
+    env_file: .env
+    environment:
+      LIVEKIT_URL: wss://${LIVEKIT_DOMAIN}
+      # Padrão: Speaches da própria VPS. Para usar o Mac (ou uma GPU), defina
+      # STT_*/TTS_* no .env — trocar de motor é só URL + modelo.
+      STT_BASE_URL: ${STT_BASE_URL:-http://speaches:8000/v1}
+      STT_API_KEY: ${STT_API_KEY:-${SPEACHES_API_KEY}}
+      TTS_BASE_URL: ${TTS_BASE_URL:-http://speaches:8000/v1}
+      TTS_API_KEY: ${TTS_API_KEY:-${SPEACHES_API_KEY}}
+    cpus: ${VOICE_CPUS_AGENT}
+    mem_limit: ${VOICE_MEM_AGENT}
+    restart: unless-stopped
+    depends_on:
+      speaches:
+        condition: service_healthy
+
+  # Ponte para STT/TTS rodando FORA da VPS (ex.: Mac mini com GPU Apple).
+  # O Mac abre "ssh -R 127.0.0.1:18000:127.0.0.1:8000" para a VPS; esta ponte
+  # expõe isso só na rede interna da voz (172.22.0.1:18001). ufw libera a 18001
+  # apenas para 172.22.0.0/16. Ligar: docker compose --profile mac up -d
+  mac-ponte:
+    image: alpine/socat:1.8.1.1
+    profiles: ["mac"]
+    network_mode: host
+    command: ["TCP-LISTEN:18001,bind=172.22.0.1,fork,reuseaddr", "TCP:127.0.0.1:18000"]
+    cpus: 0.25
+    mem_limit: 64m
+    restart: unless-stopped
+
+  # Gravação (F5). Desligado até lá: docker compose --profile gravacao up -d
+  egress:
+    image: livekit/egress:v1.15.0
+    profiles: ["gravacao"]
+    network_mode: host
+    cpus: 1.0
+    mem_limit: 2048m
+    restart: unless-stopped
+
+networks:
+  # Rede da IA de voz: sem porta publicada (fora da internet), com saída para
+  # baixar modelos do HuggingFace. O agente (F2) entra nela para falar com o Speaches.
+  voz_ia: {}
+
+volumes:
+  speaches_hf: {}

@@ -1,0 +1,23 @@
+# Gerado por scripts/render.sh → infra/generated/livekit.yaml
+port: ${LIVEKIT_HTTP_PORT}
+bind_addresses:
+  - 0.0.0.0
+log_level: info
+
+rtc:
+  tcp_port: ${LIVEKIT_RTC_TCP_PORT}
+  port_range_start: ${LIVEKIT_RTC_UDP_START}
+  port_range_end: ${LIVEKIT_RTC_UDP_END}
+  use_external_ip: true
+
+redis:
+  address: 127.0.0.1:${VOICE_REDIS_PORT}
+
+keys:
+  ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
+
+# Webhooks para a API do Sendtur entram na F4 (POST /voice/webhooks/livekit).
+# webhook:
+#   api_key: ${LIVEKIT_API_KEY}
+#   urls:
+#     - https://<API_DOMAIN>/voice/webhooks/livekit

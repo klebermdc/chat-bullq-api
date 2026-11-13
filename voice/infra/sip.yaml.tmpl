@@ -1,0 +1,25 @@
+# Gerado por scripts/render.sh → infra/generated/sip.yaml
+# A Meta fala SIP só por TLS (5061) com mídia SRTP (SDES) e OPUS.
+api_key: ${LIVEKIT_API_KEY}
+api_secret: ${LIVEKIT_API_SECRET}
+ws_url: ws://127.0.0.1:${LIVEKIT_HTTP_PORT}
+redis:
+  address: 127.0.0.1:${VOICE_REDIS_PORT}
+
+# SIP sem TLS fica só no localhost (ufw não abre a 5060).
+sip_port: 5060
+rtp_port: ${SIP_RTP_START}-${SIP_RTP_END}
+use_external_ip: true
+
+# O livekit/sip só usa codecs ligados aqui. A Meta exige OPUS (teste F1, 13/11).
+codecs:
+  opus: true
+
+logging:
+  level: info
+
+tls:
+  port: ${SIP_TLS_PORT}
+  certs:
+    - cert_file: /certs/${SIP_DOMAIN}/${SIP_DOMAIN}.crt
+      key_file: /certs/${SIP_DOMAIN}/${SIP_DOMAIN}.key
