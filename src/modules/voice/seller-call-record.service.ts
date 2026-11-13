@@ -76,7 +76,8 @@ export class SellerCallRecordService {
         ramal: WHATSAPP_RAMAL,
         numero: input.numero,
         status: 'DIALING',
-        insightState: 'PENDING',
+        // Sem estado até desligar: "Gerando resumo…" só aparece depois da ligação.
+        insightState: null,
       },
     });
     const message = await this.prisma.message.create({
