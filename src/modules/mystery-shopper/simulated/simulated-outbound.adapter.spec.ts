@@ -75,7 +75,7 @@ describe('SimulatedOutboundAdapter', () => {
       const [name, data, opts] = botQueue.add.mock.calls[0];
       expect(name).toBe('bot-turn');
       expect(data).toEqual({ runId: 'r1' });
-      expect(opts.jobId).toBe('bot-turn:r1');
+      expect(opts.jobId).toBe('bot-turn-r1');
       expect(opts.delay).toBeGreaterThanOrEqual(40_000);
       expect(opts.delay).toBeLessThanOrEqual(90_000);
       expect(opts).toEqual(expect.objectContaining({ removeOnComplete: true, removeOnFail: true }));
@@ -88,7 +88,7 @@ describe('SimulatedOutboundAdapter', () => {
       botQueue.add.mockImplementation(async () => void order.push('add'));
       await adapter.sendMessage(channel, '5525912345678', text);
       await flush();
-      expect(botQueue.getJob).toHaveBeenCalledWith('bot-turn:r1');
+      expect(botQueue.getJob).toHaveBeenCalledWith('bot-turn-r1');
       expect(order).toEqual(['remove', 'add']);
     });
 

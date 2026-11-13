@@ -21,7 +21,7 @@ export const BOT_WINDOW_END_MINUTES = 22 * 60 + 30;
 export const BOT_MORNING_JITTER_MS = 30 * 60_000;
 export const BOT_DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 
-/** Um jobId por execução: é a chave do debounce. */
+/** Um jobId por execução: é a chave do debounce. Sem ":" — o BullMQ recusa. */
 export function botTurnJobId(runId: string): string {
-  return `bot-turn:${runId}`;
+  return `bot-turn-${runId}`;
 }
