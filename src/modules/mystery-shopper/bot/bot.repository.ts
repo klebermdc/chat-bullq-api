@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { MysteryShopperBotStatus } from '@prisma/client';
+import { Prisma, type MysteryShopperBotStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 
 export const BOT_LIVE_STATUSES: MysteryShopperBotStatus[] = ['ACTIVE', 'CLOSING'];
@@ -46,12 +46,30 @@ export class BotRepository {
     });
   }
 
-  /** Nasce com 1 mensagem: a abertura é enviada logo em seguida. */
-  createRun(organizationId: string, numberId: string, persona: string): Promise<BotRunRow> {
-    return this.prisma.mysteryShopperBotRun.create({
-      data: { organizationId, numberId, persona, clientMessages: 1 },
-      select: RUN_SELECT,
-    });
+  /**
+   * Checa e cria na mesma transação Serializable: duas partidas simultâneas não passam as duas.
+   * null = já existe execução viva (ou conflito de serialização).
+   */
+  async createRunExclusive(organizationId: string, numberId: string, persona: string): Promise<BotRunRow | null> {
+    try {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          const live = await tx.mysteryShopperBotRun.findFirst({
+            where: { organizationId, numberId, status: { in: BOT_LIVE_STATUSES } },
+            select: { id: true },
+          });
+          if (live) return null;
+          return tx.mysteryShopperBotRun.create({
+            data: { organizationId, numberId, persona, clientMessages: 1 },
+            select: RUN_SELECT,
+          });
+        },
+        { isolationLevel: 'Serializable' },
+      );
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') return null;
+      throw err;
+    }
   }
 
   /** Só sai de ACTIVE/CLOSING: nunca reescreve um fim já registrado. */

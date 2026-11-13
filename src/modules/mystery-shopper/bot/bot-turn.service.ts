@@ -14,6 +14,8 @@ import {
   BOT_MAX_CLIENT_MESSAGES,
   BOT_MAX_TOKENS,
   BOT_MORNING_JITTER_MS,
+  BOT_READ_DELAY_MAX_MS,
+  BOT_READ_DELAY_MIN_MS,
   BOT_TEMPERATURE,
 } from './bot.constants';
 import { BotRepository, type BotRunRow } from './bot.repository';
@@ -77,7 +79,22 @@ export class BotTurnService {
     // Parar durante a chamada da IA vence.
     if (!isLive(await this.repository.findRun(runId))) return { kind: 'SKIPPED' };
 
-    return this.apply(run, reply, forceEnd, costUsd);
+    const snapshotLastId = conversation.messages[conversation.messages.length - 1].id;
+    const outcome = await this.apply(run, reply, forceEnd, costUsd);
+    return (await this.followUpIfTeamWrote(run, snapshotLastId)) ?? outcome;
+  }
+
+  /**
+   * A equipe escreveu durante o turno: o acordar do adaptador não conseguiu recriar o job (este estava ativo).
+   * Devolve DELAYED e o processor atrasa ESTE mesmo job (mesmo jobId, concorrência 1): turnos seguem serializados.
+   */
+  private async followUpIfTeamWrote(run: LiveRun, snapshotLastId: string): Promise<BotTurnOutcome | null> {
+    const fresh = await this.repository.findRun(run.id);
+    if (!isLive(fresh) || (fresh.status === 'CLOSING' && fresh.followUpAnswered)) return null;
+    const { messages } = await this.simulator.getConversation(run.organizationId, run.numberId);
+    const last = messages[messages.length - 1];
+    if (!last || last.from !== 'EMPRESA' || last.id === snapshotLastId) return null;
+    return { kind: 'DELAYED', delayMs: randomInt(BOT_READ_DELAY_MIN_MS, BOT_READ_DELAY_MAX_MS + 1) };
   }
 
   private async apply(run: LiveRun, reply: BotReply, forceEnd: boolean, costUsd: number): Promise<BotTurnOutcome> {

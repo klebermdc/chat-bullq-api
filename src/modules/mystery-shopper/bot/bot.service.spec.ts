@@ -12,7 +12,7 @@ function build(over: { number?: unknown; active?: unknown; latest?: unknown; job
   const numbers = { findNumberForSimulator: jest.fn().mockResolvedValue('number' in over ? over.number : NUMBER) };
   const repo = {
     findActiveRun: jest.fn().mockResolvedValue('active' in over ? over.active : null),
-    createRun: jest.fn().mockResolvedValue(RUN),
+    createRunExclusive: jest.fn().mockResolvedValue(RUN),
     stopRun: jest.fn().mockResolvedValue({ ...RUN, status: 'STOPPED' }),
     failRun: jest.fn().mockResolvedValue(undefined),
     findLatestRun: jest.fn().mockResolvedValue('latest' in over ? over.latest : null),
@@ -30,7 +30,7 @@ describe('BotService.start', () => {
     const state = await service.start('org', 'n1', PERSONA);
     expect(BOT_OPENING_MESSAGE).toBe('Olá! Vi esse anúncio e quero solicitar uma cotação.');
     expect(simulator.sendMessage).toHaveBeenCalledWith('org', 'n1', 'Olá! Vi esse anúncio e quero solicitar uma cotação.');
-    expect(repo.createRun).toHaveBeenCalledWith('org', 'n1', PERSONA);
+    expect(repo.createRunExclusive).toHaveBeenCalledWith('org', 'n1', PERSONA);
     expect(state).toEqual({ status: 'ACTIVE', persona: PERSONA, clientMessages: 1, lastError: null });
   });
 
@@ -44,11 +44,12 @@ describe('BotService.start', () => {
     const { service, simulator, repo } = build({ number: { ...NUMBER, isSimulated: false } });
     await expect(service.start('org', 'n1', PERSONA)).rejects.toBeInstanceOf(BadRequestException);
     expect(simulator.sendMessage).not.toHaveBeenCalled();
-    expect(repo.createRun).not.toHaveBeenCalled();
+    expect(repo.createRunExclusive).not.toHaveBeenCalled();
   });
 
   it('já com robô ativo = 409, sem enviar', async () => {
-    const { service, simulator } = build({ active: RUN });
+    const { service, simulator, repo } = build();
+    repo.createRunExclusive.mockResolvedValue(null);
     await expect(service.start('org', 'n1', PERSONA)).rejects.toBeInstanceOf(ConflictException);
     expect(simulator.sendMessage).not.toHaveBeenCalled();
   });

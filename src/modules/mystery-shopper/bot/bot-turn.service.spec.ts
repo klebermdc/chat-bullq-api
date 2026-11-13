@@ -167,4 +167,47 @@ describe('BotTurnService.run', () => {
     expect(user).toContain('msg-40');
     expect(user).not.toMatch(/msg-39(\n|$)/);
   });
+
+  describe('mensagem da equipe durante o turno', () => {
+    const NEW_TEAM = { id: 'm3', from: 'EMPRESA', text: 'Posso mandar a cotação?' };
+
+    it('agenda novo turno (mesmo job, 40–90 s) se a equipe escreveu durante a chamada da IA', async () => {
+      const { service, simulator } = build();
+      simulator.getConversation
+        .mockResolvedValueOnce(CONVERSATION)
+        .mockResolvedValueOnce({ messages: [...CONVERSATION.messages, { id: 'm-bot', from: 'CLIENTE', text: 'somos em 4' }, NEW_TEAM] });
+      const outcome = await service.run('r1', NOW);
+      expect(simulator.sendMessage).toHaveBeenCalledTimes(1);
+      expect(outcome.kind).toBe('DELAYED');
+      const delay = (outcome as { delayMs: number }).delayMs;
+      expect(delay).toBeGreaterThanOrEqual(40_000);
+      expect(delay).toBeLessThanOrEqual(90_000);
+    });
+
+    it('também após silencio', async () => {
+      const { service, simulator, llm } = build();
+      llm.complete.mockResolvedValue(answer({ acao: 'silencio' }));
+      simulator.getConversation
+        .mockResolvedValueOnce(CONVERSATION)
+        .mockResolvedValueOnce({ messages: [...CONVERSATION.messages, NEW_TEAM] });
+      expect((await service.run('r1', NOW)).kind).toBe('DELAYED');
+    });
+
+    it('sem mensagem nova da equipe não agenda nada', async () => {
+      const { service, simulator } = build();
+      simulator.getConversation
+        .mockResolvedValueOnce(CONVERSATION)
+        .mockResolvedValueOnce({ messages: [...CONVERSATION.messages, { id: 'm-bot', from: 'CLIENTE', text: 'somos em 4' }] });
+      await expect(service.run('r1', NOW)).resolves.toEqual({ kind: 'SENT' });
+    });
+
+    it('execução parada ou encerrada neste turno não agenda', async () => {
+      const { service, simulator, repo } = build();
+      simulator.getConversation
+        .mockResolvedValueOnce(CONVERSATION)
+        .mockResolvedValueOnce({ messages: [...CONVERSATION.messages, NEW_TEAM] });
+      repo.findRun.mockResolvedValueOnce(RUN).mockResolvedValueOnce(RUN).mockResolvedValueOnce({ ...RUN, status: 'ENDED' });
+      await expect(service.run('r1', NOW)).resolves.toEqual({ kind: 'SENT' });
+    });
+  });
 });

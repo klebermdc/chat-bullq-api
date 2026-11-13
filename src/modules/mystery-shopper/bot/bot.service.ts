@@ -34,10 +34,8 @@ export class BotService {
 
   async start(organizationId: string, numberId: string, persona: string): Promise<BotState> {
     await this.requireSimulated(organizationId, numberId);
-    if (await this.repository.findActiveRun(organizationId, numberId)) {
-      throw new ConflictException('Já existe um robô conversando neste número.');
-    }
-    const run = await this.repository.createRun(organizationId, numberId, persona.trim());
+    const run = await this.repository.createRunExclusive(organizationId, numberId, persona.trim());
+    if (!run) throw new ConflictException('Já existe um robô conversando neste número.');
     try {
       // Mesmo caminho do viewer digitando: SimulatorService → process-inbound.
       await this.simulator.sendMessage(organizationId, numberId, BOT_OPENING_MESSAGE);
