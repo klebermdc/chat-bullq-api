@@ -14,6 +14,12 @@ de verdade. Cada passo é reversível.
 **Pegadinha resolvida:** a Meta recusa o ALPN `sip` do livekit/sip (`tls: no application protocol`).
 O `sip.yaml` precisa de `tls.alpn: []` (já no template).
 
+**Pegadinha 2 (13/11):** a Meta às vezes recusa a ligação antes de tocar com
+`403: SDP Validation Error` (mesma configuração passou antes e depois). A API disca
+esperando os primeiros 4 s da resposta e, nesse caso, disca de novo uma vez
+(Aline em sala nova `<sala>-2`; vendedor na mesma sala). Aparece no log como
+"Meta recusou o SDP na sala …".
+
 ## 0. Antes de começar
 
 - Horário de atendimento dos vendedores conferido (a Aline só liga no expediente do dono da conversa).

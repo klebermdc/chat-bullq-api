@@ -37,7 +37,7 @@ function make(opts: { orgs?: any[]; proposals?: any[]; conv?: any; permission?: 
     getPermission: jest.fn().mockResolvedValue(opts.permission ?? { canCall: true, canRequest: true, status: 'temporary' }),
     requestPermission: jest.fn().mockResolvedValue('wamid.1'),
   } as any;
-  const dialer = { configured: opts.dialerConfigured ?? true, dial: jest.fn().mockResolvedValue(undefined) } as any;
+  const dialer = { configured: opts.dialerConfigured ?? true, dial: jest.fn().mockImplementation(async (i: any) => i.room) } as any;
   const realtime = { emitToChannel: jest.fn(), emitToConversation: jest.fn() } as any;
   return { svc: new OutreachService(prisma, graph, dialer, realtime), prisma, graph, dialer };
 }

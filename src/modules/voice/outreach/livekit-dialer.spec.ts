@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { LiveKitDialer, liveKitToken, readLiveKitConfig } from './livekit-dialer';
+import { isSdpRejection, LiveKitDialer, liveKitToken, readLiveKitConfig } from './livekit-dialer';
 
 const CFG = { url: 'https://lk.exemplo', apiKey: 'APIk', apiSecret: 'segredo', outboundTrunkId: 'ST_out', agentName: 'aline-voz' };
 
@@ -74,5 +74,62 @@ describe('LiveKitDialer (vendedor)', () => {
     });
     await d.endRoom('vendedor-cv1-1');
     expect(calls).toEqual(['https://lk.exemplo/twirp/livekit.RoomService/DeleteRoom']);
+  });
+});
+
+const SDP_403 = 'twirp error unknown: unexpected status from INVITE response: sip status: 403: SDP Validation Error: Provided SDP is invalid';
+
+/** LiveKit falso: CreateSIPParticipant responde conforme a fila (erro, ok ou "chamando" sem responder). */
+function fakeLiveKit(sipReplies: ('sdp403' | 'ok' | 'chamando' | 'outro')[]) {
+  const calls: { url: string; body: any }[] = [];
+  const fetchImpl = async (url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    calls.push({ url, body });
+    if (!url.endsWith('CreateSIPParticipant')) return new Response('{}');
+    const reply = sipReplies.shift();
+    if (reply === 'sdp403') return new Response(JSON.stringify({ code: 'unknown', msg: SDP_403 }), { status: 500 });
+    if (reply === 'outro') return new Response(JSON.stringify({ code: 'unknown', msg: 'sip status: 486: Busy Here' }), { status: 500 });
+    if (reply === 'chamando') return new Promise<Response>(() => undefined);
+    return new Response('{}');
+  };
+  return { calls, dialer: LiveKitDialer.withConfig(CFG, fetchImpl, 20) };
+}
+
+describe('recusa de SDP da Meta (403 antes de tocar)', () => {
+  it('reconhece só o 403 de SDP', () => {
+    expect(isSdpRejection(new Error(`LiveKit CreateSIPParticipant 500: ${SDP_403}`))).toBe(true);
+    expect(isSdpRejection(new Error('LiveKit CreateSIPParticipant 500: sip status: 486: Busy Here'))).toBe(false);
+    expect(isSdpRejection(new Error('LiveKit CreateSIPParticipant 403: forbidden'))).toBe(false);
+  });
+
+  it('Aline: disca de novo numa sala nova (a primeira a Aline já encerrou) e devolve a sala usada', async () => {
+    const { calls, dialer } = fakeLiveKit(['sdp403', 'ok']);
+    const room = await dialer.dial({ room: 'retorno-pr1', phoneE164: '+5511999990000', missionMetadata: '{}', contactName: 'Kleber' });
+    expect(room).toBe('retorno-pr1-2');
+    expect(calls.map((c) => [c.url.split('/').pop(), c.body.room ?? c.body.roomName])).toEqual([
+      ['CreateDispatch', 'retorno-pr1'],
+      ['CreateSIPParticipant', 'retorno-pr1'],
+      ['CreateDispatch', 'retorno-pr1-2'],
+      ['CreateSIPParticipant', 'retorno-pr1-2'],
+    ]);
+    expect(calls[1].body).toMatchObject({ waitUntilAnswered: true, ringingTimeout: '50s' });
+  });
+
+  it('vendedor: disca de novo na mesma sala', async () => {
+    const { calls, dialer } = fakeLiveKit(['sdp403', 'ok']);
+    await dialer.dialForSeller({ room: 'vendedor-cv1-1', phoneE164: '+5511999990000', contactName: 'Kleber' });
+    expect(calls.map((c) => c.body.roomName)).toEqual(['vendedor-cv1-1', 'vendedor-cv1-1']);
+  });
+
+  it('tenta de novo só uma vez e não repete outros erros', async () => {
+    await expect(fakeLiveKit(['sdp403', 'sdp403', 'ok']).dialer.dialForSeller({ room: 'r', phoneE164: '+5511999990000', contactName: 'x' })).rejects.toThrow('SDP');
+    const ocupado = fakeLiveKit(['outro', 'ok']);
+    await expect(ocupado.dialer.dialForSeller({ room: 'r', phoneE164: '+5511999990000', contactName: 'x' })).rejects.toThrow('486');
+    expect(ocupado.calls).toHaveLength(1);
+  });
+
+  it('chamando sem recusa: não espera o cliente atender', async () => {
+    const { dialer } = fakeLiveKit(['chamando']);
+    await expect(dialer.dial({ room: 'r', phoneE164: '+5511999990000', missionMetadata: '{}', contactName: 'x' })).resolves.toBe('r');
   });
 });

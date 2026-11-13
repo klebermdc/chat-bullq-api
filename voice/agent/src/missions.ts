@@ -57,7 +57,7 @@ ${systemRule}
 - Só fale de assuntos da viagem e da OFP.
 
 ${VOICE_RULES}`;
-  const greeting = `Oi, ${cliente}? Aqui é a Aline, da OFP. Esta ligação pode ser gravada. Estou ligando sobre a cotação de Orlando que a ${vendedor} te mandou. Você conseguiu ver?`;
+  const greeting = `Oi, ${cliente}? Aqui é a Aline, da OFP. Esta ligação pode ser gravada. Estou ligando sobre a cotação de Orlando que ${vendedor} te mandou. Você conseguiu ver?`;
   return { prompt, greeting, ...(withTools && { conversationId }) };
 }
 

@@ -214,8 +214,8 @@ export class OutreachService {
         vendedor: firstName(conv.assignedTo?.name) ?? 'seu consultor',
         conversationId: conv.id,
       });
-      await this.dialer.dial({ room, phoneE164: `+${conv.contact!.phone!.replace(/\D/g, '')}`, missionMetadata: mission, contactName: conv.contact!.name ?? 'Cliente' });
-      await this.prisma.voiceOutreach.update({ where: { proposalId: p.id }, data: { callStatus: 'LIGOU', calledAt: now, room } });
+      const usedRoom = await this.dialer.dial({ room, phoneE164: `+${conv.contact!.phone!.replace(/\D/g, '')}`, missionMetadata: mission, contactName: conv.contact!.name ?? 'Cliente' });
+      await this.prisma.voiceOutreach.update({ where: { proposalId: p.id }, data: { callStatus: 'LIGOU', calledAt: now, room: usedRoom } });
       await this.systemNote(conv, '📞 A Aline ligou para o cliente para confirmar se ele viu a cotação.');
     } catch (err) {
       await this.prisma.voiceOutreach.update({ where: { proposalId: p.id }, data: { callStatus: 'FALHOU', callNote: (err as Error).message.slice(0, 300) } });

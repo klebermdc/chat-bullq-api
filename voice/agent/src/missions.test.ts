@@ -5,7 +5,7 @@ describe('missionFromMetadata', () => {
   test('retorno de cotação usa nomes do cliente e da vendedora na saudação e no prompt', () => {
     const m = missionFromMetadata(JSON.stringify({ missao: 'retorno_cotacao', cliente: 'Kleber', vendedor: 'Renata' }));
     expect(m.greeting).toBe(
-      'Oi, Kleber? Aqui é a Aline, da OFP. Esta ligação pode ser gravada. Estou ligando sobre a cotação de Orlando que a Renata te mandou. Você conseguiu ver?',
+      'Oi, Kleber? Aqui é a Aline, da OFP. Esta ligação pode ser gravada. Estou ligando sobre a cotação de Orlando que Renata te mandou. Você conseguiu ver?',
     );
     expect(m.prompt).toContain('mandou a cotação');
     expect(m.prompt).toContain('NÃO fala de preço');
