@@ -11,6 +11,7 @@ import {
   localDayBounds,
   parseScoreboardDate,
 } from './daily-scoreboard.rules';
+import { REAL_CONVERSATION } from '../../../common/mystery-shopper.filters';
 
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 const OPEN_STATUSES: ConversationStatus[] = [
@@ -103,9 +104,9 @@ export class DailyScoreboardService {
     return org?.aiTimezone || DEFAULT_TIMEZONE;
   }
 
-  /** Filtro comum: conversa real (sem grupo, apagada ou arquivada) da org. */
+  /** Filtro comum: conversa real (sem grupo, apagada, arquivada ou de cliente oculto) da org. */
   private baseWhere(organizationId: string): Prisma.ConversationWhereInput {
-    return { organizationId, isGroup: false, deletedAt: null, isArchived: false };
+    return { organizationId, isGroup: false, deletedAt: null, isArchived: false, ...REAL_CONVERSATION };
   }
 
   private openConversations(organizationId: string) {
@@ -168,7 +169,9 @@ export class DailyScoreboardService {
                ${ASSIGNMENT_SOURCE_SQL} AS source
           FROM conversation_audit_logs l
           JOIN conversations c ON c.id = l.conversation_id
+          JOIN contacts k ON k.id = c.contact_id
          WHERE c.organization_id = ${organizationId}
+           AND k.is_mystery_shopper = false
            AND c.is_group = false AND c.deleted_at IS NULL AND c.is_archived = false
            AND l.action = 'ASSIGNED'
            AND l.to_value IS NOT NULL

@@ -51,4 +51,19 @@ describe('contagem de leads ignora contatos importados', () => {
     expect(prisma.contact.count).not.toHaveBeenCalled();
     expect(sqlText(prisma.$queryRaw.mock.calls[0])).toContain(`"metadata"->>'origem' IS NULL`);
   });
+
+  it('countLeads não conta contato de cliente oculto', async () => {
+    const prisma = { $queryRaw: jest.fn().mockResolvedValue([{ leads: BigInt(3) }]) } as any;
+
+    expect(await countLeads(prisma, 'org-1', from, to)).toBe(3);
+
+    expect(sqlText(prisma.$queryRaw.mock.calls[0])).toContain('"is_mystery_shopper" = false');
+  });
+
+  it('série diária também deixa o cliente oculto de fora', async () => {
+    const prisma = { $queryRaw: jest.fn().mockResolvedValue([]) } as any;
+    await new MarketingRepository(prisma).dailyLeads('org-1', from, to);
+
+    expect(sqlText(prisma.$queryRaw.mock.calls[0])).toContain('"is_mystery_shopper" = false');
+  });
 });

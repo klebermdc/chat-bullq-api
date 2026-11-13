@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AdConnectionStatus, CardStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { countLeads, NOT_IMPORTED_CONTACT } from './lead-count';
+import { NOT_MYSTERY_SHOPPER_CONTACT } from '../../../common/mystery-shopper.filters';
 
 export interface MediaAggregate {
   spend: number;
@@ -115,6 +116,7 @@ export class MarketingRepository {
           AND "created_at" >= ${from}
           AND "created_at" <= ${to}
           AND ${NOT_IMPORTED_CONTACT}
+          AND ${NOT_MYSTERY_SHOPPER_CONTACT}
         GROUP BY day
         ORDER BY day ASC
       `,

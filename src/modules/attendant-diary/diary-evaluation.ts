@@ -79,7 +79,7 @@ function renderTranscript(transcript: DiaryTranscript): string {
 }
 
 /** Aceita JSON puro, em cerca markdown ou cercado de texto. */
-function parseJsonObject(raw: string): Record<string, unknown> | null {
+export function parseJsonObject(raw: string): Record<string, unknown> | null {
   const stripped = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
   const candidate = stripped.match(/\{[\s\S]*\}/)?.[0];
   if (!candidate) return null;

@@ -173,6 +173,8 @@ model User {
 model Organization {
   voiceOutreach VoiceOutreach[]
   appointments Appointment[]
+  mysteryShopperNumbers MysteryShopperNumber[]
+  mysteryShopperVisits  MysteryShopperVisit[]
   id          String    @id @default(cuid())
   name        String
   slug        String    @unique
@@ -550,6 +552,8 @@ model ChannelSyncJob {
 
 model Contact {
   appointments Appointment[]
+  mysteryShopperNumbers MysteryShopperNumber[]
+  mysteryShopperVisits  MysteryShopperVisit[]
   id             String    @id @default(cuid())
   organizationId String    @map("organization_id")
   name           String?
@@ -565,6 +569,9 @@ model Contact {
   ctwaSourceId   String?   @map("ctwa_source_id")
   ctwaSourceType String?   @map("ctwa_source_type")
   ctwaClidAt     DateTime? @map("ctwa_clid_at")
+  // Cliente oculto: contato de teste da gestão. Omitido globalmente no
+  // PrismaService — nunca chega ao vendedor. Ver mystery-shopper.
+  isMysteryShopper Boolean   @default(false) @map("is_mystery_shopper")
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
   deletedAt      DateTime? @map("deleted_at")
@@ -583,6 +590,7 @@ model Contact {
 
   @@index([organizationId, phone], name: "idx_contact_org_phone")
   @@index([organizationId, email], name: "idx_contact_org_email")
+  @@index([organizationId, isMysteryShopper], name: "idx_contact_org_mystery")
   @@map("contacts")
 }
 
@@ -648,6 +656,7 @@ model SocialComment {
 
 model Conversation {
   appointments Appointment[]
+  mysteryShopperVisit MysteryShopperVisit?
   id                  String             @id @default(cuid())
   organizationId      String             @map("organization_id")
   channelId           String             @map("channel_id")
@@ -3447,4 +3456,62 @@ model VoiceOutreach {
 
   @@index([organizationId, callStatus])
   @@map("voice_outreach")
+}
+
+enum MysteryShopperVisitStatus {
+  OPEN
+  EVALUATING
+  DONE
+  FAILED
+  DISCARDED
+}
+
+/// Número de cliente oculto. Remover = removed_at; o contato continua marcado.
+model MysteryShopperNumber {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  contactId      String    @map("contact_id")
+  label          String
+  createdById    String?   @map("created_by_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  removedAt      DateTime? @map("removed_at")
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact               @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  visits       MysteryShopperVisit[]
+
+  @@index([organizationId, removedAt])
+  @@index([contactId])
+  @@map("mystery_shopper_numbers")
+}
+
+/// Uma visita = uma conversa de um número de cliente oculto.
+model MysteryShopperVisit {
+  id             String                    @id @default(cuid())
+  organizationId String                    @map("organization_id")
+  numberId       String                    @map("number_id")
+  contactId      String                    @map("contact_id")
+  conversationId String                    @unique @map("conversation_id")
+  sellerUserId   String?                   @map("seller_user_id")
+  scenario       String?
+  status         MysteryShopperVisitStatus @default(OPEN)
+  closedAt       DateTime?                 @map("closed_at")
+  evaluatedAt    DateTime?                 @map("evaluated_at")
+  metrics        Json                      @default("{}")
+  scores         Json                      @default("[]")
+  totalScore     Int?                      @map("total_score")
+  summary        Json                      @default("{}")
+  error          String?
+  costUsd        Decimal?                  @map("cost_usd") @db.Decimal(10, 4)
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @updatedAt @map("updated_at")
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  number       MysteryShopperNumber @relation(fields: [numberId], references: [id], onDelete: Cascade)
+  contact      Contact              @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  conversation Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([organizationId, sellerUserId, evaluatedAt])
+  @@map("mystery_shopper_visits")
 }

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
+import { NOT_MYSTERY_SHOPPER_CONTACT } from '../../../common/mystery-shopper.filters';
 
 /**
  * Contato criado por script de importação não é lead do período.
@@ -29,6 +30,7 @@ export async function countLeads(
         AND "created_at" >= ${from}
         AND "created_at" <= ${to}
         AND ${NOT_IMPORTED_CONTACT}
+        AND ${NOT_MYSTERY_SHOPPER_CONTACT}
     `,
   );
   return rows.length > 0 ? Number(rows[0].leads) : 0;
