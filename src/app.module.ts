@@ -49,6 +49,7 @@ import { SalesReportsModule } from './modules/sales-reports/sales-reports.module
 import { ProposalsModule } from './modules/proposals/proposals.module';
 import { CrmReportsModule } from './modules/crm-reports/crm-reports.module';
 import { ChannelUsageModule } from './modules/channel-usage/channel-usage.module';
+import { WhatsappCostsModule } from './modules/whatsapp-costs/whatsapp-costs.module';
 import { CopilotModule } from './modules/copilot/copilot.module';
 import { CallsModule } from './modules/calls/calls.module';
 import { OrderFichaModule } from './modules/order-ficha/order-ficha.module';
@@ -136,6 +137,7 @@ import redisConfig from './config/redis.config';
     ProposalsModule,
     CrmReportsModule,
     ChannelUsageModule,
+    WhatsappCostsModule,
     CopilotModule,
     CallsModule,
     OrderFichaModule,
