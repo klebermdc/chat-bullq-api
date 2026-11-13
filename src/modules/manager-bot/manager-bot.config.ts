@@ -21,6 +21,8 @@ export interface ManagerBotConfig {
   alertIntervalMinutes: number;
   queueThreshold: number;
   offlineMinutes: number;
+  /** Teto de custo do WhatsApp por dia (moeda da conta Meta); 0 = sem alerta. */
+  costAlertDaily: number;
 }
 
 export type ParsedManagerBot = { ok: true; config: ManagerBotConfig } | { ok: false; reason: string | null };
@@ -31,6 +33,7 @@ export const DEFAULT_SLA_ALERT_AFTER_MINUTES = 30;
 export const DEFAULT_ALERT_INTERVAL_MINUTES = 30;
 export const DEFAULT_QUEUE_THRESHOLD = 10;
 export const DEFAULT_OFFLINE_MINUTES = 30;
+export const DEFAULT_COST_ALERT_DAILY = 120;
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const CHAT_ID = /^-?\d{1,20}$/;
 
@@ -44,6 +47,11 @@ function positiveInt(value: unknown, fallback: number): number | null {
   if (value === undefined) return fallback;
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) return null;
   return Math.floor(value);
+}
+
+function nonNegative(value: unknown, fallback: number): number | null {
+  if (value === undefined) return fallback;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function parseHhmm(value: unknown, fallback: string): number | null {
@@ -83,6 +91,7 @@ export function parseManagerBotConfig(settings: unknown): ParsedManagerBot {
     alertIntervalMinutes: positiveInt(raw.alertIntervalMinutes, DEFAULT_ALERT_INTERVAL_MINUTES),
     queueThreshold: positiveInt(raw.queueThreshold, DEFAULT_QUEUE_THRESHOLD),
     offlineMinutes: positiveInt(raw.offlineMinutes, DEFAULT_OFFLINE_MINUTES),
+    costAlertDaily: nonNegative(raw.costAlertDaily, DEFAULT_COST_ALERT_DAILY),
   };
   const invalid = Object.entries(fields).find(([, v]) => v === null);
   if (invalid) return { ok: false, reason: `${invalid[0]} inválido` };

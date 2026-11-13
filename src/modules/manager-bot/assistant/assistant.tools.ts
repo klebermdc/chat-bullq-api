@@ -53,6 +53,12 @@ export const ASSISTANT_TOOLS: LlmToolDefinition[] = [
     parameters: { type: 'object', properties: PERIOD, required: ['inicio', 'fim'] },
   },
   {
+    name: 'custo_whatsapp',
+    description:
+      'Custo real do WhatsApp oficial cobrado pela Meta no período: total por moeda, por canal e por categoria (respostas 24h, marketing, utilidade), custo por dia, e quem mais gerou custo (vendedores, IA e automações) e os templates mais caros, estimados. Use para perguntas de gasto/custo/fatura do WhatsApp.',
+    parameters: { type: 'object', properties: PERIOD, required: ['inicio', 'fim'] },
+  },
+  {
     name: 'equipe_agora',
     description:
       'Equipe agora: quem está online/ausente/offline, se está dentro do expediente, quantos clientes esperam por ele e minutos online hoje.',
@@ -78,6 +84,7 @@ export class AssistantTools {
     vendas_perdidas: (org, args) => this.lost(org, args),
     volume_periodo: (org, args) => this.volume(org, args),
     equipe_agora: (org, _args, now) => this.team(org, now),
+    custo_whatsapp: (org, args, now) => this.costs(org, args, now),
   };
 
   constructor(
@@ -155,6 +162,27 @@ export class AssistantTools {
       this.repository.countClosed(org.id, range),
     ]);
     return { novas, finalizadas };
+  }
+
+  private async costs(org: AlertOrg, args: Args, now: Date) {
+    parsePeriod(args.inicio, args.fim, org.tz);
+    const { report, top } = await this.reports.costSummary(org, now, String(args.inicio).trim(), String(args.fim).trim());
+    return {
+      totalPorMoeda: report.totalsByCurrency,
+      canais: report.channels.map((c) => ({
+        canal: c.channelName,
+        moeda: c.currency,
+        erro: c.error,
+        custo: c.totals.cost,
+        cobradas: c.totals.billable,
+        gratis: c.totals.free,
+        porCategoria: c.totals.byCategory,
+        porDia: c.daily.map((d) => ({ data: d.date, custo: d.cost, cobradas: d.billable })),
+      })),
+      quemGerouCusto: top ? limited(top.senders) : null,
+      templatesMaisCaros: top ? limited(top.templates) : null,
+      observacao: 'quemGerouCusto e templates são estimativa (quantidade × preço médio da Meta no período)',
+    };
   }
 
   private async team(org: AlertOrg, now: Date) {

@@ -8,6 +8,7 @@ import { AssistantTools } from './assistant/assistant.tools';
 import { SlaManagerAlertsModule } from '../response-sla/manager-alerts/manager-alerts.module';
 import type { ThrottleStore } from '../response-sla/manager-alerts/manager-alerts.throttle';
 import { TeamPresenceModule } from '../team-presence/team-presence.module';
+import { WhatsappCostsModule } from '../whatsapp-costs/whatsapp-costs.module';
 import { ManagerBotAccess } from './manager-bot.access';
 import { ManagerBotController } from './manager-bot.controller';
 import { ManagerBotCron, ManagerBotProcessor } from './manager-bot.cron';
@@ -30,6 +31,7 @@ import { TelegramWebhookController } from './telegram/telegram.webhook.controlle
     SlaManagerAlertsModule,
     TeamPresenceModule,
     LlmModule,
+    WhatsappCostsModule,
   ],
   controllers: [ManagerBotController, TelegramWebhookController],
   providers: [
