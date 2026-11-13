@@ -20,6 +20,9 @@ logging:
 
 tls:
   port: ${SIP_TLS_PORT}
+  # A Meta (wa.meta.vc) recusa o ALPN "sip" padrão ("tls: no application protocol"):
+  # lista vazia desliga o ALPN. livekit/sip PR #686.
+  alpn: []
   certs:
     - cert_file: /certs/${SIP_DOMAIN}/${SIP_DOMAIN}.crt
       key_file: /certs/${SIP_DOMAIN}/${SIP_DOMAIN}.key

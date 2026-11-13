@@ -9,6 +9,12 @@ import type { OpenAI } from 'openai';
  */
 const CHANNELS = 1;
 
+/** Cancelamento por interrupção (barge-in): não é erro. O SDK da OpenAI usa APIUserAbortError. */
+export function isAbortError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return err.name === 'AbortError' || err.constructor?.name === 'APIUserAbortError' || err.message === 'Request was aborted.';
+}
+
 export interface StreamingTtsOptions {
   client: OpenAI;
   model: string;
@@ -111,7 +117,7 @@ class StreamingChunkedStream extends tts.ChunkedStream {
       push(bytes.flush());
       emit(pending, true);
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') return;
+      if (isAbortError(error)) return;
       throw error;
     } finally {
       this.queue.close();
