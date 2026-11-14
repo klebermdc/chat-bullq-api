@@ -5,6 +5,7 @@ import { TelegramClient } from '../manager-bot/telegram/telegram.client';
 import { BotRepository } from './bot/bot.repository';
 import { BotTurnService } from './bot/bot-turn.service';
 import { BotService } from './bot/bot.service';
+import { PersonaGeneratorService } from './bot/persona-generator.service';
 import { MYSTERY_SHOPPER_QUEUE } from './mystery-shopper.constants';
 import { MysteryShopperAccess } from './mystery-shopper.access';
 import { MysteryShopperController } from './mystery-shopper.controller';
@@ -35,6 +36,7 @@ import { VisitEvaluatorService } from './visit-evaluator.service';
     BotRepository,
     BotService,
     BotTurnService,
+    PersonaGeneratorService,
     VisitEvaluatorService,
     MysteryShopperProcessor,
     { provide: TelegramClient, useFactory: () => new TelegramClient(process.env.TELEGRAM_BOT_TOKEN) },
