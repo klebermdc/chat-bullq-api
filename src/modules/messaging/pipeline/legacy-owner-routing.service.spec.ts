@@ -18,6 +18,7 @@ function make(
     phone?: string | null;
     rows?: unknown[];
     member?: unknown;
+    previous?: unknown[];
   } = {},
 ) {
   const updated = { id: 'conv-1', channelId: 'ch-1', assignedToId: 'user-renata' };
@@ -27,7 +28,15 @@ function make(
         phone: overrides.phone === undefined ? '558599998888' : overrides.phone,
       }),
     },
-    $queryRaw: jest.fn().mockResolvedValue(overrides.rows ?? [LEGACY_ROW]),
+    // A carteira e o último dono são consultas SQL distintas; o mock separa
+    // pelo texto da query.
+    $queryRaw: jest.fn().mockImplementation((strings: TemplateStringsArray) =>
+      Promise.resolve(
+        strings.join('?').includes('buscar_vendedor_legado')
+          ? (overrides.rows ?? [LEGACY_ROW])
+          : (overrides.previous ?? []),
+      ),
+    ),
     userOrganization: {
       findFirst: jest
         .fn()
@@ -106,7 +115,10 @@ describe('LegacyOwnerRoutingService.routeNewConversation', () => {
     const result = await service.routeNewConversation(PARAMS);
 
     expect(result).toEqual({ routed: false, reason: 'no_phone' });
-    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    const carteiraQueries = prisma.$queryRaw.mock.calls.filter(([strings]: any) =>
+      strings.join('?').includes('buscar_vendedor_legado'),
+    );
+    expect(carteiraQueries).toHaveLength(0);
     expect(fsm.assign).not.toHaveBeenCalled();
   });
 
@@ -205,6 +217,91 @@ describe('LegacyOwnerRoutingService — lead do site com a Aline até o handoff'
 
     expect(result).toEqual({ routed: true, userId: 'user-renata', vendedor: 'Renata' });
     expect(fsm.assign).toHaveBeenCalledWith('conv-1', 'user-renata', undefined, 'legacy_owner');
+    expect(prisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv-1' },
+      data: { aiEnabled: true, activeAgentId: 'aline', aiUntilHandoff: true },
+    });
+  });
+});
+
+describe('LegacyOwnerRoutingService — cliente que volta e não está na carteira', () => {
+  const PREVIOUS = [{ user_id: 'user-suelen', name: 'Suelen' }];
+
+  it('devolve ao último vendedor que atendeu o contato e desliga a IA', async () => {
+    const { service, fsm, prisma } = make({ rows: [], previous: PREVIOUS });
+
+    const result = await service.routeNewConversation(PARAMS);
+
+    expect(result).toEqual({
+      routed: true,
+      userId: 'user-suelen',
+      vendedor: 'Suelen',
+      via: 'previous_owner',
+    });
+    expect(fsm.assign).toHaveBeenCalledWith('conv-1', 'user-suelen', undefined, 'previous_owner');
+    expect(prisma.conversation.update).toHaveBeenCalledWith({
+      where: { id: 'conv-1' },
+      data: { aiEnabled: false, activeAgentId: null },
+    });
+  });
+
+  it('também vale para contato sem telefone (Instagram)', async () => {
+    const { service, fsm } = make({ phone: null, previous: PREVIOUS });
+
+    const result = await service.routeNewConversation(PARAMS);
+
+    expect(result.routed).toBe(true);
+    expect(fsm.assign).toHaveBeenCalledWith('conv-1', 'user-suelen', undefined, 'previous_owner');
+  });
+
+  it('vale quando o vendedor da carteira saiu das vendas (sem usuário mapeado)', async () => {
+    const { service, fsm } = make({
+      rows: [{ ...LEGACY_ROW, vendedor: 'Gabi', user_id: null }],
+      previous: PREVIOUS,
+    });
+
+    const result = await service.routeNewConversation(PARAMS);
+
+    expect(result.routed).toBe(true);
+    expect(fsm.assign).toHaveBeenCalledWith('conv-1', 'user-suelen', undefined, 'previous_owner');
+  });
+
+  it('passa o dono da conversa reaberta para a consulta, que o prefere', async () => {
+    const { service, prisma } = make({ rows: [], previous: PREVIOUS });
+
+    await service.routeNewConversation({ ...PARAMS, previousOwnerId: 'user-suelen' });
+
+    const previousQuery = prisma.$queryRaw.mock.calls.find(
+      ([strings]: any) => !strings.join('?').includes('buscar_vendedor_legado'),
+    );
+    expect(previousQuery).toBeDefined();
+    expect(previousQuery.slice(1)).toContain('user-suelen');
+  });
+
+  it('a carteira continua tendo prioridade: não consulta o último dono', async () => {
+    const { service, prisma, fsm } = make({ previous: PREVIOUS });
+
+    const result = await service.routeNewConversation(PARAMS);
+
+    expect(result).toEqual({ routed: true, userId: 'user-renata', vendedor: 'Renata' });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(fsm.assign).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem atendimento anterior segue a distribuição normal', async () => {
+    const { service, fsm } = make({ rows: [], previous: [] });
+
+    const result = await service.routeNewConversation(PARAMS);
+
+    expect(result).toEqual({ routed: false, reason: 'not_found' });
+    expect(fsm.assign).not.toHaveBeenCalled();
+  });
+
+  it('lead do site volta ao último dono com a Aline conduzindo até o handoff', async () => {
+    const { service, prisma } = make({ rows: [], previous: PREVIOUS });
+
+    await service.routeNewConversation(PARAMS, { aiUntilHandoffAgentId: 'aline' });
+
     expect(prisma.conversation.update).toHaveBeenCalledWith({
       where: { id: 'conv-1' },
       data: { aiEnabled: true, activeAgentId: 'aline', aiUntilHandoff: true },

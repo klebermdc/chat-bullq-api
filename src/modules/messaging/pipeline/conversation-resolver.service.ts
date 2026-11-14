@@ -11,6 +11,11 @@ export interface ResolvedConversation {
   wasReopened: boolean;
   /** Reaberta mantendo o atendente que escreveu depois de finalizar. */
   keptAssignee?: boolean;
+  /**
+   * Reaberta sem atendente: quem era o dono antes de finalizar. O roteamento
+   * usa para devolver o cliente a ele quando a carteira não resolve.
+   */
+  previousAssigneeId?: string | null;
 }
 
 /** Janela em que a resposta do cliente reabre a conversa finalizada. */
@@ -119,13 +124,15 @@ export class ConversationResolverService {
    *  - o atendente escreveu nela DEPOIS de finalizar (template de retomada)
    *    há menos de 24h — o cliente está respondendo esse envio, e a resposta
    *    tem que cair na mesma conversa, não numa nova.
-   * No segundo caso quem mandou continua dono; no primeiro, volta sem dono.
+   * No segundo caso quem mandou continua dono; no primeiro, volta sem dono e
+   * o dono anterior segue no retorno para o roteamento decidir.
    */
   private async tryReopen(lastClosed: {
     id: string;
     closedAt: Date | null;
     updatedAt: Date;
     lastOutboundAt: Date | null;
+    assignedToId: string | null;
   }): Promise<ResolvedConversation | null> {
     const closedAt = lastClosed.closedAt ?? lastClosed.updatedAt;
     const outboundAt = lastClosed.lastOutboundAt ?? null;
@@ -162,6 +169,7 @@ export class ConversationResolverService {
       isNew: false,
       wasReopened: true,
       keptAssignee: reachedOutAfterClose,
+      previousAssigneeId: reachedOutAfterClose ? null : lastClosed.assignedToId,
     };
   }
 

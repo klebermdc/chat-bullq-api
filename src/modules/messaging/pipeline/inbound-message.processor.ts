@@ -236,6 +236,7 @@ export class InboundMessageProcessor extends WorkerHost {
         isNew: conversationIsNew,
         wasReopened: conversationWasReopened,
         keptAssignee: conversationKeptAssignee,
+        previousAssigneeId: conversationPreviousAssigneeId,
       } = await this.conversationResolver.resolve(
         organizationId,
         channelId,
@@ -363,10 +364,11 @@ export class InboundMessageProcessor extends WorkerHost {
         eligible: isNew && direction === MessageDirection.INBOUND && !message.isGroup,
       });
 
-      // Carteira legada: lead novo que já era de um vendedor volta direto pra
-      // ele, antes do sino (que então avisa o vendedor) e antes do chatbot e
-      // da Aline (que ficam de fora). Falha aqui cai no fluxo normal. Conversa
-      // reaberta (<24h) também entra: o resolver a reabre SEM atendente.
+      // Cliente que volta: vai para o vendedor da carteira legada ou, fora
+      // dela, para o último atendente do contato — antes do sino (que então
+      // avisa o vendedor) e antes do chatbot e da Aline (que ficam de fora).
+      // Falha aqui cai no fluxo normal. Conversa reaberta (<24h) também
+      // entra: o resolver a reabre SEM atendente e informa quem era o dono.
       // Exceção: reaberta porque o atendente mandou template depois de
       // finalizar — ela segue com quem mandou.
       let routedToLegacyOwner = false;
@@ -383,6 +385,7 @@ export class InboundMessageProcessor extends WorkerHost {
             organizationId,
             conversationId,
             contactId,
+            previousOwnerId: conversationPreviousAssigneeId,
           });
           routedToLegacyOwner = legacy.routed;
         } catch (err: any) {
