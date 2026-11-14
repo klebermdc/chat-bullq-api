@@ -38,7 +38,7 @@ describe('BotTurnService.run', () => {
     await expect(service.run('r1', NOW)).resolves.toEqual({ kind: 'SENT' });
     expect(simulator.sendMessage).toHaveBeenCalledWith('org', 'n1', 'somos em 4');
     expect(repo.recordTurn).toHaveBeenCalledWith('r1', { status: 'ACTIVE', sent: true, followUpAnswered: false, costUsd: 0.01 });
-    expect(llm.complete).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org', temperature: 0.7, maxTokens: 600 }));
+    expect(llm.complete).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org', temperature: 0.7, maxTokens: 3000 }));
   });
 
   it('encerrar: envia a saída e vai para CLOSING', async () => {
