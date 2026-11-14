@@ -13,6 +13,8 @@ import {
 } from './mystery-shopper.constants';
 import { MysteryShopperRepository, type NumberRow, type VisitRow } from './mystery-shopper.repository';
 import type { CriterionScore, VisitMetrics, VisitSummary } from './mystery-shopper.types';
+import { resolveKpiMonth } from './kpi-month';
+import { buildKpis, type MysteryShopperKpis } from './visit-kpis';
 import { buildRanking, type RankingRow } from './visit-ranking';
 import { buildVisitLines } from './visit-transcript';
 
@@ -157,6 +159,22 @@ export class MysteryShopperService {
     const visits = await this.repository.findRankingVisits(organizationId, new Date(now.getTime() - RANKING_DAYS * DAY_MS));
     const names = await this.repository.findUserNames(visits.map((v) => v.sellerUserId));
     return buildRanking(visits, names);
+  }
+
+  /** Indicadores do mês (`YYYY-MM`, no fuso da org); sem mês = mês atual. */
+  async kpis(organizationId: string, month: string | undefined, now: Date = new Date()): Promise<MysteryShopperKpis> {
+    const timeZone = await this.repository.findOrgTimezone(organizationId);
+    const range = resolveKpiMonth(month, now, timeZone);
+    const [both, openVisits] = await Promise.all([
+      this.repository.findKpiVisits(organizationId, range.previousStart, range.end),
+      this.repository.countOpenVisits(organizationId, range.start, range.end),
+    ]);
+    const inMonth = (v: { evaluatedAt: Date }) => v.evaluatedAt.getTime() >= range.start.getTime();
+    const visits = both.filter(inMonth);
+    const previousVisits = both.filter((v) => !inMonth(v));
+    const sellerIds = [...new Set(visits.flatMap((v) => (v.sellerUserId ? [v.sellerUserId] : [])))];
+    const names = await this.repository.findUserNames(sellerIds);
+    return buildKpis({ month: range.month, visits, previousVisits, openVisits, names });
   }
 
   listNumbers(organizationId: string): Promise<NumberRow[]> {

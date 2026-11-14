@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiExcludeController } from '@nestjs/swagger';
 import { JwtAuthGuard, OrgGuard } from '../../common/guards';
 import { CurrentOrg, CurrentUser } from '../../common/decorators';
@@ -73,6 +73,13 @@ export class MysteryShopperController {
   async ranking(@CurrentOrg('id') orgId: string, @CurrentUser('email') email: string) {
     await this.accessControl.assertViewer(orgId, email);
     return this.service.ranking(orgId);
+  }
+
+  /** Indicadores do mês: `?month=YYYY-MM` (opcional; padrão = mês atual no fuso da org). */
+  @Get('kpis')
+  async kpis(@CurrentOrg('id') orgId: string, @CurrentUser('email') email: string, @Query('month') month?: string) {
+    await this.accessControl.assertViewer(orgId, email);
+    return this.service.kpis(orgId, month);
   }
 
   @Get('numbers')
