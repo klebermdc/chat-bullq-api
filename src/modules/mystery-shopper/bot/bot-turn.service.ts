@@ -156,8 +156,10 @@ export class BotTurnService {
           ],
         });
         costUsd += response.usage.costUsd;
-        const reply = parseBotReply(llmText(response.message.content));
+        const text = llmText(response.message.content);
+        const reply = parseBotReply(text);
         if (reply) return { reply, costUsd };
+        this.logger.warn(`bot_turn_unreadable attempt=${attempt} stop=${response.stopReason ?? '?'} chars=${text.length}`);
       } catch (err) {
         this.logger.warn(`bot_turn_llm_error attempt=${attempt}: ${(err as Error).message}`);
       }

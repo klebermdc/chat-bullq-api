@@ -10,7 +10,8 @@ export const BOT_READ_DELAY_MAX_MS = 90_000;
 /** Depois disto o robô é forçado a encerrar no próximo turno. */
 export const BOT_MAX_CLIENT_MESSAGES = 15;
 export const BOT_HISTORY_LIMIT = 60;
-export const BOT_MAX_TOKENS = 600;
+/** O MiniMax escreve o raciocínio (<think>) dentro deste limite: 600 cortava antes do JSON em conversa longa. */
+export const BOT_MAX_TOKENS = 3000;
 export const BOT_TEMPERATURE = 0.7;
 export const BOT_MAX_ATTEMPTS = 2;
 export const BOT_MAX_REPLY_CHARS = 1000;

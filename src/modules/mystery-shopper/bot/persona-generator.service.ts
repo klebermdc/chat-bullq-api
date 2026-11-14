@@ -157,12 +157,13 @@ export class PersonaGeneratorService {
             { role: 'user', content: attempt === 0 ? prompt.user : `${prompt.user}\n\n${RETRY_REMINDER}` },
           ],
         });
-        const persona = parsePersona(llmText(response.message.content));
+        const text = llmText(response.message.content);
+        const persona = parsePersona(text);
         if (persona) {
           this.logger.log(`persona_generated org=${organizationId} attempt=${attempt} chars=${persona.length} costUsd=${response.usage.costUsd}`);
           return persona;
         }
-        this.logger.warn(`persona_unreadable org=${organizationId} attempt=${attempt}`);
+        this.logger.warn(`persona_unreadable org=${organizationId} attempt=${attempt} stop=${response.stopReason ?? '?'} chars=${text.length}`);
       } catch (err) {
         this.logger.warn(`persona_llm_error org=${organizationId} attempt=${attempt}: ${(err as Error).message}`);
       }

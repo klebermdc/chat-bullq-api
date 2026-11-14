@@ -6,3 +6,10 @@ describe('botTurnJobId', () => {
     expect(botTurnJobId('r1')).not.toContain(':');
   });
 });
+
+describe('BOT_MAX_TOKENS', () => {
+  it('deixa espaço para o raciocínio do MiniMax antes do JSON', () => {
+    const { BOT_MAX_TOKENS } = jest.requireActual('./bot.constants');
+    expect(BOT_MAX_TOKENS).toBeGreaterThanOrEqual(2000);
+  });
+});

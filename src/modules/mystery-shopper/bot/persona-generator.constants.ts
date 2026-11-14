@@ -16,5 +16,6 @@ export const PERSONA_LOST_REASONS_MAX = 6;
 export const PERSONA_LOST_WINDOW_DAYS = 90;
 
 export const PERSONA_TEMPERATURE = 0.9;
-export const PERSONA_MAX_TOKENS = 900;
+/** Inclui o raciocínio (<think>) do MiniMax; com pouco espaço a persona sai cortada, sem JSON. */
+export const PERSONA_MAX_TOKENS = 4000;
 export const PERSONA_MAX_ATTEMPTS = 2;
