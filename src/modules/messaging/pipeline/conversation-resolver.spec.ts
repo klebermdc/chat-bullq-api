@@ -191,4 +191,21 @@ describe('ConversationResolverService.resolve', () => {
     expect(result).toMatchObject({ wasReopened: true, keptAssignee: false });
     expect(prisma.conversation.update.mock.calls[0][0].data.assignedToId).toBeNull();
   });
+
+  it('reabertura comum devolve quem era o dono, para o roteamento devolver o cliente a ele', async () => {
+    const closedAt = new Date(Date.now() - HOUR);
+    const prisma = buildReopenPrisma({
+      id: 'conv-recente',
+      status: ConversationStatus.CLOSED,
+      closedAt,
+      updatedAt: closedAt,
+      lastOutboundAt: null,
+      assignedToId: 'user-renata',
+    });
+    const service = buildService(prisma, { enqueue: jest.fn() });
+
+    const result = await service.resolve(organizationId, channelId, contactId);
+
+    expect(result.previousAssigneeId).toBe('user-renata');
+  });
 });

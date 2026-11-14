@@ -3,7 +3,13 @@
  * O placar do dia separa cliente novo liberado (`distribution`) de retorno
  * (todo o resto).
  */
-export type AssignmentSource = 'distribution' | 'legacy_owner' | 'transfer' | 'self' | 'automation';
+export type AssignmentSource =
+  | 'distribution'
+  | 'legacy_owner'
+  | 'previous_owner'
+  | 'transfer'
+  | 'self'
+  | 'automation';
 
 export interface AssignmentChange {
   fromValue: string | null;

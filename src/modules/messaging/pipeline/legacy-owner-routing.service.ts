@@ -8,6 +8,8 @@ export interface LegacyRouteParams {
   organizationId: string;
   conversationId: string;
   contactId: string;
+  /** Dono da conversa reaberta antes de finalizar (o resolver tira o dono). */
+  previousOwnerId?: string | null;
 }
 
 export interface LegacyRouteOptions {
@@ -19,7 +21,7 @@ export interface LegacyRouteOptions {
 }
 
 export type LegacyRouteResult =
-  | { routed: true; userId: string; vendedor: string }
+  | { routed: true; userId: string; vendedor: string; via?: 'previous_owner' }
   | { routed: false; reason: 'no_phone' | 'not_found' }
   | { routed: false; reason: 'unmapped' | 'inactive'; vendedor: string };
 
@@ -30,15 +32,24 @@ interface LegacyOwnerRow {
   user_id: string | null;
 }
 
+interface PreviousOwnerRow {
+  user_id: string;
+  name: string | null;
+}
+
 /**
- * Carteira legada: cliente que já era de um vendedor na planilha antiga
- * (tabela `contatos_legado`, exportada da Umbler) volta direto para ele quando
- * abre conversa nova. Pula a triagem da Aline e a fila "Distribuir". As
- * etiquetas da planilha vão para o contato; a do vendedor vem do `fsm.assign`.
+ * Cliente que volta a escrever vai para quem já o atendia, sem passar pela
+ * triagem da Aline nem pela fila "Distribuir".
  *
- * O nome da planilha ("Renata", "Carol"...) vira usuário pela tabela
- * `contatos_legado_vendedores`. Sem mapeamento, ou com o vendedor inativo /
- * fora da organização, a conversa segue o fluxo normal.
+ * 1. Carteira legada (tabela `contatos_legado`, exportada da Umbler): as
+ *    etiquetas da planilha vão para o contato; a do vendedor vem do
+ *    `fsm.assign`. O nome da planilha ("Renata", "Carol"...) vira usuário pela
+ *    tabela `contatos_legado_vendedores`.
+ * 2. Fora da carteira (cliente que chegou depois da Umbler, Instagram, ou
+ *    vendedor da planilha que saiu): o último atendente do contato, em
+ *    qualquer canal, se ainda for membro ativo da organização.
+ *
+ * Sem nenhum dos dois, a conversa segue o fluxo normal.
  */
 @Injectable()
 export class LegacyOwnerRoutingService {
@@ -53,6 +64,24 @@ export class LegacyOwnerRoutingService {
   async routeNewConversation(
     params: LegacyRouteParams,
     opts: LegacyRouteOptions = {},
+  ): Promise<LegacyRouteResult> {
+    const fromCarteira = await this.routeFromCarteira(params, opts);
+    if (fromCarteira.routed) return fromCarteira;
+
+    const previous = await this.findPreviousOwner(params);
+    if (!previous) return fromCarteira;
+
+    const vendedor = previous.name ?? previous.user_id;
+    await this.assignAndSilenceAi(params.conversationId, previous.user_id, 'previous_owner', opts);
+    this.logger.log(
+      `retorno: conv=${params.conversationId} devolvida ao último atendente "${vendedor}" (user=${previous.user_id})`,
+    );
+    return { routed: true, userId: previous.user_id, vendedor, via: 'previous_owner' };
+  }
+
+  private async routeFromCarteira(
+    params: LegacyRouteParams,
+    opts: LegacyRouteOptions,
   ): Promise<LegacyRouteResult> {
     const { organizationId, conversationId, contactId } = params;
 
@@ -94,9 +123,53 @@ export class LegacyOwnerRoutingService {
       return { routed: false, reason: 'inactive', vendedor };
     }
 
+    await this.assignAndSilenceAi(conversationId, owner.user_id, 'legacy_owner', opts);
+    this.logger.log(
+      `legado: conv=${conversationId} atribuída a "${vendedor}" (user=${owner.user_id})`,
+    );
+    return { routed: true, userId: owner.user_id, vendedor };
+  }
+
+  /**
+   * Último atendente do contato, ainda ativo na organização. O dono da
+   * conversa reaberta vem primeiro (o resolver já o tirou da linha); depois,
+   * a conversa com dono mais recente do contato, em qualquer canal.
+   */
+  private async findPreviousOwner(params: LegacyRouteParams): Promise<PreviousOwnerRow | null> {
+    const { organizationId, conversationId, contactId } = params;
+    const hint = params.previousOwnerId ?? null;
+    const rows = await this.prisma.$queryRaw<PreviousOwnerRow[]>`
+      WITH candidatos AS (
+        SELECT ${hint}::text AS user_id, 0 AS prioridade, now() AS quando
+        WHERE ${hint}::text IS NOT NULL
+        UNION ALL
+        SELECT c.assigned_to_id, 1, COALESCE(c.last_message_at, c.updated_at)
+        FROM conversations c
+        WHERE c.organization_id = ${organizationId}
+          AND c.contact_id = ${contactId}
+          AND c.id <> ${conversationId}
+          AND c.assigned_to_id IS NOT NULL
+          AND c.deleted_at IS NULL
+      )
+      SELECT k.user_id, u.name
+      FROM candidatos k
+      JOIN users u ON u.id = k.user_id AND u.is_active AND u.deleted_at IS NULL
+      JOIN user_organizations uo
+        ON uo.user_id = k.user_id AND uo.organization_id = ${organizationId}
+      ORDER BY k.prioridade, k.quando DESC
+      LIMIT 1`;
+    return rows[0] ?? null;
+  }
+
+  private async assignAndSilenceAi(
+    conversationId: string,
+    userId: string,
+    source: 'legacy_owner' | 'previous_owner',
+    opts: LegacyRouteOptions,
+  ): Promise<void> {
     // Atribui antes de desligar a IA: se a atribuição perder uma corrida, a
     // conversa continua com a Aline em vez de ficar sem ninguém.
-    await this.fsm.assign(conversationId, owner.user_id, undefined, 'legacy_owner');
+    await this.fsm.assign(conversationId, userId, undefined, source);
     // `shouldHandle` da IA ignora `assignedToId`: sem isto a Aline responderia
     // por cima do vendedor.
     // Exceção: lead do site com a Aline até o handoff — ela pergunta e
@@ -114,11 +187,6 @@ export class LegacyOwnerRoutingService {
     this.realtime.emitToConversation(conversationId, 'conversation:updated', {
       conversation: updated,
     });
-
-    this.logger.log(
-      `legado: conv=${conversationId} atribuída a "${vendedor}" (user=${owner.user_id})`,
-    );
-    return { routed: true, userId: owner.user_id, vendedor };
   }
 
   /**
