@@ -55,13 +55,13 @@ describe('costs.report', () => {
     expect(plain(formatMoney(2, 'USD'))).toBe('US$ 2,00');
   });
 
-  it('abertura: ontem e mês numa linha; avisa canal sem dados', () => {
+  it('abertura: ontem e mês numa linha; canal sem acesso não faz ruído', () => {
     const failed = report(410, 1, {
       channels: [...report(410).channels, { ...report(0).channels[0], channelName: 'Comercial', status: 'error', error: 'x' }],
     });
     const lines = buildCostOpeningLines(report(67.61, 1473), failed).map(plain);
     expect(lines[0]).toBe('<b>WhatsApp ontem:</b> R$ 67,61 (1.473 cobradas) · <b>no mês:</b> R$ 410,00');
-    expect(lines[1]).toContain('Comercial');
+    expect(lines).toHaveLength(1);
   });
 
   it('projeção usa só dias fechados', () => {

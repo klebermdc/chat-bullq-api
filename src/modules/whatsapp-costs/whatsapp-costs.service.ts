@@ -34,6 +34,8 @@ export interface CostsBreakdown {
 
 /** A Meta atualiza o custo algumas vezes por hora; 10 min poupa chamadas do bot e da tela. */
 const CACHE_TTL_MS = 10 * 60_000;
+/** Canal sem acesso (conta antiga, token vencido) não muda em minutos: evita chamar a Meta e logar a cada tique. */
+const ERROR_CACHE_TTL_MS = 60 * 60_000;
 const CACHE_MAX_ENTRIES = 200;
 const EMPTY_TOTALS: CostTotals = { cost: 0, billable: 0, free: 0, byCategory: [] };
 
@@ -89,9 +91,10 @@ export class WhatsappCostsService {
   private async channelCosts(channel: CostChannel, period: CostPeriod, tz: string, now: Date): Promise<ChannelCosts> {
     const key = `${channel.id}|${period.from}|${period.to}`;
     const hit = this.cache.get(key);
-    if (hit && now.getTime() - hit.at < CACHE_TTL_MS) return hit.value;
+    const ttl = hit?.value.status === 'error' ? ERROR_CACHE_TTL_MS : CACHE_TTL_MS;
+    if (hit && now.getTime() - hit.at < ttl) return hit.value;
     const value = await this.fetchChannel(channel, period, tz);
-    if (value.status === 'ok') this.remember(key, now, value);
+    this.remember(key, now, value);
     return value;
   }
 
