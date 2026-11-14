@@ -3,8 +3,9 @@ import { ChannelType, MessageDirection, MessageStatus, MysteryShopperVisitStatus
 import { PrismaService } from '../../database/prisma.service';
 import { phoneVariants } from '../../common/utils/phone.util';
 import { messageText } from '../messaging/messages/message-search';
-import { MAX_TRANSCRIPT_LINES, NON_CONVERSATIONAL_TYPES, VISIT_LIST_LIMIT } from './mystery-shopper.constants';
-import type { CriterionScore, EvaluationResult, VisitMessage } from './mystery-shopper.types';
+import { DEFAULT_ORG_TIMEZONE, MAX_TRANSCRIPT_LINES, NON_CONVERSATIONAL_TYPES, VISIT_LIST_LIMIT } from './mystery-shopper.constants';
+import type { CriterionScore, EvaluationResult, VisitMessage, VisitMetrics } from './mystery-shopper.types';
+import type { KpiVisit } from './visit-kpis';
 
 export interface ActiveNumber {
   id: string;
@@ -23,6 +24,28 @@ export interface VisitForEvaluation {
   assignedToId: string | null;
   sellerUserId: string | null;
 }
+
+const asRecord = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+/** `metrics` (JSON) de uma visita avaliada; campo ausente = não aconteceu. */
+function toKpiMetrics(value: unknown): VisitMetrics {
+  const raw = asRecord(value);
+  const numberOrNull = (v: unknown) => (typeof v === 'number' ? v : null);
+  return {
+    firstHumanReplyMinutes: numberOrNull(raw.firstHumanReplyMinutes),
+    humanMessages: numberOrNull(raw.humanMessages) ?? 0,
+    followUps: numberOrNull(raw.followUps) ?? 0,
+    firstFollowUpHours: numberOrNull(raw.firstFollowUpHours),
+    proposalSent: raw.proposalSent === true,
+    lastShopperMessageAt: typeof raw.lastShopperMessageAt === 'string' ? raw.lastShopperMessageAt : null,
+  };
+}
+
+const toImprovements = (summary: unknown): string[] => {
+  const list = asRecord(summary).improvements;
+  return Array.isArray(list) ? list.filter((v): v is string => typeof v === 'string') : [];
+};
 
 const VISIT_SELECT = {
   id: true,
@@ -316,6 +339,36 @@ export class MysteryShopperRepository {
       totalScore: r.totalScore as number,
       scores: (Array.isArray(r.scores) ? r.scores : []) as unknown as CriterionScore[],
     }));
+  }
+
+  /** Visitas DONE avaliadas em [from, to), da mais antiga para a mais nova (indicadores do mês). */
+  async findKpiVisits(organizationId: string, from: Date, to: Date): Promise<KpiVisit[]> {
+    const rows = await this.prisma.mysteryShopperVisit.findMany({
+      where: { organizationId, status: 'DONE', totalScore: { not: null }, evaluatedAt: { gte: from, lt: to } },
+      select: { id: true, sellerUserId: true, totalScore: true, scores: true, metrics: true, summary: true, evaluatedAt: true },
+      orderBy: { evaluatedAt: 'asc' },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      sellerUserId: r.sellerUserId,
+      totalScore: r.totalScore as number,
+      scores: (Array.isArray(r.scores) ? r.scores : []) as unknown as CriterionScore[],
+      metrics: toKpiMetrics(r.metrics),
+      improvements: toImprovements(r.summary),
+      evaluatedAt: r.evaluatedAt as Date,
+    }));
+  }
+
+  /** Visitas ainda abertas ou em avaliação criadas em [from, to). */
+  countOpenVisits(organizationId: string, from: Date, to: Date): Promise<number> {
+    return this.prisma.mysteryShopperVisit.count({
+      where: { organizationId, status: { in: ['OPEN', 'EVALUATING'] }, createdAt: { gte: from, lt: to } },
+    });
+  }
+
+  async findOrgTimezone(organizationId: string): Promise<string> {
+    const org = await this.prisma.organization.findUnique({ where: { id: organizationId }, select: { aiTimezone: true } });
+    return org?.aiTimezone || DEFAULT_ORG_TIMEZONE;
   }
 
   listNumbers(organizationId: string): Promise<NumberRow[]> {

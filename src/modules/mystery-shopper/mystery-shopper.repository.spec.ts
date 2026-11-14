@@ -185,4 +185,48 @@ describe('MysteryShopperRepository', () => {
       expect(message.findMany).not.toHaveBeenCalled();
     });
   });
+
+  describe('indicadores', () => {
+    const FROM = new Date('2026-10-01T03:00:00Z');
+    const TO = new Date('2026-12-01T03:00:00Z');
+
+    test('visitas DONE avaliadas no intervalo, com JSON normalizado e "a melhorar" do resumo', async () => {
+      const evaluatedAt = new Date('2026-11-05T10:00:00Z');
+      const findMany = jest.fn().mockResolvedValue([
+        { id: 'v1', sellerUserId: 'u1', totalScore: 80, scores: [{ criterion: 'ocultoTom' }], metrics: { firstHumanReplyMinutes: 4, followUps: 1, proposalSent: true }, summary: { improvements: ['Perguntar datas', 3] }, evaluatedAt },
+        { id: 'v2', sellerUserId: null, totalScore: 40, scores: null, metrics: {}, summary: null, evaluatedAt },
+      ]);
+      const repository = new MysteryShopperRepository({ mysteryShopperVisit: { findMany } } as never);
+
+      const rows = await repository.findKpiVisits('org', FROM, TO);
+
+      expect(findMany.mock.calls[0][0]).toMatchObject({
+        where: { organizationId: 'org', status: 'DONE', totalScore: { not: null }, evaluatedAt: { gte: FROM, lt: TO } },
+        orderBy: { evaluatedAt: 'asc' },
+      });
+      expect(rows[0]).toMatchObject({ id: 'v1', improvements: ['Perguntar datas'], metrics: { firstHumanReplyMinutes: 4, followUps: 1, proposalSent: true } });
+      expect(rows[1]).toMatchObject({ scores: [], improvements: [], metrics: { firstHumanReplyMinutes: null, followUps: 0, proposalSent: false } });
+    });
+
+    test('abertas do mês: OPEN/EVALUATING criadas no intervalo', async () => {
+      const count = jest.fn().mockResolvedValue(3);
+      const repository = new MysteryShopperRepository({ mysteryShopperVisit: { count } } as never);
+
+      expect(await repository.countOpenVisits('org', FROM, TO)).toBe(3);
+      expect(count.mock.calls[0][0].where).toEqual({
+        organizationId: 'org',
+        status: { in: ['OPEN', 'EVALUATING'] },
+        createdAt: { gte: FROM, lt: TO },
+      });
+    });
+
+    test.each([
+      ['Europe/Lisbon', 'Europe/Lisbon'],
+      [null, 'America/Sao_Paulo'],
+    ])('fuso da org: %s → %s', async (aiTimezone, expected) => {
+      const findUnique = jest.fn().mockResolvedValue({ aiTimezone });
+      const repository = new MysteryShopperRepository({ organization: { findUnique } } as never);
+      expect(await repository.findOrgTimezone('org')).toBe(expected);
+    });
+  });
 });

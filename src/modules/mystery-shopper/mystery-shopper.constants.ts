@@ -38,6 +38,19 @@ export const RANKING_DAYS = 90;
 export const SMALL_SAMPLE_VISITS = 2;
 export const VISIT_LIST_LIMIT = 200;
 
+/** Indicadores do mês: nota total a partir da qual a visita conta como aprovada. */
+export const APPROVED_SCORE = 70;
+/** Diferença de média (pontos) abaixo da qual a tendência do vendedor é "igual". */
+export const TREND_SAME_POINTS = 3;
+export const MAX_TOP_IMPROVEMENTS = 2;
+/** Fuso padrão quando a org não tem `aiTimezone`. */
+export const DEFAULT_ORG_TIMEZONE = 'America/Sao_Paulo';
+/** Critérios de IA usados no funil e nos erros graves (nomes das skills padrão). */
+export const DISCOVERY_CRITERION = 'ocultoDescoberta';
+export const PROPOSAL_CRITERION = 'ocultoCotacao';
+export const INFORMATION_CRITERION = 'ocultoInformacao';
+export const CLOSING_CRITERION = 'ocultoFechamento';
+
 export const NON_CONVERSATIONAL_TYPES = ['REACTION', 'SYSTEM'] as const;
 
 /** Visita em EVALUATING há mais que isso sem andar = job perdido; a varredura reenfileira. */

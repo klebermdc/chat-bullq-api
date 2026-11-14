@@ -2,7 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { MysteryShopperController } from './mystery-shopper.controller';
 
 describe('MysteryShopperController', () => {
-  const service = { listVisits: jest.fn().mockResolvedValue([]) };
+  const service = { listVisits: jest.fn().mockResolvedValue([]), kpis: jest.fn().mockResolvedValue({ month: '2026-11' }) };
   const simulator = {
     listChannels: jest.fn().mockResolvedValue([]),
     createNumber: jest.fn().mockResolvedValue({ id: 'n1' }),
@@ -27,6 +27,18 @@ describe('MysteryShopperController', () => {
     const controller = new MysteryShopperController(service as never, access as never, simulator as never, bot as never);
     await expect(controller.listVisits('org', 'dono@x.com')).rejects.toBeInstanceOf(NotFoundException);
     expect(service.listVisits).not.toHaveBeenCalled();
+  });
+
+  test('/kpis: 404 para quem não é viewer; viewer recebe o mês pedido', async () => {
+    const denied = { assertViewer: jest.fn().mockRejectedValue(new NotFoundException()) };
+    const blocked = new MysteryShopperController(service as never, denied as never, simulator as never, bot as never);
+    await expect(blocked.kpis('org', 'dono@x.com', '2026-11')).rejects.toBeInstanceOf(NotFoundException);
+    expect(service.kpis).not.toHaveBeenCalled();
+
+    const allowed = { assertViewer: jest.fn().mockResolvedValue(undefined) };
+    const controller = new MysteryShopperController(service as never, allowed as never, simulator as never, bot as never);
+    await expect(controller.kpis('org', 'v@x.com', '2026-11')).resolves.toEqual({ month: '2026-11' });
+    expect(service.kpis).toHaveBeenCalledWith('org', '2026-11');
   });
 
   test('rotas do simulador: 404 para quem não é viewer, sem tocar no serviço', async () => {
