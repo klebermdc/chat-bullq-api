@@ -5,11 +5,13 @@ import { CurrentOrg, CurrentUser } from '../../common/decorators';
 import { AddNumberDto } from './dto/add-number.dto';
 import { AddSimulatedNumberDto } from './dto/add-simulated-number.dto';
 import { StartBotDto } from './dto/start-bot.dto';
+import { GeneratePersonaDto } from './dto/generate-persona.dto';
 import { SimulatorMessageDto } from './dto/simulator-message.dto';
 import { ScenarioDto } from './dto/scenario.dto';
 import { MysteryShopperAccess } from './mystery-shopper.access';
 import { MysteryShopperService } from './mystery-shopper.service';
 import { BotService } from './bot/bot.service';
+import { PersonaGeneratorService } from './bot/persona-generator.service';
 import { SimulatorService } from './simulated/simulator.service';
 
 /**
@@ -26,6 +28,7 @@ export class MysteryShopperController {
     private readonly accessControl: MysteryShopperAccess,
     private readonly simulator: SimulatorService,
     private readonly bot: BotService,
+    private readonly personas: PersonaGeneratorService,
   ) {}
 
   /** Única rota que responde a todos: diz só se o menu aparece. */
@@ -146,6 +149,13 @@ export class MysteryShopperController {
   ) {
     await this.accessControl.assertViewer(orgId, email);
     return this.bot.start(orgId, numberId, dto.persona);
+  }
+
+  /** A IA escreve a persona do robô a partir de uma prévia curta, com o conhecimento da org. */
+  @Post('personas/generate')
+  async generatePersona(@CurrentOrg('id') orgId: string, @CurrentUser('email') email: string, @Body() dto: GeneratePersonaDto) {
+    await this.accessControl.assertViewer(orgId, email);
+    return this.personas.generate(orgId, dto.brief);
   }
 
   @Delete('simulator/:numberId/bot')
