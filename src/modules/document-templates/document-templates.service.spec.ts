@@ -1,9 +1,13 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { DocumentTemplatesService, TemplateActor } from './document-templates.service';
+import { ConversationActor, ConversationGuardService } from '../acceptances/conversation-guard.service';
 
 const ADMIN: TemplateActor = { organizationId: 'org-1', role: 'ADMIN', userId: 'u-admin' };
 const OWNER: TemplateActor = { organizationId: 'org-1', role: 'OWNER', userId: 'u-owner' };
 const AGENT: TemplateActor = { organizationId: 'org-1', role: 'AGENT', userId: 'u-agent' };
+/** Ator das rotas com conversa: canais acessíveis entram na guarda. */
+const withChannels = (actor: TemplateActor, channels: ConversationActor['channelAccess'] = new Set(['ch-1'])): ConversationActor =>
+  ({ ...actor, channelAccess: channels });
 
 function tpl(over: Record<string, unknown> = {}) {
   return {
@@ -33,7 +37,8 @@ function setup(row: any = tpl()) {
   const pdf = { renderDocument: jest.fn().mockResolvedValue(Buffer.from('pdf')) } as any;
   const fieldDefaults = { values: jest.fn().mockResolvedValue({}) } as any;
   const personalData = { findValues: jest.fn().mockResolvedValue({}) } as any;
-  const svc = new DocumentTemplatesService(prisma, conversationAccess, pdf, fieldDefaults, personalData);
+  const guard = new ConversationGuardService(conversationAccess);
+  const svc = new DocumentTemplatesService(prisma, guard, pdf, fieldDefaults, personalData);
   return { prisma, conversationAccess, pdf, fieldDefaults, personalData, svc };
 }
 
@@ -128,7 +133,7 @@ describe('DocumentTemplatesService — escrita', () => {
 describe('DocumentTemplatesService.autofill / render / pdf', () => {
   it('autofill com conversa passa pela guarda de acesso e lê o contato na org', async () => {
     const { prisma, conversationAccess, svc } = setup();
-    const { values } = await svc.autofill(AGENT, 'tpl-1', 'conv-1');
+    const { values } = await svc.autofill(withChannels(AGENT), 'tpl-1', 'conv-1');
     expect(conversationAccess.assertConversationAccess).toHaveBeenCalledWith('conv-1', 'org-1', 'AGENT', 'u-agent', { allowParticipant: true });
     expect(prisma.contact.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'ct-1', organizationId: 'org-1' } }));
     expect(values['[Nome do Cliente]']).toBe('Ana');
@@ -139,12 +144,12 @@ describe('DocumentTemplatesService.autofill / render / pdf', () => {
   it('autofill com conversa de outra org/sem acesso propaga o 404', async () => {
     const { conversationAccess, svc } = setup();
     conversationAccess.assertConversationAccess.mockRejectedValue(new NotFoundException('Conversation not found'));
-    await expect(svc.autofill(AGENT, 'tpl-1', 'conv-x')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.autofill(withChannels(AGENT), 'tpl-1', 'conv-x')).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('autofill sem conversa não consulta contato nem dados pessoais', async () => {
     const { prisma, personalData, svc } = setup();
-    await svc.autofill(ADMIN, 'tpl-1');
+    await svc.autofill(withChannels(ADMIN), 'tpl-1');
     expect(prisma.contact.findFirst).not.toHaveBeenCalled();
     expect(personalData.findValues).not.toHaveBeenCalled();
   });
@@ -155,9 +160,9 @@ describe('DocumentTemplatesService.autofill / render / pdf', () => {
     }));
     fieldDefaults.values.mockResolvedValue({ '[Cidade]': 'São Paulo' });
     personalData.findValues.mockResolvedValue({ '[CPF do Cliente]': '123' });
-    const out = await svc.autofill(AGENT, 'tpl-1', 'conv-1');
+    const out = await svc.autofill(withChannels(AGENT), 'tpl-1', 'conv-1');
     expect(fieldDefaults.values).toHaveBeenCalledWith('org-1');
-    expect(personalData.findValues).toHaveBeenCalledWith('org-1', 'ct-1');
+    expect(personalData.findValues).toHaveBeenCalledWith('org-1', 'ct-1', expect.any(Array));
     expect(out.values).toEqual(expect.objectContaining({
       '[Cidade]': 'São Paulo', '[Nome do Cliente]': 'Ana', '[CPF do Cliente]': '123', '[Razão Social da Agência]': 'OFP Ltda',
     }));
@@ -174,10 +179,27 @@ describe('DocumentTemplatesService.autofill / render / pdf', () => {
     expect(out).not.toHaveProperty('contactName');
   });
 
+  it('AGENT sem acesso ao canal da conversa → 404 e nenhum dado pessoal é lido', async () => {
+    const { prisma, personalData, svc } = setup();
+    const err = await svc.autofill(withChannels(AGENT, new Set(['outro-canal'])), 'tpl-1', 'conv-1').catch((e) => e);
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect(prisma.contact.findFirst).not.toHaveBeenCalled();
+    expect(personalData.findValues).not.toHaveBeenCalled();
+  });
+
+  it('vendedor incluído (conversa compartilhada) preenche: a guarda libera participante', async () => {
+    const { conversationAccess, personalData, svc } = setup();
+    personalData.findValues.mockResolvedValue({ '[CPF do Cliente]': '123' });
+    const out = await svc.autofill(withChannels(AGENT), 'tpl-1', 'conv-1');
+    expect(conversationAccess.assertConversationAccess).toHaveBeenCalledWith('conv-1', 'org-1', 'AGENT', 'u-agent', { allowParticipant: true });
+    expect(personalData.findValues).toHaveBeenCalledWith('org-1', 'ct-1', expect.arrayContaining(['[CPF do Cliente]']));
+    expect(out.values['[CPF do Cliente]']).toBe('123');
+  });
+
   it('autofill com conversa sem acesso não lê dados pessoais', async () => {
     const { conversationAccess, personalData, svc } = setup();
     conversationAccess.assertConversationAccess.mockRejectedValue(new NotFoundException());
-    await expect(svc.autofill(AGENT, 'tpl-1', 'conv-x')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.autofill(withChannels(AGENT), 'tpl-1', 'conv-x')).rejects.toBeInstanceOf(NotFoundException);
     expect(personalData.findValues).not.toHaveBeenCalled();
   });
 

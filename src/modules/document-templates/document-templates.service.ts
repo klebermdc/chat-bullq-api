@@ -6,7 +6,10 @@ import {
 } from '@nestjs/common';
 import { DocumentTemplate, DocumentTemplateAudience, OrgRole } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { ConversationAccessService } from '../messaging/conversations/conversation-access.service';
+import {
+  ConversationActor,
+  ConversationGuardService,
+} from '../acceptances/conversation-guard.service';
 import { AcceptancePdfService } from '../acceptances/acceptance-pdf.service';
 import { canSeeTemplate, isTemplateManager } from './document-template-access';
 import {
@@ -62,7 +65,7 @@ export function assertPlaceholderCount(body: string): void {
 export class DocumentTemplatesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly conversationAccess: ConversationAccessService,
+    private readonly guard: ConversationGuardService,
     private readonly pdf: AcceptancePdfService,
     private readonly fieldDefaults: FieldDefaultsService,
     private readonly personalData: ContactPersonalDataService,
@@ -152,24 +155,26 @@ export class DocumentTemplatesService {
   /**
    * Valores pré-preenchidos para os campos do modelo, com a origem de cada um
    * e os campos agrupados. Com `conversationId`, os dados do cliente vêm do
-   * contato daquela conversa — e a conversa passa pela mesma guarda de acesso
-   * do envio (outra org/outro vendedor = 404).
+   * contato daquela conversa — e a conversa passa pela mesma guarda do envio
+   * do contrato (outra org, conversa de colega ou canal sem acesso = 404;
+   * vendedor incluído passa).
    */
-  async autofill(actor: TemplateActor, id: string, conversationId?: string): Promise<AutofillView> {
+  async autofill(actor: ConversationActor, id: string, conversationId?: string): Promise<AutofillView> {
     const { contactName: _contactName, ...view } = await this.autofillDetail(actor, id, conversationId);
     return view;
   }
 
-  async autofillDetail(actor: TemplateActor, id: string, conversationId?: string): Promise<AutofillDetail> {
+  async autofillDetail(actor: ConversationActor, id: string, conversationId?: string): Promise<AutofillDetail> {
     const template = await this.findVisible(actor, id);
     return this.autofillTemplate(actor, template, conversationId);
   }
 
   async autofillTemplate(
-    actor: TemplateActor,
+    actor: ConversationActor,
     template: Pick<DocumentTemplate, 'body'>,
     conversationId?: string,
   ): Promise<AutofillDetail> {
+    const placeholders = extractPlaceholders(template.body);
     const contact = conversationId ? await this.contactOfConversation(actor, conversationId) : null;
     const [settings, defaults, saved] = await Promise.all([
       this.prisma.contractSettings.findUnique({
@@ -177,9 +182,8 @@ export class DocumentTemplatesService {
         select: { companyName: true, companyDocument: true, companyAddress: true },
       }),
       this.fieldDefaults.values(actor.organizationId),
-      contact ? this.personalData.findValues(actor.organizationId, contact.id) : Promise.resolve({}),
+      contact ? this.personalData.findValues(actor.organizationId, contact.id, placeholders) : Promise.resolve({}),
     ]);
-    const placeholders = extractPlaceholders(template.body);
     const { values, sources } = resolveAutofill({
       placeholders,
       settings,
@@ -225,16 +229,10 @@ export class DocumentTemplatesService {
   }
 
   private async contactOfConversation(
-    actor: TemplateActor,
+    actor: ConversationActor,
     conversationId: string,
   ): Promise<ClientContactRow | null> {
-    const conversation = await this.conversationAccess.assertConversationAccess(
-      conversationId,
-      actor.organizationId,
-      actor.role,
-      actor.userId,
-      { allowParticipant: true },
-    );
+    const conversation = await this.guard.assertCanUse(actor, conversationId);
     return this.prisma.contact.findFirst({
       where: { id: conversation.contactId, organizationId: actor.organizationId },
       select: { id: true, name: true, phone: true, email: true },

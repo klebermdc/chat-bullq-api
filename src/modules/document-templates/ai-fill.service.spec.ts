@@ -100,6 +100,23 @@ describe('AiFillService.fill', () => {
     expect(llm.complete).not.toHaveBeenCalled();
   });
 
+  it('campo de agência nunca vai para a IA nem volta dela', async () => {
+    const { svc, llm, templates } = setup('{"[CNPJ da Agência]": "99", "[Cidade]": "Rio", "[Destino]": "Orlando"}');
+    templates.findVisible.mockResolvedValue({ id: 'tpl-1', title: 'T', body: '[CNPJ da Agência] [Cidade] [Destino]' });
+    const out = await svc.fill(AGENT, 'tpl-1', { text: 'CNPJ 99, Rio, Orlando' });
+    const user = llm.complete.mock.calls[0][0].messages[1].content as string;
+    expect(user).not.toContain('- [CNPJ da Agência]');
+    expect(user).not.toContain('- [Cidade]');
+    expect(out.values).toEqual({ '[Destino]': 'Orlando' });
+  });
+
+  it('só campos de agência pendentes → nem chama a IA', async () => {
+    const { svc, llm, templates } = setup();
+    templates.findVisible.mockResolvedValue({ id: 'tpl-1', title: 'T', body: '[CNPJ da Agência] [Dia]' });
+    expect(await svc.fill(AGENT, 'tpl-1', { text: 'x' })).toEqual({ values: {}, filled: [] });
+    expect(llm.complete).not.toHaveBeenCalled();
+  });
+
   it('modelo invisível → 404 propagado', async () => {
     const { svc, templates } = setup();
     templates.findVisible.mockRejectedValue(new NotFoundException());

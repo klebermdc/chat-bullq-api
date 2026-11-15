@@ -83,8 +83,8 @@ export class ConversationContractsService {
    * Outra org, conversa de colega (AGENT) ou canal sem acesso = 404, antes de
    * criar qualquer coisa — um aceite órfão não pode nascer de um pedido negado.
    */
-  private assertCanUseConversation(actor: ContractActor, conversationId: string): Promise<void> {
-    return this.guard.assertCanUse(actor, conversationId);
+  private async assertCanUseConversation(actor: ContractActor, conversationId: string): Promise<void> {
+    await this.guard.assertCanUse(actor, conversationId);
   }
 
   async list(actor: ContractActor, conversationId: string): Promise<AcceptanceStatusView[]> {

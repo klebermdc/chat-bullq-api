@@ -20,7 +20,8 @@ export interface ConversationActor {
 export class ConversationGuardService {
   constructor(private readonly conversationAccess: ConversationAccessService) {}
 
-  async assertCanUse(actor: ConversationActor, conversationId: string): Promise<void> {
+  /** Devolve a conversa liberada (quem precisa do contato não consulta de novo). */
+  async assertCanUse(actor: ConversationActor, conversationId: string): Promise<{ id: string; contactId: string }> {
     const conversation = await this.conversationAccess.assertConversationAccess(
       conversationId,
       actor.organizationId,
@@ -32,5 +33,6 @@ export class ConversationGuardService {
     if (access !== 'ALL' && !access.has(conversation.channelId)) {
       throw new NotFoundException('Conversation not found');
     }
+    return { id: conversation.id, contactId: conversation.contactId };
   }
 }

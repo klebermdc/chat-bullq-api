@@ -59,11 +59,19 @@ export function capNewest(lines: readonly string[], maxChars: number): string {
   return kept.join('\n');
 }
 
+/**
+ * Tira as marcas que cercam o material no prompt (`<<<`/`>>>` e sequências
+ * maiores): texto do cliente não pode fechar o bloco e falar como instrução.
+ */
+export function neutralizeDelimiters(text: string): string {
+  return (text ?? '').replace(/<{3,}|>{3,}/g, ' ');
+}
+
 /** Material de origem: texto colado primeiro, depois a conversa — no teto total. */
 export function buildSource(input: { pasted?: string; lines: readonly string[] }): string {
-  const pasted = (input.pasted ?? '').trim().slice(0, AI_FILL_MAX_SOURCE_CHARS);
+  const pasted = neutralizeDelimiters(input.pasted ?? '').trim().slice(0, AI_FILL_MAX_SOURCE_CHARS);
   const room = AI_FILL_MAX_SOURCE_CHARS - pasted.length;
-  const conversation = room > 0 ? capNewest(input.lines, room) : '';
+  const conversation = room > 0 ? capNewest(input.lines.map(neutralizeDelimiters), room) : '';
   const parts = [
     pasted ? `### Texto colado pelo atendente\n${pasted}` : '',
     conversation ? `### Conversa no WhatsApp (mais antiga → mais nova)\n${conversation}` : '',
@@ -71,9 +79,13 @@ export function buildSource(input: { pasted?: string; lines: readonly string[] }
   return parts.filter(Boolean).join('\n\n');
 }
 
+/** Grupos que a IA pode preencher. Agência vem do cadastro, nunca de conversa. */
+const AI_GROUPS = new Set(['client', 'seller']);
+
 /**
- * Campos que a IA deve tentar: nem data automática, nem extenso (calculado em
- * código), nem os que o atendente já preencheu.
+ * Campos que a IA deve tentar: só de cliente e de vendedor (nem data
+ * automática, nem dado da agência), sem extenso (calculado em código) e sem
+ * os que o atendente já preencheu.
  */
 export function aiTargetFields(
   placeholders: readonly string[],
@@ -82,7 +94,7 @@ export function aiTargetFields(
   const filled = new Map(Object.entries(current));
   return placeholders.filter(
     (name) =>
-      classifyPlaceholder(name) !== 'auto' &&
+      AI_GROUPS.has(classifyPlaceholder(name)) &&
       extensoBaseField(name) === null &&
       !(filled.get(name) ?? '').trim(),
   );

@@ -137,8 +137,9 @@ export class DocumentTemplatesController {
     @CurrentOrg('id') orgId: string,
     @CurrentUserRole() role: OrgRole,
     @CurrentUser('id') userId: string,
+    @CurrentChannelAccess() channelAccess: ChannelAccess,
   ) {
-    return this.service.autofill(this.actor(orgId, role, userId), id, query.conversationId);
+    return this.service.autofill({ organizationId: orgId, role, userId, channelAccess }, id, query.conversationId);
   }
 
   @Post(':id/ai-fill')

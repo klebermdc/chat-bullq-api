@@ -36,6 +36,26 @@ describe('valuesToPersonalData', () => {
   });
 });
 
+describe('grafia diferente no modelo (caixa/acento)', () => {
+  it('grava pelo nome normalizado', () => {
+    expect(valuesToPersonalData({
+      '[cpf do cliente]': '123',
+      '[Endereco do Cliente]': 'Rua A',
+      '[ESTADO CIVIL DO CLIENTE]': 'casado',
+    })).toEqual({ cpf: '123', address: 'Rua A', maritalStatus: 'casado' });
+  });
+
+  it('mesma coluna em duas grafias: vale a primeira com valor', () => {
+    expect(valuesToPersonalData({ '[CPF do Cliente]': '', '[cpf do cliente]': '9', '[Cpf do Cliente]': '8' }))
+      .toEqual({ cpf: '9' });
+  });
+
+  it('lê de volta na grafia do modelo', () => {
+    expect(personalDataToValues({ cpf: '123', address: 'Rua A' }, ['[cpf do cliente]', '[Endereco do Cliente]', '[Valor Total]']))
+      .toEqual({ '[cpf do cliente]': '123', '[Endereco do Cliente]': 'Rua A' });
+  });
+});
+
 describe('PERSONAL_DATA_SELECT', () => {
   it('seleciona as seis colunas', () => {
     expect(PERSONAL_DATA_SELECT).toEqual({

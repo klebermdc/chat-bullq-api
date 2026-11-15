@@ -15,13 +15,20 @@ import {
 export class ContactPersonalDataService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** `{ "[CPF do Cliente]": "…" }` do contato, escopado pela org. */
-  async findValues(organizationId: string, contactId: string): Promise<Record<string, string>> {
+  /**
+   * `{ "[CPF do Cliente]": "…" }` do contato, escopado pela org. Com
+   * `placeholders`, as chaves saem na grafia do modelo.
+   */
+  async findValues(
+    organizationId: string,
+    contactId: string,
+    placeholders?: readonly string[],
+  ): Promise<Record<string, string>> {
     const row = await this.prisma.contactPersonalData.findFirst({
       where: { contactId, organizationId },
       select: PERSONAL_DATA_SELECT,
     });
-    return personalDataToValues(row);
+    return personalDataToValues(row, placeholders);
   }
 
   /**

@@ -32,7 +32,9 @@ function setup(row: any = tpl()) {
     findValues: jest.fn().mockResolvedValue({}),
     saveFromValues: jest.fn().mockResolvedValue(1),
   } as any;
-  const templates = new DocumentTemplatesService(prisma, conversationAccess, {} as any, fieldDefaults, personalData);
+  const templates = new DocumentTemplatesService(
+    prisma, new ConversationGuardService(conversationAccess), {} as any, fieldDefaults, personalData,
+  );
   const acceptance = { id: 'acc-1', contactId: 'ct-1', kind: 'CONTRACT', title: 'Contrato de Viagem', status: 'PENDING', items: [],
     signedAt: null, signerName: null, signerIp: null, signerUserAgent: null, pdfKey: null, createdAt: new Date(), expiresAt: new Date() };
   const acceptances = {

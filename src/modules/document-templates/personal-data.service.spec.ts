@@ -19,6 +19,11 @@ describe('ContactPersonalDataService', () => {
     }));
   });
 
+  it('com os campos do modelo, devolve na grafia do modelo', async () => {
+    const { svc } = setup({ cpf: '123' });
+    expect(await svc.findValues('org-1', 'ct-1', ['[cpf do cliente]'])).toEqual({ '[cpf do cliente]': '123' });
+  });
+
   it('grava só campos mapeados e não vazios, sem apagar com vazio', async () => {
     const { prisma, svc } = setup();
     const count = await svc.saveFromValues('org-1', 'ct-1', {
