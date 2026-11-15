@@ -1,3 +1,5 @@
+import type { AcceptanceKind, AcceptanceStatus, Prisma } from '@prisma/client';
+
 /**
  * Passageiro nominal de um item. Ingresso de parque é nominal: o nome errado
  * (ou inventado) só aparece no portão, com a família parada na fila. Por isso
@@ -75,6 +77,10 @@ export interface ExtractedVoucher {
 /** O que a página pública pode ver (sem PII interna). */
 export interface PublicAcceptanceView {
   status: 'PENDING' | 'SIGNED' | 'EXPIRED' | 'CANCELED';
+  /** DELIVERY (aceite de entrega) ou CONTRACT (contrato de modelo). */
+  kind: AcceptanceKind;
+  /** Título do contrato; null no aceite de entrega. */
+  title: string | null;
   organizationName: string;
   items: AcceptanceItem[];
   termText: string;
@@ -90,4 +96,20 @@ export interface PublicAcceptanceView {
   /** Vouchers entregues, para o cliente conferir antes de assinar. */
   vouchers: VoucherRef[];
   orderRef: string | null;
+}
+
+/** Visão do operador de um aceite da conversa (entrega ou contrato). */
+export interface AcceptanceStatusView {
+  id: string;
+  kind: AcceptanceKind;
+  title: string | null;
+  status: AcceptanceStatus;
+  items: Prisma.JsonValue;
+  signedAt: Date | null;
+  signerName: string | null;
+  signerIp: string | null;
+  signerUserAgent: string | null;
+  pdfUrl: string | null;
+  createdAt: Date;
+  expiresAt: Date | null;
 }

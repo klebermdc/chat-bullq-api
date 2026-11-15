@@ -10,7 +10,14 @@ import { generateAcceptanceToken } from './acceptance-token.util';
 import { extractPdfText } from './pdf-text.util';
 import { renderPdfToPngs } from './pdf-render.util';
 import { storageKeyFromUploadUrl } from './storage-key.util';
-import { AcceptanceItem, PublicAcceptanceView, VoucherInput, VoucherRef } from './acceptances.types';
+import { AcceptanceKind, OrderAcceptance } from '@prisma/client';
+import {
+  AcceptanceItem,
+  AcceptanceStatusView,
+  PublicAcceptanceView,
+  VoucherInput,
+  VoucherRef,
+} from './acceptances.types';
 
 // O nome da org é interpolado de propósito (o texto original dizia "da OFP"):
 // numa instalação multi-org, o cliente de outra empresa não pode assinar um
@@ -18,6 +25,7 @@ import { AcceptanceItem, PublicAcceptanceView, VoucherInput, VoucherRef } from '
 const DEFAULT_TERM = (org: string) =>
   `Declaro que recebi da ${org} todos os produtos e/ou serviços relacionados abaixo e que realizei a conferência das respectivas datas, quantidades, informações e demais detalhes. Confirmo que os itens estão corretos, completos e de acordo com o que foi previamente contratado e acordado.`;
 const ACCEPTANCE_TTL_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class AcceptancesService {
@@ -73,8 +81,21 @@ export class AcceptancesService {
       createdById: string;
       vouchers?: VoucherInput[];
       orderRef?: string;
+      /**
+       * CONTRACT = contrato de modelo: `termText` é o texto preenchido (sem
+       * termo default), sem política de cancelamento e sem itens.
+       */
+      kind?: AcceptanceKind;
+      title?: string;
+      templateId?: string;
+      expiresInDays?: number;
     },
-  ): Promise<{ acceptance: any; link: string }> {
+  ): Promise<{ acceptance: OrderAcceptance; link: string }> {
+    const kind = input.kind ?? AcceptanceKind.DELIVERY;
+    const isContract = kind === AcceptanceKind.CONTRACT;
+    if (isContract && !input.termText?.trim()) {
+      throw new BadRequestException('O contrato está sem texto.');
+    }
     const base = this.baseUrl();
     const conv = await this.prisma.conversation.findFirst({
       where: { id: conversationId, organizationId },
@@ -91,7 +112,7 @@ export class AcceptancesService {
     const vouchers = input.vouchers?.length ? await this.withHashes(input.vouchers) : [];
 
     const token = generateAcceptanceToken();
-    const expiresAt = new Date(Date.now() + ACCEPTANCE_TTL_DAYS * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + (input.expiresInDays ?? ACCEPTANCE_TTL_DAYS) * DAY_MS);
     const acceptance = await this.prisma.orderAcceptance.create({
       data: {
         organizationId,
@@ -99,13 +120,17 @@ export class AcceptancesService {
         contactId: conv.contactId,
         cardId: card?.id ?? null,
         token,
+        kind,
+        title: input.title?.trim() || null,
+        templateId: input.templateId ?? null,
         items: (input.items ?? []) as any,
         vouchers: vouchers as any,
         orderRef: input.orderRef?.trim() || null,
         termText: input.termText?.trim() || DEFAULT_TERM(conv.organization.name),
         // Snapshot: o aceite guarda a política vigente AGORA. Ler por relação
         // faria uma edição futura reescrever um documento já assinado.
-        policyText: conv.organization.cancellationPolicy?.trim() || null,
+        // Contrato traz as próprias cláusulas: a política de entrega não entra.
+        policyText: isContract ? null : conv.organization.cancellationPolicy?.trim() || null,
         status: 'PENDING',
         createdById: input.createdById,
         expiresAt,
@@ -271,6 +296,8 @@ export class AcceptancesService {
     }
     return {
       status: status as any,
+      kind: acc.kind,
+      title: acc.title ?? null,
       organizationName: acc.organization.name,
       items: (acc.items as any) ?? [],
       termText: acc.termText,
@@ -299,6 +326,8 @@ export class AcceptancesService {
 
     const signedAt = new Date();
     const pdfBuf = await this.pdf.render({
+      kind: acc.kind,
+      title: acc.title ?? null,
       organizationName: acc.organization.name,
       termText: acc.termText,
       policyText: acc.policyText ?? null,
@@ -324,12 +353,15 @@ export class AcceptancesService {
       await this.effects.onSigned({
         id: signed.id, organizationId: signed.organizationId, conversationId: signed.conversationId,
         cardId: signed.cardId, signerName: input.name, signedAt,
+        kind: signed.kind, title: signed.title ?? null,
       });
     } catch (err) {
       this.logger.error(`Aceite ${signed.id} assinado, mas efeitos pós-assinatura falharam: ${err instanceof Error ? err.message : err}`);
     }
     return {
       status: signed.status,
+      kind: signed.kind,
+      title: signed.title ?? null,
       organizationName: acc.organization.name,
       items: (signed.items as any) ?? [],
       termText: signed.termText,
@@ -347,23 +379,44 @@ export class AcceptancesService {
     const acc = await this.prisma.orderAcceptance.findFirst({ where: { id, organizationId } });
     if (!acc) throw new NotFoundException('Aceite não encontrado.');
     if (acc.status === 'SIGNED') throw new GoneException('Este aceite já foi assinado.');
-    const expiresAt = new Date(Date.now() + ACCEPTANCE_TTL_DAYS * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + ACCEPTANCE_TTL_DAYS * DAY_MS);
     const updated = await this.prisma.orderAcceptance.update({
       where: { id: acc.id }, data: { status: 'PENDING', expiresAt },
     });
     return { acceptance: updated, link: `${base}/aceite/${acc.token}` };
   }
 
-  async getStatusForConversation(organizationId: string, conversationId: string) {
-    const acc = await this.prisma.orderAcceptance.findFirst({
-      where: { organizationId, conversationId }, orderBy: { createdAt: 'desc' },
-    });
-    if (!acc) return null;
+  /** Visão do operador (status da conversa / lista de contratos). */
+  toStatusView(acc: OrderAcceptance): AcceptanceStatusView {
     return {
-      id: acc.id, status: acc.status, items: acc.items,
+      id: acc.id, kind: acc.kind, title: acc.title ?? null, status: acc.status, items: acc.items,
       signedAt: acc.signedAt, signerName: acc.signerName,
       signerIp: acc.signerIp, signerUserAgent: acc.signerUserAgent,
       pdfUrl: this.pdfUrl(acc.id, acc.pdfKey), createdAt: acc.createdAt, expiresAt: acc.expiresAt,
     };
+  }
+
+  /**
+   * Último aceite de ENTREGA da conversa. Só DELIVERY: um contrato enviado
+   * depois não pode tomar o lugar do bloco de entrega na tela.
+   */
+  async getStatusForConversation(organizationId: string, conversationId: string) {
+    const acc = await this.prisma.orderAcceptance.findFirst({
+      where: { organizationId, conversationId, kind: AcceptanceKind.DELIVERY },
+      orderBy: { createdAt: 'desc' },
+    });
+    return acc ? this.toStatusView(acc) : null;
+  }
+
+  /** Todos os contratos (CONTRACT) da conversa, do mais novo ao mais antigo. */
+  async listContractsForConversation(
+    organizationId: string,
+    conversationId: string,
+  ): Promise<AcceptanceStatusView[]> {
+    const rows = await this.prisma.orderAcceptance.findMany({
+      where: { organizationId, conversationId, kind: AcceptanceKind.CONTRACT },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((acc) => this.toStatusView(acc));
   }
 }

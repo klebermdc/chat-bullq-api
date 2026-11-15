@@ -45,3 +45,29 @@ describe('AcceptanceEffectsService.onSigned', () => {
     expect(prisma.message.create).toHaveBeenCalled();
   });
 });
+
+describe('AcceptanceEffectsService.onSigned — contrato', () => {
+  it('CONTRACT posta o aviso do contrato e NÃO mexe no card (efeito só de entrega)', async () => {
+    const prisma = {
+      conversation: { findUnique: jest.fn().mockResolvedValue({ id: 'conv-1', channelId: 'ch-1', contactId: 'ct-1' }) },
+      message: { create: jest.fn().mockResolvedValue({ id: 'sys-1' }) },
+      card: { findUnique: jest.fn(), update: jest.fn() },
+    } as any;
+    const realtime = { emitToChannel: jest.fn(), emitToConversation: jest.fn(), emitToOrg: jest.fn() } as any;
+    const svc = new AcceptanceEffectsService(prisma, realtime);
+
+    await svc.onSigned({
+      id: 'acc-1', organizationId: 'org-1', conversationId: 'conv-1', cardId: 'card-1',
+      signerName: 'João', signedAt: new Date('2026-11-15T14:00:00Z'),
+      kind: 'CONTRACT', title: 'Contrato de Viagem',
+    });
+
+    expect(prisma.card.findUnique).not.toHaveBeenCalled();
+    expect(prisma.card.update).not.toHaveBeenCalled();
+    expect(realtime.emitToOrg).not.toHaveBeenCalled();
+    const content = prisma.message.create.mock.calls[0][0].data.content;
+    expect(content.text).toContain('assinou o contrato *Contrato de Viagem*');
+    expect(content.text).not.toContain('recebimento');
+    expect(content.acceptance).toEqual({ id: 'acc-1', status: 'SIGNED', kind: 'CONTRACT' });
+  });
+});
