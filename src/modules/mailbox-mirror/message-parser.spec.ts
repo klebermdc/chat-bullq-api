@@ -1,5 +1,5 @@
 import { MailboxContactRole } from '@prisma/client';
-import { buildSnippet, parseRawEmail } from './message-parser';
+import { buildSnippet, parseRawEmail, sanitizeText } from './message-parser';
 
 const RAW = [
   'From: "Cliente Feliz" <Cliente@Gmail.com>',
@@ -67,5 +67,22 @@ describe('buildSnippet', () => {
 
   it('devolve null quando não há corpo', () => {
     expect(buildSnippet(null, null)).toBeNull();
+  });
+
+  it('não corta um emoji ao meio (meio emoji derruba o Prisma)', () => {
+    expect(buildSnippet('a'.repeat(199) + '😀 resto', null)).toBe('a'.repeat(199) + '😀');
+  });
+});
+
+describe('sanitizeText', () => {
+  it('troca surrogate solto por � e tira o byte nulo', () => {
+    expect(sanitizeText('a\uD83D')).toBe('a\uFFFD');
+    expect(sanitizeText('\uDE00b')).toBe('\uFFFDb');
+    expect(sanitizeText('x\u0000y')).toBe('xy');
+  });
+
+  it('mantém emoji inteiro e null', () => {
+    expect(sanitizeText('ok 😀')).toBe('ok 😀');
+    expect(sanitizeText(null)).toBeNull();
   });
 });
