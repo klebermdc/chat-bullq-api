@@ -7,6 +7,7 @@ import {
 } from './document-template.dto';
 import { CreateContractDto, FillTemplateDto } from './fill-template.dto';
 import { MAX_VALUE_KEYS, MAX_VALUE_LENGTH } from '../placeholders.util';
+import { AiFillDto, DataRequestDto, MAX_AI_TEXT_LENGTH, UpdateFieldDefaultsDto } from './contract-fill.dto';
 
 /** Mesma config do `main.ts`: testar com pipe mais frouxo não cobriria nada. */
 const pipe = new ValidationPipe({
@@ -99,5 +100,40 @@ describe('FillTemplateDto / CreateContractDto', () => {
     await rejects(CreateContractDto, { templateId: 't1', expiresInDays: 91 });
     const out: any = await run(CreateContractDto, { templateId: 't1', expiresInDays: 7, values: {} });
     expect(out.expiresInDays).toBe(7);
+  });
+});
+
+describe('UpdateFieldDefaultsDto', () => {
+  it('aceita campos válidos, inclusive valor vazio (remove)', async () => {
+    const out: any = await run(UpdateFieldDefaultsDto, { values: { '[Cidade]': 'SP', '[UF]': '' } });
+    expect(out.values).toEqual({ '[Cidade]': 'SP', '[UF]': '' });
+  });
+
+  it('recusa chave sem colchete, valor longo, não-string e mais de 80 chaves', async () => {
+    await rejects(UpdateFieldDefaultsDto, { values: { Cidade: 'SP' } });
+    await rejects(UpdateFieldDefaultsDto, { values: { '[]': 'SP' } });
+    await rejects(UpdateFieldDefaultsDto, { values: { '[Cidade]': 'x'.repeat(501) } });
+    await rejects(UpdateFieldDefaultsDto, { values: { '[Cidade]': 1 } });
+    await rejects(UpdateFieldDefaultsDto, {});
+    const many = Object.fromEntries(Array.from({ length: 81 }, (_, i) => [`[C${i}]`, 'v']));
+    await rejects(UpdateFieldDefaultsDto, { values: many });
+  });
+});
+
+describe('DataRequestDto / AiFillDto', () => {
+  it('pedido de dados exige templateId e send booleano', async () => {
+    await rejects(DataRequestDto, { send: true });
+    await rejects(DataRequestDto, { templateId: 't1' });
+    await rejects(DataRequestDto, { templateId: 't1', send: 'false' });
+    const out: any = await run(DataRequestDto, { templateId: 't1', send: false });
+    expect(out.send).toBe(false);
+  });
+
+  it('IA: texto até o teto, currentValues como objeto de strings', async () => {
+    await expect(run(AiFillDto, { text: 'x', currentValues: { '[A]': 'b' }, useConversation: true, conversationId: 'c' }))
+      .resolves.toBeDefined();
+    await rejects(AiFillDto, { text: 'x'.repeat(MAX_AI_TEXT_LENGTH + 1) });
+    await rejects(AiFillDto, { currentValues: { a: 1 } });
+    await rejects(AiFillDto, { useConversation: 'talvez' });
   });
 });

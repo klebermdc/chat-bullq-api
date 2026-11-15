@@ -24,14 +24,17 @@ function setup(row: any = tpl()) {
       update: jest.fn().mockImplementation(async ({ data }: any) => ({ ...row, ...data })),
     },
     contractSettings: { findUnique: jest.fn().mockResolvedValue({ companyName: 'OFP Ltda', companyDocument: null, companyAddress: null }) },
-    contact: { findFirst: jest.fn().mockResolvedValue({ name: 'Ana', phone: '5511', email: null }) },
+    contact: { findFirst: jest.fn().mockResolvedValue({ id: 'ct-1', name: 'Ana', phone: '5511', email: null }) },
     organization: { findUnique: jest.fn().mockResolvedValue({ name: 'OFP' }) },
   } as any;
   const conversationAccess = {
     assertConversationAccess: jest.fn().mockResolvedValue({ id: 'conv-1', contactId: 'ct-1', channelId: 'ch-1' }),
   } as any;
   const pdf = { renderDocument: jest.fn().mockResolvedValue(Buffer.from('pdf')) } as any;
-  return { prisma, conversationAccess, pdf, svc: new DocumentTemplatesService(prisma, conversationAccess, pdf) };
+  const fieldDefaults = { values: jest.fn().mockResolvedValue({}) } as any;
+  const personalData = { findValues: jest.fn().mockResolvedValue({}) } as any;
+  const svc = new DocumentTemplatesService(prisma, conversationAccess, pdf, fieldDefaults, personalData);
+  return { prisma, conversationAccess, pdf, fieldDefaults, personalData, svc };
 }
 
 describe('DocumentTemplatesService.list', () => {
@@ -139,10 +142,43 @@ describe('DocumentTemplatesService.autofill / render / pdf', () => {
     await expect(svc.autofill(AGENT, 'tpl-1', 'conv-x')).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('autofill sem conversa não consulta contato', async () => {
-    const { prisma, svc } = setup();
+  it('autofill sem conversa não consulta contato nem dados pessoais', async () => {
+    const { prisma, personalData, svc } = setup();
     await svc.autofill(ADMIN, 'tpl-1');
     expect(prisma.contact.findFirst).not.toHaveBeenCalled();
+    expect(personalData.findValues).not.toHaveBeenCalled();
+  });
+
+  it('autofill devolve origens e grupos; lê dados lembrados do contato da conversa e os da agência', async () => {
+    const { personalData, fieldDefaults, svc } = setup(tpl({
+      body: '[Cidade], [Dia]. Eu, [Nome do Cliente], CPF [CPF do Cliente], razão [Razão Social da Agência], valor [Valor Total].',
+    }));
+    fieldDefaults.values.mockResolvedValue({ '[Cidade]': 'São Paulo' });
+    personalData.findValues.mockResolvedValue({ '[CPF do Cliente]': '123' });
+    const out = await svc.autofill(AGENT, 'tpl-1', 'conv-1');
+    expect(fieldDefaults.values).toHaveBeenCalledWith('org-1');
+    expect(personalData.findValues).toHaveBeenCalledWith('org-1', 'ct-1');
+    expect(out.values).toEqual(expect.objectContaining({
+      '[Cidade]': 'São Paulo', '[Nome do Cliente]': 'Ana', '[CPF do Cliente]': '123', '[Razão Social da Agência]': 'OFP Ltda',
+    }));
+    expect(out.sources).toEqual({
+      '[Cidade]': 'default', '[Dia]': 'date', '[Nome do Cliente]': 'contact', '[CPF do Cliente]': 'saved',
+      '[Razão Social da Agência]': 'agency',
+    });
+    expect(out.groups).toEqual({
+      client: ['[Nome do Cliente]', '[CPF do Cliente]'],
+      seller: ['[Valor Total]'],
+      agency: ['[Cidade]', '[Razão Social da Agência]'],
+      auto: ['[Dia]'],
+    });
+    expect(out).not.toHaveProperty('contactName');
+  });
+
+  it('autofill com conversa sem acesso não lê dados pessoais', async () => {
+    const { conversationAccess, personalData, svc } = setup();
+    conversationAccess.assertConversationAccess.mockRejectedValue(new NotFoundException());
+    await expect(svc.autofill(AGENT, 'tpl-1', 'conv-x')).rejects.toBeInstanceOf(NotFoundException);
+    expect(personalData.findValues).not.toHaveBeenCalled();
   });
 
   it('render devolve texto e faltantes', async () => {

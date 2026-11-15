@@ -2,9 +2,9 @@
  * Pré-preenchimento dos campos canônicos que o importador garante nos modelos.
  * Função pura: quem chama busca os dados (escopados por org) e passa aqui.
  *
- * Só preenche o que existe de verdade. Contact não tem CPF nem endereço, a
- * org não tem cidade nem representante legal cadastrados — esses campos ficam
- * para o atendente digitar, nunca com um valor deduzido.
+ * Só preenche o que existe de verdade: dados fixos que a agência cadastrou,
+ * colunas da empresa, contato, dados pessoais já lembrados e a data de hoje.
+ * Nada é deduzido.
  */
 
 const TIME_ZONE = 'America/Sao_Paulo';
@@ -31,6 +31,10 @@ export interface AutofillInput {
   settings: AgencySettings | null;
   contact: ClientContact | null;
   now: Date;
+  /** Dados fixos da agência (`contract_settings.field_defaults`). */
+  defaults?: Readonly<Record<string, string>>;
+  /** Dados pessoais lembrados do contato (`contact_personal_data`). */
+  saved?: Readonly<Record<string, string>>;
 }
 
 export interface DateParts {
@@ -55,28 +59,66 @@ export function saoPauloDateParts(now: Date): DateParts {
   };
 }
 
-function candidates(input: AutofillInput): Map<string, string | null | undefined> {
+export type AutofillSource = 'default' | 'agency' | 'contact' | 'saved' | 'date';
+
+export interface AutofillResult {
+  values: Record<string, string>;
+  /** De onde veio cada valor preenchido. */
+  sources: Record<string, AutofillSource>;
+}
+
+type Layer = readonly [AutofillSource, ReadonlyMap<string, string | null | undefined>];
+
+/**
+ * Camadas da menor para a maior precedência: dados fixos da agência
+ * (fieldDefaults) → colunas da empresa → contato/dados lembrados → data.
+ * Map, não objeto: um campo `[constructor]` não pode achar o protótipo.
+ */
+function layers(input: AutofillInput): Layer[] {
   const { settings, contact } = input;
   const date = saoPauloDateParts(input.now);
-  // Map, não objeto: um campo `[constructor]` não pode achar o protótipo.
-  return new Map<string, string | null | undefined>([
-    ['[Razão Social da Agência]', settings?.companyName],
-    ['[CNPJ da Agência]', settings?.companyDocument],
-    ['[Endereço da Agência]', settings?.companyAddress],
-    ['[Nome do Cliente]', contact?.name],
-    ['[Telefone do Cliente]', contact?.phone],
-    ['[E-mail do Cliente]', contact?.email],
-    ['[Dia]', date.day],
-    ['[Mês]', date.month],
-    ['[Ano]', date.year],
-  ]);
+  return [
+    ['default', new Map(Object.entries(input.defaults ?? {}))],
+    ['agency', new Map([
+      ['[Razão Social da Agência]', settings?.companyName],
+      ['[CNPJ da Agência]', settings?.companyDocument],
+      ['[Endereço da Agência]', settings?.companyAddress],
+    ])],
+    ['contact', new Map([
+      ['[Nome do Cliente]', contact?.name],
+      ['[Telefone do Cliente]', contact?.phone],
+      ['[E-mail do Cliente]', contact?.email],
+    ])],
+    ['saved', new Map(Object.entries(input.saved ?? {}))],
+    ['date', new Map([
+      ['[Dia]', date.day],
+      ['[Mês]', date.month],
+      ['[Ano]', date.year],
+    ])],
+  ];
+}
+
+function resolveOne(name: string, all: readonly Layer[]): [string, string, AutofillSource] | null {
+  const hit = [...all]
+    .reverse()
+    .map(([source, map]) => [source, (map.get(name) ?? '').trim()] as const)
+    .find(([, value]) => value.length > 0);
+  return hit ? [name, hit[1], hit[0]] : null;
+}
+
+/** Valores e origens para os campos do modelo (só os que existem no modelo). */
+export function resolveAutofill(input: AutofillInput): AutofillResult {
+  const all = layers(input);
+  const resolved = input.placeholders
+    .map((name) => resolveOne(name, all))
+    .filter((hit): hit is [string, string, AutofillSource] => hit !== null);
+  return {
+    values: Object.fromEntries(resolved.map(([name, value]) => [name, value])),
+    sources: Object.fromEntries(resolved.map(([name, , source]) => [name, source])),
+  };
 }
 
 /** Valores para os campos do modelo que puderam ser preenchidos (chave `[Campo]`). */
 export function buildAutofill(input: AutofillInput): Record<string, string> {
-  const known = candidates(input);
-  const entries = input.placeholders
-    .map((name) => [name, (known.get(name) ?? '').trim()] as const)
-    .filter(([, value]) => value.length > 0);
-  return Object.fromEntries(entries);
+  return resolveAutofill(input).values;
 }

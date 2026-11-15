@@ -16,8 +16,13 @@ describe('DocumentTemplatesController — papéis', () => {
     expect(roles('remove')).toEqual(['OWNER', 'ADMIN']);
   });
 
+  it('dados da agência (field-defaults) só OWNER/ADMIN', () => {
+    expect(roles('getFieldDefaults')).toEqual(['OWNER', 'ADMIN']);
+    expect(roles('putFieldDefaults')).toEqual(['OWNER', 'ADMIN']);
+  });
+
   it('leitura e preenchimento abertos a membros (regra fina no serviço)', () => {
-    for (const m of ['list', 'get', 'autofill', 'render', 'pdf'] as const) {
+    for (const m of ['list', 'get', 'autofill', 'render', 'pdf', 'fillWithAi'] as const) {
       expect(roles(m)).toBeUndefined();
     }
   });
@@ -37,5 +42,18 @@ describe('limites por IP (throttler geral)', () => {
     expect(limit(DocumentTemplatesController.prototype, 'pdf')).toBe(30);
     expect(limit(ConversationContractsController.prototype, 'resend')).toBe(20);
     expect(limit(AcceptancesController.prototype, 'resend')).toBe(20);
+  });
+
+  it('IA e pedido de dados têm teto próprio', () => {
+    expect(limit(DocumentTemplatesController.prototype, 'fillWithAi')).toBe(10);
+    expect(limit(ConversationContractsController.prototype, 'requestData')).toBe(20);
+  });
+});
+
+describe('ordem das rotas', () => {
+  it('field-defaults vem antes de :id (senão GET /field-defaults cairia no get)', () => {
+    const names = Object.getOwnPropertyNames(DocumentTemplatesController.prototype);
+    expect(names.indexOf('getFieldDefaults')).toBeLessThan(names.indexOf('get'));
+    expect(names.indexOf('putFieldDefaults')).toBeLessThan(names.indexOf('get'));
   });
 });

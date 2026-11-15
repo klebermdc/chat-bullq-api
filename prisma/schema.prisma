@@ -287,6 +287,7 @@ model Organization {
   orderFichas               OrderFicha[]
   orderAcceptances          OrderAcceptance[]
   documentTemplates         DocumentTemplate[]
+  contactPersonalData       ContactPersonalData[]
   contracts                 Contract[]
   contractBlockedDates      ContractBlockedDate[]
   contractSettings          ContractSettings?
@@ -593,6 +594,7 @@ model Contact {
   orderFichas       OrderFicha[]
   orderAcceptances  OrderAcceptance[]
   socialComments    SocialComment[]
+  personalData      ContactPersonalData?
 
   @@index([organizationId, phone], name: "idx_contact_org_phone")
   @@index([organizationId, email], name: "idx_contact_org_email")
@@ -2665,6 +2667,29 @@ model DocumentTemplate {
   @@map("document_templates")
 }
 
+/// Dados pessoais do cliente lembrados dos contratos (CPF, RG, endereço…).
+/// Tabela à parte de propósito (LGPD): nenhuma rota de contato a inclui; só
+/// o preenchimento de contrato lê e grava aqui.
+model ContactPersonalData {
+  contactId      String   @id @map("contact_id")
+  organizationId String   @map("organization_id")
+  cpf            String?
+  rg             String?
+  address        String?
+  maritalStatus  String?  @map("marital_status")
+  nationality    String?
+  /// Como foi digitada no contrato (texto livre, ex.: "05/03/1990").
+  birthDate      String?  @map("birth_date")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  updatedById    String?  @map("updated_by_id")
+
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("contact_personal_data")
+}
+
 model OrderAcceptance {
   id             String  @id @default(cuid())
   organizationId String  @map("organization_id")
@@ -3384,6 +3409,8 @@ model ContractSettings {
   companyName            String? @map("company_name")
   companyDocument        String? @map("company_document")
   companyAddress         String? @map("company_address")
+  /// Dados fixos da agência para os modelos de contrato: { "[Campo]": "valor" }.
+  fieldDefaults          Json    @default("{}") @map("field_defaults")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
