@@ -39,6 +39,7 @@ import { SalesRecoveryModule } from './modules/sales-recovery/sales-recovery.mod
 import { SchedulingModule } from './modules/scheduling/scheduling.module';
 import { CadencesModule } from './modules/cadences/cadences.module';
 import { ConversationAutoCloseModule } from './modules/conversation-auto-close/conversation-auto-close.module';
+import { MailboxMirrorModule } from './modules/mailbox-mirror/mailbox-mirror.module';
 import { ResponseSlaModule } from './modules/response-sla/response-sla.module';
 import { SlaManagerAlertsModule } from './modules/response-sla/manager-alerts/manager-alerts.module';
 import { ManagerBotModule } from './modules/manager-bot/manager-bot.module';
@@ -128,6 +129,7 @@ import redisConfig from './config/redis.config';
     SchedulingModule,
     CadencesModule,
     ConversationAutoCloseModule,
+    MailboxMirrorModule,
     ResponseSlaModule,
     SlaManagerAlertsModule,
     ManagerBotModule,

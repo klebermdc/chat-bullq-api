@@ -171,6 +171,8 @@ model User {
 }
 
 model Organization {
+  mailboxes       Mailbox[]
+  mailboxMessages MailboxMessage[]
   voiceOutreach VoiceOutreach[]
   appointments Appointment[]
   mysteryShopperNumbers MysteryShopperNumber[]
@@ -553,6 +555,7 @@ model ChannelSyncJob {
 // ─── Contacts ────────────────────────────────────
 
 model Contact {
+  mailboxLinks MailboxMessageContact[]
   appointments Appointment[]
   mysteryShopperNumbers MysteryShopperNumber[]
   mysteryShopperVisits  MysteryShopperVisit[]
@@ -3553,4 +3556,106 @@ model MysteryShopperBotRun {
 
   @@index([numberId, status])
   @@map("mystery_shopper_bot_runs")
+}
+
+// ─── Espelho de caixa de e-mail (só leitura, via IMAP) ──────────────────────
+// Ver docs/plans/email-reservas.md. A senha NUNCA fica no banco: `passwordEnv`
+// guarda só o NOME da variável de ambiente (ex.: MAILBOX_RESERVAS_PASSWORD).
+
+enum MailboxContactRole {
+  FROM
+  REPLY_TO
+  TO
+  CC
+}
+
+model Mailbox {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  address        String
+  imapHost       String    @map("imap_host")
+  imapPort       Int       @default(993) @map("imap_port")
+  imapSecure     Boolean   @default(true) @map("imap_secure")
+  imapUser       String    @map("imap_user")
+  /// Nome da variável de ambiente com a senha de app. Nunca a senha em si.
+  passwordEnv    String    @map("password_env")
+  /// Pasta IMAP. null = automática (a marcada \All, ex. "Todos os e-mails"; senão INBOX).
+  folder         String?
+  /// Domínios extras a ignorar na ligação com contatos (o da própria caixa já é ignorado).
+  ignoredDomains String[]  @default([]) @map("ignored_domains")
+  uidValidity    BigInt?   @map("uid_validity")
+  lastUid        BigInt    @default(0) @map("last_uid")
+  lastSyncAt     DateTime? @map("last_sync_at")
+  lastError      String?   @map("last_error")
+  enabled        Boolean   @default(true)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  messages     MailboxMessage[]
+
+  @@unique([organizationId, address])
+  @@map("mailboxes")
+}
+
+model MailboxMessage {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  mailboxId      String    @map("mailbox_id")
+  uid            BigInt
+  /// Message-ID do cabeçalho (ou hash do conteúdo quando ausente). Único por caixa.
+  messageId      String    @map("message_id")
+  inReplyTo      String?   @map("in_reply_to")
+  subject        String?
+  fromAddr       String?   @map("from_addr")
+  fromName       String?   @map("from_name")
+  toAddrs        String[]  @default([]) @map("to_addrs")
+  ccAddrs        String[]  @default([]) @map("cc_addrs")
+  sentAt         DateTime? @map("sent_at")
+  snippet        String?
+  textBody       String?   @map("text_body")
+  /// HTML cru. Sanitizado só na exibição (web).
+  htmlBody       String?   @map("html_body")
+  hasAttachments Boolean   @default(false) @map("has_attachments")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mailbox      Mailbox                 @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  attachments  MailboxAttachment[]
+  contacts     MailboxMessageContact[]
+
+  @@unique([mailboxId, messageId])
+  @@index([mailboxId, sentAt])
+  @@index([organizationId, sentAt])
+  @@map("mailbox_messages")
+}
+
+model MailboxAttachment {
+  id               String  @id @default(cuid())
+  mailboxMessageId String  @map("mailbox_message_id")
+  position         Int
+  filename         String?
+  contentType      String  @map("content_type")
+  size             Int
+  /// null quando o anexo passou do limite e não foi guardado (só metadados).
+  storageKey       String? @map("storage_key")
+
+  mailboxMessage MailboxMessage @relation(fields: [mailboxMessageId], references: [id], onDelete: Cascade)
+
+  @@unique([mailboxMessageId, position])
+  @@map("mailbox_attachments")
+}
+
+model MailboxMessageContact {
+  id               String             @id @default(cuid())
+  mailboxMessageId String             @map("mailbox_message_id")
+  contactId        String             @map("contact_id")
+  role             MailboxContactRole
+
+  mailboxMessage MailboxMessage @relation(fields: [mailboxMessageId], references: [id], onDelete: Cascade)
+  contact        Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([mailboxMessageId, contactId, role])
+  @@index([contactId])
+  @@map("mailbox_message_contacts")
 }

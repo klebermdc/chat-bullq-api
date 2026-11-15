@@ -55,6 +55,7 @@ export const FEATURE_MAP = {
 
   // --- Só gestão ---------------------------------------------------------
   'automations.view': STAFF,
+  'mailbox.view': STAFF, // caixa reservas@ inteira; o vendedor vê só os e-mails dos clientes dele, no card
   'email.view': STAFF, // campanhas de email marketing — tela administrativa, não de atendimento
   'projects.view': STAFF,
   'inactivity.view': STAFF,
