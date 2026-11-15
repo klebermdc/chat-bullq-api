@@ -77,14 +77,14 @@ describe('MailboxSyncService', () => {
     expect(sessions.create).not.toHaveBeenCalled();
   });
 
-  it('primeira vez: busca 12 meses, grava em ordem e salva o cursor com a uidValidity', async () => {
+  it('primeira vez: busca 5 meses, grava em ordem e salva o cursor com a uidValidity', async () => {
     const session = fakeSession({ found: [30, 10, 20] });
     const { prisma, store, sessions, service } = setup(session);
 
     const outcome = await service.syncMailbox(mailbox(), NOW);
 
     expect(sessions.create).toHaveBeenCalledWith(expect.objectContaining({ password: 'app-pass' }));
-    expect(session.search).toHaveBeenCalledWith({ since: new Date('2025-11-15T12:00:00Z') });
+    expect(session.search).toHaveBeenCalledWith({ since: new Date('2026-06-18T12:00:00Z') });
     expect(store.save.mock.calls.map((c) => c[1])).toEqual([10, 20, 30]);
     expect(outcome).toEqual({ status: 'synced', created: 3, existing: 0, lastUid: 30n });
     expect(prisma.mailbox.update).toHaveBeenCalledWith({
@@ -109,7 +109,7 @@ describe('MailboxSyncService', () => {
     expect(outcome).toMatchObject({ lastUid: 501n, created: 1 });
   });
 
-  it('uidValidity mudou: relê os 12 meses do zero e conta as já gravadas', async () => {
+  it('uidValidity mudou: relê os 5 meses do zero e conta as já gravadas', async () => {
     const session = fakeSession({ uidValidity: 900n, found: [1, 2] });
     const { store, prisma, service } = setup(session);
     store.save.mockResolvedValue('existing');
@@ -124,7 +124,7 @@ describe('MailboxSyncService', () => {
     });
   });
 
-  it('primeira vez sem nada em 12 meses: cursor vai para o fim da pasta', async () => {
+  it('primeira vez sem nada em 5 meses: cursor vai para o fim da pasta', async () => {
     const session = fakeSession({ found: [], uidNext: 4321 });
     const { prisma, service } = setup(session);
 

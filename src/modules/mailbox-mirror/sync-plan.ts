@@ -3,7 +3,8 @@
  * serviço só executa o plano.
  */
 
-export const INITIAL_LOOKBACK_DAYS = 365;
+/** ~5 meses: decisão do Kleber em 15/11 (5 meses pesava demais no MinIO). */
+export const INITIAL_LOOKBACK_DAYS = 150;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type SyncMode = 'initial' | 'incremental' | 'reset';
@@ -23,10 +24,10 @@ export interface SyncPlan {
 }
 
 /**
- * - Primeira vez: últimos 12 meses.
+ * - Primeira vez: últimos 5 meses.
  * - uidValidity igual: UIDs depois do último gravado.
  * - uidValidity mudou (pasta recriada no servidor): os UIDs antigos não valem
- *   mais; relê os 12 meses. Não duplica porque a gravação é por Message-ID.
+ *   mais; relê os 5 meses. Não duplica porque a gravação é por Message-ID.
  */
 export function planSync(cursor: SyncCursor, serverUidValidity: bigint, now: Date): SyncPlan {
   const since = new Date(now.getTime() - INITIAL_LOOKBACK_DAYS * DAY_MS);
