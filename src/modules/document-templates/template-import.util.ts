@@ -1,5 +1,6 @@
 import { DocumentTemplateAudience } from '@prisma/client';
 import { MAX_BODY_LENGTH, MAX_CATEGORY_LENGTH, MAX_TITLE_LENGTH } from './dto/document-template.dto';
+import { MAX_PLACEHOLDERS, extractPlaceholders } from './placeholders.util';
 
 export const MAX_SOURCE_REF_LENGTH = 200;
 /** Arquivo de importação é de uma org: dezenas de modelos, não milhares. */
@@ -49,6 +50,7 @@ function parseItem(raw: unknown, index: number): { item?: ImportTemplate; errors
     !category && `category (texto, até ${MAX_CATEGORY_LENGTH})`,
     !audience && 'audience (CLIENT ou INTERNAL)',
     !body && `body (texto não vazio, até ${MAX_BODY_LENGTH})`,
+    body && extractPlaceholders(body).length > MAX_PLACEHOLDERS && `body (mais de ${MAX_PLACEHOLDERS} campos)`,
   ]
     .filter((e): e is string => Boolean(e))
     .map((field) => `templates[${index}]: campo inválido — ${field}`);

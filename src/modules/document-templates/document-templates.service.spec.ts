@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { DocumentTemplatesService, TemplateActor } from './document-templates.service';
 
 const ADMIN: TemplateActor = { organizationId: 'org-1', role: 'ADMIN', userId: 'u-admin' };
@@ -101,6 +101,17 @@ describe('DocumentTemplatesService — escrita', () => {
     await expect(svc.update(ADMIN, 'tpl-1', { title: 'x' })).rejects.toBeInstanceOf(NotFoundException);
     await expect(svc.deactivate(ADMIN, 'tpl-1')).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.documentTemplate.update).not.toHaveBeenCalled();
+  });
+
+  it('corpo com mais de 200 campos → 400 na criação e na edição, sem gravar', async () => {
+    const { prisma, svc } = setup();
+    const body = Array.from({ length: 201 }, (_, i) => `[Campo ${i}]`).join(' ');
+    await expect(svc.create(ADMIN, { title: 'T', category: 'C', audience: 'CLIENT', body })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.update(ADMIN, 'tpl-1', { body })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.documentTemplate.create).not.toHaveBeenCalled();
+    expect(prisma.documentTemplate.update).not.toHaveBeenCalled();
+    const ok = Array.from({ length: 200 }, (_, i) => `[Campo ${i}]`).join(' ');
+    await expect(svc.create(ADMIN, { title: 'T', category: 'C', audience: 'CLIENT', body: ok })).resolves.toBeDefined();
   });
 
   it('deactivate é exclusão suave (isActive=false)', async () => {

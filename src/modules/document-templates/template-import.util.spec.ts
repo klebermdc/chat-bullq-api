@@ -24,6 +24,11 @@ describe('parseImportFile', () => {
     expect(errors.join('\n')).not.toContain('SEGREDO');
   });
 
+  it('corpo com mais de 200 campos é erro', () => {
+    const body = Array.from({ length: 201 }, (_, i) => `[C${i}]`).join(' ');
+    expect(parseImportFile({ templates: [{ ...ok, body }] }).errors[0]).toContain('mais de 200 campos');
+  });
+
   it('item que não é objeto vira erro', () => {
     expect(parseImportFile({ templates: ['x'] }).errors[0]).toContain('templates[0]');
   });

@@ -1,4 +1,5 @@
 import {
+  MAX_PLACEHOLDER_LENGTH,
   MAX_VALUE_KEYS,
   MAX_VALUE_LENGTH,
   canonicalKey,
@@ -28,6 +29,13 @@ describe('extractPlaceholders', () => {
 
   it('trata "[ENTRE COLCHETES]" como campo (o admin edita o texto)', () => {
     expect(extractPlaceholders('[ENTRE COLCHETES]')).toEqual(['[ENTRE COLCHETES]']);
+  });
+
+  it('texto entre colchetes acima do teto não é campo (e fica intacto no preenchimento)', () => {
+    const exact = 'a'.repeat(MAX_PLACEHOLDER_LENGTH);
+    const long = 'b'.repeat(MAX_PLACEHOLDER_LENGTH + 1);
+    expect(extractPlaceholders(`[${exact}] [${long}]`)).toEqual([`[${exact}]`]);
+    expect(fillTemplate(`[${long}]`, {})).toEqual({ text: `[${long}]`, missing: [] });
   });
 
   it('não atravessa quebra de linha', () => {

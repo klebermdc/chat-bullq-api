@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -14,7 +15,7 @@ import {
   toDetail,
   toSummary,
 } from './document-template.view';
-import { FillResult, extractPlaceholders, fillTemplate } from './placeholders.util';
+import { FillResult, MAX_PLACEHOLDERS, extractPlaceholders, fillTemplate } from './placeholders.util';
 import { buildAutofill } from './autofill.util';
 import {
   CreateDocumentTemplateDto,
@@ -29,6 +30,16 @@ export interface TemplateActor {
 }
 
 const NOT_FOUND = 'Modelo não encontrado.';
+
+/** Recusa na edição um corpo com mais campos do que dá para preencher. */
+export function assertPlaceholderCount(body: string): void {
+  const count = extractPlaceholders(body).length;
+  if (count > MAX_PLACEHOLDERS) {
+    throw new BadRequestException(
+      `O modelo tem ${count} campos entre colchetes; o máximo é ${MAX_PLACEHOLDERS}.`,
+    );
+  }
+}
 
 @Injectable()
 export class DocumentTemplatesService {
@@ -80,6 +91,7 @@ export class DocumentTemplatesService {
   }
 
   async create(actor: TemplateActor, dto: CreateDocumentTemplateDto): Promise<DocumentTemplateDetail> {
+    assertPlaceholderCount(dto.body);
     const created = await this.prisma.documentTemplate.create({
       data: {
         organizationId: actor.organizationId,
@@ -98,6 +110,7 @@ export class DocumentTemplatesService {
     id: string,
     dto: UpdateDocumentTemplateDto,
   ): Promise<DocumentTemplateDetail> {
+    if (dto.body !== undefined) assertPlaceholderCount(dto.body);
     await this.assertExistsInOrg(actor.organizationId, id);
     const updated = await this.prisma.documentTemplate.update({
       where: { id },

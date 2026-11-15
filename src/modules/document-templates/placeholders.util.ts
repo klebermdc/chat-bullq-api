@@ -11,12 +11,24 @@ export const MAX_VALUE_LENGTH = 2000;
 /** Teto de chaves num preenchimento. Modelo real tem dezenas, não centenas. */
 export const MAX_VALUE_KEYS = 200;
 
+/** Teto de campos num modelo: igual ao de chaves, senão nem dava pra preencher. */
+export const MAX_PLACEHOLDERS = MAX_VALUE_KEYS;
+
+/**
+ * Tamanho máximo do texto DENTRO do colchete. Acima disso é texto entre
+ * colchetes (nota, citação), não campo — e nem caberia como chave de `values`.
+ */
+export const MAX_PLACEHOLDER_LENGTH = 150;
+
+/** Tamanho máximo da chave canônica (`[` + nome + `]`). */
+export const MAX_PLACEHOLDER_KEY_LENGTH = MAX_PLACEHOLDER_LENGTH + 2;
+
 /**
  * Um campo: colchete, conteúdo sem colchete nem quebra de linha, colchete.
  * Sem quebra de linha de propósito: um `[` solto num parágrafo não pode
  * engolir o texto até o próximo `]` três linhas abaixo.
  */
-const PLACEHOLDER_RE = /\[([^[\]\n]*)\]/g;
+const PLACEHOLDER_RE = new RegExp(`\\[([^[\\]\\n]{0,${MAX_PLACEHOLDER_LENGTH}})\\]`, 'g');
 
 /**
  * Forma canônica do campo: COM colchetes e sem espaço nas bordas de dentro

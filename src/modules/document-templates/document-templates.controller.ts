@@ -23,6 +23,8 @@ import {
 } from './dto/document-template.dto';
 import { AutofillQueryDto, FillTemplateDto } from './dto/fill-template.dto';
 import { sendPdf } from './pdf-response.util';
+import { Throttle } from '@nestjs/throttler';
+import { LIMITE_PDF } from '../acceptances/acceptances.constants';
 
 /**
  * Modelos de documento. Leitura/preenchimento: qualquer membro (AGENT só vê
@@ -120,6 +122,7 @@ export class DocumentTemplatesController {
   }
 
   @Post(':id/pdf')
+  @Throttle({ geral: LIMITE_PDF })
   @ApiOperation({ summary: 'PDF do texto preenchido (sem assinatura)' })
   async pdf(
     @Param('id') id: string,

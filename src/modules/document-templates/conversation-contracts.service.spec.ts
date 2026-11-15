@@ -1,4 +1,5 @@
-import { BadRequestException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { ConversationGuardService } from '../acceptances/conversation-guard.service';
 import { ConversationContractsService, ContractActor, contractLinkMessage } from './conversation-contracts.service';
 import { DocumentTemplatesService } from './document-templates.service';
 
@@ -25,10 +26,12 @@ function setup(row: any = tpl()) {
   const acceptances = {
     createForConversation: jest.fn().mockResolvedValue({ acceptance, link: 'https://x.test/aceite/tok' }),
     listContractsForConversation: jest.fn().mockResolvedValue([]),
+    findContractInConversation: jest.fn().mockResolvedValue({ ...acceptance }),
+    resend: jest.fn().mockResolvedValue({ acceptance: { ...acceptance, expiresAt: new Date() }, link: 'https://x.test/aceite/tok' }),
     toStatusView: jest.fn().mockImplementation((a: any) => ({ id: a.id, kind: a.kind, title: a.title, status: a.status })),
   } as any;
   const messages = { send: jest.fn().mockResolvedValue({ id: 'msg-1' }) } as any;
-  const svc = new ConversationContractsService(templates, acceptances, conversationAccess, messages);
+  const svc = new ConversationContractsService(templates, acceptances, new ConversationGuardService(conversationAccess), messages);
   return { svc, acceptances, messages, conversationAccess };
 }
 
@@ -117,5 +120,40 @@ describe('ConversationContractsService.list', () => {
 describe('contractLinkMessage', () => {
   it('monta o texto do link', () => {
     expect(contractLinkMessage('X', 'L')).toBe('Segue o contrato *X* para leitura e aceite: L');
+  });
+});
+
+describe('ConversationContractsService.resend', () => {
+  it('confere a conversa, busca o contrato dela, renova e reenvia a mesma mensagem', async () => {
+    const { svc, acceptances, messages, conversationAccess } = setup();
+    const out = await svc.resend(AGENT, 'conv-1', 'acc-1');
+    expect(conversationAccess.assertConversationAccess).toHaveBeenCalledWith('conv-1', 'org-1', 'AGENT', 'u-1', { allowParticipant: true });
+    expect(acceptances.findContractInConversation).toHaveBeenCalledWith('org-1', 'conv-1', 'acc-1');
+    expect(acceptances.resend).toHaveBeenCalledWith('org-1', 'acc-1');
+    expect(messages.send.mock.calls[0][0].content.text)
+      .toBe('Segue o contrato *Contrato de Viagem* para leitura e aceite: https://x.test/aceite/tok');
+    expect(out).toEqual(expect.objectContaining({ id: 'acc-1', kind: 'CONTRACT', link: 'https://x.test/aceite/tok', send: { queued: true, messageId: 'msg-1' } }));
+  });
+
+  it('contrato assinado → 409 e nada é renovado nem enviado', async () => {
+    const { svc, acceptances, messages } = setup();
+    acceptances.findContractInConversation.mockResolvedValue({ id: 'acc-1', status: 'SIGNED', title: 'X' });
+    await expect(svc.resend(AGENT, 'conv-1', 'acc-1')).rejects.toBeInstanceOf(ConflictException);
+    expect(acceptances.resend).not.toHaveBeenCalled();
+    expect(messages.send).not.toHaveBeenCalled();
+  });
+
+  it('conversa sem acesso → 404 antes de procurar o contrato', async () => {
+    const { svc, acceptances, conversationAccess } = setup();
+    conversationAccess.assertConversationAccess.mockRejectedValue(new NotFoundException());
+    await expect(svc.resend(AGENT, 'conv-x', 'acc-1')).rejects.toBeInstanceOf(NotFoundException);
+    expect(acceptances.findContractInConversation).not.toHaveBeenCalled();
+  });
+
+  it('contrato de outra conversa/entrega → 404 (propagado do serviço de aceite)', async () => {
+    const { svc, acceptances, messages } = setup();
+    acceptances.findContractInConversation.mockRejectedValue(new NotFoundException('Contrato não encontrado.'));
+    await expect(svc.resend(AGENT, 'conv-1', 'acc-delivery')).rejects.toBeInstanceOf(NotFoundException);
+    expect(messages.send).not.toHaveBeenCalled();
   });
 });

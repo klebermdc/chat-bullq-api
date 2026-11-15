@@ -11,6 +11,8 @@ import {
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { ConversationContractsService, ContractActor } from './conversation-contracts.service';
 import { CreateContractDto } from './dto/fill-template.dto';
+import { Throttle } from '@nestjs/throttler';
+import { LIMITE_REENVIO } from '../acceptances/acceptances.constants';
 
 /** Contratos de modelo enviados ao cliente de uma conversa. */
 @ApiTags('Document templates')
@@ -52,5 +54,19 @@ export class ConversationContractsController {
     @CurrentChannelAccess() access: ChannelAccess,
   ) {
     return this.service.create(this.actor(orgId, role, userId, access), conversationId, dto);
+  }
+
+  @Post(':id/resend')
+  @Throttle({ geral: LIMITE_REENVIO })
+  @ApiOperation({ summary: 'Renova o prazo do contrato e reenvia o link no WhatsApp' })
+  resend(
+    @Param('conversationId') conversationId: string,
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
+  ) {
+    return this.service.resend(this.actor(orgId, role, userId, access), conversationId, id);
   }
 }

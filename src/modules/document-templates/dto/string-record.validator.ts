@@ -5,10 +5,10 @@ import {
   registerDecorator,
   ValidationOptions,
 } from 'class-validator';
-import { MAX_VALUE_KEYS, MAX_VALUE_LENGTH } from '../placeholders.util';
+import { MAX_PLACEHOLDER_KEY_LENGTH, MAX_VALUE_KEYS, MAX_VALUE_LENGTH } from '../placeholders.util';
 
-/** Nome de campo: o conteúdo de um `[...]`, curto. */
-export const MAX_KEY_LENGTH = 200;
+/** Chave `[Campo]`: o mesmo teto que torna um colchete campo (+ colchetes). */
+export const MAX_KEY_LENGTH = MAX_PLACEHOLDER_KEY_LENGTH;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

@@ -79,6 +79,11 @@ describe('FillTemplateDto / CreateContractDto', () => {
     expect(out.values).toEqual({ '[Nome do Cliente]': 'Ana' });
   });
 
+  it('aceita chave no teto do campo e recusa acima dele', async () => {
+    await expect(run(FillTemplateDto, { values: { [`[${'a'.repeat(150)}]`]: 'v' } })).resolves.toBeDefined();
+    await rejects(FillTemplateDto, { values: { [`[${'a'.repeat(151)}]`]: 'v' } });
+  });
+
   it('recusa values com valor não-string, array, chaves demais ou valor longo demais', async () => {
     await rejects(FillTemplateDto, { values: { a: 1 } });
     await rejects(FillTemplateDto, { values: ['a'] });
