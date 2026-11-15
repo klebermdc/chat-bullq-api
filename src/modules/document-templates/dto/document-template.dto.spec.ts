@@ -75,8 +75,8 @@ describe('ListDocumentTemplatesQueryDto', () => {
 
 describe('FillTemplateDto / CreateContractDto', () => {
   it('aceita values como objeto de strings', async () => {
-    const out: any = await run(FillTemplateDto, { values: { 'Nome do Cliente': 'Ana' } });
-    expect(out.values).toEqual({ 'Nome do Cliente': 'Ana' });
+    const out: any = await run(FillTemplateDto, { values: { '[Nome do Cliente]': 'Ana' } });
+    expect(out.values).toEqual({ '[Nome do Cliente]': 'Ana' });
   });
 
   it('recusa values com valor não-string, array, chaves demais ou valor longo demais', async () => {

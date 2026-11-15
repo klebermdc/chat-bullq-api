@@ -44,7 +44,7 @@ describe('DocumentTemplatesService.list', () => {
     });
     expect(list[0]).toEqual({
       id: 'tpl-1', title: 'Contrato', category: 'Viagem', audience: 'CLIENT', isActive: true,
-      placeholders: ['Nome do Cliente', 'Dia', 'Mês', 'Ano', 'CPF do Cliente'],
+      placeholders: ['[Nome do Cliente]', '[Dia]', '[Mês]', '[Ano]', '[CPF do Cliente]'],
     });
     expect(list[0]).not.toHaveProperty('body');
   });
@@ -117,9 +117,9 @@ describe('DocumentTemplatesService.autofill / render / pdf', () => {
     const { values } = await svc.autofill(AGENT, 'tpl-1', 'conv-1');
     expect(conversationAccess.assertConversationAccess).toHaveBeenCalledWith('conv-1', 'org-1', 'AGENT', 'u-agent', { allowParticipant: true });
     expect(prisma.contact.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'ct-1', organizationId: 'org-1' } }));
-    expect(values['Nome do Cliente']).toBe('Ana');
-    expect(values).toHaveProperty('Dia');
-    expect(values).not.toHaveProperty('CPF do Cliente');
+    expect(values['[Nome do Cliente]']).toBe('Ana');
+    expect(values['[Dia]']).toEqual(expect.any(String));
+    expect(values).not.toHaveProperty('[CPF do Cliente]');
   });
 
   it('autofill com conversa de outra org/sem acesso propaga o 404', async () => {
@@ -136,12 +136,12 @@ describe('DocumentTemplatesService.autofill / render / pdf', () => {
 
   it('render devolve texto e faltantes', async () => {
     const { svc } = setup(tpl({ body: '[A] e [B]' }));
-    expect(await svc.render(AGENT, 'tpl-1', { A: 'a' })).toEqual({ text: 'a e [B]', missing: ['B'] });
+    expect(await svc.render(AGENT, 'tpl-1', { '[A]': 'a' })).toEqual({ text: 'a e [B]', missing: ['[B]'] });
   });
 
   it('pdf usa o pipeline de PDF com título e nome da org', async () => {
     const { pdf, svc } = setup(tpl({ audience: 'INTERNAL', title: 'Procuração', body: '[A]' }));
-    const out = await svc.pdfFor(ADMIN, 'tpl-1', { A: 'x' });
+    const out = await svc.pdfFor(ADMIN, 'tpl-1', { '[A]': 'x' });
     expect(pdf.renderDocument).toHaveBeenCalledWith({ organizationName: 'OFP', title: 'Procuração', text: 'x' });
     expect(out.title).toBe('Procuração');
   });

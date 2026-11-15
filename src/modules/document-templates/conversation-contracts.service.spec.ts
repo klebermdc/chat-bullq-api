@@ -32,7 +32,7 @@ function setup(row: any = tpl()) {
   return { svc, acceptances, messages, conversationAccess };
 }
 
-const filled = { 'Nome do Cliente': 'Ana', 'CPF do Cliente': '123' };
+const filled = { '[Nome do Cliente]': 'Ana', '[CPF do Cliente]': '123' };
 
 describe('ConversationContractsService.create', () => {
   it('cria o aceite CONTRACT com o texto preenchido e manda o link na conversa', async () => {
@@ -55,10 +55,10 @@ describe('ConversationContractsService.create', () => {
 
   it('campo sem valor → 422 com a lista de faltantes e nada é criado', async () => {
     const { svc, acceptances, messages } = setup();
-    const err = await svc.create(AGENT, 'conv-1', { templateId: 'tpl-1', values: { 'Nome do Cliente': 'Ana', 'CPF do Cliente': ' ' } })
+    const err = await svc.create(AGENT, 'conv-1', { templateId: 'tpl-1', values: { '[Nome do Cliente]': 'Ana', '[CPF do Cliente]': ' ' } })
       .catch((e) => e);
     expect(err).toBeInstanceOf(UnprocessableEntityException);
-    expect((err as UnprocessableEntityException).getResponse()).toEqual(expect.objectContaining({ missing: ['CPF do Cliente'] }));
+    expect((err as UnprocessableEntityException).getResponse()).toEqual(expect.objectContaining({ missing: ['[CPF do Cliente]'] }));
     expect(acceptances.createForConversation).not.toHaveBeenCalled();
     expect(messages.send).not.toHaveBeenCalled();
   });

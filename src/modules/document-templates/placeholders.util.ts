@@ -18,6 +18,17 @@ export const MAX_VALUE_KEYS = 200;
  */
 const PLACEHOLDER_RE = /\[([^[\]\n]*)\]/g;
 
+/**
+ * Forma canônica do campo: COM colchetes e sem espaço nas bordas de dentro
+ * (`[ Dia ]` → `[Dia]`). É assim que o campo aparece em `placeholders`,
+ * `missing` e nas chaves do autofill — e como a tela manda `values`.
+ */
+export function canonicalKey(key: string): string {
+  const k = key.trim();
+  const inner = k.startsWith('[') && k.endsWith(']') ? k.slice(1, -1) : k;
+  return `[${inner.trim()}]`;
+}
+
 export type TemplateValues = Readonly<Record<string, string>>;
 
 export interface FillResult {
@@ -26,14 +37,16 @@ export interface FillResult {
   missing: string[];
 }
 
-/** Campos únicos do corpo, na ordem da primeira aparição. */
+/** Campos únicos do corpo (`[Nome]`, com colchetes), na ordem da primeira aparição. */
 export function extractPlaceholders(body: string): string[] {
   const names = Array.from((body ?? '').matchAll(PLACEHOLDER_RE), (m) => m[1].trim());
-  return [...new Set(names.filter((name) => name.length > 0))];
+  // Colchete vazio/só espaço (`[ ]`, caixinha de marcar) não é campo.
+  return [...new Set(names.filter((name) => name.length > 0).map((name) => `[${name}]`))];
 }
 
 /**
- * Normaliza o que veio do cliente: só strings, aparadas, cortadas em
+ * Normaliza o que veio do cliente: chave na forma canônica (`[Campo]`; aceita
+ * também sem colchetes), só strings, aparadas, cortadas em
  * `MAX_VALUE_LENGTH`, no máximo `MAX_VALUE_KEYS` chaves. Devolve objeto novo.
  */
 export function normalizeValues(
@@ -43,7 +56,7 @@ export function normalizeValues(
   const entries = Object.entries(values)
     .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
     .slice(0, MAX_VALUE_KEYS)
-    .map(([key, value]) => [key.trim(), value.trim().slice(0, MAX_VALUE_LENGTH)] as const);
+    .map(([key, value]) => [canonicalKey(key), value.trim().slice(0, MAX_VALUE_LENGTH)] as const);
   return Object.fromEntries(entries);
 }
 
@@ -61,7 +74,7 @@ export function fillTemplate(
   const normalized = new Map(Object.entries(normalizeValues(values)));
   const missing = extractPlaceholders(body).filter((name) => !normalized.get(name));
   const text = (body ?? '').replace(PLACEHOLDER_RE, (match, inner: string) => {
-    const value = normalized.get(inner.trim());
+    const value = normalized.get(`[${inner.trim()}]`);
     return value ? value : match;
   });
   return { text, missing };

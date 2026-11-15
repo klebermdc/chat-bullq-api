@@ -60,19 +60,19 @@ function candidates(input: AutofillInput): Map<string, string | null | undefined
   const date = saoPauloDateParts(input.now);
   // Map, não objeto: um campo `[constructor]` não pode achar o protótipo.
   return new Map<string, string | null | undefined>([
-    ['Razão Social da Agência', settings?.companyName],
-    ['CNPJ da Agência', settings?.companyDocument],
-    ['Endereço da Agência', settings?.companyAddress],
-    ['Nome do Cliente', contact?.name],
-    ['Telefone do Cliente', contact?.phone],
-    ['E-mail do Cliente', contact?.email],
-    ['Dia', date.day],
-    ['Mês', date.month],
-    ['Ano', date.year],
+    ['[Razão Social da Agência]', settings?.companyName],
+    ['[CNPJ da Agência]', settings?.companyDocument],
+    ['[Endereço da Agência]', settings?.companyAddress],
+    ['[Nome do Cliente]', contact?.name],
+    ['[Telefone do Cliente]', contact?.phone],
+    ['[E-mail do Cliente]', contact?.email],
+    ['[Dia]', date.day],
+    ['[Mês]', date.month],
+    ['[Ano]', date.year],
   ]);
 }
 
-/** Valores para os campos do modelo que puderam ser preenchidos. */
+/** Valores para os campos do modelo que puderam ser preenchidos (chave `[Campo]`). */
 export function buildAutofill(input: AutofillInput): Record<string, string> {
   const known = candidates(input);
   const entries = input.placeholders
