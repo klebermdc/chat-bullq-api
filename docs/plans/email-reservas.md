@@ -6,7 +6,7 @@ Data: 2026-11-15 · Pedido do Kleber · Primeiro passo para sair do Google Works
 - **Só leitura** na v1. Responder continua no Gmail.
 - **Quem vê:** AGENT vê os e-mails de um contato só se alcança alguma conversa dele
   (`scopedUserWhere`: dono ou incluído). A tela da caixa inteira é só para OWNER/ADMIN.
-- **Histórico:** importa os últimos 12 meses na primeira sincronização.
+- **Histórico:** importa os últimos 5 meses (150 dias) na primeira sincronização; era 12, reduzido em 15/11.
 - **Fonte:** IMAP (imapflow) com senha de app. Funciona com o Google hoje e com Hostinger/Zoho
   depois, só trocando host/usuário/senha. Sem mexer em MX.
 

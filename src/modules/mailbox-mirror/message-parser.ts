@@ -57,7 +57,7 @@ function stripHtml(html: string): string {
 export function buildSnippet(text: string | null, html: string | null): string | null {
   const source = text?.trim() ? text : html ? stripHtml(html) : '';
   const collapsed = source.replace(/\s+/g, ' ').trim();
-  return collapsed ? collapsed.slice(0, SNIPPET_LENGTH) : null;
+  return collapsed ? Array.from(collapsed).slice(0, SNIPPET_LENGTH).join('') : null;
 }
 
 /** Sem Message-ID, um hash do conteúdo mantém a re-sincronização idempotente. */
@@ -65,19 +65,26 @@ function fallbackMessageId(raw: Buffer): string {
   return `<sha256-${createHash('sha256').update(raw).digest('hex')}@sendtur>`;
 }
 
-/** O Postgres recusa o byte NUL em TEXT; e-mail mal formado às vezes traz. */
-function clean(value: string | null | undefined): string | null {
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/**
+ * O Postgres recusa o byte NUL em TEXT e o Prisma recusa meio emoji (surrogate solto:
+ * "unexpected end of hex escape"). E-mail mal formado às vezes traz os dois.
+ */
+export function sanitizeText(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
-  return value.replace(/\u0000/g, '');
+  return value.replace(/\u0000/g, '').replace(LONE_SURROGATE, '\uFFFD');
 }
+
+const clean = sanitizeText;
 
 function toParsedEmail(mail: ParsedMail, raw: Buffer): ParsedEmail {
   const firstFrom = rawAddresses(mail.from)[0];
   const htmlBody = clean(typeof mail.html === 'string' ? mail.html : null);
   const textBody = clean(mail.text);
   return {
-    messageId: mail.messageId?.trim() || fallbackMessageId(raw),
-    inReplyTo: mail.inReplyTo?.trim() || null,
+    messageId: clean(mail.messageId?.trim()) || fallbackMessageId(raw),
+    inReplyTo: clean(mail.inReplyTo?.trim()) || null,
     subject: clean(mail.subject),
     fromAddr: normalizeEmailAddress(firstFrom?.address),
     fromName: clean(firstFrom?.name?.trim()) || null,
@@ -90,7 +97,7 @@ function toParsedEmail(mail: ParsedMail, raw: Buffer): ParsedEmail {
     attachments: mail.attachments.map((att, position) => ({
       position,
       filename: clean(att.filename),
-      contentType: att.contentType || 'application/octet-stream',
+      contentType: clean(att.contentType) || 'application/octet-stream',
       size: att.size ?? att.content.byteLength,
       content: att.content,
     })),

@@ -3,12 +3,12 @@ import { chunk, cursorAfterEmptyScan, pendingUids, planSync } from './sync-plan'
 const NOW = new Date('2026-11-15T12:00:00Z');
 
 describe('planSync', () => {
-  it('primeira vez: busca os últimos 12 meses a partir do UID 0', () => {
+  it('primeira vez: busca os últimos 5 meses a partir do UID 0', () => {
     const plan = planSync({ uidValidity: null, lastUid: 0n }, 777n, NOW);
 
     expect(plan.mode).toBe('initial');
     expect(plan.afterUid).toBe(0n);
-    expect(plan.search).toEqual({ since: new Date('2025-11-15T12:00:00Z') });
+    expect(plan.search).toEqual({ since: new Date('2026-06-18T12:00:00Z') });
   });
 
   it('mesma uidValidity: só UIDs depois do último visto', () => {
@@ -19,12 +19,12 @@ describe('planSync', () => {
     expect(plan.search).toEqual({ uid: '1501:*' });
   });
 
-  it('uidValidity mudou: recomeça os 12 meses (idempotente pelo Message-ID)', () => {
+  it('uidValidity mudou: recomeça os 5 meses (idempotente pelo Message-ID)', () => {
     const plan = planSync({ uidValidity: 777n, lastUid: 1500n }, 900n, NOW);
 
     expect(plan.mode).toBe('reset');
     expect(plan.afterUid).toBe(0n);
-    expect(plan.search).toEqual({ since: new Date('2025-11-15T12:00:00Z') });
+    expect(plan.search).toEqual({ since: new Date('2026-06-18T12:00:00Z') });
   });
 });
 
@@ -39,7 +39,7 @@ describe('pendingUids', () => {
 });
 
 describe('cursorAfterEmptyScan', () => {
-  it('na primeira vez sem nada nos 12 meses, pula para o fim da pasta', () => {
+  it('na primeira vez sem nada nos 5 meses, pula para o fim da pasta', () => {
     expect(cursorAfterEmptyScan('initial', 0n, 4321)).toBe(4320n);
   });
 

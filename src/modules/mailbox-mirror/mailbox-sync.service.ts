@@ -8,7 +8,7 @@ import { MessageStoreService } from './message-store.service';
 import { chunk, cursorAfterEmptyScan, pendingUids, planSync, SyncPlan } from './sync-plan';
 
 export const SYNC_BATCH_SIZE = 50;
-/** Teto por rodada: a importação inicial de 12 meses anda em várias rodadas de 5 min. */
+/** Teto por rodada: a importação inicial de 5 meses anda em várias rodadas de 5 min. */
 export const MAX_MESSAGES_PER_RUN = 500;
 const MAX_ERROR_LENGTH = 500;
 
