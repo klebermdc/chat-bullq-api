@@ -22,6 +22,15 @@ export function maskSensitivePath(url: string): string {
   return (url ?? '').replace(SENSITIVE_SEGMENT, '$1:token');
 }
 
+/** Repassa `missing: string[]` de uma HttpException 4xx; nada mais do corpo. */
+function missingFields(res: unknown): { missing?: string[] } {
+  if (!res || typeof res !== 'object') return {};
+  const missing = (res as { missing?: unknown }).missing;
+  return Array.isArray(missing) && missing.every((m) => typeof m === 'string')
+    ? { missing }
+    : {};
+}
+
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
@@ -99,6 +108,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         exception instanceof HttpException
           ? exception.name
           : 'InternalServerError',
+      // Lista de campos faltantes (ex.: contrato com `[Campo]` sem valor) —
+      // a tela precisa dela para marcar o que falta, não só o texto.
+      ...missingFields(exceptionResponse),
       timestamp: new Date().toISOString(),
       path: safeUrl,
     });
