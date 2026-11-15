@@ -1,4 +1,4 @@
-import { ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
+import { ArgumentsHost, HttpException, HttpStatus, UnprocessableEntityException } from '@nestjs/common';
 import { ErrorSeverity, ErrorSource } from '@prisma/client';
 import { ErrorReporterService } from '../../modules/error-reporter/error-reporter.service';
 import { GlobalExceptionFilter, maskSensitivePath } from './http-exception.filter';
@@ -106,6 +106,24 @@ describe('GlobalExceptionFilter', () => {
     const { host, json } = makeHost('/api/v1/public/contracts/abc123SEGREDO');
     filter.catch(new HttpException('nao encontrado', HttpStatus.NOT_FOUND), host);
     expect(json.mock.calls[0][0].path).toBe('/api/v1/public/contracts/:token');
+  });
+});
+
+describe('GlobalExceptionFilter — campos faltantes', () => {
+  it('repassa `missing` de uma exceção 4xx para o cliente', () => {
+    const filter = new GlobalExceptionFilter();
+    const { host, json } = makeHost('/api/v1/conversations/c1/contracts', 'POST');
+    filter.catch(new UnprocessableEntityException({ message: 'Faltam campos', missing: ['CPF do Cliente'] }), host);
+    expect(json.mock.calls[0][0]).toEqual(expect.objectContaining({
+      statusCode: 422, message: 'Faltam campos', missing: ['CPF do Cliente'],
+    }));
+  });
+
+  it('não inventa `missing` quando a exceção não traz', () => {
+    const filter = new GlobalExceptionFilter();
+    const { host, json } = makeHost();
+    filter.catch(new HttpException('x', HttpStatus.BAD_REQUEST), host);
+    expect(json.mock.calls[0][0]).not.toHaveProperty('missing');
   });
 });
 

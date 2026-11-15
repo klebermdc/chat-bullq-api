@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AcceptanceKind } from '@prisma/client';
 import { chromium, type BrowserType } from 'playwright';
 import {
   AcceptanceItem,
@@ -7,6 +8,10 @@ import {
 } from './acceptances.types';
 
 export interface AcceptancePdfInput {
+  /** Ausente = DELIVERY (aceites anteriores ao campo). */
+  kind?: AcceptanceKind;
+  /** Título do contrato (cabeçalho do PDF no CONTRACT). */
+  title?: string | null;
   organizationName: string;
   termText: string;
   /** Snapshot da política de cancelamento. Ausente/vazia = bloco não sai. */
@@ -18,6 +23,18 @@ export interface AcceptancePdfInput {
   vouchers?: VoucherRef[];
   orderRef?: string | null;
 }
+
+/** Documento sem assinatura (modelo interno preenchido, baixado em PDF). */
+export interface DocumentPdfInput {
+  organizationName: string;
+  title: string;
+  text: string;
+}
+
+const BASE_STYLE = `body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:40px;line-height:1.5}
+      h1{font-size:20px}ul{padding-left:20px}.meta{margin-top:32px;font-size:12px;color:#444;border-top:1px solid #ddd;padding-top:16px}
+      .policy{white-space:pre-wrap}.doc{white-space:pre-wrap}.org{font-size:13px;color:#444;margin-top:-8px}
+      .pax{margin:2px 0 6px;font-size:12px;color:#444;list-style:circle}`;
 
 function esc(s: string): string {
   return String(s ?? '').replace(/[&<>"]/g, (c) =>
@@ -49,7 +66,52 @@ export class AcceptancePdfService {
     return `<ul class="pax">${rows}</ul>`;
   }
 
+  /** Evidência da assinatura — a mesma no aceite de entrega e no contrato. */
+  private signatureBlock(i: AcceptancePdfInput, extra = ''): string {
+    const when = i.signedAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    return `<div class="meta">
+        <div><strong>Assinado por:</strong> ${esc(i.signerName)}</div>
+        <div><strong>Data/hora:</strong> ${esc(when)} (Brasília)</div>
+        ${i.signerIp ? `<div><strong>IP:</strong> ${esc(i.signerIp)}</div>` : ''}
+        ${extra}
+        <div>Assinatura eletrônica simples (MP 2.200-2/2001).</div>
+      </div>`;
+  }
+
+  private page(body: string): string {
+    return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/>
+      <style>${BASE_STYLE}</style>
+      </head><body>${body}</body></html>`;
+  }
+
+  /**
+   * Contrato assinado: título, nome da org, o texto preenchido (quebras de
+   * linha preservadas) e o bloco da assinatura. Sem itens nem vouchers — o
+   * contrato é o próprio texto.
+   */
+  private contractHtml(i: AcceptancePdfInput): string {
+    const title = i.title?.trim() || 'Contrato';
+    return this.page(`
+      <h1>${esc(title)}</h1>
+      <p class="org">${esc(i.organizationName)}</p>
+      <div class="doc">${esc(i.termText)}</div>
+      ${this.signatureBlock(i, '<div>Declarou ter lido e aceito o contrato acima.</div>')}`);
+  }
+
+  /** Documento interno preenchido, sem assinatura. */
+  private documentHtml(i: DocumentPdfInput): string {
+    return this.page(`
+      <h1>${esc(i.title)}</h1>
+      <p class="org">${esc(i.organizationName)}</p>
+      <div class="doc">${esc(i.text)}</div>`);
+  }
+
   private html(i: AcceptancePdfInput): string {
+    if (i.kind === AcceptanceKind.CONTRACT) return this.contractHtml(i);
+    return this.deliveryHtml(i);
+  }
+
+  private deliveryHtml(i: AcceptancePdfInput): string {
     // `qty` também passa pelo `esc()`. Hoje o `@IsNumber()` + pipe global já
     // recusariam markup, mas a regra deste arquivo é "tudo que vem do usuário
     // é escapado" — abrir exceção por ser "seguro na origem" ensina que a
@@ -57,7 +119,6 @@ export class AcceptancePdfService {
     const rows = i.items.map((it) => `<li>${esc(it.description)}${
       it.qty ? ` — <strong>${esc(String(it.qty))}x</strong>` : ''}${it.date ? ` (${esc(it.date)})` : ''}${
       it.note ? ` — ${esc(it.note)}` : ''}${this.paxList(it.passengers)}</li>`).join('');
-    const when = i.signedAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     // O hash de cada voucher entra no comprovante como prova de qual arquivo
     // foi entregue. Arquivo ilegível no momento do hash fica sem `sha256` —
     // nesse caso o nome aparece sozinho, sem rótulo de hash vazio.
@@ -92,28 +153,26 @@ export class AcceptancePdfService {
     const policyConsent = policy
       ? '<div>Declarou ter lido e aceito a política de cancelamento acima.</div>'
       : '';
-    return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/>
-      <style>body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:40px;line-height:1.5}
-      h1{font-size:20px}ul{padding-left:20px}.meta{margin-top:32px;font-size:12px;color:#444;border-top:1px solid #ddd;padding-top:16px}
-      .policy{white-space:pre-wrap}
-      .pax{margin:2px 0 6px;font-size:12px;color:#444;list-style:circle}</style>
-      </head><body>
+    return this.page(`
       <h1>Comprovante de Aceite — ${esc(i.organizationName)}</h1>
       ${orderBlock}
       <p>${esc(i.termText)}</p>
       <h3>Itens conferidos</h3><ul>${rows}</ul>
       ${voucherBlock}
       ${policyBlock}
-      <div class="meta">
-        <div><strong>Assinado por:</strong> ${esc(i.signerName)}</div>
-        <div><strong>Data/hora:</strong> ${esc(when)} (Brasília)</div>
-        ${i.signerIp ? `<div><strong>IP:</strong> ${esc(i.signerIp)}</div>` : ''}
-        ${policyConsent}
-        <div>Assinatura eletrônica simples (MP 2.200-2/2001).</div>
-      </div></body></html>`;
+      ${this.signatureBlock(i, policyConsent)}`);
   }
 
   async render(input: AcceptancePdfInput): Promise<Buffer> {
+    return this.htmlToPdf(this.html(input));
+  }
+
+  /** PDF de um documento preenchido, sem assinatura (modelo interno). */
+  async renderDocument(input: DocumentPdfInput): Promise<Buffer> {
+    return this.htmlToPdf(this.documentHtml(input));
+  }
+
+  private async htmlToPdf(html: string): Promise<Buffer> {
     const browser = await this.browserType.launch({
       headless: true,
       executablePath: process.env.PROPOSAL_CHROMIUM_PATH || undefined,
@@ -121,7 +180,7 @@ export class AcceptancePdfService {
     });
     try {
       const page = await browser.newPage();
-      await page.setContent(this.html(input), { waitUntil: 'load' });
+      await page.setContent(html, { waitUntil: 'load' });
       return (await page.pdf({ format: 'A4', printBackground: true })) as Buffer;
     } finally {
       await browser.close();

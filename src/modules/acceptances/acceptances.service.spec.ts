@@ -780,3 +780,134 @@ describe('AcceptancesService.extractVoucherText', () => {
     expect(readPdfText).not.toHaveBeenCalled();
   });
 });
+
+describe('AcceptancesService — contratos (kind CONTRACT)', () => {
+  const env = process.env;
+  beforeEach(() => { process.env = { ...env, APP_PUBLIC_URL: 'https://x.test' }; });
+  afterEach(() => { process.env = env; });
+
+  function prismaWithPolicy() {
+    return {
+      conversation: { findFirst: jest.fn().mockResolvedValue({
+        id: 'conv-1', organizationId: 'org-1', contactId: 'ct-1',
+        organization: { name: 'OFP', cancellationPolicy: 'Política de entrega.' },
+      }) },
+      card: { findFirst: jest.fn().mockResolvedValue({ id: 'card-1' }) },
+      orderAcceptance: { create: jest.fn().mockImplementation(({ data }: any) => ({ id: 'acc-1', ...data })) },
+    } as any;
+  }
+
+  it('cria CONTRACT com título, templateId, texto preenchido, sem política e com prazo próprio', async () => {
+    const prisma = prismaWithPolicy();
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+    const before = Date.now();
+    const { acceptance, link } = await svc.createForConversation('org-1', 'conv-1', {
+      items: [], createdById: 'u', kind: 'CONTRACT', title: 'Contrato X', templateId: 'tpl-1',
+      termText: 'Eu, Ana, contrato.', expiresInDays: 7,
+    });
+    expect(acceptance).toEqual(expect.objectContaining({
+      kind: 'CONTRACT', title: 'Contrato X', templateId: 'tpl-1', termText: 'Eu, Ana, contrato.', policyText: null, items: [],
+    }));
+    const days = ((acceptance.expiresAt as Date).getTime() - before) / 86_400_000;
+    expect(days).toBeGreaterThan(6.99);
+    expect(days).toBeLessThan(7.01);
+    expect(link).toBe(`https://x.test/aceite/${acceptance.token}`);
+  });
+
+  it('CONTRACT sem texto é recusado (nunca cai no termo de entrega)', async () => {
+    const svc = new AcceptancesService(prismaWithPolicy(), {} as any, {} as any, {} as any, {} as any);
+    await expect(svc.createForConversation('org-1', 'conv-1', {
+      items: [], createdById: 'u', kind: 'CONTRACT', termText: '  ',
+    })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('entrega continua DELIVERY por padrão e com a política', async () => {
+    const svc = new AcceptancesService(prismaWithPolicy(), {} as any, {} as any, {} as any, {} as any);
+    const { acceptance } = await svc.createForConversation('org-1', 'conv-1', { items: [], createdById: 'u' });
+    expect(acceptance.kind).toBe('DELIVERY');
+    expect(acceptance.policyText).toBe('Política de entrega.');
+  });
+
+  it('status da conversa só considera DELIVERY e traz kind/title', async () => {
+    const row = { id: 'acc-1', kind: 'DELIVERY', title: null, status: 'PENDING', items: [], pdfKey: null,
+      signedAt: null, signerName: null, signerIp: null, signerUserAgent: null, createdAt: new Date(), expiresAt: null };
+    const prisma = { orderAcceptance: { findFirst: jest.fn().mockResolvedValue(row) } } as any;
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+    const view = await svc.getStatusForConversation('org-1', 'conv-1');
+    expect(prisma.orderAcceptance.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { organizationId: 'org-1', conversationId: 'conv-1', kind: 'DELIVERY' },
+    }));
+    expect(view).toEqual(expect.objectContaining({ id: 'acc-1', kind: 'DELIVERY', title: null }));
+  });
+
+  it('lista os contratos da conversa (escopo da org, só CONTRACT, mais novo primeiro)', async () => {
+    const row = { id: 'c-1', kind: 'CONTRACT', title: 'Contrato X', status: 'SIGNED', items: [], pdfKey: 'k',
+      signedAt: new Date(), signerName: 'Ana', signerIp: '1', signerUserAgent: 'UA', createdAt: new Date(), expiresAt: null };
+    const prisma = { orderAcceptance: { findMany: jest.fn().mockResolvedValue([row]) } } as any;
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+    const list = await svc.listContractsForConversation('org-1', 'conv-1');
+    expect(prisma.orderAcceptance.findMany).toHaveBeenCalledWith({
+      where: { organizationId: 'org-1', conversationId: 'conv-1', kind: 'CONTRACT' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(list).toEqual([expect.objectContaining({ id: 'c-1', kind: 'CONTRACT', title: 'Contrato X', pdfUrl: '/api/v1/acceptances/c-1/pdf' })]);
+  });
+
+  it('assinar CONTRACT reusa o fluxo: PDF com kind/title, efeitos recebem kind e a visão traz kind/title', async () => {
+    const acc = { id: 'acc-1', organizationId: 'org-1', conversationId: 'conv-1', contactId: 'ct-1', cardId: 'card-1',
+      token: 'tok', items: [], termText: 'Contrato preenchido', status: 'PENDING', kind: 'CONTRACT', title: 'Contrato X',
+      expiresAt: new Date(Date.now() + 1e9), policyText: null, organization: { name: 'OFP' } };
+    const prisma = { orderAcceptance: {
+      findUnique: jest.fn().mockResolvedValue(acc),
+      update: jest.fn().mockImplementation(({ data }: any) => ({ ...acc, ...data })),
+    } } as any;
+    const pdf = { render: jest.fn().mockResolvedValue(Buffer.from('pdf')) } as any;
+    const storage = { put: jest.fn().mockResolvedValue(undefined) } as any;
+    const effects = { onSigned: jest.fn().mockResolvedValue(undefined) } as any;
+    const svc = new AcceptancesService(prisma, pdf, effects, storage, {} as any);
+
+    const view = await svc.sign('tok', { name: 'Ana', ip: '1.2.3.4', userAgent: 'UA' });
+    expect(pdf.render).toHaveBeenCalledWith(expect.objectContaining({ kind: 'CONTRACT', title: 'Contrato X', termText: 'Contrato preenchido' }));
+    expect(effects.onSigned).toHaveBeenCalledWith(expect.objectContaining({ kind: 'CONTRACT', title: 'Contrato X' }));
+    expect(view).toEqual(expect.objectContaining({ kind: 'CONTRACT', title: 'Contrato X', status: 'SIGNED' }));
+  });
+
+  it('visão pública traz kind e title', async () => {
+    const acc = { id: 'acc-1', token: 'tok', items: [], termText: 'T', status: 'PENDING', kind: 'CONTRACT', title: 'Contrato X',
+      expiresAt: null, policyText: null, pdfKey: null, signedAt: null, signerName: null, vouchers: [], orderRef: null,
+      organization: { name: 'OFP' } };
+    const prisma = { orderAcceptance: { findUnique: jest.fn().mockResolvedValue(acc) } } as any;
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+    expect(await svc.getByToken('tok')).toEqual(expect.objectContaining({ kind: 'CONTRACT', title: 'Contrato X' }));
+  });
+});
+
+describe('AcceptancesService — reenvio com o prazo original e busca de contrato', () => {
+  const env = process.env;
+  beforeEach(() => { process.env = { ...env, APP_PUBLIC_URL: 'https://x.test' }; });
+  afterEach(() => { process.env = env; });
+
+  it('resend renova com a duração da criação (7 dias), não 30', async () => {
+    const createdAt = new Date('2026-11-01T00:00:00Z');
+    const prisma = { orderAcceptance: {
+      findFirst: jest.fn().mockResolvedValue({ id: 'acc-1', token: 'tok', status: 'EXPIRED', organizationId: 'org-1',
+        createdAt, expiresAt: new Date(createdAt.getTime() + 7 * 86_400_000) }),
+      update: jest.fn().mockImplementation(({ data }: any) => ({ id: 'acc-1', ...data })),
+    } } as any;
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+    const before = Date.now();
+    await svc.resend('org-1', 'acc-1');
+    const days = (prisma.orderAcceptance.update.mock.calls[0][0].data.expiresAt.getTime() - before) / 86_400_000;
+    expect(days).toBeGreaterThan(6.99);
+    expect(days).toBeLessThan(7.01);
+  });
+
+  it('findContractInConversation filtra org, conversa e kind CONTRACT; senão 404', async () => {
+    const prisma = { orderAcceptance: { findFirst: jest.fn().mockResolvedValue(null) } } as any;
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+    await expect(svc.findContractInConversation('org-1', 'conv-1', 'acc-1')).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.orderAcceptance.findFirst).toHaveBeenCalledWith({
+      where: { id: 'acc-1', organizationId: 'org-1', conversationId: 'conv-1', kind: 'CONTRACT' },
+    });
+  });
+});

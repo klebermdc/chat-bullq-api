@@ -240,3 +240,47 @@ describe('AcceptancePdfService', () => {
     });
   });
 });
+
+describe('AcceptancePdfService — contrato e documento', () => {
+  const base = {
+    organizationName: 'OFP',
+    termText: 'Cláusula 1 <b>x</b>\nCláusula 2',
+    items: [{ description: 'NÃO DEVE APARECER' }],
+    signerName: 'Ana',
+    signedAt: new Date('2026-11-15T12:00:00Z'),
+    signerIp: '1.2.3.4',
+  };
+
+  it('CONTRACT: título no cabeçalho, texto escapado com quebras e assinatura, sem itens', () => {
+    const svc = new AcceptancePdfService({} as any);
+    const html = (svc as any).html({ ...base, kind: 'CONTRACT', title: 'Contrato <Viagem>' });
+    expect(html).toContain('<h1>Contrato &lt;Viagem&gt;</h1>');
+    expect(html).toContain('Cláusula 1 &lt;b&gt;x&lt;/b&gt;\nCláusula 2');
+    expect(html).toContain('white-space:pre-wrap');
+    expect(html).toContain('Assinado por:</strong> Ana');
+    expect(html).toContain('1.2.3.4');
+    expect(html).not.toContain('Itens conferidos');
+    expect(html).not.toContain('NÃO DEVE APARECER');
+    expect(html).not.toContain('Comprovante de Aceite');
+  });
+
+  it('sem kind continua o comprovante de entrega', () => {
+    const svc = new AcceptancePdfService({} as any);
+    const html = (svc as any).html(base);
+    expect(html).toContain('Comprovante de Aceite — OFP');
+    expect(html).toContain('Itens conferidos');
+  });
+
+  it('renderDocument gera PDF com título, org e texto escapado, sem bloco de assinatura', async () => {
+    const page = { setContent: jest.fn().mockResolvedValue(undefined), pdf: jest.fn().mockResolvedValue(Buffer.from('pdf')) };
+    const browser = { newPage: jest.fn().mockResolvedValue(page), close: jest.fn().mockResolvedValue(undefined) };
+    const svc = new AcceptancePdfService({ launch: jest.fn().mockResolvedValue(browser) } as any);
+    const buf = await svc.renderDocument({ organizationName: 'OFP', title: 'Procuração', text: '<script>x</script>' });
+    expect(buf).toBeInstanceOf(Buffer);
+    const html = page.setContent.mock.calls[0][0] as string;
+    expect(html).toContain('<h1>Procuração</h1>');
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).not.toContain('Assinado por');
+    expect(browser.close).toHaveBeenCalled();
+  });
+});

@@ -1,4 +1,5 @@
 import { PATH_METADATA } from '@nestjs/common/constants';
+import { NotFoundException } from '@nestjs/common';
 import { AcceptancesController } from './acceptances.controller';
 
 /**
@@ -43,12 +44,37 @@ describe('AcceptancesController.extractVoucherText', () => {
         .fn()
         .mockResolvedValue({ items: [], orderRef: null }),
     } as any;
-    const controller = new AcceptancesController(service, {} as never);
+    const controller = new AcceptancesController(service, {} as never, {} as never);
 
     await controller.extractVoucherText({ text: 'voucher colado' }, 'org-1');
 
     expect(service.extractVoucherText).toHaveBeenCalledWith('org-1', {
       text: 'voucher colado',
     });
+  });
+});
+
+describe('AcceptancesController — acesso por conversa no PDF e no reenvio', () => {
+  const actor = ['org-1', 'AGENT', 'u-1', new Set(['ch-1'])] as const;
+
+  it('reenvio confere a conversa antes de renovar', async () => {
+    const order: string[] = [];
+    const access = { assertAccess: jest.fn().mockImplementation(async () => { order.push('access'); }) };
+    const service = { resend: jest.fn().mockImplementation(async () => { order.push('resend'); return { link: 'l' }; }) };
+    const controller = new AcceptancesController(service as any, {} as never, access as any);
+    await controller.resend('acc-1', ...actor);
+    expect(access.assertAccess).toHaveBeenCalledWith(
+      { organizationId: 'org-1', role: 'AGENT', userId: 'u-1', channelAccess: actor[3] }, 'acc-1');
+    expect(order).toEqual(['access', 'resend']);
+  });
+
+  it('sem acesso à conversa: nem reenvia nem busca o PDF', async () => {
+    const access = { assertAccess: jest.fn().mockRejectedValue(new NotFoundException()) };
+    const service = { resend: jest.fn(), pdfKeyForOrg: jest.fn() };
+    const controller = new AcceptancesController(service as any, {} as never, access as any);
+    await expect(controller.resend('acc-1', ...actor)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(controller.pdf('acc-1', ...actor, {} as any)).rejects.toBeInstanceOf(NotFoundException);
+    expect(service.resend).not.toHaveBeenCalled();
+    expect(service.pdfKeyForOrg).not.toHaveBeenCalled();
   });
 });

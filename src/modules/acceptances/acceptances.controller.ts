@@ -2,7 +2,18 @@ import { Body, Controller, Get, Param, Post, Res, UseGuards } from '@nestjs/comm
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
-import { CurrentOrg } from '../../common/decorators';
+import { OrgRole } from '@prisma/client';
+import { Throttle } from '@nestjs/throttler';
+import {
+  CurrentChannelAccess,
+  CurrentOrg,
+  CurrentUser,
+  CurrentUserRole,
+} from '../../common/decorators';
+import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
+import { AcceptanceAccessService } from './acceptance-access.service';
+import { ConversationActor } from './conversation-guard.service';
+import { LIMITE_REENVIO } from './acceptances.constants';
 import { StorageService } from '../storage/storage.service';
 import { AcceptancesService } from './acceptances.service';
 import { streamStoredPdf } from './stream-pdf.util';
@@ -17,7 +28,17 @@ export class AcceptancesController {
   constructor(
     private readonly service: AcceptancesService,
     private readonly storage: StorageService,
+    private readonly access: AcceptanceAccessService,
   ) {}
+
+  private actor(
+    organizationId: string,
+    role: OrgRole,
+    userId: string,
+    channelAccess: ChannelAccess,
+  ): ConversationActor {
+    return { organizationId, role, userId, channelAccess };
+  }
 
   /**
    * PDF do aceite assinado para o operador.
@@ -31,8 +52,13 @@ export class AcceptancesController {
   async pdf(
     @Param('id') id: string,
     @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
+    @CurrentChannelAccess() channels: ChannelAccess,
     @Res() res: Response,
   ): Promise<void> {
+    // Além da org: a conversa do aceite (AGENT só a dele / canal liberado).
+    await this.access.assertAccess(this.actor(orgId, role, userId, channels), id);
     const key = await this.service.pdfKeyForOrg(id, orgId);
     await streamStoredPdf(this.storage, key, res);
   }
@@ -67,7 +93,15 @@ export class AcceptancesController {
   }
 
   @Post(':id/resend')
-  resend(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
+  @Throttle({ geral: LIMITE_REENVIO })
+  async resend(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
+    @CurrentChannelAccess() channels: ChannelAccess,
+  ) {
+    await this.access.assertAccess(this.actor(orgId, role, userId, channels), id);
     return this.service.resend(orgId, id);
   }
 }
