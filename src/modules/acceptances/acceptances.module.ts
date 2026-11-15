@@ -30,6 +30,8 @@ import { PublicAcceptancesController } from './public-acceptances.controller';
     VoucherExtractorService,
     { provide: AcceptancePdfService, useFactory: () => new AcceptancePdfService(chromium) },
   ],
-  exports: [AcceptancesService],
+  // AcceptancePdfService: o PDF de modelo interno (document-templates) usa o
+  // mesmo pipeline do comprovante.
+  exports: [AcceptancesService, AcceptancePdfService],
 })
 export class AcceptancesModule {}

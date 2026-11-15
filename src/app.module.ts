@@ -55,6 +55,7 @@ import { CopilotModule } from './modules/copilot/copilot.module';
 import { CallsModule } from './modules/calls/calls.module';
 import { OrderFichaModule } from './modules/order-ficha/order-ficha.module';
 import { AcceptancesModule } from './modules/acceptances/acceptances.module';
+import { DocumentTemplatesModule } from './modules/document-templates/document-templates.module';
 import { MetaCapiModule } from './modules/meta-capi/meta-capi.module';
 import { MarketingModule } from './modules/marketing/marketing.module';
 import { EmailCoreModule } from './modules/email-core/email-core.module';
@@ -144,6 +145,7 @@ import redisConfig from './config/redis.config';
     CallsModule,
     OrderFichaModule,
     AcceptancesModule,
+    DocumentTemplatesModule,
     MetaCapiModule,
     MarketingModule,
     EmailCoreModule,
