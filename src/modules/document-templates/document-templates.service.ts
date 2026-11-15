@@ -6,7 +6,10 @@ import {
 } from '@nestjs/common';
 import { DocumentTemplate, DocumentTemplateAudience, OrgRole } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { ConversationAccessService } from '../messaging/conversations/conversation-access.service';
+import {
+  ConversationActor,
+  ConversationGuardService,
+} from '../acceptances/conversation-guard.service';
 import { AcceptancePdfService } from '../acceptances/acceptance-pdf.service';
 import { canSeeTemplate, isTemplateManager } from './document-template-access';
 import {
@@ -16,7 +19,10 @@ import {
   toSummary,
 } from './document-template.view';
 import { FillResult, MAX_PLACEHOLDERS, extractPlaceholders, fillTemplate } from './placeholders.util';
-import { buildAutofill } from './autofill.util';
+import { AutofillSource, resolveAutofill } from './autofill.util';
+import { FieldGroups, groupPlaceholders } from './field-groups.util';
+import { FieldDefaultsService } from './field-defaults.service';
+import { ContactPersonalDataService } from './personal-data.service';
 import {
   CreateDocumentTemplateDto,
   UpdateDocumentTemplateDto,
@@ -30,6 +36,20 @@ export interface TemplateActor {
 }
 
 const NOT_FOUND = 'Modelo não encontrado.';
+
+export interface AutofillView {
+  values: Record<string, string>;
+  sources: Record<string, AutofillSource>;
+  /** Todos os campos do modelo, na ordem do texto, por quem os fornece. */
+  groups: FieldGroups;
+}
+
+/** Autofill com o nome do contato, para quem monta mensagem ao cliente. */
+export interface AutofillDetail extends AutofillView {
+  contactName: string | null;
+}
+
+type ClientContactRow = { id: string; name: string | null; phone: string | null; email: string | null };
 
 /** Recusa na edição um corpo com mais campos do que dá para preencher. */
 export function assertPlaceholderCount(body: string): void {
@@ -45,8 +65,10 @@ export function assertPlaceholderCount(body: string): void {
 export class DocumentTemplatesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly conversationAccess: ConversationAccessService,
+    private readonly guard: ConversationGuardService,
     private readonly pdf: AcceptancePdfService,
+    private readonly fieldDefaults: FieldDefaultsService,
+    private readonly personalData: ContactPersonalDataService,
   ) {}
 
   async list(
@@ -131,30 +153,46 @@ export class DocumentTemplatesService {
   }
 
   /**
-   * Valores pré-preenchidos para os campos do modelo. Com `conversationId`,
-   * os dados do cliente vêm do contato daquela conversa — e a conversa passa
-   * pela mesma guarda de acesso do envio (outra org/outro vendedor = 404).
+   * Valores pré-preenchidos para os campos do modelo, com a origem de cada um
+   * e os campos agrupados. Com `conversationId`, os dados do cliente vêm do
+   * contato daquela conversa — e a conversa passa pela mesma guarda do envio
+   * do contrato (outra org, conversa de colega ou canal sem acesso = 404;
+   * vendedor incluído passa).
    */
-  async autofill(
-    actor: TemplateActor,
-    id: string,
-    conversationId?: string,
-  ): Promise<{ values: Record<string, string> }> {
+  async autofill(actor: ConversationActor, id: string, conversationId?: string): Promise<AutofillView> {
+    const { contactName: _contactName, ...view } = await this.autofillDetail(actor, id, conversationId);
+    return view;
+  }
+
+  async autofillDetail(actor: ConversationActor, id: string, conversationId?: string): Promise<AutofillDetail> {
     const template = await this.findVisible(actor, id);
-    const [settings, contact] = await Promise.all([
+    return this.autofillTemplate(actor, template, conversationId);
+  }
+
+  async autofillTemplate(
+    actor: ConversationActor,
+    template: Pick<DocumentTemplate, 'body'>,
+    conversationId?: string,
+  ): Promise<AutofillDetail> {
+    const placeholders = extractPlaceholders(template.body);
+    const contact = conversationId ? await this.contactOfConversation(actor, conversationId) : null;
+    const [settings, defaults, saved] = await Promise.all([
       this.prisma.contractSettings.findUnique({
         where: { organizationId: actor.organizationId },
         select: { companyName: true, companyDocument: true, companyAddress: true },
       }),
-      conversationId ? this.contactOfConversation(actor, conversationId) : Promise.resolve(null),
+      this.fieldDefaults.values(actor.organizationId),
+      contact ? this.personalData.findValues(actor.organizationId, contact.id, placeholders) : Promise.resolve({}),
     ]);
-    const values = buildAutofill({
-      placeholders: extractPlaceholders(template.body),
+    const { values, sources } = resolveAutofill({
+      placeholders,
       settings,
       contact,
+      defaults,
+      saved,
       now: new Date(),
     });
-    return { values };
+    return { values, sources, groups: groupPlaceholders(placeholders), contactName: contact?.name ?? null };
   }
 
   async render(actor: TemplateActor, id: string, values?: Record<string, string>): Promise<FillResult> {
@@ -190,17 +228,14 @@ export class DocumentTemplatesService {
     if (!found) throw new NotFoundException(NOT_FOUND);
   }
 
-  private async contactOfConversation(actor: TemplateActor, conversationId: string) {
-    const conversation = await this.conversationAccess.assertConversationAccess(
-      conversationId,
-      actor.organizationId,
-      actor.role,
-      actor.userId,
-      { allowParticipant: true },
-    );
+  private async contactOfConversation(
+    actor: ConversationActor,
+    conversationId: string,
+  ): Promise<ClientContactRow | null> {
+    const conversation = await this.guard.assertCanUse(actor, conversationId);
     return this.prisma.contact.findFirst({
       where: { id: conversation.contactId, organizationId: actor.organizationId },
-      select: { name: true, phone: true, email: true },
+      select: { id: true, name: true, phone: true, email: true },
     });
   }
 }

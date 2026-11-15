@@ -1,4 +1,4 @@
-import { buildAutofill, saoPauloDateParts } from './autofill.util';
+import { buildAutofill, resolveAutofill, saoPauloDateParts } from './autofill.util';
 
 const ALL = [
   '[Razão Social da Agência]', '[CNPJ da Agência]', '[Endereço da Agência]', '[Representante Legal da Agência]',
@@ -64,5 +64,62 @@ describe('buildAutofill', () => {
   it('não devolve campo que o modelo não tem', () => {
     const values = buildAutofill({ placeholders: ['[Dia]'], settings: null, contact: { name: 'Ana' }, now });
     expect(values).toEqual({ '[Dia]': '15' });
+  });
+});
+
+describe('resolveAutofill — camadas e origens', () => {
+  const now = new Date('2026-11-15T15:00:00Z');
+  const placeholders = [
+    '[Cidade]', '[Razão Social da Agência]', '[CNPJ da Agência]', '[Nome do Cliente]', '[CPF do Cliente]',
+    '[Dia]', '[Valor Total]',
+  ];
+
+  it('fieldDefaults < colunas da empresa < contato/lembrados < data, com origem de cada valor', () => {
+    const out = resolveAutofill({
+      placeholders,
+      settings: { companyName: 'OFP Ltda', companyDocument: null },
+      contact: { name: 'Ana' },
+      saved: { '[CPF do Cliente]': '123' },
+      defaults: {
+        '[Cidade]': 'São Paulo',
+        '[Razão Social da Agência]': 'Nome antigo',
+        '[CNPJ da Agência]': '00.000/0001-00',
+        '[Dia]': '99',
+        '[Fora do Modelo]': 'x',
+      },
+      now,
+    });
+    expect(out.values).toEqual({
+      '[Cidade]': 'São Paulo',
+      '[Razão Social da Agência]': 'OFP Ltda',
+      '[CNPJ da Agência]': '00.000/0001-00',
+      '[Nome do Cliente]': 'Ana',
+      '[CPF do Cliente]': '123',
+      '[Dia]': '15',
+    });
+    expect(out.sources).toEqual({
+      '[Cidade]': 'default',
+      '[Razão Social da Agência]': 'agency',
+      '[CNPJ da Agência]': 'default',
+      '[Nome do Cliente]': 'contact',
+      '[CPF do Cliente]': 'saved',
+      '[Dia]': 'date',
+    });
+  });
+
+  it('valor só com espaço numa camada alta não apaga a de baixo', () => {
+    const out = resolveAutofill({
+      placeholders: ['[Razão Social da Agência]'],
+      settings: { companyName: '   ' },
+      contact: null,
+      defaults: { '[Razão Social da Agência]': 'Padrão' },
+      now,
+    });
+    expect(out).toEqual({ values: { '[Razão Social da Agência]': 'Padrão' }, sources: { '[Razão Social da Agência]': 'default' } });
+  });
+
+  it('chave "[constructor]" não acha o protótipo', () => {
+    const out = resolveAutofill({ placeholders: ['[constructor]'], settings: null, contact: null, now });
+    expect(out.values).toEqual({});
   });
 });

@@ -11,6 +11,7 @@ import {
 import type { ChannelAccess } from '../iam/channel-access/channel-access.service';
 import { ConversationContractsService, ContractActor } from './conversation-contracts.service';
 import { CreateContractDto } from './dto/fill-template.dto';
+import { DataRequestDto } from './dto/contract-fill.dto';
 import { Throttle } from '@nestjs/throttler';
 import { LIMITE_REENVIO } from '../acceptances/acceptances.constants';
 
@@ -54,6 +55,20 @@ export class ConversationContractsController {
     @CurrentChannelAccess() access: ChannelAccess,
   ) {
     return this.service.create(this.actor(orgId, role, userId, access), conversationId, dto);
+  }
+
+  @Post('data-request')
+  @Throttle({ geral: LIMITE_REENVIO })
+  @ApiOperation({ summary: 'Monta (e, com send, envia) o pedido dos dados que faltam do cliente' })
+  requestData(
+    @Param('conversationId') conversationId: string,
+    @Body() dto: DataRequestDto,
+    @CurrentOrg('id') orgId: string,
+    @CurrentUserRole() role: OrgRole,
+    @CurrentUser('id') userId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
+  ) {
+    return this.service.requestData(this.actor(orgId, role, userId, access), conversationId, dto);
   }
 
   @Post(':id/resend')
