@@ -286,6 +286,7 @@ model Organization {
   calls                     Call[]
   orderFichas               OrderFicha[]
   orderAcceptances          OrderAcceptance[]
+  documentTemplates         DocumentTemplate[]
   contracts                 Contract[]
   contractBlockedDates      ContractBlockedDate[]
   contractSettings          ContractSettings?
@@ -2625,6 +2626,45 @@ enum AcceptanceStatus {
   CANCELED
 }
 
+/// O que o cliente está aceitando. DELIVERY = aceite de entrega (itens +
+/// vouchers, move o card). CONTRACT = contrato gerado de um modelo
+/// (`DocumentTemplate`), sem itens e sem efeitos de entrega.
+enum AcceptanceKind {
+  DELIVERY
+  CONTRACT
+}
+
+/// Para quem o modelo serve. CLIENT = contrato que vai ao cliente assinar
+/// pelo link de aceite. INTERNAL = documento interno, só OWNER/ADMIN, sai em PDF.
+enum DocumentTemplateAudience {
+  CLIENT
+  INTERNAL
+}
+
+/// Modelo de documento com campos `[Assim]` no corpo. O texto é material
+/// licenciado: entra por org via scripts/import-document-templates.ts, nunca
+/// por seed no código.
+model DocumentTemplate {
+  id             String                   @id @default(cuid())
+  organizationId String                   @map("organization_id")
+  title          String
+  category       String
+  audience       DocumentTemplateAudience
+  body           String                   @db.Text
+  /// Id do arquivo de origem (Drive) — chave da importação idempotente.
+  sourceRef      String?                  @map("source_ref")
+  isActive       Boolean                  @default(true) @map("is_active")
+  createdById    String?                  @map("created_by_id")
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  updatedAt      DateTime                 @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, sourceRef])
+  @@index([organizationId, audience, isActive])
+  @@map("document_templates")
+}
+
 model OrderAcceptance {
   id             String  @id @default(cuid())
   organizationId String  @map("organization_id")
@@ -2633,6 +2673,13 @@ model OrderAcceptance {
   cardId         String? @map("card_id")
 
   token    String           @unique
+  /// DELIVERY (aceite de entrega, padrão) ou CONTRACT (contrato de modelo).
+  kind       AcceptanceKind @default(DELIVERY)
+  /// Título do documento (o do modelo, no CONTRACT). NULL no aceite de entrega.
+  title      String?
+  /// Modelo de origem do CONTRACT. Sem FK de propósito: o que vale é o
+  /// snapshot em `termText`; editar/desativar o modelo não mexe no assinado.
+  templateId String?        @map("template_id")
   items    Json             @default("[]")
   termText String           @map("term_text")
   /// Snapshot da `Organization.cancellationPolicy` no momento da criação.
@@ -2663,6 +2710,7 @@ model OrderAcceptance {
 
   @@index([organizationId, conversationId])
   @@index([organizationId, status])
+  @@index([organizationId, conversationId, kind])
   @@map("order_acceptances")
 }
 
