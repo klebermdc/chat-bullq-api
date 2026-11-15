@@ -11,6 +11,7 @@ import { extractPdfText } from './pdf-text.util';
 import { renderPdfToPngs } from './pdf-render.util';
 import { storageKeyFromUploadUrl } from './storage-key.util';
 import { AcceptanceKind, OrderAcceptance } from '@prisma/client';
+import { DAY_MS, DEFAULT_TTL_DAYS as ACCEPTANCE_TTL_DAYS, renewalTtlDays } from './acceptance-ttl.util';
 import {
   AcceptanceItem,
   AcceptanceStatusView,
@@ -24,8 +25,6 @@ import {
 // documento declarando que recebeu da OFP.
 const DEFAULT_TERM = (org: string) =>
   `Declaro que recebi da ${org} todos os produtos e/ou serviços relacionados abaixo e que realizei a conferência das respectivas datas, quantidades, informações e demais detalhes. Confirmo que os itens estão corretos, completos e de acordo com o que foi previamente contratado e acordado.`;
-const ACCEPTANCE_TTL_DAYS = 30;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class AcceptancesService {
@@ -374,12 +373,13 @@ export class AcceptancesService {
     };
   }
 
-  async resend(organizationId: string, id: string): Promise<{ acceptance: any; link: string }> {
+  async resend(organizationId: string, id: string): Promise<{ acceptance: OrderAcceptance; link: string }> {
     const base = this.baseUrl();
     const acc = await this.prisma.orderAcceptance.findFirst({ where: { id, organizationId } });
     if (!acc) throw new NotFoundException('Aceite não encontrado.');
     if (acc.status === 'SIGNED') throw new GoneException('Este aceite já foi assinado.');
-    const expiresAt = new Date(Date.now() + ACCEPTANCE_TTL_DAYS * DAY_MS);
+    // Renova com o mesmo prazo da criação (contrato pode ter sido de 7 dias).
+    const expiresAt = new Date(Date.now() + renewalTtlDays(acc) * DAY_MS);
     const updated = await this.prisma.orderAcceptance.update({
       where: { id: acc.id }, data: { status: 'PENDING', expiresAt },
     });
@@ -406,6 +406,19 @@ export class AcceptancesService {
       orderBy: { createdAt: 'desc' },
     });
     return acc ? this.toStatusView(acc) : null;
+  }
+
+  /** Um contrato (CONTRACT) daquela conversa na org, ou 404. */
+  async findContractInConversation(
+    organizationId: string,
+    conversationId: string,
+    id: string,
+  ): Promise<OrderAcceptance> {
+    const acc = await this.prisma.orderAcceptance.findFirst({
+      where: { id, organizationId, conversationId, kind: AcceptanceKind.CONTRACT },
+    });
+    if (!acc) throw new NotFoundException('Contrato não encontrado.');
+    return acc;
   }
 
   /** Todos os contratos (CONTRACT) da conversa, do mais novo ao mais antigo. */

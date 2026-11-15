@@ -881,3 +881,33 @@ describe('AcceptancesService — contratos (kind CONTRACT)', () => {
     expect(await svc.getByToken('tok')).toEqual(expect.objectContaining({ kind: 'CONTRACT', title: 'Contrato X' }));
   });
 });
+
+describe('AcceptancesService — reenvio com o prazo original e busca de contrato', () => {
+  const env = process.env;
+  beforeEach(() => { process.env = { ...env, APP_PUBLIC_URL: 'https://x.test' }; });
+  afterEach(() => { process.env = env; });
+
+  it('resend renova com a duração da criação (7 dias), não 30', async () => {
+    const createdAt = new Date('2026-11-01T00:00:00Z');
+    const prisma = { orderAcceptance: {
+      findFirst: jest.fn().mockResolvedValue({ id: 'acc-1', token: 'tok', status: 'EXPIRED', organizationId: 'org-1',
+        createdAt, expiresAt: new Date(createdAt.getTime() + 7 * 86_400_000) }),
+      update: jest.fn().mockImplementation(({ data }: any) => ({ id: 'acc-1', ...data })),
+    } } as any;
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+    const before = Date.now();
+    await svc.resend('org-1', 'acc-1');
+    const days = (prisma.orderAcceptance.update.mock.calls[0][0].data.expiresAt.getTime() - before) / 86_400_000;
+    expect(days).toBeGreaterThan(6.99);
+    expect(days).toBeLessThan(7.01);
+  });
+
+  it('findContractInConversation filtra org, conversa e kind CONTRACT; senão 404', async () => {
+    const prisma = { orderAcceptance: { findFirst: jest.fn().mockResolvedValue(null) } } as any;
+    const svc = new AcceptancesService(prisma, {} as any, {} as any, {} as any, {} as any);
+    await expect(svc.findContractInConversation('org-1', 'conv-1', 'acc-1')).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.orderAcceptance.findFirst).toHaveBeenCalledWith({
+      where: { id: 'acc-1', organizationId: 'org-1', conversationId: 'conv-1', kind: 'CONTRACT' },
+    });
+  });
+});

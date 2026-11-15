@@ -9,6 +9,9 @@ import { AcceptancePdfService } from './acceptance-pdf.service';
 import { AcceptanceEffectsService } from './acceptance-effects.service';
 import { AcceptancesController } from './acceptances.controller';
 import { PublicAcceptancesController } from './public-acceptances.controller';
+import { ConversationAccessModule } from '../messaging/conversations/conversation-access.module';
+import { ConversationGuardService } from './conversation-guard.service';
+import { AcceptanceAccessService } from './acceptance-access.service';
 
 /**
  * Módulo do Aceite de Entrega.
@@ -22,16 +25,18 @@ import { PublicAcceptancesController } from './public-acceptances.controller';
  * sabe resolver — por isso é provido via `useFactory` com o `chromium` real.
  */
 @Module({
-  imports: [PrismaModule, LlmModule],
+  imports: [PrismaModule, LlmModule, ConversationAccessModule],
   controllers: [AcceptancesController, PublicAcceptancesController],
   providers: [
     AcceptancesService,
     AcceptanceEffectsService,
+    ConversationGuardService,
+    AcceptanceAccessService,
     VoucherExtractorService,
     { provide: AcceptancePdfService, useFactory: () => new AcceptancePdfService(chromium) },
   ],
   // AcceptancePdfService: o PDF de modelo interno (document-templates) usa o
   // mesmo pipeline do comprovante.
-  exports: [AcceptancesService, AcceptancePdfService],
+  exports: [AcceptancesService, AcceptancePdfService, ConversationGuardService],
 })
 export class AcceptancesModule {}
