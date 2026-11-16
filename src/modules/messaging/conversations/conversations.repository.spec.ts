@@ -335,11 +335,12 @@ describe('ConversationsRepository.findById (janela 24h/72h no detalhe)', () => {
   // Regressão: o detalhe vinha SEM windowExpiresAt e o inbox (refetch de 5s)
   // sobrescrevia o objeto da lista, derrubando a janela de CTWA pro fallback
   // de 24h — selo errado e compositor exigindo template das 24h às 72h.
-  it('mantém a janela de 72h do CTWA mesmo com o inbound mais recente', async () => {
+  it('clique em anúncio não estende: a janela é 24h do inbound mais recente', async () => {
     const ctwaClidAt = hoursAgo(2);
+    const lastInboundAt = hoursAgo(1);
     const findUnique = jest.fn().mockResolvedValue({
       id: 'c1',
-      lastInboundAt: hoursAgo(1),
+      lastInboundAt,
       channel: { id: 'ch-1', type: 'WHATSAPP_OFFICIAL', name: 'Comercial' },
       contact: { ctwaClidAt },
     });
@@ -347,9 +348,9 @@ describe('ConversationsRepository.findById (janela 24h/72h no detalhe)', () => {
 
     const out: any = await repo.findById('c1');
 
-    expect(out.windowKind).toBe('ctwa72');
+    expect(out.windowKind).toBe('csw24');
     expect(out.windowExpiresAt).toBe(
-      new Date(ctwaClidAt.getTime() + 72 * 3600_000).toISOString(),
+      new Date(lastInboundAt.getTime() + 24 * 3600_000).toISOString(),
     );
   });
 

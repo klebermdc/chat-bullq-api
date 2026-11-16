@@ -5,7 +5,7 @@ import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { computeWhatsappWindow } from '../conversations/whatsapp-window.util';
 
 const BLOCK_REASON_WHATSAPP =
-  'Janela de atendimento (24h/72h) fechada — envie um template aprovado.';
+  'Janela de atendimento (24h) fechada — envie um template aprovado.';
 const BLOCK_REASON_MESSENGER =
   'Janela de atendimento do Messenger (24h) fechada — a Meta nao permite ' +
   'enviar fora dela. Aguarde o cliente responder.';

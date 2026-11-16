@@ -4,12 +4,16 @@ import { ErrorSeverity, ErrorSource } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { ERROR_CODES } from '../error-reporter/error-codes';
 import { ErrorReporterService } from '../error-reporter/error-reporter.service';
-import { buildAutoCloseQuery } from './auto-close.sql';
+import { buildAutoCloseQuery, buildWindowExpiredCloseQuery } from './auto-close.sql';
 
 export const AUTO_CLOSE_QUEUE = 'conversation-auto-close';
 export const AUTO_CLOSE_JOB = 'close-inactive';
-/** Todo dia às 03:00 de Brasília: ninguém atendendo, lista limpa de manhã. */
-export const AUTO_CLOSE_PATTERN = '0 3 * * *';
+/**
+ * De hora em hora: a janela de 24h vence a qualquer momento e a conversa deve
+ * sair da lista logo depois. A regra de inatividade (dias) é idempotente, então
+ * rodar mais vezes não muda o que ela fecha.
+ */
+export const AUTO_CLOSE_PATTERN = '0 * * * *';
 export const AUTO_CLOSE_TZ = 'America/Sao_Paulo';
 
 @Processor(AUTO_CLOSE_QUEUE, { concurrency: 1 })
@@ -23,13 +27,17 @@ export class AutoCloseProcessor extends WorkerHost {
     super();
   }
 
-  async process(): Promise<{ closed: number }> {
+  async process(): Promise<{ closed: number; windowExpired: number }> {
     try {
       const rows = await this.prisma.$queryRaw<{ conversation_id: string }[]>(
         buildAutoCloseQuery(),
       );
       this.logger.log(`auto_close_inactive closed=${rows.length}`);
-      return { closed: rows.length };
+      const expired = await this.prisma.$queryRaw<{ conversation_id: string }[]>(
+        buildWindowExpiredCloseQuery(),
+      );
+      this.logger.log(`auto_close_window_expired closed=${expired.length}`);
+      return { closed: rows.length, windowExpired: expired.length };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`auto_close_inactive falhou: ${msg}`);

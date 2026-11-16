@@ -20,7 +20,7 @@ describe('attachWindowExpiry', () => {
     );
   });
 
-  it('CTWA estende para 72h', () => {
+  it('clique em anúncio não estende: vale a CSW de 24h', () => {
     const out = attachWindowExpiry(
       {
         id: 'c1',
@@ -30,9 +30,9 @@ describe('attachWindowExpiry', () => {
       },
       now,
     );
-    expect(out.windowKind).toBe('ctwa72');
+    expect(out.windowKind).toBe('csw24');
     expect(out.windowExpiresAt).toBe(
-      new Date(hoursAgo(40).getTime() + 72 * 3600_000).toISOString(),
+      new Date(hoursAgo(30).getTime() + 24 * 3600_000).toISOString(),
     );
   });
 
@@ -50,7 +50,7 @@ describe('attachWindowExpiry', () => {
     expect(out.windowKind).toBeNull();
   });
 
-  it('repassa a expiração da Meta — lead de anúncio sem referral vira 72h', () => {
+  it('expiração informada pela Meta não estende a janela além de 24h', () => {
     const metaExpiry = new Date(now.getTime() + 50 * 60 * 60 * 1000);
     const out = attachWindowExpiry(
       {
@@ -61,8 +61,10 @@ describe('attachWindowExpiry', () => {
       },
       now,
     );
-    expect(out.windowExpiresAt).toBe(metaExpiry.toISOString());
-    expect(out.windowKind).toBe('ctwa72');
+    expect(out.windowExpiresAt).toBe(
+      new Date(now.getTime() - 1 * 60 * 60 * 1000).toISOString(),
+    );
+    expect(out.windowKind).toBe('csw24');
   });
 
   it('preserva os campos originais da conversa', () => {
