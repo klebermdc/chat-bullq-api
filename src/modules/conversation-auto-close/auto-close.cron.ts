@@ -10,7 +10,7 @@ import {
 
 const RETRY_DELAY_MS = 60_000;
 
-/** Registra o job diário no boot (mesmo padrão do ErrorRetentionCron). */
+/** Registra o job (de hora em hora) no boot (mesmo padrão do ErrorRetentionCron). */
 @Injectable()
 export class AutoCloseCron implements OnModuleInit {
   private readonly logger = new Logger(AutoCloseCron.name);

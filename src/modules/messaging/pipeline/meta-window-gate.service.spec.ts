@@ -68,7 +68,7 @@ describe('MetaWindowGate.blockIfClosed', () => {
     expect(prisma.message.update).not.toHaveBeenCalled();
   });
 
-  it('CTWA dentro de 72h (CSW fechada) → NÃO bloqueia', async () => {
+  it('clique em anúncio não estende: CSW fechada → bloqueia', async () => {
     const { gate, prisma } = make({ lastInboundAt: hoursAgo(30), ctwaClidAt: hoursAgo(40) });
     const blocked = await gate.blockIfClosed({
       messageId: 'msg1',
@@ -76,8 +76,8 @@ describe('MetaWindowGate.blockIfClosed', () => {
       messageType: MessageContentType.TEXT,
       now,
     });
-    expect(blocked).toBe(false);
-    expect(prisma.message.update).not.toHaveBeenCalled();
+    expect(blocked).toBe(true);
+    expect(prisma.message.update).toHaveBeenCalled();
   });
 
   it('janela aberta (inbound recente) → NÃO bloqueia', async () => {
@@ -151,7 +151,7 @@ describe('MetaWindowGate.blockIfClosed', () => {
   // Guarda de regressao: o mesmo cenario NO WHATSAPP continua liberado pelas
   // 72h do CTWA. Sem este teste, restringir a extensao poderia quebrar o
   // WhatsApp em silencio.
-  it('WhatsApp continua liberado pelas 72h do CTWA', async () => {
+  it('WhatsApp também bloqueia depois de 24h, mesmo com clique em anúncio', async () => {
     const { gate } = make({ lastInboundAt: hoursAgo(30), ctwaClidAt: hoursAgo(30) });
     const blocked = await gate.blockIfClosed({
       messageId: 'msg1',
@@ -159,6 +159,6 @@ describe('MetaWindowGate.blockIfClosed', () => {
       messageType: MessageContentType.TEXT,
       now,
     });
-    expect(blocked).toBe(false);
+    expect(blocked).toBe(true);
   });
 });

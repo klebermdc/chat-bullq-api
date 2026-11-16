@@ -697,31 +697,20 @@ describe('ScheduledDispatchProcessor', () => {
     // (comum sob pricing PMP) tinha ctwaClidAt null, então o toque de +24h caía
     // como "janela fechada" e a cadência morria sem enviar nada — mesmo com a
     // Meta tendo concedido 72h de free entry point no webhook de status.
-    it('texto livre PASSA quando a Meta concedeu 72h, mesmo sem ctwaClidAt', async () => {
+    it('texto livre NÃO sai depois de 24h, mesmo com a Meta informando prazo maior', async () => {
       const conversation = {
         ...OFICIAL,
         lastInboundAt: new Date(Date.now() - 30 * 3600_000), // CSW de 24h fechada
-        metaWindowExpiresAt: new Date(Date.now() + 42 * 3600_000), // 72h da Meta
+        metaWindowExpiresAt: new Date(Date.now() + 42 * 3600_000), // prazo da Meta ignorado
       };
-      const { processor, repo, messages } = makeOfficialDeps(
-        { ...cadenceRow, templateId: null }, // passo sem HSM — antes morria aqui
+      const { processor, messages } = makeOfficialDeps(
+        { ...cadenceRow, templateId: null },
         conversation,
       );
 
       await processor.process({ data: { scheduledMessageId: 's1' } } as any);
 
-      expect(messages.send).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'TEXT', content: cadenceRow.content }),
-        'user1',
-        'org1',
-        'ALL',
-        undefined,
-        { system: true, automated: true },
-      );
-      expect(repo.update).toHaveBeenCalledWith(
-        's1',
-        expect.objectContaining({ status: 'SENT' }),
-      );
+      expect(messages.send).not.toHaveBeenCalled();
     });
 
     it('toque bloqueado ainda avança a cadência (matrícula não fica ACTIVE para sempre)', async () => {

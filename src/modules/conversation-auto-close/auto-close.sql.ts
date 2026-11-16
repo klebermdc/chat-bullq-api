@@ -65,3 +65,74 @@ export function buildAutoCloseQuery(): Prisma.Sql {
     RETURNING conversation_id
   `;
 }
+
+/** Marca no audit log o fechamento por janela de 24h vencida. */
+export const WINDOW_CLOSE_TRIGGER = 'auto_close_window_expired';
+
+/**
+ * Fecha as conversas do WhatsApp oficial cuja janela de 24h venceu.
+ *
+ * Pedido do Kleber em 16/11/2026: com a janela fechada só template sai, e
+ * conversa "aberta" sem poder escrever confundia o time. Fechada, ela sai da
+ * lista; quando o cliente responde, volta ao último dono (PR #326).
+ *
+ * Regras:
+ * - só orgs com `settings.autoCloseOnWindowExpiry = true` (opt-in);
+ * - só canal WHATSAPP_OFFICIAL (único com template; Messenger não tem);
+ * - venceu = última msg do cliente (ou a criação, se nunca houve) há mais de 24h;
+ * - poupa quem recebeu template nas últimas 24h: o vendedor reabordou e
+ *   espera resposta;
+ * - poupa agendamento vivo e cadência viva, como o fechamento por inatividade.
+ *
+ * Mesmo motivo de não passar pela FSM: não pede avaliação nem dispara automação.
+ */
+export function buildWindowExpiredCloseQuery(): Prisma.Sql {
+  return Prisma.sql`
+    WITH alvo AS (
+      SELECT c.id, c.status::text AS from_status
+      FROM conversations c
+      JOIN organizations o ON o.id = c.organization_id
+      JOIN channels ch ON ch.id = c.channel_id
+      WHERE o.settings->'autoCloseOnWindowExpiry' = 'true'::jsonb
+        AND ch.type = 'WHATSAPP_OFFICIAL'
+        AND c.deleted_at IS NULL
+        AND c.is_archived = false
+        AND c.status <> 'CLOSED'
+        AND coalesce(c.last_inbound_at, c.created_at)
+            < (now() AT TIME ZONE 'utc') - interval '24 hours'
+        AND NOT EXISTS (
+          SELECT 1 FROM messages m
+          WHERE m.conversation_id = c.id
+            AND m.type = 'TEMPLATE'
+            AND m.direction = 'OUTBOUND'
+            AND m.created_at > (now() AT TIME ZONE 'utc') - interval '24 hours'
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM scheduled_messages s
+          WHERE s.conversation_id = c.id AND s.status IN ('PENDING', 'SENDING')
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM cadence_enrollments e
+          WHERE e.conversation_id = c.id AND e.status IN ('ACTIVE', 'PAUSED')
+        )
+      FOR UPDATE OF c SKIP LOCKED
+    ),
+    fechadas AS (
+      UPDATE conversations c
+      SET status = 'CLOSED',
+          closed_at = now() AT TIME ZONE 'utc',
+          awaiting_human_reply = false,
+          updated_at = now() AT TIME ZONE 'utc'
+      FROM alvo
+      WHERE c.id = alvo.id
+      RETURNING c.id, alvo.from_status
+    )
+    INSERT INTO conversation_audit_logs
+      (id, conversation_id, actor_id, action, from_value, to_value, metadata, created_at)
+    SELECT gen_random_uuid()::text, f.id, NULL, 'STATUS_CHANGED', f.from_status, 'CLOSED',
+           jsonb_build_object('trigger', ${WINDOW_CLOSE_TRIGGER}::text),
+           now() AT TIME ZONE 'utc'
+    FROM fechadas f
+    RETURNING conversation_id
+  `;
+}

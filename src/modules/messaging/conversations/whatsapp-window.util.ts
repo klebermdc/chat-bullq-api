@@ -1,6 +1,5 @@
 const HOUR_MS = 60 * 60 * 1000;
 export const CSW_WINDOW_MS = 24 * HOUR_MS;
-export const CTWA_WINDOW_MS = 72 * HOUR_MS;
 
 export interface WhatsappWindowInput {
   channelType: string;
@@ -29,9 +28,16 @@ export interface WhatsappWindowState {
 }
 
 /**
- * Janela efetiva de texto livre = max(lastInboundAt+24h, ctwaClidAt+72h,
- * metaWindowExpiresAt). Só vale para o canal oficial (Meta). Sem timestamps
- * ⇒ fechada (a 1ª msg de uma conversa oficial exige template).
+ * Janela de texto livre = lastInboundAt + 24h (CSW). Só vale nos canais da
+ * Meta (WhatsApp oficial e Messenger). Sem inbound ⇒ fechada (a 1ª msg de uma
+ * conversa oficial exige template).
+ *
+ * Até 16/11/2026 o clique em anúncio (`ctwaClidAt`, 72h) e a expiração que a
+ * Meta manda no status (`metaWindowExpiresAt`, 7 dias desde 28/09) ESTENDIAM a
+ * janela. No número 5198-4190 (WABA nova, desde 07/11) nenhum texto livre
+ * enviado depois de 24h chegou ao cliente (131070 ou preso em SENT), e a
+ * ampulheta mostrando "96h" levava o vendedor a escrever e falhar. Os dois
+ * campos continuam no input para não mexer nos chamadores, mas não contam mais.
  */
 export function computeWhatsappWindow(
   input: WhatsappWindowInput,
@@ -39,47 +45,14 @@ export function computeWhatsappWindow(
   if (input.channelType !== 'WHATSAPP_OFFICIAL' && input.channelType !== 'MESSENGER') {
     return { applicable: false, open: true, expiresAt: null, kind: null };
   }
-  const csw = input.lastInboundAt
-    ? input.lastInboundAt.getTime() + CSW_WINDOW_MS
-    : null;
-  // A extensao de 72h do Click-to-WhatsApp so existe no WhatsApp. No Messenger
-  // a janela e sempre 24h a partir da ultima mensagem de entrada.
-  const isWhatsapp = input.channelType === 'WHATSAPP_OFFICIAL';
-  const ctwa =
-    isWhatsapp && input.ctwaClidAt
-      ? input.ctwaClidAt.getTime() + CTWA_WINDOW_MS
-      : null;
-
-  let expMs: number | null = null;
-  let kind: 'csw24' | 'ctwa72' | null = null;
-  if (csw !== null) {
-    expMs = csw;
-    kind = 'csw24';
-  }
-  if (ctwa !== null && (expMs === null || ctwa > expMs)) {
-    expMs = ctwa;
-    kind = 'ctwa72';
-  }
-  // A Meta só emite `conversation.expiration_timestamp` para free entry point
-  // (conversa de anúncio, `billable:false`), então quando ele estende a janela
-  // é sempre a regra de 72h que está valendo. Só ESTENDE — um valor menor não
-  // pode encurtar a CSW de 24h, que a Meta honra de qualquer forma. É, assim
-  // como o CTWA, um conceito exclusivo do WhatsApp.
-  const meta =
-    isWhatsapp && input.metaWindowExpiresAt
-      ? input.metaWindowExpiresAt.getTime()
-      : null;
-  if (meta !== null && (expMs === null || meta > expMs)) {
-    expMs = meta;
-    kind = 'ctwa72';
-  }
-  if (expMs === null) {
+  if (!input.lastInboundAt) {
     return { applicable: true, open: false, expiresAt: null, kind: null };
   }
+  const expMs = input.lastInboundAt.getTime() + CSW_WINDOW_MS;
   return {
     applicable: true,
     open: input.now.getTime() < expMs,
     expiresAt: new Date(expMs),
-    kind,
+    kind: 'csw24',
   };
 }
