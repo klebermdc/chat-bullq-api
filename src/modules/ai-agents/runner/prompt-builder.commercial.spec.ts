@@ -77,7 +77,16 @@ describe('PromptBuilderService — cliente decidido não é interrogado', () => 
     expect(text).toContain('Cliente decidido');
     expect(text).toContain('transfira NESTA resposta');
     expect(text).toContain('Nunca pergunte o que o cliente já disse');
-    expect(text).toContain('no máximo 2 perguntas');
+  });
+
+  it('modo SDR: pergunta o básico (o quê, quando, quantas pessoas) antes de transferir', () => {
+    const text = systemText(true);
+
+    expect(text).toContain('O BÁSICO antes de transferir');
+    expect(text).toContain('no máximo 3 perguntas');
+    expect(text).toContain('"quero uma cotação" sem dizer o quê NÃO é cliente decidido');
+    expect(text).not.toContain('pediu preço, proposta, cotação');
+    expect(text).not.toContain('basta saber O QUE ele quer');
   });
 
   it('modo SDR: não manda perguntar detalhe que o consultor resolve', () => {
