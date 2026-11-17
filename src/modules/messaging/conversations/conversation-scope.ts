@@ -61,17 +61,29 @@ export async function canAgentReachConversation(
  *   da tela de quem ajuda justo quando o cliente escreve.
  * - Sem aba: dono OU incluído.
  */
+/**
+ * Regra das abas Esperando × Caixa de entrada. Esperando = cliente aguardando
+ * humano E o vendedor ainda não puxou o lead. Lead que só recebeu a saudação
+ * automática (`greetedAwaitingReply`) vai para a Caixa de entrada, mas segue
+ * com `awaitingHumanReply` ligado para SLA, avisos e cadência.
+ */
+export function waitingTabWhere(waiting: boolean): Prisma.ConversationWhereInput {
+  return waiting
+    ? { awaitingHumanReply: true, greetedAwaitingReply: false }
+    : { OR: [{ awaitingHumanReply: false }, { greetedAwaitingReply: true }] };
+}
+
 export function agentScopeBlock(
   scopedUserId: string,
   awaiting: boolean | undefined,
 ): Prisma.ConversationWhereInput {
   if (awaiting === true) {
-    return { assignedToId: scopedUserId, awaitingHumanReply: true };
+    return { assignedToId: scopedUserId, ...waitingTabWhere(true) };
   }
   if (awaiting === false) {
     return {
       OR: [
-        { assignedToId: scopedUserId, awaitingHumanReply: false },
+        { AND: [{ assignedToId: scopedUserId }, waitingTabWhere(false)] },
         { participants: { some: { userId: scopedUserId } } },
       ],
     };

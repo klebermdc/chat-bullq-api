@@ -1042,7 +1042,7 @@ export class ConversationsService {
     await this.findOne(id, organizationId, access);
     const updated = await this.prisma.conversation.update({
       where: { id },
-      data: { awaitingHumanReply: waiting },
+      data: { awaitingHumanReply: waiting, greetedAwaitingReply: false },
     });
 
     await this.prisma.conversationAuditLog.create({

@@ -231,7 +231,7 @@ export class PendingActionService {
       try {
         await this.prisma.conversation.update({
           where: { id: action.conversationId },
-          data: { awaitingHumanReply: false },
+          data: { awaitingHumanReply: false, greetedAwaitingReply: false },
         });
         void this.responseSla?.onWaitEnded(action.conversationId, 'handoff_rejected', new Date());
       } catch (err: any) {
@@ -320,6 +320,7 @@ export class PendingActionService {
           aiEnabled: false,
           assignedToId,
           awaitingHumanReply: true,
+          greetedAwaitingReply: false,
           // Promove PENDING→OPEN (conversa entrou em atendimento humano); mantém
           // o status quando já é outro. A aba "Esperando" é o flag acima.
           ...(conv.status === 'PENDING'

@@ -687,6 +687,12 @@ model Conversation {
   // via MessagesService.send. Resposta do bot/IA NÃO altera este flag.
   // Conversas CLOSED vão para a aba "Finalizados" independente deste valor.
   awaitingHumanReply  Boolean            @default(false) @map("awaiting_human_reply")
+  // Só a saudação automática do vendedor saiu desde a última fala do cliente.
+  // A aba trata como "Caixa de entrada" (o vendedor já puxou o lead), mas
+  // awaitingHumanReply segue true: SLA, avisos à gestão e cadência continuam
+  // vendo o cliente esperando até a 1ª resposta de verdade. Zera junto com
+  // qualquer mudança do awaitingHumanReply.
+  greetedAwaitingReply Boolean           @default(false) @map("greeted_awaiting_reply")
   lastMessageAt       DateTime?          @map("last_message_at")
   lastInboundAt       DateTime?          @map("last_inbound_at")
   // Expiração da janela informada pela PRÓPRIA Meta em
