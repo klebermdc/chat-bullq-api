@@ -31,6 +31,13 @@ describe('normalizePhone', () => {
   it('respeita numero internacional com + explicito', () => {
     expect(normalizePhone('+1 415 555 1234')).toBe('14155551234');
   });
+  // 11 dígitos sem "+" só são celular BR se o 3º dígito for 9. "1 678 396 5091"
+  // (EUA) virava 5516783965091 e o template falhava.
+  it('nao poe 55 em 11 digitos que nao sao celular BR (DDI digitado sem +)', () => {
+    expect(normalizePhone('1 678 396 5091')).toBe('16783965091');
+    expect(normalizePhone('1 (678) 396-5091')).toBe('16783965091');
+    expect(normalizePhone('16783965091')).toBe('16783965091');
+  });
   it('mantem numero que ja veio com 55', () => {
     expect(normalizePhone('551132015967')).toBe('551132015967');
   });
