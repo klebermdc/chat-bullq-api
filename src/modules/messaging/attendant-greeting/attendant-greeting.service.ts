@@ -94,28 +94,19 @@ export class AttendantGreetingService {
           : await this.textGreeting(conversation.organizationId, attendantFirstName);
       if (!message) return;
 
-      // Marca ANTES de enviar: o web recarrega a aba no evento da mensagem nova
-      // e já precisa ver o lead na Caixa de entrada. A distribuição NÃO tira o
-      // lead do Esperando: ele fica verde ("disponível para iniciar") até o
-      // vendedor clicar em Iniciar atendimento (HANDOFF_APPROVE).
-      const movedToInbox =
-        source === 'DISTRIBUTE' ? false : await this.moveToInbox(conversationId);
-      try {
-        await this.messages.send(
-          { conversationId, ...message },
-          attendantUserId,
-          conversation.organizationId,
-          'ALL',
-          undefined,
-          // `automated`: a saudação sai em nome do vendedor, mas não é resposta
-          // humana — não cumpre o SLA nem zera o awaitingHumanReply. Quem tira
-          // o lead da aba Esperando é o `greetedAwaitingReply` acima.
-          { system: true, automated: true },
-        );
-      } catch (err) {
-        if (movedToInbox) await this.undoMoveToInbox(conversationId);
-        throw err;
-      }
+      // A saudação não muda a aba: o lead só sai do Esperando quando o vendedor
+      // puxa a conversa (markTakenByAttendant). Iniciar atendimento (Aprovar)
+      // deixa o lead no Esperando.
+      await this.messages.send(
+        { conversationId, ...message },
+        attendantUserId,
+        conversation.organizationId,
+        'ALL',
+        undefined,
+        // `automated`: a saudação sai em nome do vendedor, mas não é resposta
+        // humana — não cumpre o SLA nem zera o awaitingHumanReply.
+        { system: true, automated: true },
+      );
 
       await this.markGreeted(conversationId, metadata, {
         userId: attendantUserId,
@@ -156,19 +147,6 @@ export class AttendantGreetingService {
       data: { greetedAwaitingReply: true },
     });
     return count > 0;
-  }
-
-  private async undoMoveToInbox(conversationId: string): Promise<void> {
-    await this.prisma.conversation
-      .updateMany({
-        where: { id: conversationId, greetedAwaitingReply: true },
-        data: { greetedAwaitingReply: false },
-      })
-      .catch((err: any) =>
-        this.logger.warn(
-          `saudação: falha ao devolver ao Esperando (conv=${conversationId}): ${err?.message ?? err}`,
-        ),
-      );
   }
 
   private loadConversation(id: string): Promise<GreetingConversation | null> {
