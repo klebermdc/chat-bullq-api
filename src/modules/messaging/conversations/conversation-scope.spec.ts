@@ -1,6 +1,7 @@
 import { OrgRole } from '@prisma/client';
 import {
   agentScopeBlock,
+  waitingTabWhere,
   canAgentReachConversation,
   resolveAssignmentScope,
   scopedUserWhere,
@@ -67,14 +68,29 @@ describe('agentScopeBlock', () => {
     expect(agentScopeBlock('u1', true)).toEqual({
       assignedToId: 'u1',
       awaitingHumanReply: true,
+      greetedAwaitingReply: false,
     });
   });
   it('Caixa de entrada: própria respondida + compartilhadas em qualquer estado', () => {
     expect(agentScopeBlock('u1', false)).toEqual({
       OR: [
-        { assignedToId: 'u1', awaitingHumanReply: false },
+        {
+          AND: [
+            { assignedToId: 'u1' },
+            { OR: [{ awaitingHumanReply: false }, { greetedAwaitingReply: true }] },
+          ],
+        },
         { participants: { some: { userId: 'u1' } } },
       ],
+    });
+  });
+  it('saudação automática conta como Caixa de entrada', () => {
+    expect(waitingTabWhere(true)).toEqual({
+      awaitingHumanReply: true,
+      greetedAwaitingReply: false,
+    });
+    expect(waitingTabWhere(false)).toEqual({
+      OR: [{ awaitingHumanReply: false }, { greetedAwaitingReply: true }],
     });
   });
   it('sem aba: dono ou incluído', () => {

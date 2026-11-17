@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ChannelType, ConversationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { attachWindowExpiry } from './attach-window-expiry';
-import { agentScopeBlock, scopedUserWhere } from './conversation-scope';
+import { agentScopeBlock, scopedUserWhere, waitingTabWhere } from './conversation-scope';
 import { buildSearchOr, SEARCH_CONTACT_LIMIT } from './inbox-search';
 import { findContactIdsBySearch } from '../contacts/contact-search';
 import {
@@ -166,12 +166,13 @@ export class ConversationsRepository {
     // aba resolvida dentro de `agentScopeBlock`.
     const isMineFilter =
       !!currentUserId && filters.assignedToId === currentUserId;
+    let tabBlock: Prisma.ConversationWhereInput | undefined;
     if (
       filters.awaitingHumanReply !== undefined &&
       !filters.enforceAssignedToId &&
       !isMineFilter
     ) {
-      where.awaitingHumanReply = filters.awaitingHumanReply;
+      tabBlock = waitingTabWhere(filters.awaitingHumanReply);
     }
     // Resolve the effective channel filter:
     //   - filters.channelId  (single, from the topbar dropdown)
@@ -216,6 +217,7 @@ export class ConversationsRepository {
     // bloco próprio: antes elas dividiam o mesmo `where.OR` e a última a ser
     // montada apagava a anterior (etiqueta + busca perdia a etiqueta).
     const andBlocks: Prisma.ConversationWhereInput[] = [];
+    if (tabBlock) andBlocks.push(tabBlock);
 
     // Etiquetas, vários atendentes, funil, venda perdida, origem, parado há X.
     andBlocks.push(
@@ -628,7 +630,8 @@ export class ConversationsRepository {
    * Contagem por ABA de atendimento (Esperando / Caixa de entrada / Finalizados),
    * respeitando o mesmo escopo do inbox padrão: org, canais acessíveis (RBAC),
    * atribuição forçada (RN-05), canal selecionado no topbar e não-arquivadas.
-   * Um único groupBy(status, awaitingHumanReply) alimenta as três abas.
+   * Um único groupBy(status, awaitingHumanReply, greetedAwaitingReply)
+   * alimenta as três abas.
    */
   async countByTab(
     organizationId: string,
@@ -659,7 +662,7 @@ export class ConversationsRepository {
     }
 
     const rows = await this.prisma.conversation.groupBy({
-      by: ['status', 'awaitingHumanReply'],
+      by: ['status', 'awaitingHumanReply', 'greetedAwaitingReply'],
       where: {
         organizationId,
         deletedAt: null,
@@ -675,7 +678,8 @@ export class ConversationsRepository {
     const counts = rows.reduce((acc, r) => {
       if (r.status === ConversationStatus.CLOSED) {
         acc.closed += r._count;
-      } else if (r.awaitingHumanReply) {
+      } else if (r.awaitingHumanReply && !r.greetedAwaitingReply) {
+        // Mesma regra da lista (waitingTabWhere): só a saudação saiu → Entrada.
         acc.waiting += r._count;
       } else {
         acc.inbox += r._count;

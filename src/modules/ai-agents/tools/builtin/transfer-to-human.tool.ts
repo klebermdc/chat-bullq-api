@@ -173,7 +173,7 @@ export class TransferToHumanTool implements AiTool {
     try {
       await this.prisma.conversation.update({
         where: { id: ctx.conversationId },
-        data: { awaitingHumanReply: true },
+        data: { awaitingHumanReply: true, greetedAwaitingReply: false },
       });
       // SLA de resposta: o handoff é o momento em que o cliente passa a
       // esperar um humano (até aqui a Aline conduzia).
@@ -298,6 +298,7 @@ export class TransferToHumanTool implements AiTool {
         activeAgentId: null,
         aiUntilHandoff: false,
         awaitingHumanReply: true,
+        greetedAwaitingReply: false,
       },
     });
     void this.responseSla?.onCustomerWaiting(ctx.conversationId, new Date());

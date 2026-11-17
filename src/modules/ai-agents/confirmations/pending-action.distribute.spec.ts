@@ -317,7 +317,7 @@ describe('PendingActionService.reject — tira o lead da fila "Esperando"', () =
     await svc.reject('pa1', 'org1', 'op1', 'ainda não qualificado');
     expect(prisma.conversation.update).toHaveBeenCalledWith({
       where: { id: 'conv1' },
-      data: { awaitingHumanReply: false },
+      data: { awaitingHumanReply: false, greetedAwaitingReply: false },
     });
   });
 

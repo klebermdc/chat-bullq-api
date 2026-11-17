@@ -281,14 +281,18 @@ export class InboundMessageProcessor extends WorkerHost {
               // Echo (msg nossa que volta, OUTBOUND) não mexe no flag: resposta
               // do bot não pode tirar a conversa de "Esperando".
               ...(direction === MessageDirection.INBOUND
-                ? { awaitingHumanReply: true }
+                ? { awaitingHumanReply: true, greetedAwaitingReply: false }
                 : {}),
               // COEXISTÊNCIA: echo comprovadamente humano — alguém digitou no
               // app do WhatsApp Business. Aqui SIM sai de "Esperando", porque
               // um atendente de verdade respondeu. Não vale pro echo comum de
               // Baileys, onde a msg pode ser nossa (o bot se auto-silenciaria).
               ...(humanEcho
-                ? { awaitingHumanReply: false, lastHumanReplyAt: new Date() }
+                ? {
+                    awaitingHumanReply: false,
+                    greetedAwaitingReply: false,
+                    lastHumanReplyAt: new Date(),
+                  }
                 : {}),
             },
           });

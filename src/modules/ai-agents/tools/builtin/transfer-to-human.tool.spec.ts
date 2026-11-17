@@ -134,7 +134,7 @@ describe('TransferToHumanTool — card de distribuição (não expira / Esperand
 
     expect(prisma.conversation.update).toHaveBeenCalledWith({
       where: { id: 'conv1' },
-      data: { awaitingHumanReply: true },
+      data: { awaitingHumanReply: true, greetedAwaitingReply: false },
     });
   });
 
@@ -209,7 +209,7 @@ describe('TransferToHumanTool — queueStalledHandoff (vigia de lead parado)', (
       }),
     );
     expect(prisma.conversation.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { awaitingHumanReply: true } }),
+      expect.objectContaining({ data: { awaitingHumanReply: true, greetedAwaitingReply: false } }),
     );
     expect(res.finalAction).toBe('TRANSFERRED_TO_HUMAN');
   });

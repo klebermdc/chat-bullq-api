@@ -109,6 +109,16 @@ describe('ConversationsRepository.findInbox (busca + etiqueta)', () => {
     expect(whereOf().AND).toContainEqual(scopedUserWhere('u9'));
   });
 
+  it('ADM na aba Esperando: lead que só recebeu a saudação fica de fora', async () => {
+    const { repo, whereOf } = buildRepo();
+    await repo.findInbox({ organizationId: 'org-1', awaitingHumanReply: true }, 0, 30);
+    expect(whereOf().awaitingHumanReply).toBeUndefined();
+    expect(whereOf().AND).toContainEqual({
+      awaitingHumanReply: true,
+      greetedAwaitingReply: false,
+    });
+  });
+
   it('AGENT na aba Esperando: só a conversa dele, sem as compartilhadas', async () => {
     const { repo, whereOf } = buildRepo();
     await repo.findInbox(
@@ -413,14 +423,16 @@ describe('ConversationsRepository.countByTab (abas de atendimento)', () => {
       { status: 'WAITING', awaitingHumanReply: false, _count: 1 },
       { status: 'CLOSED', awaitingHumanReply: true, _count: 4 }, // fechada ignora o flag
       { status: 'CLOSED', awaitingHumanReply: false, _count: 6 },
+      // Só a saudação do vendedor saiu → Caixa de entrada, flag segue ligado.
+      { status: 'OPEN', awaitingHumanReply: true, greetedAwaitingReply: true, _count: 7 },
     ]);
     const repo = buildRepo(groupBy);
 
     const result = await repo.countByTab('org-1');
 
-    expect(result).toEqual({ waiting: 5, inbox: 6, closed: 10 });
+    expect(result).toEqual({ waiting: 5, inbox: 13, closed: 10 });
     const arg = groupBy.mock.calls[0][0];
-    expect(arg.by).toEqual(['status', 'awaitingHumanReply']);
+    expect(arg.by).toEqual(['status', 'awaitingHumanReply', 'greetedAwaitingReply']);
     expect(arg.where.isArchived).toBe(false);
     expect(arg.where.deletedAt).toBeNull();
   });

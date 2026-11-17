@@ -10,6 +10,7 @@ function makeDeps(overrides: any = {}) {
         metadata: {},
       }),
       update: jest.fn().mockResolvedValue({}),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     user: {
       findUnique: jest.fn().mockResolvedValue({ name: 'Bárbara Silva' }),
@@ -267,5 +268,39 @@ describe('AttendantGreetingService', () => {
 
       expect(messages.send).not.toHaveBeenCalled();
     });
+  });
+
+  it('tira o lead do Esperando (greetedAwaitingReply) só se o cliente esperava', async () => {
+    const { prisma, messages, settings } = makeDeps();
+    const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+    await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'TRANSFER' });
+    expect(prisma.conversation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'c1', awaitingHumanReply: true },
+      data: { greetedAwaitingReply: true },
+    });
+    // Marca antes do envio: o web recarrega a aba no evento da mensagem.
+    expect(prisma.conversation.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+      messages.send.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('devolve ao Esperando quando o envio falha', async () => {
+    const { prisma, messages, settings } = makeDeps();
+    messages.send.mockRejectedValue(new Error('meta 500'));
+    const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+    await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'TRANSFER' });
+    expect(prisma.conversation.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 'c1', greetedAwaitingReply: true },
+      data: { greetedAwaitingReply: false },
+    });
+    expect(prisma.conversation.update).not.toHaveBeenCalled();
+  });
+
+  it('não marca nada quando não há mensagem a enviar', async () => {
+    const { prisma, messages, settings } = makeDeps();
+    settings.get.mockResolvedValue({ enabled: false, template: 'x' });
+    const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+    await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'TRANSFER' });
+    expect(prisma.conversation.updateMany).not.toHaveBeenCalled();
   });
 });

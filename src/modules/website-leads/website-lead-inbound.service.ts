@@ -132,6 +132,7 @@ export class WebsiteLeadInboundService {
         aiUntilHandoff: false,
         activeAgentId: null,
         awaitingHumanReply: false,
+        greetedAwaitingReply: false,
         ...(closes ? { status: ConversationStatus.CLOSED, closedAt: new Date() } : {}),
         metadata: {
           ...metadata,
