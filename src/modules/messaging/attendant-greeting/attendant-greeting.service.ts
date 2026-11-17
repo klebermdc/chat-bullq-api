@@ -142,6 +142,14 @@ export class AttendantGreetingService {
    * Só vale se o cliente estava esperando — o `awaitingHumanReply` fica
    * ligado (SLA, avisos e cadência seguem contando até a resposta de verdade).
    */
+  /**
+   * Vendedor puxou a conversa (assumir): tira o lead do Esperando para a Caixa
+   * de entrada, mesmo que a saudação não tenha saído (desligada ou já feita).
+   */
+  async markTakenByAttendant(conversationId: string): Promise<void> {
+    await this.moveToInbox(conversationId);
+  }
+
   private async moveToInbox(conversationId: string): Promise<boolean> {
     const { count } = await this.prisma.conversation.updateMany({
       where: { id: conversationId, awaitingHumanReply: true },

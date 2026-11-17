@@ -314,4 +314,16 @@ describe('AttendantGreetingService', () => {
     expect(messages.send).toHaveBeenCalledTimes(1);
     expect(prisma.conversation.updateMany).not.toHaveBeenCalled();
   });
+
+  it('markTakenByAttendant tira o lead do Esperando mesmo sem saudação', async () => {
+    const { prisma, messages, settings } = makeDeps();
+    settings.get.mockResolvedValue({ enabled: false, template: 'x' });
+    const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+    await svc.markTakenByAttendant('c1');
+    expect(prisma.conversation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'c1', awaitingHumanReply: true },
+      data: { greetedAwaitingReply: true },
+    });
+    expect(messages.send).not.toHaveBeenCalled();
+  });
 });

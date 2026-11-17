@@ -27,7 +27,7 @@ function makeService(assignedToId: string | null) {
     conversation: { findFirst: jest.fn().mockResolvedValue(conversation) },
   };
   const channelAccess = { assertChannelAccess: jest.fn() };
-  const attendantGreeting = { greet: jest.fn().mockResolvedValue(undefined) };
+  const attendantGreeting = { greet: jest.fn().mockResolvedValue(undefined), markTakenByAttendant: jest.fn().mockResolvedValue(undefined) };
 
   const svc: ConversationsService = Object.create(ConversationsService.prototype);
   Object.assign(svc, {

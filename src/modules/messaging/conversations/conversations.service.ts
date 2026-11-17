@@ -1088,6 +1088,7 @@ export class ConversationsService {
     this.broadcastUpdate(updated as Conversation | null);
 
     if (assigneeChanged) {
+      await this.attendantGreeting.markTakenByAttendant(id);
       await this.attendantGreeting.greet({
         conversationId: id,
         attendantUserId: userId,
