@@ -69,3 +69,35 @@ describe('PromptBuilderService — qualificação sem beco sem saída', () => {
     expect(systemText(false)).not.toContain('FIM NORMAL da qualificação');
   });
 });
+
+describe('PromptBuilderService — cliente decidido não é interrogado', () => {
+  it('modo SDR: cliente que já disse o que quer é transferido na hora', () => {
+    const text = systemText(true);
+
+    expect(text).toContain('Cliente decidido');
+    expect(text).toContain('transfira NESTA resposta');
+    expect(text).toContain('Nunca pergunte o que o cliente já disse');
+    expect(text).toContain('no máximo 2 perguntas');
+  });
+
+  it('modo SDR: não manda perguntar detalhe que o consultor resolve', () => {
+    expect(systemText(true)).not.toContain('Falta só detalhe (datas, quantas pessoas, idades)? Pergunte.');
+  });
+
+  it('modo SDR: sem roteiro de venda consultiva nem insistência em objeção', () => {
+    const text = systemText(true);
+
+    expect(text).not.toContain('VENDA CONSULTIVA EM 3 ETAPAS');
+    expect(text).not.toContain('TRATAMENTO DE OBJEÇÕES');
+    expect(text).not.toContain('o que faltou pra você bater o martelo');
+    expect(text).not.toContain('processo é sempre perguntar antes');
+  });
+
+  it('fora do modo SDR: roteiro de venda continua igual', () => {
+    const text = systemText(false);
+
+    expect(text).toContain('VENDA CONSULTIVA EM 3 ETAPAS');
+    expect(text).toContain('TRATAMENTO DE OBJEÇÕES');
+    expect(text).not.toContain('Cliente decidido');
+  });
+});
