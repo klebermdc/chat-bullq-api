@@ -303,4 +303,15 @@ describe('AttendantGreetingService', () => {
     await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'TRANSFER' });
     expect(prisma.conversation.updateMany).not.toHaveBeenCalled();
   });
+
+  it('distribuição com janela fechada não tira o lead do Esperando (fase verde)', async () => {
+    const { prisma, messages, settings } = makeDeps();
+    prisma.messageTemplate.findFirst.mockResolvedValue({ id: 't1', isDistribution: true });
+    const svc = new AttendantGreetingService(prisma as any, messages as any, settings as any);
+    jest.spyOn(svc as any, 'isWindowClosed').mockReturnValue(true);
+    jest.spyOn(svc as any, 'distributionTemplate').mockResolvedValue({ type: 'TEMPLATE', content: {} });
+    await svc.greet({ conversationId: 'c1', attendantUserId: 'u1', source: 'DISTRIBUTE', onlyWhenWindowClosed: true });
+    expect(messages.send).toHaveBeenCalledTimes(1);
+    expect(prisma.conversation.updateMany).not.toHaveBeenCalled();
+  });
 });

@@ -95,8 +95,11 @@ export class AttendantGreetingService {
       if (!message) return;
 
       // Marca ANTES de enviar: o web recarrega a aba no evento da mensagem nova
-      // e já precisa ver o lead na Caixa de entrada.
-      const movedToInbox = await this.moveToInbox(conversationId);
+      // e já precisa ver o lead na Caixa de entrada. A distribuição NÃO tira o
+      // lead do Esperando: ele fica verde ("disponível para iniciar") até o
+      // vendedor clicar em Iniciar atendimento (HANDOFF_APPROVE).
+      const movedToInbox =
+        source === 'DISTRIBUTE' ? false : await this.moveToInbox(conversationId);
       try {
         await this.messages.send(
           { conversationId, ...message },
