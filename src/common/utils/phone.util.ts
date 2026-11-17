@@ -2,8 +2,15 @@ import { BadRequestException } from '@nestjs/common';
 
 const BR_DDI = '55';
 /** DDD (2) + número (8 fixo / 9 celular) — o que o operador digita sem o DDI. */
-const BR_NATIONAL_LENGTHS = [10, 11];
+const BR_LANDLINE_LENGTH = 10;
+/** DDD + 9 + 8 dígitos: celular BR de 11 dígitos sempre tem 9 como 3º dígito. */
+const BR_MOBILE_NATIONAL = /^[1-9][1-9]9\d{8}$/;
 const MIN_PHONE_DIGITS = 10;
+
+/** Parece DDD + número brasileiro digitado sem o 55? */
+function looksLikeBrazilianNational(digits: string): boolean {
+  return digits.length === BR_LANDLINE_LENGTH || BR_MOBILE_NATIONAL.test(digits);
+}
 
 /**
  * Normaliza telefone para só-dígitos com DDI (ex.: "+55 (11) 98201-5967" e
@@ -12,6 +19,8 @@ const MIN_PHONE_DIGITS = 10;
  * Sem `+` explícito, 10–11 dígitos são tratados como número brasileiro
  * digitado sem o 55 — antes eles iam como estavam e o WhatsApp entregava
  * para outro país (11 98201-5967 virava +1 198...).
+ * Com 11 dígitos, só é celular BR se o 3º dígito for 9; senão é número
+ * estrangeiro com o DDI digitado sem o "+" (ex.: EUA "1 678 396 5091").
  */
 export function normalizePhone(raw: string): string {
   const trimmed = (raw || '').trim();
@@ -21,7 +30,7 @@ export function normalizePhone(raw: string): string {
   if (digits.length < MIN_PHONE_DIGITS) {
     throw new BadRequestException('Telefone inválido: informe DDD e o número completo.');
   }
-  if (!hasExplicitDdi && BR_NATIONAL_LENGTHS.includes(digits.length)) {
+  if (!hasExplicitDdi && looksLikeBrazilianNational(digits)) {
     return BR_DDI + digits;
   }
   return digits;
