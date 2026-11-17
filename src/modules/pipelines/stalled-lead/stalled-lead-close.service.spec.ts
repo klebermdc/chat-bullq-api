@@ -1,3 +1,4 @@
+import { STALL_MIN_INBOUND } from '../../ai-agents/stalled-handoff/stalled-handoff.sql';
 import { OrgRole } from '@prisma/client';
 import { StalledLeadCloseService } from './stalled-lead-close.service';
 import { buildNoReplyCloseQuery } from './stalled-lead-close.sql';
@@ -53,7 +54,7 @@ describe('buildNoReplyCloseQuery', () => {
 
   it('só quem conversou pouco (abaixo do mínimo da fila) e há 48h', () => {
     expect(q.sql).toMatch(/\) < \?/);
-    expect(q.values).toEqual(expect.arrayContaining([48, 3]));
+    expect(q.values).toEqual(expect.arrayContaining([48, STALL_MIN_INBOUND]));
   });
 
   it('nunca fecha lead que passou pela fila nem com cadência ou agendamento vivo', () => {

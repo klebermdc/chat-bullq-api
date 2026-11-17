@@ -1,15 +1,16 @@
 import { Prisma } from '@prisma/client';
 
 /** Horas de silêncio do cliente depois da última fala da IA. */
-export const STALL_HOURS = 3;
+export const STALL_HOURS = 2;
 /** Mais velho que isso já não vale puxar: o lead esfriou e a janela fechou. */
 export const STALL_MAX_AGE_HOURS = 72;
 /**
- * Mínimo de mensagens do cliente para ir à fila: quem conversou de verdade
- * com a IA. Abaixo disso o lead não vai à fila; depois de 48h sem resposta é
+ * Mínimo de mensagens do cliente para ir à fila: quem escreveu e parou de
+ * responder a IA, mesmo numa pergunta base, vai para a fila (lead não morre).
+ * Quem nunca escreveu não vai à fila; depois de 48h sem resposta é
  * finalizado como "Não respondeu" (pipelines/stalled-lead).
  */
-export const STALL_MIN_INBOUND = 3;
+export const STALL_MIN_INBOUND = 1;
 /** Teto por rodada, para uma rodada nunca inundar a fila. */
 export const STALL_BATCH_LIMIT = 50;
 
