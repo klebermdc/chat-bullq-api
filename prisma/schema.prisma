@@ -1634,6 +1634,35 @@ model LeadSubmission {
   @@map("lead_submissions")
 }
 
+/// NFS-e de guiamento enviada ao cliente pelo WhatsApp a pedido do OFP Hub
+/// (POST /api/v1/nfse/enviar). `envioId` é o id da nota no Hub: o mesmo
+/// envio não sai duas vezes.
+model NfseDispatch {
+  id             String    @id @default(cuid())
+  envioId        String    @unique @map("envio_id")
+  organizationId String?   @map("organization_id")
+  channelId      String?   @map("channel_id")
+  contactId      String?   @map("contact_id")
+  conversationId String?   @map("conversation_id")
+  phone          String
+  numeroNfse     String    @map("numero_nfse")
+  valor          Decimal   @db.Decimal(12, 2)
+  /// SENDING | SENT | FAILED
+  status         String    @default("SENDING")
+  /// text_and_document (janela aberta) | template (janela fechada)
+  mode           String?
+  /// wamid devolvido pela Meta (documento ou template).
+  externalId     String?   @map("external_id")
+  messageId      String?   @map("message_id")
+  failedReason   String?   @map("failed_reason")
+  sentAt         DateTime? @map("sent_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([phone, createdAt], name: "idx_nfse_dispatch_phone_time")
+  @@map("nfse_dispatches")
+}
+
 model AiAgentHandoff {
   id             String   @id @default(cuid())
   conversationId String   @map("conversation_id")

@@ -29,7 +29,7 @@ export class StartConversationService {
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
   ) {}
 
-  private toExternalId(channelType: ChannelType, phone: string): string {
+  toExternalId(channelType: ChannelType, phone: string): string {
     // Gateway baseado em Baileys (Zappfy/Uazapi) usa o JID
     // `<phone>@s.whatsapp.net`; Meta e demais usam só os dígitos.
     const isBaileysWhatsApp = channelType === ChannelType.WHATSAPP_ZAPPFY;
@@ -87,7 +87,8 @@ export class StartConversationService {
     return { conversationId, contactId, messageId };
   }
 
-  private async resolveContact(
+  /** Acha o contato pelo telefone (com/sem o 9º dígito) ou cria; usado também pelo envio da NFS-e. */
+  async resolveContact(
     organizationId: string,
     channelId: string,
     data: { phone: string; name?: string; email?: string; notes?: string; externalId: string; preferContactId?: string },
