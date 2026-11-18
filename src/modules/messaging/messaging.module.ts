@@ -140,6 +140,8 @@ import { ContactsRepository } from './contacts/contacts.repository';
     LegacyOwnerRoutingService,
     LeadCardService,
     IdempotencyService,
+    // Envio da NFS-e (NfseModule): acha/abre a conversa do cliente.
+    ConversationResolverService,
   ],
 })
 export class MessagingModule {}
