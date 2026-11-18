@@ -51,6 +51,12 @@ describe('feature-map', () => {
     expect(can(OrgRole.AGENT, 'email.view')).toBe(false);
   });
 
+  it('mailbox.view liberado para AGENT: o botão Reservas aparece para todos os logados', () => {
+    expect(can(OrgRole.AGENT, 'mailbox.view')).toBe(true);
+    expect(can(OrgRole.OWNER, 'mailbox.view')).toBe(true);
+    expect(can(OrgRole.ADMIN, 'mailbox.view')).toBe(true);
+  });
+
   it('permissionsFor(role ausente) é lista vazia', () => {
     expect(permissionsFor(undefined)).toEqual([]);
   });
