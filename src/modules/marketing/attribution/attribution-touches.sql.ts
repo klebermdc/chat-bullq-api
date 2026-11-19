@@ -20,7 +20,10 @@ export const UTM_AD_ID_PREFIX = 'utm:';
  * 2. **Formulário do site** — `lead_submissions.attribution` traz a campanha
  *    (`ofp_cmp`), o conjunto (`ofp_trm`) e o criativo (`ofp_cnt`) POR NOME.
  *    O nome vira `ad_id` pelo `ad_daily_stats` (campanha + criativo; empate
- *    decide pelo conjunto e depois pelo maior gasto). Sem par na Meta (conta
+ *    decide pelo conjunto e depois pelo maior gasto). Se a campanha do link
+ *    estiver errada (texto fixo copiado de outro anúncio — caso do `video40`,
+ *    que dizia `engaj_geral`), casa só pelo nome do criativo quando ele é
+ *    único na conta. Sem par na Meta (conta
  *    não conectada, nome trocado), o toque fica com `ad_id` sintético
  *    `utm:<campanha>|<criativo>` e os nomes da UTM — a venda aparece na
  *    linha da campanha, só sem gasto, em vez de sumir no "não atribuído".
@@ -46,6 +49,7 @@ export function touchesCte(organizationId: string): Prisma.Sql {
              ls."created_at",
              COALESCE(
                ad."ad_id",
+               ad_by_name."ad_id",
                ${UTM_AD_ID_PREFIX} || (ls."attribution"->>'ofp_cmp') || '|' || (ls."attribution"->>'ofp_cnt')
              ),
              ls."attribution"->>'ofp_cnt',
@@ -67,6 +71,13 @@ export function touchesCte(organizationId: string): Prisma.Sql {
                  a."ad_id"
         LIMIT 1
       ) ad ON true
+      LEFT JOIN LATERAL (
+        SELECT MIN(a."ad_id") AS ad_id
+        FROM "ad_daily_stats" a
+        WHERE a."organization_id" = ls."organization_id"
+          AND a."ad_name" = ls."attribution"->>'ofp_cnt'
+        HAVING COUNT(DISTINCT a."ad_id") = 1
+      ) ad_by_name ON true
       WHERE ls."organization_id" = ${organizationId}
         AND ls."attribution"->>'ofp_cmp' IS NOT NULL
         AND ls."attribution"->>'ofp_cnt' IS NOT NULL

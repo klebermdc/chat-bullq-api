@@ -33,6 +33,8 @@ describe('AttributionRepository — toques CTWA + formulário do site', () => {
     expect(text).toContain(`'ofp_cmp'`);
     expect(text).toContain(`'ofp_cnt'`);
     expect(text).toContain('"ad_daily_stats"');
+    // Campanha errada no link: casa só pelo criativo quando o nome é único.
+    expect(text).toContain('HAVING COUNT(DISTINCT a."ad_id") = 1');
     expect(text).toContain('"is_mystery_shopper" = false');
     expect(text).toContain('"deleted_at" IS NULL');
     expect(values).toEqual(expect.arrayContaining(['org-1', 'ad', 'organic', from, to]));
