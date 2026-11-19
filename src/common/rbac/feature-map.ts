@@ -61,7 +61,9 @@ export const FEATURE_MAP = {
   'inactivity.view': STAFF,
   'ai-agents.view': STAFF,
   'chatbot.view': STAFF,
-  'copilot.view': STAFF,
+  // Página do Copiloto: modo Consulta (conhecimento da Aline) é de todos;
+  // o modo Dados (POST /copilot/ask, SQL no banco) segue só OWNER/ADMIN via @Roles.
+  'copilot.view': ALL,
   'products.view': STAFF,
   'settings.view': STAFF, // cobre as 19 abas de Configurações
 } as const satisfies Record<string, OrgRole[]>;

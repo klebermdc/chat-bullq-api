@@ -24,16 +24,13 @@ import {
   type LostReasonCount,
   type PersonaContext,
 } from './persona-generator';
+import {
+  MAIN_AGENT_SELECT,
+  pickMainAgent,
+  type AgentCandidate,
+} from '../../ai-agents/agents/main-agent';
 
-export interface AgentCandidate {
-  id: string;
-  name: string;
-  kind: string;
-  systemPrompt: string;
-  operationalContext: string | null;
-  createdAt: Date;
-  _count: { channels: number };
-}
+export { pickMainAgent, type AgentCandidate };
 
 const FRIENDLY_ERROR = 'Não foi possível criar a persona agora. Tente de novo.';
 const RETRY_REMINDER =
@@ -45,20 +42,6 @@ function llmText(content: LlmContent): string {
   return content.map((part) => (part.type === 'text' ? part.text : '')).join('');
 }
 
-/**
- * A IA de atendimento principal da org (a SDR que fala com o cliente): ligada a canal
- * no automático > orquestrador > mais canais > mais antiga. Sem nome fixo de agente.
- */
-export function pickMainAgent(agents: AgentCandidate[]): AgentCandidate | null {
-  const rank = (a: AgentCandidate) => [a._count.channels > 0 ? 0 : 1, a.kind === 'ORCHESTRATOR' ? 0 : 1, -a._count.channels, a.createdAt.getTime()];
-  const sorted = [...agents].sort((a, b) => {
-    const ra = rank(a);
-    const rb = rank(b);
-    const i = ra.findIndex((v, idx) => v !== rb[idx]);
-    return i === -1 ? 0 : ra[i] - rb[i];
-  });
-  return sorted[0] ?? null;
-}
 
 /** Escreve a persona do cliente oculto a partir de uma prévia, com o conhecimento da própria org. */
 @Injectable()
@@ -110,15 +93,7 @@ export class PersonaGeneratorService {
   private async loadAgentInstructions(organizationId: string): Promise<string> {
     const agents: AgentCandidate[] = await this.prisma.aiAgent.findMany({
       where: { organizationId, isActive: true, deletedAt: null },
-      select: {
-        id: true,
-        name: true,
-        kind: true,
-        systemPrompt: true,
-        operationalContext: true,
-        createdAt: true,
-        _count: { select: { channels: { where: { mode: 'AUTONOMOUS' } } } },
-      },
+      select: MAIN_AGENT_SELECT,
     });
     const agent = pickMainAgent(agents);
     if (!agent) return '';
