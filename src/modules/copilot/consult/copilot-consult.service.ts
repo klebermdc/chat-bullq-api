@@ -20,6 +20,7 @@ import {
   formatTranscript,
   isConsultSafeCustomSkill,
   pickConsultBuiltinTools,
+  skillUsesConversationContext,
   splitSuggestion,
   type TranscriptMessage,
 } from './consult-prompt';
@@ -72,7 +73,7 @@ export class CopilotConsultService {
       : undefined;
 
     const agent = await this.loadMainAgent(organizationId);
-    const [faq, customSkills] = await Promise.all([this.loadFaq(organizationId), this.loadCustomSkills(agent.id)]);
+    const [faq, customSkills] = await Promise.all([this.loadFaq(organizationId), this.loadCustomSkills(agent.id, !!conversation)]);
 
     const builtinDefs = pickConsultBuiltinTools(
       this.registry.getLlmDefinitionsForKind(agent.kind as AiAgentKind, agent.id),
@@ -150,15 +151,21 @@ export class CopilotConsultService {
     }
   }
 
-  private async loadCustomSkills(agentId: string): Promise<CustomSkill[]> {
+  private async loadCustomSkills(agentId: string, hasConversation: boolean): Promise<CustomSkill[]> {
+    // Skill que pede aprovação viraria um item falso na fila de aprovação: fica de fora.
     const links = await this.prisma.aiAgentSkill.findMany({
-      where: { agentId },
+      where: { agentId, requiresApproval: false },
       include: { skill: { include: { tool: true } } },
     });
     return links
       .map((l) => l.skill)
       .filter((s): s is CustomSkill => !!s.tool && s.isActive && !s.deletedAt && s.tool.isActive && !s.tool.deletedAt)
-      .filter((s) => isConsultSafeCustomSkill(s));
+      .filter((s) => isConsultSafeCustomSkill(s))
+      .filter(
+        (s) =>
+          hasConversation ||
+          !skillUsesConversationContext([s.httpPath, s.httpHeadersExtra, s.httpBodyTemplate, s.tool.httpBaseUrl, s.tool.httpHeaders]),
+      );
   }
 
   private async loadConversation(

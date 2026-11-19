@@ -128,4 +128,31 @@ describe('CopilotConsultService', () => {
     expect(req.messages[0].content).toContain('use buscarHotel');
     expect(req.messages[0].content).not.toContain('use criarLead');
   });
+
+  it('não oferece skill que pede aprovação', async () => {
+    const { service, prisma, llm } = makeService();
+    llm.complete.mockResolvedValue(finalAnswer('ok'));
+    await service.consult('org1', VENDEDOR, { text: 'oi' });
+    expect(prisma.aiAgentSkill.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { agentId: 'aline', requiresApproval: false } }),
+    );
+  });
+
+  it('sem conversa, tira a skill que usa dados do contato; com conversa, oferece', async () => {
+    const { service, prisma, llm } = makeService();
+    prisma.aiAgentSkill.findMany.mockResolvedValue([
+      {
+        skill: {
+          name: 'pedidosDoContato', description: 'x', parameters: {}, source: 'HTTP', httpMethod: 'GET',
+          httpPath: '/pedidos/{{ ctx.contactId }}', isActive: true, deletedAt: null, promptInstructions: null,
+          tool: { isActive: true, deletedAt: null, httpBaseUrl: 'https://api' },
+        },
+      },
+    ]);
+    llm.complete.mockResolvedValue(finalAnswer('ok'));
+    await service.consult('org1', VENDEDOR, { text: 'oi' });
+    expect(llm.complete.mock.calls[0][0].tools.map((t: { name: string }) => t.name)).toEqual(['lookupOffering']);
+    await service.consult('org1', VENDEDOR, { text: 'oi', conversationId: 'c1' });
+    expect(llm.complete.mock.calls[1][0].tools.map((t: { name: string }) => t.name)).toContain('pedidosDoContato');
+  });
 });

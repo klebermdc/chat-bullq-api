@@ -119,6 +119,16 @@ export function isConsultSafeCustomSkill(skill: { source: string; httpMethod: st
   return skill.source === 'HTTP' && (skill.httpMethod ?? '').toUpperCase() === 'GET';
 }
 
+const CTX_TEMPLATE_RE = /\{\{\s*ctx\./;
+
+/**
+ * A skill monta URL/cabeçalho/corpo com dados da conversa ({{ctx.contactId}} etc.)?
+ * Sem conversa aberta ela mandaria um marcador falso ao serviço externo: fica de fora.
+ */
+export function skillUsesConversationContext(parts: unknown[]): boolean {
+  return parts.some((p) => p != null && CTX_TEMPLATE_RE.test(typeof p === 'string' ? p : JSON.stringify(p)));
+}
+
 export function pickConsultBuiltinTools(
   defs: LlmToolDefinition[],
   hasConversation: boolean,
