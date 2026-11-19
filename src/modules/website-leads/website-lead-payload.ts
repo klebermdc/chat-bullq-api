@@ -19,6 +19,7 @@ export const TRACKING_FIELD_IDS = [
   'ofp_cmp',
   'ofp_cnt',
   'ofp_trm',
+  'ofp_ad',
   'fbclid',
   'gclid',
   'utm_source',

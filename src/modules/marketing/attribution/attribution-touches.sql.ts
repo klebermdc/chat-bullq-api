@@ -17,7 +17,8 @@ export const UTM_AD_ID_PREFIX = 'utm:';
  * anúncio do toque. Duas fontes:
  *
  * 1. **Click-to-WhatsApp** — `contacts.ctwa_source_id` (referral da Meta).
- * 2. **Formulário do site** — `lead_submissions.attribution` traz a campanha
+ * 2. **Formulário do site** — com `ofp_ad` (ID do anúncio, `{{ad.id}}` da
+ *    Meta no link) o anúncio é esse, exato. Sem ele, `lead_submissions.attribution` traz a campanha
  *    (`ofp_cmp`), o conjunto (`ofp_trm`) e o criativo (`ofp_cnt`) POR NOME.
  *    O nome vira `ad_id` pelo `ad_daily_stats` (campanha + criativo; empate
  *    decide pelo conjunto e depois pelo maior gasto). Se a campanha do link
@@ -48,6 +49,7 @@ export function touchesCte(organizationId: string): Prisma.Sql {
       SELECT ls."contact_id",
              ls."created_at",
              COALESCE(
+               CASE WHEN ls."attribution"->>'ofp_ad' ~ '^[0-9]+$' THEN ls."attribution"->>'ofp_ad' END,
                ad."ad_id",
                ad_by_name."ad_id",
                ${UTM_AD_ID_PREFIX} || (ls."attribution"->>'ofp_cmp') || '|' || (ls."attribution"->>'ofp_cnt')
@@ -79,8 +81,10 @@ export function touchesCte(organizationId: string): Prisma.Sql {
         HAVING COUNT(DISTINCT a."ad_id") = 1
       ) ad_by_name ON true
       WHERE ls."organization_id" = ${organizationId}
-        AND ls."attribution"->>'ofp_cmp' IS NOT NULL
-        AND ls."attribution"->>'ofp_cnt' IS NOT NULL
+        AND (
+          ls."attribution"->>'ofp_ad' ~ '^[0-9]+$'
+          OR (ls."attribution"->>'ofp_cmp' IS NOT NULL AND ls."attribution"->>'ofp_cnt' IS NOT NULL)
+        )
         AND (ls."attribution"->>'ofp_mdm') IS DISTINCT FROM ${SITE_ORGANIC_MEDIUM}
     )
   `;

@@ -33,6 +33,8 @@ describe('AttributionRepository — toques CTWA + formulário do site', () => {
     expect(text).toContain(`'ofp_cmp'`);
     expect(text).toContain(`'ofp_cnt'`);
     expect(text).toContain('"ad_daily_stats"');
+    // ID do anúncio no link (ofp_ad) vence o casamento por nome.
+    expect(text).toContain(`'ofp_ad' ~ '^[0-9]+$'`);
     // Campanha errada no link: casa só pelo criativo quando o nome é único.
     expect(text).toContain('HAVING COUNT(DISTINCT a."ad_id") = 1');
     expect(text).toContain('"is_mystery_shopper" = false');
