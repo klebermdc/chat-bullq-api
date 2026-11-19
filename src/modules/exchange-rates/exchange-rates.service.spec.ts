@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { ExchangeRatesService, STALE_AFTER_MS, isEnabledFor } from './exchange-rates.service';
+import { ExchangeRatesService, MANUAL_STALE_AFTER_MS, STALE_AFTER_MS, isEnabledFor, readManualRate } from './exchange-rates.service';
 
 const NOW = new Date('2026-11-19T15:00:00Z');
 
@@ -12,6 +12,8 @@ function makePrisma(rows: Record<string, any> = {}, settings: unknown = { operat
       update: jest.fn(async (args) => args),
     },
     organization: { findUnique: jest.fn(async () => ({ settings })) },
+    user: { findUnique: jest.fn(async () => ({ name: 'Kleber' })) },
+    $executeRaw: jest.fn(async () => 1),
   };
 }
 
@@ -91,5 +93,42 @@ describe('ExchangeRatesService.listFor', () => {
       ['AZ', null, false, true],
     ]);
     expect(out.rates[2].url).toBe('https://www.azulviagens.com.br/');
+  });
+});
+
+describe('lançamento manual (AZ)', () => {
+  const az = (updatedAt: string) => ({
+    operatorExchangeRates: true,
+    manualExchangeRates: { AZ: { value: 5.88, updatedAt, updatedByName: 'Kleber' } },
+  });
+
+  it('readManualRate ignora lixo', () => {
+    expect(readManualRate({ manualExchangeRates: { AZ: { value: 'x', updatedAt: 'y' } } }, 'AZ')).toBeNull();
+    expect(readManualRate(null, 'AZ')).toBeNull();
+  });
+
+  it('lista o valor lançado com quem lançou', async () => {
+    const svc = new ExchangeRatesService(makePrisma({}, az(NOW.toISOString())) as never);
+    const azView = (await svc.listFor('org1', NOW)).rates.find((r) => r.code === 'AZ')!;
+    expect([azView.value, azView.updatedByName, azView.stale, azView.manual]).toEqual([5.88, 'Kleber', false, true]);
+  });
+
+  it('lançamento com mais de 24h aparece apagado', async () => {
+    const old = new Date(NOW.getTime() - MANUAL_STALE_AFTER_MS - 1).toISOString();
+    const svc = new ExchangeRatesService(makePrisma({}, az(old)) as never);
+    expect((await svc.listFor('org1', NOW)).rates.find((r) => r.code === 'AZ')!.stale).toBe(true);
+  });
+
+  it('grava só na org e com o nome de quem lançou', async () => {
+    const prisma = makePrisma();
+    const out = await new ExchangeRatesService(prisma as never).setManual('org1', 'u1', 'az', 5.88, NOW);
+    expect(out).toEqual({ value: 5.88, updatedAt: NOW.toISOString(), updatedByName: 'Kleber' });
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('recusa operadora automática e valor fora da faixa', async () => {
+    const svc = new ExchangeRatesService(makePrisma() as never);
+    await expect(svc.setManual('org1', 'u1', 'JT', 6, NOW)).rejects.toThrow('atualizada automaticamente');
+    await expect(svc.setManual('org1', 'u1', 'AZ', 58.8, NOW)).rejects.toThrow('Câmbio inválido');
   });
 });
