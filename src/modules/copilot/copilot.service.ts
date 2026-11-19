@@ -4,16 +4,11 @@ import { PrismaService } from '../../database/prisma.service';
 import { LlmService } from '../ai-agents/llm/llm.service';
 import { HttpToolExecutorService } from '../ai-agents/tools/http-tool-executor.service';
 import { SqlToolExecutorService } from '../ai-agents/tools/sql-tool-executor.service';
-import {
-  stripForeignScripts,
-  stripThinkBlocks,
-} from '../ai-agents/runner/text-guards';
 import type {
-  LlmContent,
   LlmMessage,
-  LlmTextPart,
   LlmToolDefinition,
 } from '../ai-agents/llm/llm.types';
+import { runCopilotToolLoop } from './copilot-tool-loop';
 import type { ToolContext } from '../ai-agents/tools/tool.types';
 
 export type CopilotTurn = { role: 'user' | 'assistant'; content: string };
@@ -21,7 +16,6 @@ export type CopilotTurn = { role: 'user' | 'assistant'; content: string };
 @Injectable()
 export class CopilotService {
   private readonly logger = new Logger(CopilotService.name);
-  private static readonly MAX_ITERATIONS = 5;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -94,76 +88,28 @@ export class CopilotService {
       runId: 'copilot',
     };
 
-    for (let i = 0; i < CopilotService.MAX_ITERATIONS; i++) {
-      const res = await this.llm.complete({
+    const reply = await runCopilotToolLoop(
+      this.llm,
+      {
         organizationId,
         modelId: agent.modelId,
-        messages,
         tools: tools.length ? tools : undefined,
         temperature: agent.temperature,
         maxTokens: agent.maxTokens,
-      });
-      messages.push(res.message);
-
-      if (res.stopReason !== 'tool_calls' || !res.message.toolCalls?.length) {
-        const reply = this.clean(this.textOf(res.message.content));
-        return { reply: reply || 'Não consegui gerar uma resposta agora.' };
-      }
-
-      for (const call of res.message.toolCalls) {
-        const skill = skillsByName.get(call.name);
-        let output: unknown;
+      },
+      messages,
+      async (name, args) => {
+        const skill = skillsByName.get(name);
         if (!skill || !skill.tool) {
-          output = { ok: false, error: `Skill desconhecida: ${call.name}` };
-        } else {
-          try {
-            const result =
-              skill.source === 'SQL'
-                ? await this.sqlExec.execute(
-                    skill,
-                    skill.tool,
-                    call.arguments,
-                    ctx,
-                  )
-                : await this.httpExec.execute(
-                    skill,
-                    skill.tool,
-                    call.arguments,
-                    ctx,
-                  );
-            output = result.output;
-          } catch (err: any) {
-            output = { ok: false, error: err?.message ?? String(err) };
-          }
+          return { ok: false, error: `Skill desconhecida: ${name}` };
         }
-        messages.push({
-          role: 'tool',
-          content: JSON.stringify(output),
-          toolCallId: call.id,
-          name: call.name,
-        });
-      }
-    }
-
-    const last = [...messages].reverse().find((m) => m.role === 'assistant');
-    return {
-      reply: last
-        ? this.clean(this.textOf(last.content)) ||
-          'Não consegui concluir a consulta.'
-        : 'Não consegui concluir a consulta.',
-    };
-  }
-
-  /** Remove raciocínio `<think>` e caracteres CJK vazados antes de devolver. */
-  private clean(text: string): string {
-    return stripForeignScripts(stripThinkBlocks(text));
-  }
-
-  private textOf(content: LlmContent): string {
-    if (typeof content === 'string') return content;
-    return content
-      .filter((p): p is LlmTextPart => p.type === 'text')
-      .map((p) => p.text)
-      .join('');
+        const result =
+          skill.source === 'SQL'
+            ? await this.sqlExec.execute(skill, skill.tool, args, ctx)
+            : await this.httpExec.execute(skill, skill.tool, args, ctx);
+        return result.output;
+      },
+    );
+    return { reply };
   }
 }
