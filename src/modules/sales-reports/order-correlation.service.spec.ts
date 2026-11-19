@@ -19,10 +19,11 @@ function card(overrides: Record<string, any> = {}) {
   };
 }
 
-function make(opts: { wonCards?: any[]; order?: any; contactOrders?: any[] } = {}) {
+function make(opts: { wonCards?: any[]; order?: any; contactOrders?: any[]; linkedCount?: number } = {}) {
   const prisma = {
     card: {
       findMany: jest.fn().mockResolvedValue(opts.wonCards ?? []),
+      count: jest.fn().mockResolvedValue(opts.linkedCount ?? 0),
       update: jest.fn().mockResolvedValue({}),
     },
     ofpSalesOrder: {
@@ -64,6 +65,20 @@ describe('OrderCorrelationService.correlateWonCards', () => {
     const where = prisma.ofpSalesOrder.findFirst.mock.calls[0][0].where;
     expect(where.OR).toContainEqual({ pedido: { equals: 'R4YB7P', mode: 'insensitive' } });
     expect(prisma.card.update).toHaveBeenCalled();
+  });
+
+  it('pedido já ligado a outro card não liga de novo (valor não conta em dobro)', async () => {
+    const { service, prisma } = make({
+      wonCards: [card({ value: 100, metadata: { orderNumber: 'PEDIDO 72152' } })],
+      linkedCount: 1,
+    });
+    const res = await service.correlateWonCards(NOW);
+
+    expect(prisma.card.count.mock.calls[0][0].where).toEqual({
+      metadata: { path: ['ofpOrderExternalId'], equals: 'ext-9' },
+    });
+    expect(prisma.card.update).not.toHaveBeenCalled();
+    expect(res).toEqual({ matched: 0, checked: 1 });
   });
 
   it('idempotente: card já correlacionado não é tocado', async () => {
