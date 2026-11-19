@@ -68,6 +68,7 @@ import { EmailCampaignsModule } from './modules/email-campaigns/email-campaigns.
 import { StorageModule } from './modules/storage/storage.module';
 import { HealthModule } from './modules/health/health.module';
 import { ErrorPanelModule } from './modules/error-panel/error-panel.module';
+import { ExchangeRatesModule } from './modules/exchange-rates/exchange-rates.module';
 import redisConfig from './config/redis.config';
 
 @Module({
@@ -155,6 +156,7 @@ import redisConfig from './config/redis.config';
     EmailCampaignsModule,
     HealthModule,
     ErrorPanelModule,
+    ExchangeRatesModule,
   ],
 })
 export class AppModule {}
