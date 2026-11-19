@@ -3,6 +3,7 @@ import { ChannelHubModule } from '../channel-hub/channel-hub.module';
 import { MessagingModule } from '../messaging/messaging.module';
 import { NfseApiKeyGuard } from './nfse-api-key.guard';
 import { NfseController } from './nfse.controller';
+import { NfseDeliveryWatcher } from './nfse-delivery-watcher';
 import { NfseService } from './nfse.service';
 import { NfseWhatsappSender } from './nfse-whatsapp-sender.service';
 
@@ -10,6 +11,6 @@ import { NfseWhatsappSender } from './nfse-whatsapp-sender.service';
 @Module({
   imports: [forwardRef(() => MessagingModule), forwardRef(() => ChannelHubModule)],
   controllers: [NfseController],
-  providers: [NfseService, NfseWhatsappSender, NfseApiKeyGuard],
+  providers: [NfseService, NfseWhatsappSender, NfseDeliveryWatcher, NfseApiKeyGuard],
 })
 export class NfseModule {}

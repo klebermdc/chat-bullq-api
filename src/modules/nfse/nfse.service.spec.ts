@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { NfseService } from './nfse.service';
 import { NfseDeliveryError } from './nfse-whatsapp-sender.service';
 import { downloadNfsePdf } from './nfse-pdf-downloader';
+import { NfseUndeliveredError } from './nfse-delivery-watcher';
 
 jest.mock('./nfse-pdf-downloader', () => {
   const actual = jest.requireActual('./nfse-pdf-downloader');
@@ -34,6 +35,9 @@ function setup(opts: {
   existing?: { status: string; mode: string | null } | null;
   previousAssigneeId?: string | null;
   wasReopened?: boolean;
+  watchError?: Error;
+  delivered?: boolean;
+  earlierMessages?: Array<{ status: string; failedReason: string | null }>;
 } = {}) {
   const prisma = {
     nfseDispatch: {
@@ -49,6 +53,12 @@ function setup(opts: {
     },
     messageTemplate: { findFirst: jest.fn().mockResolvedValue(opts.template ?? null) },
     conversationAuditLog: { create: jest.fn().mockResolvedValue({}) },
+    message: { findMany: jest.fn().mockResolvedValue(opts.earlierMessages ?? []) },
+  };
+  const watcher = {
+    waitOutcome: jest.fn(opts.watchError
+      ? () => Promise.reject(opts.watchError)
+      : () => Promise.resolve(opts.delivered ?? true)),
   };
   const sender: { send: jest.Mock<any, any> } = {
     send: jest.fn(opts.sendError
@@ -73,8 +83,9 @@ function setup(opts: {
     } as any,
     sender as any,
     { emitToChannel: jest.fn() } as any,
+    watcher as any,
   );
-  return { service, prisma, sender };
+  return { service, prisma, sender, watcher };
 }
 
 beforeEach(() => {
@@ -87,7 +98,7 @@ describe('NfseService.enviar', () => {
 
     const result = await service.enviar(PAYLOAD);
 
-    expect(result).toEqual({ status: 200, body: { ok: true, messageId: 'wamid.1' } });
+    expect(result).toEqual({ status: 200, body: { ok: true, messageId: 'wamid.1', entregue: true } });
     expect(sender.send.mock.calls.map((c) => c[0].type)).toEqual(['TEXT', 'DOCUMENT']);
     expect(sender.send.mock.calls[1][0].content).toEqual({
       mediaUrl: 'https://api/x.pdf',
@@ -212,7 +223,7 @@ describe('NfseService.enviar', () => {
 
     const result = await service.enviar(PAYLOAD);
 
-    expect(result).toEqual({ status: 200, body: { ok: true, messageId: 'wamid.1' } });
+    expect(result).toEqual({ status: 200, body: { ok: true, messageId: 'wamid.1', entregue: true } });
   });
 
   it('gives the conversation back to its previous owner when closing it again', async () => {
@@ -228,5 +239,67 @@ describe('NfseService.enviar', () => {
       expect.objectContaining({ status: 'CLOSED', assignedToId: 'seller1' }),
     );
   });
-});
 
+  it('answers 422 when WhatsApp accepts the message and then reports it undeliverable', async () => {
+    const { service, prisma } = setup({
+      template: { name: 'nfse_guiamento', language: 'pt_BR' },
+      watchError: new NfseUndeliveredError('Número sem WhatsApp ([131026] Message undeliverable).'),
+    });
+
+    const result = await service.enviar(PAYLOAD);
+
+    expect(result).toEqual({
+      status: 422,
+      body: { ok: false, erro: 'Número sem WhatsApp ([131026] Message undeliverable).' },
+    });
+    expect(prisma.nfseDispatch.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED', mode: null }) }),
+    );
+    expect(prisma.nfseDispatch.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'SENT' }) }),
+    );
+  });
+
+  it('answers ok with entregue:false when WhatsApp did not confirm in time', async () => {
+    const { service } = setup({ template: { name: 'nfse_guiamento', language: 'pt_BR' }, delivered: false });
+
+    const result = await service.enviar(PAYLOAD);
+
+    expect(result).toEqual({ status: 200, body: { ok: true, messageId: 'wamid.1', entregue: false } });
+  });
+
+  it('sends again when the earlier "sent" envioId came back undelivered from WhatsApp', async () => {
+    const { service, sender, prisma } = setup({
+      createError: p2002(),
+      retryCount: 1,
+      existing: { status: 'SENT', mode: 'template', messageId: 'old', conversationId: 'conv1' } as any,
+      earlierMessages: [{ status: 'FAILED', failedReason: '[131026] Message undeliverable' }],
+      template: { name: 'nfse_guiamento', language: 'pt_BR' },
+    });
+
+    const result = await service.enviar(PAYLOAD);
+
+    expect(prisma.nfseDispatch.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'SENT' }),
+        data: expect.objectContaining({ status: 'FAILED', mode: null }),
+      }),
+    );
+    expect(result.status).toBe(200);
+    expect(sender.send).toHaveBeenCalled();
+  });
+
+  it('answers duplicado only when the earlier send was not reported as failed', async () => {
+    const { service, sender } = setup({
+      createError: p2002(),
+      retryCount: 0,
+      existing: { status: 'SENT', mode: 'template', messageId: 'old', conversationId: 'conv1' } as any,
+      earlierMessages: [{ status: 'DELIVERED', failedReason: null }],
+    });
+
+    const result = await service.enviar(PAYLOAD);
+
+    expect(result).toEqual({ status: 200, body: { ok: true, duplicado: true } });
+    expect(sender.send).not.toHaveBeenCalled();
+  });
+});

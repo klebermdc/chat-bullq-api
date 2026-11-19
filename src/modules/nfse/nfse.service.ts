@@ -1,12 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Channel, ConversationStatus, MessageContentType, Prisma } from '@prisma/client';
+import { Channel, ConversationStatus, MessageContentType, MessageStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { computeWhatsappWindow } from '../messaging/conversations/whatsapp-window.util';
 import { StartConversationService } from '../messaging/conversations/start-conversation.service';
 import { UploadsService } from '../messaging/messages/uploads.service';
 import { ConversationResolverService } from '../messaging/pipeline/conversation-resolver.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { NfseDeliveryWatcher, NfseUndeliveredError, undeliveredReason } from './nfse-delivery-watcher';
 import { buildNfseTemplateContent, nfseMessageText } from './nfse-message';
 import type { NfsePayload } from './nfse-payload';
 import { downloadNfsePdf, NfsePdfError } from './nfse-pdf-downloader';
@@ -25,13 +26,16 @@ const PDF_MIME = 'application/pdf';
 export type NfseResult =
   | { status: 200; body: { ok: true; duplicado: true } }
   | { status: 409; body: { ok: false; erro: string } }
-  | { status: 200; body: { ok: true; messageId: string } }
+  /** entregue=false: a Meta aceitou e não avisou falha no prazo, mas ainda não confirmou a entrega. */
+  | { status: 200; body: { ok: true; messageId: string; entregue: boolean } }
   | { status: 422; body: { ok: false; erro: string } };
 
 interface Delivery {
   mode: 'text_and_document' | 'template';
   messageId: string;
   externalId: string;
+  /** Todas as mensagens deste envio (texto + PDF, ou o template). */
+  messageIds: string[];
   organizationId: string;
   channelId: string;
   contactId: string;
@@ -61,6 +65,7 @@ export class NfseService {
     private readonly resolver: ConversationResolverService,
     private readonly sender: NfseWhatsappSender,
     private readonly realtime: RealtimeGateway,
+    private readonly watcher: NfseDeliveryWatcher,
   ) {}
 
   async enviar(p: NfsePayload): Promise<NfseResult> {
@@ -73,8 +78,11 @@ export class NfseService {
       return { status: 409, body: { ok: false, erro: 'Envio com este envioId em andamento; tente de novo em instantes.' } };
     }
     let d: Delivery;
+    let entregue: boolean;
     try {
       d = await this.deliver(p, claim.textSent);
+      // A Meta só diz "aceito" na hora; a recusa (ex.: 131026) chega segundos depois.
+      entregue = await this.watcher.waitOutcome(d.messageIds);
     } catch (err) {
       return this.failed(p, err);
     }
@@ -96,8 +104,8 @@ export class NfseService {
         },
       })
       .catch((e: Error) => this.logger.error(`nfse envioId=${p.envioId} status=SENT_NOT_RECORDED: ${e.message}`));
-    this.logger.log(`nfse envioId=${p.envioId} status=SENT mode=${d.mode}`);
-    return { status: 200, body: { ok: true, messageId: d.externalId || d.messageId } };
+    this.logger.log(`nfse envioId=${p.envioId} status=SENT mode=${d.mode} entregue=${entregue}`);
+    return { status: 200, body: { ok: true, messageId: d.externalId || d.messageId, entregue } };
   }
 
   private async failed(p: NfsePayload, err: unknown): Promise<NfseResult> {
@@ -105,7 +113,8 @@ export class NfseService {
     const reason = expected ? (err as Error).message : 'Falha inesperada ao enviar a NFS-e.';
     await this.prisma.nfseDispatch.update({
       where: { envioId: p.envioId },
-      data: { status: 'FAILED', failedReason: reason },
+      // Não entregue: a próxima tentativa manda tudo de novo (o texto também não chegou).
+      data: { status: 'FAILED', failedReason: reason, ...(err instanceof NfseUndeliveredError ? { mode: null } : {}) },
     });
     this.logger.warn(`nfse envioId=${p.envioId} status=FAILED`);
     if (!expected) throw err;
@@ -125,6 +134,7 @@ export class NfseService {
     } catch (err) {
       if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
     }
+    await this.releaseIfUndelivered(p.envioId);
     const retry = await this.prisma.nfseDispatch.updateMany({
       where: {
         envioId: p.envioId,
@@ -141,6 +151,36 @@ export class NfseService {
     });
     if (retry.count > 0) return { textSent: row?.mode === TEXT_SENT };
     return row?.status === 'SENT' ? 'sent' : 'in_progress';
+  }
+
+  /**
+   * Envio gravado como SENT cuja mensagem a Meta depois recusou (webhook
+   * chegou após a resposta): volta a FAILED para poder ser refeito, em vez de
+   * responder "duplicado" de uma nota que não chegou.
+   */
+  private async releaseIfUndelivered(envioId: string): Promise<void> {
+    const row = await this.prisma.nfseDispatch.findUnique({
+      where: { envioId },
+      select: { status: true, messageId: true, conversationId: true },
+    });
+    if (row?.status !== 'SENT' || !row.conversationId) return;
+    const failed = (
+      await this.prisma.message.findMany({
+        where: {
+          conversationId: row.conversationId,
+          metadata: { path: ['envioId'], equals: envioId },
+          status: MessageStatus.FAILED,
+        },
+        select: { status: true, failedReason: true },
+        take: 1,
+      })
+    ).find((m) => m.status === MessageStatus.FAILED);
+    if (!failed) return;
+    await this.prisma.nfseDispatch.updateMany({
+      where: { envioId, status: 'SENT' },
+      data: { status: 'FAILED', mode: null, failedReason: undeliveredReason(failed.failedReason) },
+    });
+    this.logger.warn(`nfse envioId=${envioId} status=UNDELIVERED_RELEASED`);
   }
 
   private async deliver(p: NfsePayload, textSent: boolean): Promise<Delivery> {
@@ -206,13 +246,15 @@ export class NfseService {
 
   private async sendTextAndDocument(t: Target, p: NfsePayload, pdfLink: string, textSent: boolean) {
     const metadata = { source: SOURCE, envioId: p.envioId };
+    const messageIds: string[] = [];
     if (!textSent) {
-      await this.sender.send({
+      const text = await this.sender.send({
         ...this.base(t),
         type: MessageContentType.TEXT,
         content: { text: nfseMessageText(p) },
         metadata,
       });
+      messageIds.push(text.messageId);
       await this.prisma.nfseDispatch.update({ where: { envioId: p.envioId }, data: { mode: TEXT_SENT } });
     }
     const doc = await this.sender.send({
@@ -221,7 +263,7 @@ export class NfseService {
       content: { mediaUrl: pdfLink, fileName: p.pdfNome, mimeType: PDF_MIME },
       metadata,
     });
-    return { mode: 'text_and_document' as const, ...doc };
+    return { mode: 'text_and_document' as const, ...doc, messageIds: [...messageIds, doc.messageId] };
   }
 
   private async sendTemplate(t: Target, p: NfsePayload, pdfLink: string) {
@@ -246,7 +288,7 @@ export class NfseService {
       content: content as Prisma.InputJsonValue,
       metadata: { source: SOURCE, envioId: p.envioId, renderedText: nfseMessageText(p) },
     });
-    return { mode: 'template' as const, ...sent };
+    return { mode: 'template' as const, ...sent, messageIds: [sent.messageId] };
   }
 
   private base(t: Target) {
