@@ -34,4 +34,42 @@ describe('CopilotController', () => {
     expect(consult.consult).toHaveBeenCalledWith('org1', { id: 'u1', role: OrgRole.AGENT }, dto);
     expect(out).toEqual({ reply: 'ok', suggestion: null });
   });
+
+  describe('consulta com print', () => {
+    const png = { buffer: Buffer.from('img'), mimetype: 'image/png' };
+    const make = () => {
+      const consult = { consult: jest.fn().mockResolvedValue({ reply: 'ok', suggestion: null }) };
+      return { consult, controller: new CopilotController({} as any, consult as any) };
+    };
+
+    it('manda a imagem em base64 com os campos do formulário', async () => {
+      const { consult, controller } = make();
+      await controller.consultWithImage('org1', 'u1', OrgRole.AGENT, {
+        text: 'o que é isso?',
+        conversationId: 'c1',
+        history: JSON.stringify([{ role: 'user', content: 'oi' }]),
+      }, png);
+      expect(consult.consult).toHaveBeenCalledWith('org1', { id: 'u1', role: OrgRole.AGENT }, expect.objectContaining({
+        text: 'o que é isso?',
+        conversationId: 'c1',
+        history: [expect.objectContaining({ role: 'user', content: 'oi' })],
+        image: { mediaType: 'image/png', data: Buffer.from('img').toString('base64') },
+      }));
+    });
+
+    it('recusa sem arquivo, com tipo errado ou histórico quebrado', async () => {
+      const { consult, controller } = make();
+      await expect(controller.consultWithImage('org1', 'u1', OrgRole.AGENT, { text: 'x' }, undefined)).rejects.toThrow('Anexe');
+      await expect(
+        controller.consultWithImage('org1', 'u1', OrgRole.AGENT, { text: 'x' }, { buffer: Buffer.from('a'), mimetype: 'application/pdf' }),
+      ).rejects.toThrow('JPG');
+      await expect(controller.consultWithImage('org1', 'u1', OrgRole.AGENT, { text: 'x', history: '{' }, png)).rejects.toThrow('Histórico');
+      await expect(controller.consultWithImage('org1', 'u1', OrgRole.AGENT, { text: '' }, png)).rejects.toThrow('inválida');
+      expect(consult.consult).not.toHaveBeenCalled();
+    });
+
+    it('é aberta a todos, como a consulta', () => {
+      expect(Reflect.getMetadata(FEATURE_KEY, CopilotController.prototype.consultWithImage)).toBe('copilot.view');
+    });
+  });
 });

@@ -25,8 +25,14 @@ import {
   type TranscriptMessage,
 } from './consult-prompt';
 
+export interface ConsultImage {
+  mediaType: string;
+  /** Base64 sem o prefixo `data:`. */
+  data: string;
+}
 export interface ConsultRequest {
   text: string;
+  image?: ConsultImage;
   history?: CopilotTurn[];
   conversationId?: string;
   messageId?: string;
@@ -95,7 +101,13 @@ export class CopilotConsultService {
     const messages: LlmMessage[] = [
       { role: 'system', content: systemPrompt },
       ...(req.history ?? []).slice(-HISTORY_TURNS).map((t): LlmMessage => ({ role: t.role, content: t.content })),
-      { role: 'user', content: req.text },
+      {
+        role: 'user',
+        // Com print: o LlmService troca sozinho para o modelo de visão (MiniMax-M3).
+        content: req.image
+          ? [{ type: 'text', text: req.text }, { type: 'image', base64: req.image }]
+          : req.text,
+      },
     ];
 
     const ctx: ToolContext = {
@@ -121,7 +133,7 @@ export class CopilotConsultService {
         return { ok: false, error: `Ferramenta indisponível no modo consulta: ${name}` };
       },
     );
-    this.logger.log(`copilot_consult org=${organizationId} user=${user.id} conv=${conversation?.conversationId ?? '-'} tools=${tools.length}`);
+    this.logger.log(`copilot_consult org=${organizationId} user=${user.id} conv=${conversation?.conversationId ?? '-'} tools=${tools.length} image=${req.image ? 'yes' : 'no'}`);
     return splitSuggestion(text);
   }
 
