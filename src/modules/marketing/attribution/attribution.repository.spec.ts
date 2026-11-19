@@ -80,4 +80,14 @@ describe('AttributionRepository — toques CTWA + formulário do site', () => {
     expect(totals).toEqual({ leadsTotal: 10, leadsWithAdId: 4, unattributedDeals: 5, unattributedRevenue: 1000.5 });
     expect(sqlOf(prisma, 1).text).toContain('NOT EXISTS (SELECT 1 FROM touches t');
   });
+
+  it('não atribuído por motivo: mesma base do coverage, tags e carteira por parâmetro', async () => {
+    const { repo, prisma } = make([{ reason: 'portfolio', deals: BigInt(2), revenue: '300.00' }]);
+    const rows = await repo.unattributedByReason('org-1', from, to);
+    const { text, values } = sqlOf(prisma);
+
+    expect(text).toContain('NOT EXISTS (SELECT 1 FROM touches t');
+    expect(values).toEqual(expect.arrayContaining(['Anúncio Meta', 'Instagram Orgânico', 'Site', 'umbler%']));
+    expect(rows).toEqual([{ reason: 'portfolio', deals: 2, revenue: 300 }]);
+  });
 });

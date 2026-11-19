@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { AttributionRepository, LeadsByAdRow, MediaByAdRow, WonByAdRow } from './attribution.repository';
+import {
+  AttributionRepository,
+  LeadsByAdRow,
+  MediaByAdRow,
+  UnattributedReasonRow,
+  WonByAdRow,
+} from './attribution.repository';
 
 export interface AttributionRow {
   adId: string;
@@ -20,6 +26,8 @@ export interface UnattributedBucket {
   revenue: number;
   /** Nunca um número: não existe "gasto não-atribuído", só leads sem anúncio identificado. */
   spend: null;
+  /** Vendas sem anúncio por motivo, da maior receita para a menor. */
+  byReason: UnattributedReasonRow[];
 }
 
 export interface CoverageStats {
@@ -69,11 +77,12 @@ export class AttributionService {
   constructor(private readonly repository: AttributionRepository) {}
 
   async getAttribution(organizationId: string, from: Date, to: Date): Promise<AttributionResult> {
-    const [leadsRows, wonRows, mediaRows, coverageTotals] = await Promise.all([
+    const [leadsRows, wonRows, mediaRows, coverageTotals, reasonRows] = await Promise.all([
       this.repository.leadsByAd(organizationId, from, to),
       this.repository.wonByAd(organizationId, from, to),
       this.repository.mediaByAd(organizationId, from, to),
       this.repository.coverageTotals(organizationId, from, to),
+      this.repository.unattributedByReason(organizationId, from, to),
     ]);
 
     const rows = this.buildRows(leadsRows, wonRows, mediaRows).sort((a, b) => b.revenue - a.revenue);
@@ -83,6 +92,7 @@ export class AttributionService {
       deals: coverageTotals.unattributedDeals,
       revenue: coverageTotals.unattributedRevenue,
       spend: null,
+      byReason: [...reasonRows].sort((a, b) => b.revenue - a.revenue),
     };
 
     const coverage: CoverageStats = {

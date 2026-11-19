@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { countLeads } from '../metrics/lead-count';
 import { LAST_TOUCH_FOR_CARD, touchesCte } from './attribution-touches.sql';
+import { UnattributedReason, unattributedByReasonSql } from './unattributed-reason.sql';
 
 /** Nomes que vieram da UTM do site — usados quando o anúncio não tem linha de gasto. */
 interface UtmNames {
@@ -26,6 +27,12 @@ export interface CoverageTotals {
   leadsWithAdId: number;
   unattributedDeals: number;
   unattributedRevenue: number;
+}
+
+export interface UnattributedReasonRow {
+  reason: UnattributedReason;
+  deals: number;
+  revenue: number;
 }
 
 export interface MediaByAdRow {
@@ -170,6 +177,14 @@ export class AttributionRepository {
       unattributedDeals: unattributed ? Number(unattributed.deals) : 0,
       unattributedRevenue: unattributed ? Number(unattributed.revenue ?? 0) : 0,
     };
+  }
+
+  /** Vendas sem anúncio, por motivo (ver `unattributed-reason.sql.ts`). Soma = `unattributedDeals`. */
+  async unattributedByReason(organizationId: string, from: Date, to: Date): Promise<UnattributedReasonRow[]> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ reason: UnattributedReason; deals: bigint; revenue: Prisma.Decimal | null }>
+    >(unattributedByReasonSql(organizationId, from, to));
+    return rows.map((row) => ({ reason: row.reason, deals: Number(row.deals), revenue: Number(row.revenue ?? 0) }));
   }
 
   /**
