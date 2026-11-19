@@ -44,6 +44,7 @@ import { MailboxMirrorModule } from './modules/mailbox-mirror/mailbox-mirror.mod
 import { ResponseSlaModule } from './modules/response-sla/response-sla.module';
 import { SlaManagerAlertsModule } from './modules/response-sla/manager-alerts/manager-alerts.module';
 import { ManagerBotModule } from './modules/manager-bot/manager-bot.module';
+import { TeamPulseModule } from './modules/team-pulse/team-pulse.module';
 import { MysteryShopperModule } from './modules/mystery-shopper/mystery-shopper.module';
 import { AutomationsModule } from './modules/automations/automations.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
@@ -137,6 +138,7 @@ import redisConfig from './config/redis.config';
     ResponseSlaModule,
     SlaManagerAlertsModule,
     ManagerBotModule,
+    TeamPulseModule,
     MysteryShopperModule,
     WebhooksModule,
     SalesReportsModule,

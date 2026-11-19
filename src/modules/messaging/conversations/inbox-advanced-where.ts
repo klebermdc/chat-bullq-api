@@ -139,7 +139,7 @@ export const AUTONOMOUS_AGENT_LINK = {
  * resposta da IA não desliga, então quem conversou com a Aline (e os leads na
  * cadência de reengajamento) sumia de "Com a IA" e de "Na fila" (12/11/2026).
  */
-const WITH_AI: Block = {
+export const WITH_AI: Block = {
   AND: [{ OR: [{ aiEnabled: null }, { aiEnabled: true }] }, { NOT: PENDING_HANDOFF }],
   channel: {
     aiEnabled: { not: false },

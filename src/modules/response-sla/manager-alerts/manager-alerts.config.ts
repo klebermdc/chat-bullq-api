@@ -41,7 +41,7 @@ const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 type Raw = Record<string, unknown>;
 
-function isObject(v: unknown): v is Raw {
+export function isObject(v: unknown): v is Raw {
   return !!v && typeof v === 'object' && !Array.isArray(v);
 }
 
@@ -56,7 +56,7 @@ function positiveInt(value: unknown, fallback: number): number | null {
   return Math.floor(value);
 }
 
-function nonEmpty(value: unknown, fallback: string): string | null {
+export function nonEmpty(value: unknown, fallback: string): string | null {
   if (value === undefined) return fallback;
   if (typeof value !== 'string' || value.trim() === '') return null;
   return value.trim();
@@ -79,7 +79,8 @@ function parseHhmm(value: unknown): number | null {
   return match ? Number(match[1]) * 60 + Number(match[2]) : null;
 }
 
-function parseRecipients(value: unknown): ManagerRecipient[] | null {
+/** Lista não vazia; um destinatário inválido invalida a lista inteira. */
+export function parseRecipients(value: unknown): ManagerRecipient[] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
   const parsed = value.map(parseRecipient);
   return parsed.every((r): r is ManagerRecipient => r !== null) ? parsed : null;
