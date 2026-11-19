@@ -39,11 +39,13 @@ describe('PresenceSamplerService.sample', () => {
         activeMinutes: 1,
         firstSeenAt: NOW,
         lastSeenAt: NOW,
+        lastActiveAt: minutesAgo(1),
       },
       update: {
         onlineMinutes: { increment: 1 },
         activeMinutes: { increment: 1 },
         lastSeenAt: NOW,
+        lastActiveAt: minutesAgo(1),
       },
     });
   });
@@ -58,6 +60,8 @@ describe('PresenceSamplerService.sample', () => {
     const { update } = prisma.agentPresenceDaily.upsert.mock.calls[0][0];
     expect(update.activeMinutes).toEqual({ increment: 0 });
     expect(update.onlineMinutes).toEqual({ increment: 1 });
+    // Saída do dia = último uso real: Chat parado não empurra o horário.
+    expect(update).not.toHaveProperty('lastActiveAt');
   });
 
   it('duas abas do mesmo atendente contam um minuto só', async () => {
@@ -90,5 +94,19 @@ describe('PresenceSamplerService.sample', () => {
     await sampler.sample(NOW);
 
     expect(prisma.agentPresenceDaily.upsert).toHaveBeenCalledTimes(2);
+  });
+
+  it('não leva para hoje o último uso de ontem (virada da meia-noite)', async () => {
+    // 00:02 em São Paulo; mexeu pela última vez às 23:59 de ontem.
+    const now = new Date('2026-09-23T03:02:00Z');
+    const { sampler, prisma } = make([
+      { organizationId: 'org-1', userId: 'pedro', lastActiveAt: new Date('2026-09-23T02:59:00Z') },
+    ]);
+
+    await sampler.sample(now);
+
+    const { create, update } = prisma.agentPresenceDaily.upsert.mock.calls[0][0];
+    expect(create).not.toHaveProperty('lastActiveAt');
+    expect(update).not.toHaveProperty('lastActiveAt');
   });
 });

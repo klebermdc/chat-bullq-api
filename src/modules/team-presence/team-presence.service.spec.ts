@@ -37,8 +37,8 @@ function make(opts: { sockets?: unknown[] } = {}) {
     },
     agentPresenceDaily: {
       findMany: jest.fn().mockResolvedValue([
-        { userId: 'marcella', day: new Date('2026-09-22T00:00:00Z'), onlineMinutes: 300, activeMinutes: 240, firstSeenAt: new Date('2026-09-22T17:02:00Z') },
-        { userId: 'marcella', day: new Date('2026-09-21T00:00:00Z'), onlineMinutes: 480, activeMinutes: 400, firstSeenAt: new Date('2026-09-21T17:00:00Z') },
+        { userId: 'marcella', day: new Date('2026-09-22T00:00:00Z'), onlineMinutes: 300, activeMinutes: 240, firstSeenAt: new Date('2026-09-22T17:02:00Z'), lastSeenAt: new Date('2026-09-22T22:59:00Z'), lastActiveAt: new Date('2026-09-22T22:40:00Z') },
+        { userId: 'marcella', day: new Date('2026-09-21T00:00:00Z'), onlineMinutes: 480, activeMinutes: 400, firstSeenAt: new Date('2026-09-21T17:00:00Z'), lastSeenAt: new Date('2026-09-21T21:15:00Z'), lastActiveAt: null },
       ]),
     },
   } as any;
@@ -56,6 +56,35 @@ function make(opts: { sockets?: unknown[] } = {}) {
 }
 
 describe('TeamPresenceService.getTeamPresence', () => {
+  it('lista entrada e saída de cada dia, do mais recente ao mais antigo', async () => {
+    const { service } = make();
+
+    const rows = await service.getTeamPresence('org-1', RANGE);
+
+    const marcella = rows.find((r) => r.userId === 'marcella')!;
+    expect(marcella.today.lastActiveAt).toBe('2026-09-22T22:40:00.000Z');
+    expect(marcella.period.days).toEqual([
+      {
+        day: '2026-09-22',
+        firstSeenAt: '2026-09-22T17:02:00.000Z',
+        lastActiveAt: '2026-09-22T22:40:00.000Z',
+        lastSeenAt: '2026-09-22T22:59:00.000Z',
+        onlineMinutes: 300,
+        activeMinutes: 240,
+      },
+      {
+        // Dia de antes do registro de último uso: só o Chat aberto.
+        day: '2026-09-21',
+        firstSeenAt: '2026-09-21T17:00:00.000Z',
+        lastActiveAt: null,
+        lastSeenAt: '2026-09-21T21:15:00.000Z',
+        onlineMinutes: 480,
+        activeMinutes: 400,
+      },
+    ]);
+    expect(rows.find((r) => r.userId === 'pedro')!.period.days).toEqual([]);
+  });
+
   it('monta uma linha por atendente com status, horário, fila e tempo online', async () => {
     const { service } = make();
 

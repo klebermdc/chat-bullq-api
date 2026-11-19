@@ -3308,6 +3308,9 @@ model AgentPresenceDaily {
   activeMinutes  Int      @default(0) @map("active_minutes")
   firstSeenAt    DateTime @map("first_seen_at")
   lastSeenAt     DateTime @map("last_seen_at")
+  /// Último uso real do dia (mexeu no Chat) = "saída" do ponto. Nulo nos dias
+  /// anteriores a 19/11/2026 e em dia só com Chat aberto e parado.
+  lastActiveAt   DateTime? @map("last_active_at")
 
   @@id([organizationId, userId, day])
   @@index([organizationId, day])

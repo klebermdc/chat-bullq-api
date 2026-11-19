@@ -30,8 +30,32 @@ export interface TeamPresenceRow {
   /** Conversas dele em que o cliente espera resposta (aba Esperando). */
   waitingCount: number;
   lastHumanReplyAt: string | null;
-  today: { onlineMinutes: number; activeMinutes: number; firstSeenAt: string | null };
-  period: { onlineMinutes: number; activeMinutes: number; daysOnline: number };
+  today: {
+    onlineMinutes: number;
+    activeMinutes: number;
+    firstSeenAt: string | null;
+    lastActiveAt: string | null;
+  };
+  period: {
+    onlineMinutes: number;
+    activeMinutes: number;
+    daysOnline: number;
+    /** Ponto dia a dia, do mais recente ao mais antigo. */
+    days: PresenceDay[];
+  };
+}
+
+export interface PresenceDay {
+  /** AAAA-MM-DD no fuso da org. */
+  day: string;
+  /** Entrada: primeiro minuto com o Chat aberto. */
+  firstSeenAt: string;
+  /** Saída: último uso real. Nulo antes de 19/11/2026 (aí vale lastSeenAt). */
+  lastActiveAt: string | null;
+  /** Último minuto com o Chat aberto. */
+  lastSeenAt: string;
+  onlineMinutes: number;
+  activeMinutes: number;
 }
 
 /** Painel "Equipe agora": quem está online e quanto tempo cada um ficou. */
@@ -136,11 +160,22 @@ export class TeamPresenceService {
           onlineMinutes: today?.onlineMinutes ?? 0,
           activeMinutes: today?.activeMinutes ?? 0,
           firstSeenAt: today?.firstSeenAt.toISOString() ?? null,
+          lastActiveAt: today?.lastActiveAt?.toISOString() ?? null,
         },
         period: {
           onlineMinutes: days.reduce((sum, d) => sum + d.onlineMinutes, 0),
           activeMinutes: days.reduce((sum, d) => sum + d.activeMinutes, 0),
           daysOnline: days.length,
+          days: days
+            .map((d): PresenceDay => ({
+              day: d.day.toISOString().slice(0, 10),
+              firstSeenAt: d.firstSeenAt.toISOString(),
+              lastActiveAt: d.lastActiveAt?.toISOString() ?? null,
+              lastSeenAt: d.lastSeenAt.toISOString(),
+              onlineMinutes: d.onlineMinutes,
+              activeMinutes: d.activeMinutes,
+            }))
+            .sort((a, b) => b.day.localeCompare(a.day)),
         },
       };
     });
