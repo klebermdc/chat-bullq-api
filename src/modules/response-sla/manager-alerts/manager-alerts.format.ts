@@ -9,10 +9,16 @@ export const UNASSIGNED_LABEL = 'sem dono';
 export const MAX_PARAM_LENGTH = 300;
 const EMPTY_PARAM = '-';
 
+/** Um argumento só: é usada em `.map(sanitizeTemplateParam)`. */
 export function sanitizeTemplateParam(value: string): string {
+  return sanitizeTemplateParamTo(value, MAX_PARAM_LENGTH);
+}
+
+/** Igual ao `sanitizeTemplateParam`, com teto próprio (termina em "…" se cortar). */
+export function sanitizeTemplateParamTo(value: string, maxLength: number): string {
   const flat = value.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
   if (!flat) return EMPTY_PARAM;
-  return flat.length > MAX_PARAM_LENGTH ? `${flat.slice(0, MAX_PARAM_LENGTH - 1)}…` : flat;
+  return flat.length > maxLength ? `${flat.slice(0, maxLength - 1)}…` : flat;
 }
 
 export function firstName(name: string | null | undefined): string {
@@ -24,7 +30,10 @@ function ownerLabel(agentName: string | null): string {
 }
 
 /** "Pedro 2, Suelen 1, sem dono 1" — quantidade desc; no empate, "sem dono" por último. */
-export function formatAgentBreakdown(waits: ReadonlyArray<{ agentName: string | null }>): string {
+export function formatAgentBreakdown(
+  waits: ReadonlyArray<{ agentName: string | null }>,
+  separator = ', ',
+): string {
   if (waits.length === 0) return NONE_PLACEHOLDER;
   const counts = waits.reduce(
     (acc, w) => {
@@ -41,7 +50,7 @@ export function formatAgentBreakdown(waits: ReadonlyArray<{ agentName: string | 
         a.localeCompare(b, 'pt-BR'),
     )
     .map(([label, count]) => `${label} ${count}`)
-    .join(', ');
+    .join(separator);
 }
 
 /** "Maria Silva com Pedro, 52 min" — a espera com mais minutos úteis. */

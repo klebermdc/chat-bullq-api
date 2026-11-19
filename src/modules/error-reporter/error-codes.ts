@@ -21,6 +21,8 @@ export const ERROR_CODES = {
   /** Aviso de SLA de resposta para a gestão (WhatsApp) não saiu. */
   SLA_MANAGER_ALERT_FAILED: 'SLA_MANAGER_ALERT_FAILED',
   MANAGER_BOT_FAILED: 'MANAGER_BOT_FAILED',
+  /** Pulso do atendimento (WhatsApp da gestão) não saiu. */
+  TEAM_PULSE_FAILED: 'TEAM_PULSE_FAILED',
   /** Espelho IMAP de uma caixa de e-mail (reservas@) falhou. */
   MAILBOX_SYNC_FAILED: 'MAILBOX_SYNC_FAILED',
 
