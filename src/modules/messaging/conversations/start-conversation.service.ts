@@ -8,6 +8,7 @@ import { PrismaService } from '../../../database/prisma.service';
 import { ConversationResolverService } from '../pipeline/conversation-resolver.service';
 import { externalIdVariants, normalizePhone, phoneVariants } from '../../../common/utils/phone.util';
 import { StartConversationDto } from './dto/start-conversation.dto';
+import { ConversationFsmService } from './conversation-fsm.service';
 import type { ChannelAccess } from '../../iam/channel-access/channel-access.service';
 
 /** Envio automático (sem atendente digitando), ex.: retorno do lead do site. */
@@ -19,6 +20,13 @@ export interface StartConversationOptions {
   renderedText?: string;
 }
 
+/** Atendente que abriu a conversa pelo "+" (ausente no envio automático). */
+export interface StartConversationCreator {
+  userId?: string;
+  userOrganizationId: string;
+  role: OrgRole;
+}
+
 @Injectable()
 export class StartConversationService {
   private readonly logger = new Logger(StartConversationService.name);
@@ -27,6 +35,7 @@ export class StartConversationService {
     private readonly prisma: PrismaService,
     private readonly resolver: ConversationResolverService,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
+    private readonly fsm: ConversationFsmService,
   ) {}
 
   toExternalId(channelType: ChannelType, phone: string): string {
@@ -40,7 +49,7 @@ export class StartConversationService {
     organizationId: string,
     dto: StartConversationDto,
     access: ChannelAccess,
-    creator?: { userOrganizationId: string; role: OrgRole },
+    creator?: StartConversationCreator,
     opts: StartConversationOptions = {},
   ): Promise<{ conversationId: string; contactId: string; messageId: string }> {
     const channel = await this.prisma.channel.findFirst({
@@ -80,11 +89,33 @@ export class StartConversationService {
     });
 
     const { conversationId } = await this.resolver.resolve(organizationId, channel.id, contactId);
+    await this.assignToCreatorIfUnowned(conversationId, creator?.userId);
     const payload = isOfficial
       ? { type: MessageContentType.TEMPLATE, content: dto.template as Prisma.InputJsonValue }
       : { type: MessageContentType.TEXT, content: { text: dto.message as string } as Prisma.InputJsonValue };
     const messageId = await this.enqueue(channel.id, conversationId, externalId, payload, opts);
     return { conversationId, contactId, messageId };
+  }
+
+  /**
+   * Lead colocado à mão é de quem colocou: sem isto a conversa ficava sem dono
+   * e a resposta do cliente caía na fila. Conversa que já é de outro vendedor
+   * fica com ele (não vira transferência). Falha aqui só loga: o template sai.
+   */
+  private async assignToCreatorIfUnowned(conversationId: string, userId?: string): Promise<void> {
+    if (!userId) return;
+    try {
+      const current = await this.prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: { assignedToId: true },
+      });
+      if (current?.assignedToId) return;
+      await this.fsm.assign(conversationId, userId, userId, 'manual_start');
+      this.logger.log(`conversa manual: conv=${conversationId} atribuída a ${userId}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`conversa manual: falha ao atribuir conv=${conversationId} a ${userId}: ${message}`);
+    }
   }
 
   /** Acha o contato pelo telefone (com/sem o 9º dígito) ou cria; usado também pelo envio da NFS-e. */
