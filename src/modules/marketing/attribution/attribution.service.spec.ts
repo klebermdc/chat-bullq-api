@@ -1,5 +1,5 @@
 import { AttributionService } from './attribution.service';
-import { CoverageTotals, LeadsByAdRow, MediaByAdRow, WonByAdRow } from './attribution.repository';
+import { CoverageTotals, LeadsByAdRow, MediaByAdRow, UnattributedReasonRow, WonByAdRow } from './attribution.repository';
 
 /** Período qualquer — os testes não dependem do relógio. */
 const FROM = new Date('2026-01-01T00:00:00.000Z');
@@ -18,6 +18,7 @@ function makeRepository(
     wonByAd?: WonByAdRow[];
     coverageTotals?: CoverageTotals;
     mediaByAd?: MediaByAdRow[];
+    unattributedByReason?: UnattributedReasonRow[];
   } = {},
 ) {
   return {
@@ -25,6 +26,7 @@ function makeRepository(
     wonByAd: jest.fn(async () => overrides.wonByAd ?? []),
     coverageTotals: jest.fn(async () => overrides.coverageTotals ?? ZERO_COVERAGE),
     mediaByAd: jest.fn(async () => overrides.mediaByAd ?? []),
+    unattributedByReason: jest.fn(async () => overrides.unattributedByReason ?? []),
   };
 }
 
@@ -157,7 +159,7 @@ describe('AttributionService', () => {
 
       const result = await service.getAttribution(ORG, FROM, TO);
 
-      expect(result.unattributed).toEqual({ leads: 0, deals: 0, revenue: 0, spend: null });
+      expect(result.unattributed).toEqual({ leads: 0, deals: 0, revenue: 0, spend: null, byReason: [] });
       expect(result.rows).toEqual([]);
     });
 
@@ -170,7 +172,7 @@ describe('AttributionService', () => {
 
       const result = await service.getAttribution(ORG, FROM, TO);
 
-      expect(result.unattributed).toEqual({ leads: 20, deals: 3, revenue: 450, spend: null });
+      expect(result.unattributed).toEqual({ leads: 20, deals: 3, revenue: 450, spend: null, byReason: [] });
     });
 
     it('coverage.pct = leadsWithAdId/leadsTotal*100', async () => {
@@ -283,5 +285,20 @@ describe('AttributionService — criativo só conhecido pela UTM do site', () =>
     const { rows } = await service.getAttribution(ORG, FROM, TO);
 
     expect(rows[0]).toMatchObject({ adName: 'Meta name', campaignName: 'Meta camp' });
+  });
+});
+
+describe('AttributionService — não atribuído por motivo', () => {
+  it('devolve os motivos ordenados pela receita', async () => {
+    const { service } = build({
+      unattributedByReason: [
+        { reason: 'site', deals: 1, revenue: 100 },
+        { reason: 'portfolio', deals: 30, revenue: 200000 },
+      ],
+    });
+
+    const { unattributed } = await service.getAttribution(ORG, FROM, TO);
+
+    expect(unattributed.byReason.map((r) => r.reason)).toEqual(['portfolio', 'site']);
   });
 });
