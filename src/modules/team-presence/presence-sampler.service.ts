@@ -44,8 +44,15 @@ export class PresenceSamplerService implements OnModuleInit, OnModuleDestroy {
     const tzByOrg = new Map(orgs.map((o) => [o.id, o.aiTimezone || DEFAULT_TIMEZONE]));
 
     for (const user of users) {
-      const day = new Date(`${dayKey(now, tzByOrg.get(user.organizationId) ?? DEFAULT_TIMEZONE)}T00:00:00Z`);
+      const tz = tzByOrg.get(user.organizationId) ?? DEFAULT_TIMEZONE;
+      const todayKey = dayKey(now, tz);
+      const day = new Date(`${todayKey}T00:00:00Z`);
       const activeMinute = presenceStatus(user.lastActiveAt, now) === 'online' ? 1 : 0;
+      // Saída do dia = último uso real (não o Chat aberto e parado), só do dia.
+      const lastUse =
+        activeMinute && dayKey(user.lastActiveAt, tz) === todayKey
+          ? { lastActiveAt: user.lastActiveAt }
+          : {};
       const key = { organizationId: user.organizationId, userId: user.userId, day };
       try {
         await this.prisma.agentPresenceDaily.upsert({
@@ -56,11 +63,13 @@ export class PresenceSamplerService implements OnModuleInit, OnModuleDestroy {
             activeMinutes: activeMinute,
             firstSeenAt: now,
             lastSeenAt: now,
+            ...lastUse,
           },
           update: {
             onlineMinutes: { increment: 1 },
             activeMinutes: { increment: activeMinute },
             lastSeenAt: now,
+            ...lastUse,
           },
         });
       } catch (err: unknown) {
