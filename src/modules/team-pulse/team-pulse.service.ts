@@ -107,7 +107,8 @@ export class TeamPulseService {
       this.repository.listBreaches(org.id, today),
       this.repository.countLeads(org.id, today),
     ]);
-    const days = team.map((m) => ({ name: m.name, day: m.period.days.find((d) => d.day === todayKey) ?? null }));
+    // Só atendentes com horário de trabalho (fica de fora quem só olha o painel).
+    const days = team.filter((m) => m.schedule.configured).map((m) => ({ name: m.name, day: m.period.days.find((d) => d.day === todayKey) ?? null }));
     const params = buildClosingParams({ now, tz: org.tz, days, waits, breaches, leads });
     return this.deliver(target, 'closing', params);
   }

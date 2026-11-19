@@ -15,7 +15,7 @@ const PEDRO = {
   name: 'Pedro Souza',
   status: 'online',
   lastActiveAt: iso('2026-11-19T14:59:00'),
-  schedule: { withinHours: true },
+  schedule: { configured: true, withinHours: true },
   today: { firstSeenAt: iso('2026-11-19T09:02:00') },
   period: {
     days: [
@@ -34,7 +34,7 @@ const BARBARA = {
   name: 'Bárbara',
   status: 'offline',
   lastActiveAt: null,
-  schedule: { withinHours: false },
+  schedule: { configured: true, withinHours: false },
   today: { firstSeenAt: null },
   period: { days: [] },
 };
@@ -209,6 +209,16 @@ describe('TeamPulseService.sendTest', () => {
     const report = await service.sendTest('org1', 'closing', AT_15H);
     expect(sender.sendToAll.mock.calls[0][2].name).toBe('fechamento_atendimento');
     expect(report.kind).toBe('closing');
+  });
+
+  it('fechamento deixa de fora quem não tem horário de trabalho (admin que só olha o painel)', async () => {
+    const admin = { ...PEDRO, userId: 'adm', name: 'Kleber Admin', schedule: { configured: false, withinHours: null } };
+    const { service, sender } = setup({ team: [PEDRO, admin] as never });
+    await service.sendTest('org1', 'closing', AT_15H);
+    const [, recipients, , paramsFor] = sender.sendToAll.mock.calls[0];
+    const clock = paramsFor(recipients[0]).join(' ');
+    expect(clock).toContain('Pedro');
+    expect(clock).not.toContain('Kleber');
   });
 
   it('recusa quando a org não tem teamPulse válido', async () => {
