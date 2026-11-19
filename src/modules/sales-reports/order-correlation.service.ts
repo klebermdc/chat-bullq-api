@@ -97,12 +97,22 @@ export class OrderCorrelationService {
     return hasPhone || hasEmail;
   }
 
+  /**
+   * Pedido já ligado a outro card não liga de novo: dois atendentes que dão
+   * Ganho com o mesmo nº (venda em grupo, card duplicado) somariam o valor
+   * em dobro no Marketing. Fica no primeiro card.
+   */
   private async findByOrderNumber(candidates: string[]): Promise<MatchedOrder | null> {
     if (candidates.length === 0) return null;
-    return this.prisma.ofpSalesOrder.findFirst({
+    const order = await this.prisma.ofpSalesOrder.findFirst({
       where: { OR: candidates.map((pedido) => ({ pedido: { equals: pedido, mode: 'insensitive' as const } })) },
       select: { externalId: true, venda: true },
     });
+    if (!order) return null;
+    const alreadyLinked = await this.prisma.card.count({
+      where: { metadata: { path: ['ofpOrderExternalId'], equals: order.externalId } },
+    });
+    return alreadyLinked > 0 ? null : order;
   }
 
   private async findByContact(card: WonCard): Promise<MatchedOrder | null> {
