@@ -155,4 +155,15 @@ describe('CopilotConsultService', () => {
     await service.consult('org1', VENDEDOR, { text: 'oi', conversationId: 'c1' });
     expect(llm.complete.mock.calls[1][0].tools.map((t: { name: string }) => t.name)).toContain('pedidosDoContato');
   });
+
+  it('com print, manda a imagem junto da pergunta', async () => {
+    const { service, llm } = makeService();
+    llm.complete.mockResolvedValue(finalAnswer('No print o total é R$ 1.200.'));
+    await service.consult('org1', VENDEDOR, { text: 'quanto deu?', image: { mediaType: 'image/png', data: 'AAAA' } });
+    const user = llm.complete.mock.calls[0][0].messages.find((m: { role: string }) => m.role === 'user');
+    expect(user.content).toEqual([
+      { type: 'text', text: 'quanto deu?' },
+      { type: 'image', base64: { mediaType: 'image/png', data: 'AAAA' } },
+    ]);
+  });
 });
