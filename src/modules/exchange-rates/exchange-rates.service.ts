@@ -1,11 +1,32 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { FetchLike, OPERATORS, OperatorDef, fetchOperatorRate } from './exchange-rates.sources';
+import { FetchLike, OPERATORS, OperatorDef, fetchOperatorRate, toRate } from './exchange-rates.sources';
 
 /** Duas buscas perdidas (5h cada) → o valor aparece como desatualizado. */
 export const STALE_AFTER_MS = 11 * 60 * 60 * 1000;
 const MAX_ERROR_LENGTH = 300;
+/** Valor lançado à mão vale pelo dia; depois de 24h aparece apagado. */
+export const MANUAL_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/** Lançamento manual guardado em `organizations.settings.manualExchangeRates[code]`. */
+export interface ManualRate {
+  value: number;
+  updatedAt: string;
+  updatedByName: string | null;
+}
+
+export function readManualRate(settings: unknown, code: string): ManualRate | null {
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return null;
+  const all = (settings as Record<string, unknown>).manualExchangeRates;
+  const raw = all && typeof all === 'object' ? (all as Record<string, unknown>)[code] : null;
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const value = toRate(r.value);
+  const updatedAt = typeof r.updatedAt === 'string' && !Number.isNaN(Date.parse(r.updatedAt)) ? r.updatedAt : null;
+  if (value === null || !updatedAt) return null;
+  return { value, updatedAt, updatedByName: typeof r.updatedByName === 'string' ? r.updatedByName : null };
+}
 
 export interface OperatorRateView {
   code: string;
@@ -17,8 +38,10 @@ export interface OperatorRateView {
   fetchedAt: string | null;
   changedAt: string | null;
   stale: boolean;
-  /** true = sem busca automática, o atendente consulta no site. */
+  /** true = sem busca automática; valor lançado à mão pelo ADM. */
   manual: boolean;
+  /** Quem lançou o valor manual. */
+  updatedByName: string | null;
 }
 
 export interface RefreshResult {
@@ -107,7 +130,8 @@ export class ExchangeRatesService {
     const rows = await this.prisma.operatorExchangeRate.findMany();
     const byCode = new Map(rows.map((r) => [r.code, r]));
     const rates = OPERATORS.map((op): OperatorRateView => {
-      const row = op.source === 'link' ? undefined : byCode.get(op.code);
+      if (op.source === 'link') return this.manualView(op, readManualRate(org?.settings, op.code), now);
+      const row = byCode.get(op.code);
       return {
         code: op.code,
         name: op.name,
@@ -117,9 +141,53 @@ export class ExchangeRatesService {
         fetchedAt: row?.fetchedAt?.toISOString() ?? null,
         changedAt: row?.changedAt?.toISOString() ?? null,
         stale: row ? now.getTime() - row.fetchedAt.getTime() > STALE_AFTER_MS : false,
-        manual: op.source === 'link',
+        manual: false,
+        updatedByName: null,
       };
     });
     return { enabled: true, rates };
+  }
+
+  private manualView(op: OperatorDef, manual: ManualRate | null, now: Date): OperatorRateView {
+    return {
+      code: op.code,
+      name: op.name,
+      url: op.url,
+      value: manual?.value ?? null,
+      sourceUpdatedLabel: null,
+      fetchedAt: manual?.updatedAt ?? null,
+      changedAt: manual?.updatedAt ?? null,
+      stale: manual ? now.getTime() - Date.parse(manual.updatedAt) > MANUAL_STALE_AFTER_MS : false,
+      manual: true,
+      updatedByName: manual?.updatedByName ?? null,
+    };
+  }
+
+  /** ADM/Owner lança o câmbio de uma operadora sem busca automática (AZ). */
+  async setManual(
+    organizationId: string,
+    userId: string,
+    code: string,
+    rawValue: number,
+    now: Date = new Date(),
+  ): Promise<ManualRate> {
+    const op = OPERATORS.find((o) => o.code === code.toUpperCase());
+    if (!op || op.source !== 'link') {
+      throw new BadRequestException('Essa operadora é atualizada automaticamente.');
+    }
+    const value = toRate(rawValue);
+    if (value === null) throw new BadRequestException('Câmbio inválido.');
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+    const entry: ManualRate = { value, updatedAt: now.toISOString(), updatedByName: user?.name ?? null };
+    // Mexe só na chave da operadora, sem sobrescrever o resto do settings.
+    await this.prisma.$executeRaw`
+      UPDATE organizations
+         SET settings = coalesce(settings, '{}'::jsonb) || jsonb_build_object(
+               'manualExchangeRates',
+               coalesce(settings->'manualExchangeRates', '{}'::jsonb) || jsonb_build_object(${op.code}::text, ${JSON.stringify(entry)}::jsonb)
+             )
+       WHERE id = ${organizationId}`;
+    this.logger.log(`exchange_rates manual ${op.code}=${value} org=${organizationId} user=${userId}`);
+    return entry;
   }
 }
