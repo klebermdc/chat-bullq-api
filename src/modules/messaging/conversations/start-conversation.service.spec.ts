@@ -3,20 +3,26 @@ import { ChannelType, MessageContentType, MessageDirection, MessageStatus } from
 import { StartConversationService } from './start-conversation.service';
 
 describe('StartConversationService.start', () => {
-  function make(opts: { channelType?: ChannelType; existingCC?: any; existingContact?: any } = {}) {
+  function make(opts: { channelType?: ChannelType; existingCC?: any; existingContact?: any; currentOwnerId?: string | null; assignError?: Error } = {}) {
     const channel = { id: 'ch1', organizationId: 'org1', type: opts.channelType ?? ChannelType.WHATSAPP_ZAPPFY, deletedAt: null };
     const prisma = {
       channel: { findFirst: jest.fn().mockResolvedValue(channel) },
       contactChannel: { findUnique: jest.fn().mockResolvedValue(opts.existingCC ?? null), findFirst: jest.fn().mockResolvedValue(opts.existingCC ?? null), create: jest.fn().mockResolvedValue({ id: 'cc-new', contactId: 'c-linked' }) },
       contact: { findFirst: jest.fn().mockResolvedValue(opts.existingContact ?? null), findUnique: jest.fn().mockResolvedValue(opts.existingContact ?? null), create: jest.fn().mockResolvedValue({ id: 'c-new' }) },
       message: { create: jest.fn().mockResolvedValue({ id: 'm1' }) },
-      conversation: { update: jest.fn().mockResolvedValue({}) },
+      conversation: {
+        update: jest.fn().mockResolvedValue({}),
+        findUnique: jest.fn().mockResolvedValue({ assignedToId: opts.currentOwnerId ?? null }),
+      },
     } as any;
     const resolver = { resolve: jest.fn().mockResolvedValue({ conversationId: 'conv1' }) } as any;
     const queue = { add: jest.fn().mockResolvedValue({}) } as any;
-    return { svc: new StartConversationService(prisma, resolver, queue), prisma, resolver, queue };
+    const fsm = {
+      assign: opts.assignError ? jest.fn().mockRejectedValue(opts.assignError) : jest.fn().mockResolvedValue(undefined),
+    } as any;
+    return { svc: new StartConversationService(prisma, resolver, queue, fsm), prisma, resolver, queue, fsm };
   }
-  const creator = { userOrganizationId: 'uo1', role: 'OWNER' as any };
+  const creator = { userId: 'u1', userOrganizationId: 'uo1', role: 'AGENT' as any };
 
   it('recusa canal WhatsApp Oficial SEM template', async () => {
     const { svc } = make({ channelType: ChannelType.WHATSAPP_OFFICIAL });
@@ -109,6 +115,48 @@ describe('StartConversationService.start', () => {
         senderName: 'Aline',
         metadata: { source: 'website_lead_followup', renderedText: 'Olá! Maria' },
       }),
+    });
+  });
+
+  describe('dono da conversa aberta à mão', () => {
+    it('atribui a conversa sem dono a quem colocou o telefone', async () => {
+      const { svc, fsm } = make({ channelType: ChannelType.WHATSAPP_OFFICIAL, currentOwnerId: null });
+      await svc.start('org1', { channelId: 'ch1', phone: '5511982015967', template: { name: 't' } }, 'ALL', creator);
+      expect(fsm.assign).toHaveBeenCalledWith('conv1', 'u1', 'u1', 'manual_start');
+    });
+
+    it('atribui antes de enfileirar o envio', async () => {
+      const { svc, fsm, queue } = make({ currentOwnerId: null });
+      await svc.start('org1', { channelId: 'ch1', phone: '5511982015967', message: 'Olá!' }, 'ALL', creator);
+      expect(fsm.assign.mock.invocationCallOrder[0]).toBeLessThan(queue.add.mock.invocationCallOrder[0]);
+    });
+
+    it('mantém o dono quando a conversa já é de outro vendedor', async () => {
+      const { svc, fsm, queue } = make({ currentOwnerId: 'u-outro' });
+      await svc.start('org1', { channelId: 'ch1', phone: '5511982015967', message: 'Olá!' }, 'ALL', creator);
+      expect(fsm.assign).not.toHaveBeenCalled();
+      expect(queue.add).toHaveBeenCalled();
+    });
+
+    it('não reatribui quando a conversa já é de quem enviou', async () => {
+      const { svc, fsm } = make({ currentOwnerId: 'u1' });
+      await svc.start('org1', { channelId: 'ch1', phone: '5511982015967', message: 'Olá!' }, 'ALL', creator);
+      expect(fsm.assign).not.toHaveBeenCalled();
+    });
+
+    it('envio automático (sem atendente) não atribui ninguém', async () => {
+      const { svc, fsm } = make({ channelType: ChannelType.WHATSAPP_OFFICIAL, currentOwnerId: null });
+      await svc.start('org1', { channelId: 'ch1', phone: '5511982015967', template: { name: 't' } }, 'ALL', undefined, {
+        source: 'website_lead_followup',
+      });
+      expect(fsm.assign).not.toHaveBeenCalled();
+    });
+
+    it('falha na atribuição não impede o envio do template', async () => {
+      const { svc, queue } = make({ currentOwnerId: null, assignError: new Error('conflito') });
+      const res = await svc.start('org1', { channelId: 'ch1', phone: '5511982015967', message: 'Olá!' }, 'ALL', creator);
+      expect(res.messageId).toBe('m1');
+      expect(queue.add).toHaveBeenCalled();
     });
   });
 });

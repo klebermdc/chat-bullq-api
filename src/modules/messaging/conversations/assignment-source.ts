@@ -9,7 +9,9 @@ export type AssignmentSource =
   | 'previous_owner'
   | 'transfer'
   | 'self'
-  | 'automation';
+  | 'automation'
+  /** Atendente abriu a conversa pelo "+" (telefone ou contato) e ficou dono. */
+  | 'manual_start';
 
 export interface AssignmentChange {
   fromValue: string | null;
