@@ -2,21 +2,20 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { countLeads } from '../metrics/lead-count';
+import { LAST_TOUCH_FOR_CARD, touchesCte } from './attribution-touches.sql';
 
-/**
- * `Contact.ctwaSourceType` também assume `'post'` (alcance orgânico). Um
- * `ctwaSourceId` de post não é um `adId` — comparar os dois sem este filtro
- * ou não bate com nada, ou pior, colide com um `adId` de mesmo valor.
- * Todo ponto deste arquivo que toca `ctwaSourceId` filtra por esta constante.
- */
-const CTWA_SOURCE_TYPE_AD = 'ad';
+/** Nomes que vieram da UTM do site — usados quando o anúncio não tem linha de gasto. */
+interface UtmNames {
+  adName?: string | null;
+  campaignName?: string | null;
+}
 
-export interface LeadsByAdRow {
+export interface LeadsByAdRow extends UtmNames {
   adId: string;
   leads: number;
 }
 
-export interface WonByAdRow {
+export interface WonByAdRow extends UtmNames {
   adId: string;
   deals: number;
   revenue: number;
@@ -40,7 +39,8 @@ export interface MediaByAdRow {
 
 /**
  * Camada fina sobre o Prisma para a cadeia de atribuição
- * `AdDailyStat.adId ← Contact.ctwaSourceId ← Card.contactId`.
+ * `AdDailyStat.adId ← toque do contato (CTWA ou formulário do site) ← Card.contactId`.
+ * Os toques vêm de `touchesCte` (ver `attribution-touches.sql.ts`).
  *
  * Nenhum método aqui reparte receita — cada linha só carrega o que bateu
  * por `adId`. Quem decide o que é "não atribuído" é o service, a partir de
@@ -50,61 +50,78 @@ export interface MediaByAdRow {
 export class AttributionRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Leads que clicaram no anúncio no período, por anúncio. Só `ctwaSourceType='ad'`. */
-  async leadsByAd(organizationId: string, from: Date, to: Date): Promise<LeadsByAdRow[]> {
-    const grouped = await this.prisma.contact.groupBy({
-      by: ['ctwaSourceId'],
-      where: {
-        organizationId,
-        deletedAt: null,
-        isMysteryShopper: false,
-        // Período pelo CLIQUE no anúncio, não pela criação do contato: cliente
-        // antigo que volta por um anúncio conta para ele.
-        ctwaClidAt: { gte: from, lte: to },
-        ctwaSourceType: CTWA_SOURCE_TYPE_AD,
-        ctwaSourceId: { not: null },
-      },
-      _count: { _all: true },
-    });
-
-    return grouped.map((row) => ({
-      // O `where` acima garante `ctwaSourceId` não-nulo; o tipo gerado pelo
-      // Prisma não reflete isso porque acompanha o tipo da coluna no schema.
-      adId: row.ctwaSourceId as string,
-      leads: row._count._all,
-    }));
-  }
-
   /**
-   * Vendas ganhas no período, agrupadas pelo anúncio do contato do card.
-   *
-   * Join feito em SQL bruto porque o Prisma não agrupa por um campo de uma
-   * relação (`card.contact.ctwaSourceId`). `organizationId`/`from`/`to` vão
-   * sempre via parâmetro (`${}` do template do Prisma) — nunca concatenados.
-   * O literal `'WON'` não é entrada externa; comparar um enum do Postgres a
-   * um literal de texto no próprio SQL é o mesmo padrão já usado em
-   * `conversations.repository.ts` (`mo.direction = 'OUTBOUND'`).
+   * Leads por anúncio no período. Período pelo TOQUE (clique no anúncio ou
+   * envio do formulário), não pela criação do contato: cliente antigo que
+   * volta por um anúncio conta para ele. Contato com mais de um toque no
+   * período conta uma vez, para o último.
    */
-  async wonByAd(organizationId: string, from: Date, to: Date): Promise<WonByAdRow[]> {
-    const rows = await this.prisma.$queryRaw<Array<{ ad_id: string; deals: bigint; revenue: Prisma.Decimal | null }>>(
+  async leadsByAd(organizationId: string, from: Date, to: Date): Promise<LeadsByAdRow[]> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ ad_id: string; ad_name: string | null; campaign_name: string | null; leads: bigint }>
+    >(
       Prisma.sql`
-        SELECT c."ctwa_source_id" AS ad_id,
-               COUNT(*)::bigint AS deals,
-               COALESCE(SUM(cd."value"), 0) AS revenue
-        FROM "cards" cd
-        JOIN "contacts" c ON c."id" = cd."contact_id"
-        WHERE cd."organization_id" = ${organizationId}
-          AND cd."status" = 'WON'
-          AND cd."closed_at" >= ${from}
-          AND cd."closed_at" <= ${to}
-          AND c."ctwa_source_type" = ${CTWA_SOURCE_TYPE_AD}
-          AND c."ctwa_source_id" IS NOT NULL
-        GROUP BY c."ctwa_source_id"
+        WITH ${touchesCte(organizationId)},
+        latest AS (
+          SELECT DISTINCT ON (t."contact_id") t."contact_id", t."ad_id", t."ad_name", t."campaign_name"
+          FROM touches t
+          WHERE t."at" >= ${from} AND t."at" <= ${to}
+          ORDER BY t."contact_id", t."at" DESC
+        )
+        SELECT l."ad_id",
+               MAX(l."ad_name") AS ad_name,
+               MAX(l."campaign_name") AS campaign_name,
+               COUNT(*)::bigint AS leads
+        FROM latest l
+        GROUP BY l."ad_id"
       `,
     );
 
     return rows.map((row) => ({
       adId: row.ad_id,
+      adName: row.ad_name,
+      campaignName: row.campaign_name,
+      leads: Number(row.leads),
+    }));
+  }
+
+  /**
+   * Vendas ganhas no período, pelo último toque do contato do card.
+   * SQL bruto porque o Prisma não agrupa por campo de relação nem faz
+   * LATERAL. `organizationId`/`from`/`to` sempre via parâmetro; o literal
+   * `'WON'` não é entrada externa.
+   */
+  async wonByAd(organizationId: string, from: Date, to: Date): Promise<WonByAdRow[]> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        ad_id: string;
+        ad_name: string | null;
+        campaign_name: string | null;
+        deals: bigint;
+        revenue: Prisma.Decimal | null;
+      }>
+    >(
+      Prisma.sql`
+        WITH ${touchesCte(organizationId)}
+        SELECT t."ad_id",
+               MAX(t."ad_name") AS ad_name,
+               MAX(t."campaign_name") AS campaign_name,
+               COUNT(*)::bigint AS deals,
+               COALESCE(SUM(cd."value"), 0) AS revenue
+        FROM "cards" cd
+        CROSS JOIN LATERAL (${LAST_TOUCH_FOR_CARD}) t
+        WHERE cd."organization_id" = ${organizationId}
+          AND cd."status" = 'WON'
+          AND cd."closed_at" >= ${from}
+          AND cd."closed_at" <= ${to}
+        GROUP BY t."ad_id"
+      `,
+    );
+
+    return rows.map((row) => ({
+      adId: row.ad_id,
+      adName: row.ad_name,
+      campaignName: row.campaign_name,
       deals: Number(row.deals),
       revenue: Number(row.revenue ?? 0),
     }));
@@ -114,53 +131,42 @@ export class AttributionRepository {
    * Totais para a cobertura e para o balde não-atribuído.
    *
    * `leadsTotal` usa a mesma definição de lead do card do painel
-   * (`countLeads`: Contact por `createdAt`, sem apagados nem importados).
-   * `unattributedDeals`/`unattributedRevenue` são os cards GANHO do período
-   * cujo contato foi apagado (`contactId` nulo), não veio de anúncio
-   * (`ctwaSourceType` != 'ad') ou não tem `ctwaSourceId` — o `LEFT JOIN` com
-   * `FILTER` cobre as três causas em uma única passada.
+   * (`countLeads`). `leadsWithAdId` = contatos com toque de anúncio no
+   * período. `unattributed*` = cards GANHO do período cujo contato foi
+   * apagado/não existe ou não tem nenhum toque de anúncio — exatamente o
+   * complemento de `wonByAd`.
    */
   async coverageTotals(organizationId: string, from: Date, to: Date): Promise<CoverageTotals> {
-    const [leadsTotal, leadsWithAdId, unattributedAgg] = await Promise.all([
+    const [leadsTotal, withAdRows, unattributedRows] = await Promise.all([
       countLeads(this.prisma, organizationId, from, to),
-      this.prisma.contact.count({
-        where: {
-          organizationId,
-          deletedAt: null,
-          isMysteryShopper: false,
-          ctwaClidAt: { gte: from, lte: to },
-          ctwaSourceType: CTWA_SOURCE_TYPE_AD,
-          ctwaSourceId: { not: null },
-        },
-      }),
+      this.prisma.$queryRaw<Array<{ contacts: bigint }>>(
+        Prisma.sql`
+          WITH ${touchesCte(organizationId)}
+          SELECT COUNT(DISTINCT t."contact_id")::bigint AS contacts
+          FROM touches t
+          WHERE t."at" >= ${from} AND t."at" <= ${to}
+        `,
+      ),
       this.prisma.$queryRaw<Array<{ deals: bigint; revenue: Prisma.Decimal | null }>>(
         Prisma.sql`
-          SELECT
-            COUNT(*) FILTER (
-              WHERE cd."contact_id" IS NULL
-                 OR c."ctwa_source_type" IS DISTINCT FROM ${CTWA_SOURCE_TYPE_AD}
-                 OR c."ctwa_source_id" IS NULL
-            )::bigint AS deals,
-            COALESCE(SUM(cd."value") FILTER (
-              WHERE cd."contact_id" IS NULL
-                 OR c."ctwa_source_type" IS DISTINCT FROM ${CTWA_SOURCE_TYPE_AD}
-                 OR c."ctwa_source_id" IS NULL
-            ), 0) AS revenue
+          WITH ${touchesCte(organizationId)}
+          SELECT COUNT(*)::bigint AS deals,
+                 COALESCE(SUM(cd."value"), 0) AS revenue
           FROM "cards" cd
-          LEFT JOIN "contacts" c ON c."id" = cd."contact_id"
           WHERE cd."organization_id" = ${organizationId}
             AND cd."status" = 'WON'
             AND cd."closed_at" >= ${from}
             AND cd."closed_at" <= ${to}
+            AND NOT EXISTS (SELECT 1 FROM touches t WHERE t."contact_id" = cd."contact_id")
         `,
       ),
     ]);
 
-    const unattributed = unattributedAgg[0];
+    const unattributed = unattributedRows[0];
 
     return {
       leadsTotal,
-      leadsWithAdId,
+      leadsWithAdId: withAdRows[0] ? Number(withAdRows[0].contacts) : 0,
       unattributedDeals: unattributed ? Number(unattributed.deals) : 0,
       unattributedRevenue: unattributed ? Number(unattributed.revenue ?? 0) : 0,
     };

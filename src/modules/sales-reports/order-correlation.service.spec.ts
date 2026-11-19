@@ -1,12 +1,25 @@
 import { OrderCorrelationService } from './order-correlation.service';
 
 /**
- * E5.2a — Correlação exata: casa cards Ganhos (WON) que têm nº do pedido
- * (metadata.orderNumber, gravado no E5.1) com o pedido real do HUB
- * (OfpSalesOrder.pedido). Match → liga (grava ofpOrderExternalId) + enriquece o
- * valor do card. Idempotente.
+ * E5.2a — Correlação: casa cards Ganhos (WON) com o pedido real do HUB
+ * (OfpSalesOrder) e copia o valor da venda para o card. Pelo nº digitado
+ * (tolerante a texto livre) e, sem nº que case, pelo contato. Idempotente.
  */
-function make(opts: { wonCards?: any[]; order?: any } = {}) {
+const NOW = new Date('2026-11-19T12:00:00Z');
+const CLOSED = new Date('2026-11-13T12:00:00Z');
+
+function card(overrides: Record<string, any> = {}) {
+  return {
+    id: 'card-1',
+    value: null,
+    closedAt: CLOSED,
+    metadata: {},
+    contact: { phone: '5518991274666', email: null },
+    ...overrides,
+  };
+}
+
+function make(opts: { wonCards?: any[]; order?: any; contactOrders?: any[] } = {}) {
   const prisma = {
     card: {
       findMany: jest.fn().mockResolvedValue(opts.wonCards ?? []),
@@ -14,74 +27,126 @@ function make(opts: { wonCards?: any[]; order?: any } = {}) {
     },
     ofpSalesOrder: {
       findFirst: jest.fn().mockResolvedValue(
-        opts.order === undefined
-          ? { externalId: 'ext-9', pedido: 'PED-1', venda: 4200 }
-          : opts.order,
+        opts.order === undefined ? { externalId: 'ext-9', venda: 4200 } : opts.order,
       ),
     },
+    $queryRaw: jest.fn().mockResolvedValue(opts.contactOrders ?? []),
   } as any;
   return { service: new OrderCorrelationService(prisma), prisma };
 }
 
-describe('OrderCorrelationService.correlateWonCards (E5.2a)', () => {
-  it('casa card Ganho com o pedido do HUB — grava ofpOrderExternalId + valor', async () => {
+describe('OrderCorrelationService.correlateWonCards', () => {
+  it('casa pelo nº do pedido — grava ofpOrderExternalId + valor', async () => {
     const { service, prisma } = make({
-      wonCards: [
-        { id: 'card-1', status: 'WON', metadata: { orderNumber: 'PED-1' } },
-      ],
+      wonCards: [card({ value: 100, metadata: { orderNumber: 'PED-1' } })],
     });
-    const res = await service.correlateWonCards();
+    const res = await service.correlateWonCards(NOW);
 
-    expect(prisma.ofpSalesOrder.findFirst).toHaveBeenCalledWith({
-      where: { pedido: 'PED-1' },
-    });
+    const where = prisma.ofpSalesOrder.findFirst.mock.calls[0][0].where;
+    expect(where.OR).toContainEqual({ pedido: { equals: 'PED-1', mode: 'insensitive' } });
     const upd = prisma.card.update.mock.calls[0][0];
     expect(upd.where).toEqual({ id: 'card-1' });
     expect(upd.data.metadata).toMatchObject({
       orderNumber: 'PED-1',
       ofpOrderExternalId: 'ext-9',
+      correlatedBy: 'order_number',
     });
     expect(upd.data.value).toBe(4200);
     expect(res).toEqual({ matched: 1, checked: 1 });
   });
 
-  it('idempotente: card já correlacionado não é atualizado de novo', async () => {
+  it('acha o localizador dentro de "Localizador: R4YB7P"', async () => {
     const { service, prisma } = make({
-      wonCards: [
-        {
-          id: 'card-1',
-          status: 'WON',
-          metadata: { orderNumber: 'PED-1', ofpOrderExternalId: 'ext-9' },
-        },
-      ],
+      wonCards: [card({ metadata: { orderNumber: 'Localizador: R4YB7P' } })],
     });
-    const res = await service.correlateWonCards();
+    await service.correlateWonCards(NOW);
+
+    const where = prisma.ofpSalesOrder.findFirst.mock.calls[0][0].where;
+    expect(where.OR).toContainEqual({ pedido: { equals: 'R4YB7P', mode: 'insensitive' } });
+    expect(prisma.card.update).toHaveBeenCalled();
+  });
+
+  it('idempotente: card já correlacionado não é tocado', async () => {
+    const { service, prisma } = make({
+      wonCards: [card({ metadata: { orderNumber: 'PED-1', ofpOrderExternalId: 'ext-9' } })],
+    });
+    const res = await service.correlateWonCards(NOW);
 
     expect(prisma.ofpSalesOrder.findFirst).not.toHaveBeenCalled();
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(prisma.card.update).not.toHaveBeenCalled();
     expect(res.matched).toBe(0);
   });
 
-  it('card com nº mas sem pedido correspondente no HUB → não atualiza', async () => {
+  it('nº não casa e card sem valor → casa pelo contato quando sobra 1 pedido', async () => {
     const { service, prisma } = make({
-      wonCards: [
-        { id: 'card-1', status: 'WON', metadata: { orderNumber: 'PED-X' } },
-      ],
+      wonCards: [card({ metadata: { orderNumber: 'Fechou guiamento' } })],
       order: null,
+      contactOrders: [{ external_id: 'ext-guia', venda: 590 }],
     });
-    const res = await service.correlateWonCards();
+    const res = await service.correlateWonCards(NOW);
+
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    const upd = prisma.card.update.mock.calls[0][0];
+    expect(upd.data.metadata).toMatchObject({ ofpOrderExternalId: 'ext-guia', correlatedBy: 'contact' });
+    expect(upd.data.value).toBe(590);
+    expect(res).toEqual({ matched: 1, checked: 1 });
+  });
+
+  it('Ganho sem nº nenhum também tenta pelo contato', async () => {
+    const { service, prisma } = make({
+      wonCards: [card()],
+      contactOrders: [{ external_id: 'ext-1', venda: 1000 }],
+    });
+    await service.correlateWonCards(NOW);
+
+    expect(prisma.ofpSalesOrder.findFirst).not.toHaveBeenCalled();
+    expect(prisma.card.update).toHaveBeenCalled();
+  });
+
+  it('pelo contato: 2+ pedidos possíveis → ambíguo, não chuta', async () => {
+    const { service, prisma } = make({
+      wonCards: [card()],
+      contactOrders: [
+        { external_id: 'a', venda: 1 },
+        { external_id: 'b', venda: 2 },
+      ],
+    });
+    const res = await service.correlateWonCards(NOW);
 
     expect(prisma.card.update).not.toHaveBeenCalled();
     expect(res).toEqual({ matched: 0, checked: 1 });
   });
 
-  it('card Ganho SEM nº do pedido é ignorado (nem consulta o HUB)', async () => {
+  it('card que já tem valor não tenta pelo contato', async () => {
     const { service, prisma } = make({
-      wonCards: [{ id: 'card-1', status: 'WON', metadata: {} }],
+      wonCards: [card({ value: 5000, metadata: { orderNumber: 'PED-X' } })],
+      order: null,
     });
-    const res = await service.correlateWonCards();
+    await service.correlateWonCards(NOW);
+
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.card.update).not.toHaveBeenCalled();
+  });
+
+  it('Ganho antigo (fora da janela) sem nº é ignorado', async () => {
+    const { service, prisma } = make({
+      wonCards: [card({ closedAt: new Date('2026-08-01T12:00:00Z') })],
+    });
+    const res = await service.correlateWonCards(NOW);
+
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(res).toEqual({ matched: 0, checked: 0 });
+  });
+
+  it('contato sem telefone nem e-mail e sem nº → ignorado', async () => {
+    const { service, prisma } = make({
+      wonCards: [card({ contact: { phone: null, email: null } })],
+    });
+    const res = await service.correlateWonCards(NOW);
 
     expect(prisma.ofpSalesOrder.findFirst).not.toHaveBeenCalled();
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(res).toEqual({ matched: 0, checked: 0 });
   });
 });
