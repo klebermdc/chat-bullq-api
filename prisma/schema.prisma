@@ -3769,3 +3769,21 @@ model MailboxMessageContact {
   @@index([contactId])
   @@map("mailbox_message_contacts")
 }
+
+/// Câmbio do dólar (R$ por US$ 1) lido das operadoras a cada 5h.
+/// Global: é o número público de cada operadora, igual para toda org.
+model OperatorExchangeRate {
+  /// Sigla da operadora (JT, SC...).
+  code               String    @id
+  value              Decimal   @db.Decimal(10, 4)
+  /// Data de atualização como a operadora mostra (texto).
+  sourceUpdatedLabel String?   @map("source_updated_label")
+  /// Última leitura com sucesso.
+  fetchedAt          DateTime  @map("fetched_at")
+  /// Quando o valor mudou pela última vez.
+  changedAt          DateTime  @map("changed_at")
+  lastError          String?   @map("last_error")
+  lastErrorAt        DateTime? @map("last_error_at")
+
+  @@map("operator_exchange_rates")
+}
