@@ -32,6 +32,8 @@ export interface WebsiteLeadAttribution {
   ofp_cmp?: string;
   ofp_cnt?: string;
   ofp_trm?: string;
+  /** ID do anúncio, preenchido pela Meta com {{ad.id}} no link. */
+  ofp_ad?: string;
   fbclid?: string;
   gclid?: string;
   page_url?: string;

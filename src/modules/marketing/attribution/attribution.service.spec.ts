@@ -245,3 +245,43 @@ describe('AttributionService', () => {
     });
   });
 });
+
+describe('AttributionService — criativo só conhecido pela UTM do site', () => {
+  it('sem linha de gasto, usa os nomes da UTM e deixa gasto/CPL/ROAS nulos', async () => {
+    const { service } = build({
+      leadsByAd: [{ adId: 'utm:engaj_geral|video40', leads: 2, adName: 'video40', campaignName: 'engaj_geral' }],
+      wonByAd: [
+        { adId: 'utm:engaj_geral|video40', deals: 1, revenue: 9074.56, adName: 'video40', campaignName: 'engaj_geral' },
+      ],
+    });
+
+    const { rows } = await service.getAttribution(ORG, FROM, TO);
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        adId: 'utm:engaj_geral|video40',
+        adName: 'video40',
+        campaignName: 'engaj_geral',
+        leads: 2,
+        deals: 1,
+        revenue: 9074.56,
+        spend: null,
+        cpl: null,
+        roas: null,
+      }),
+    ]);
+  });
+
+  it('nome da Meta tem prioridade sobre o da UTM', async () => {
+    const { service } = build({
+      wonByAd: [{ adId: 'ad-1', deals: 1, revenue: 100, adName: 'utm-name', campaignName: 'utm-camp' }],
+      mediaByAd: [
+        { adId: 'ad-1', adName: 'Meta name', campaignName: 'Meta camp', spend: 50, impressions: 10, clicks: 1 },
+      ],
+    });
+
+    const { rows } = await service.getAttribution(ORG, FROM, TO);
+
+    expect(rows[0]).toMatchObject({ adName: 'Meta name', campaignName: 'Meta camp' });
+  });
+});

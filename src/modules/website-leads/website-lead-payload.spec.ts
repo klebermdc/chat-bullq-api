@@ -74,6 +74,14 @@ describe('parseWebsiteLeadPayload', () => {
     expect(p.pageUrl).toBe('https://orlandofastpass.com.br/guiamento-remoto/');
   });
 
+  it('guarda o ID do anúncio (ofp_ad, {{ad.id}} da Meta no link)', () => {
+    const p = parseWebsiteLeadPayload({
+      'fields[whatsapp][value]': '11977776666',
+      'fields[ofp_ad][value]': '52649230118178',
+    });
+    expect(p.hidden).toEqual({ ofp_ad: '52649230118178' });
+  });
+
   it('acha o telefone por rótulo (telefone/celular/phone) e por tipo tel', () => {
     expect(parseWebsiteLeadPayload({ Celular: '11 91234-5678' }).phoneRaw).toBe('11 91234-5678');
     expect(

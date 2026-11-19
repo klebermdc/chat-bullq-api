@@ -122,6 +122,7 @@ export class AttributionService {
   /** Junta leads + vendas + mídia pela união dos `adId`. Nenhuma fonte reparte valor para outro `adId`. */
   private buildRows(leadsRows: LeadsByAdRow[], wonRows: WonByAdRow[], mediaRows: MediaByAdRow[]): AttributionRow[] {
     const leadsByAd = new Map(leadsRows.map((row) => [row.adId, row.leads]));
+    const leadRowByAd = new Map(leadsRows.map((row) => [row.adId, row]));
     const wonByAd = new Map(wonRows.map((row) => [row.adId, row]));
     const mediaByAd = new Map(mediaRows.map((row) => [row.adId, row]));
 
@@ -141,10 +142,13 @@ export class AttributionService {
       // periodo", quando o custo e simplesmente desconhecido.
       const spend = media ? media.spend : null;
 
+      // Nome da Meta primeiro; sem linha de gasto (criativo só conhecido pela
+      // UTM do formulário do site), o nome que veio na UTM.
+      const leadRow = leadRowByAd.get(adId);
       return {
         adId,
-        adName: media?.adName ?? null,
-        campaignName: media?.campaignName ?? null,
+        adName: media?.adName ?? won?.adName ?? leadRow?.adName ?? null,
+        campaignName: media?.campaignName ?? won?.campaignName ?? leadRow?.campaignName ?? null,
         spend,
         leads,
         deals,
