@@ -28,6 +28,8 @@ export interface SlaContext {
   tz: string;
   /** Agenda que vale para esta conversa; null = 24/7. */
   hours: BusinessHoursConfig | null;
+  /** Feriado da agência até este instante (null/passado = sem feriado). */
+  holidayUntil?: Date | null;
 }
 
 export interface SlaRecord {
@@ -51,4 +53,5 @@ export type EndReason =
   | 'handoff_rejected'
   | 'not_waiting'
   | 'sla_disabled'
+  | 'holiday'
   | 'reconcile';

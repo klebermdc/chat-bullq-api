@@ -26,7 +26,7 @@ const CONVERSATION = {
 };
 
 function make(
-  overrides: { membership?: unknown; now?: Date } = {},
+  overrides: { membership?: unknown; now?: Date; org?: Record<string, unknown> } = {},
 ) {
   const prisma = {
     userOrganization: {
@@ -41,7 +41,9 @@ function make(
       ),
     },
     organization: {
-      findUnique: jest.fn().mockResolvedValue({ aiTimezone: 'America/Sao_Paulo' }),
+      findUnique: jest
+        .fn()
+        .mockResolvedValue({ aiTimezone: 'America/Sao_Paulo', ...overrides.org }),
     },
   } as any;
   const service = new OnCallService(prisma);
@@ -103,6 +105,55 @@ describe('OnCallService.evaluate', () => {
     const result = await service.evaluate({ ...CONVERSATION, lastHumanReplyAt: repliedDuringHours });
 
     expect(result?.sellerName).toBe('Pedro');
+  });
+});
+
+describe('OnCallService.evaluate no feriado', () => {
+  // Feriado na terça 22/09 inteira: começou 8h, acaba 23/09 00:00 em São Paulo.
+  const HOLIDAY = {
+    aiHolidayStartedAt: new Date('2026-09-22T11:00:00Z'),
+    aiHolidayUntil: new Date('2026-09-23T03:00:00Z'),
+    aiBusinessHours: HOURS,
+  };
+
+  it('cobre o vendedor mesmo dentro do horário dele e com o plantão desligado', async () => {
+    const { service } = make({
+      now: TUESDAY_10H,
+      org: HOLIDAY,
+      membership: { workingHours: HOURS, offHoursNoticeEnabled: false, user: { name: 'Pedro Henrique' } },
+    });
+
+    const result = await service.evaluate(CONVERSATION);
+
+    expect(result).toEqual({ sellerName: 'Pedro', returnAt: 'amanhã às 09h', isHoliday: true });
+  });
+
+  it('usa o horário da agência quando o vendedor não tem grade', async () => {
+    const { service } = make({
+      now: TUESDAY_10H,
+      org: HOLIDAY,
+      membership: { workingHours: null, offHoursNoticeEnabled: false, user: { name: 'Pedro' } },
+    });
+
+    expect((await service.evaluate(CONVERSATION))?.returnAt).toBe('amanhã às 09h');
+  });
+
+  it('sai quando um humano respondeu depois que o feriado começou', async () => {
+    const { service } = make({ now: TUESDAY_10H, org: HOLIDAY });
+    const repliedDuringHoliday = new Date('2026-09-22T12:00:00Z');
+
+    expect(
+      await service.evaluate({ ...CONVERSATION, lastHumanReplyAt: repliedDuringHoliday }),
+    ).toBeNull();
+  });
+
+  it('feriado vencido volta à regra normal', async () => {
+    const { service } = make({
+      now: TUESDAY_10H,
+      org: { ...HOLIDAY, aiHolidayUntil: new Date('2026-09-22T12:00:00Z') },
+    });
+
+    expect(await service.evaluate(CONVERSATION)).toBeNull();
   });
 });
 

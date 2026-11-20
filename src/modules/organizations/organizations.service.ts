@@ -10,6 +10,7 @@ import { OrgRole, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { OrganizationsRepository } from './organizations.repository';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
+import { holidayEndFromDate, isHolidayActive } from '../routing/availability/holiday.util';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 
@@ -28,8 +29,9 @@ export class OrganizationsService {
   }
 
   async updateOrganization(orgId: string, dto: UpdateOrganizationDto) {
-    await this.getOrganization(orgId);
+    const current = await this.getOrganization(orgId);
     const {
+      aiHolidayDate,
       aiBusinessHours,
       watchdogBusinessHours,
       watchdogConfig,
@@ -38,6 +40,7 @@ export class OrganizationsService {
     } = dto;
     return this.repository.update(orgId, {
       ...rest,
+      ...this.holidayPatch(current, aiHolidayDate, rest.aiTimezone),
       ...(aiBusinessHours !== undefined
         ? { aiBusinessHours: aiBusinessHours as object }
         : {}),
@@ -56,6 +59,28 @@ export class OrganizationsService {
           }
         : {}),
     });
+  }
+
+  /**
+   * Feriado: data → instante de fim no fuso da agência. Prorrogar um feriado
+   * em andamento mantém o início (humano que já respondeu segue no comando).
+   */
+  private holidayPatch(
+    current: { aiTimezone: string; aiHolidayUntil: Date | null; aiHolidayStartedAt: Date | null },
+    date: string | null | undefined,
+    newTimezone: string | undefined,
+  ): { aiHolidayUntil?: Date | null; aiHolidayStartedAt?: Date | null } {
+    if (date === undefined) return {};
+    if (date === null) return { aiHolidayUntil: null, aiHolidayStartedAt: null };
+    const now = new Date();
+    let until: Date;
+    try {
+      until = holidayEndFromDate(date, newTimezone || current.aiTimezone || 'America/Sao_Paulo', now);
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+    const ongoing = isHolidayActive(current.aiHolidayUntil, now) && current.aiHolidayStartedAt;
+    return { aiHolidayUntil: until, aiHolidayStartedAt: ongoing ? current.aiHolidayStartedAt : now };
   }
 
   async getMembers(orgId: string) {

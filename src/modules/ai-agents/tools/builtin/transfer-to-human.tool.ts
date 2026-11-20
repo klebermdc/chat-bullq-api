@@ -13,6 +13,11 @@ import {
   formatReturn,
   type BusinessHoursConfig,
 } from '../../../routing/availability/business-hours.util';
+import {
+  formatHolidayReturn,
+  holidayReturnAt,
+  isHolidayActive,
+} from '../../../routing/availability/holiday.util';
 
 /** Mensagem que a IA manda pro cliente ao transferir — garantida por código. */
 const TRANSITION_MESSAGE =
@@ -329,11 +334,19 @@ export class TransferToHumanTool implements AiTool {
     try {
       const org = await this.prisma.organization.findUnique({
         where: { id: ctx.organizationId },
-        select: { aiBusinessHours: true, aiTimezone: true },
+        select: { aiBusinessHours: true, aiTimezone: true, aiHolidayUntil: true },
       });
       const bh = (org?.aiBusinessHours ?? null) as BusinessHoursConfig | null;
       const tz = org?.aiTimezone || 'America/Sao_Paulo';
       const now = new Date();
+      if (org?.aiHolidayUntil && isHolidayActive(org.aiHolidayUntil, now)) {
+        const proximo = formatHolidayReturn(holidayReturnAt(bh, tz, org.aiHolidayUntil), tz, now);
+        return (
+          'Perfeito, já tenho tudo que preciso 😊 Como hoje é feriado, nosso time ' +
+          `humano retorna ${proximo} e dá sequência com você por aqui. Já deixei ` +
+          'sua solicitação encaminhada! 💙'
+        );
+      }
       if (bh && !isWithinHours(bh, tz, now)) {
         const nextOpen = nextOpenAt(bh, tz, now);
         if (nextOpen) {

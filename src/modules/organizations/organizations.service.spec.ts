@@ -322,6 +322,58 @@ describe('OrganizationsService.updateOrganization', () => {
     expect(repo.update.mock.calls[0][1]).not.toHaveProperty('cancellationPolicy');
   });
 
+  describe('feriado', () => {
+    afterEach(() => jest.useRealTimers());
+    // Sexta 20/11/2026 10h em São Paulo.
+    const NOW = new Date('2026-11-20T13:00:00Z');
+
+    it('liga até a meia-noite do dia escolhido e marca o início agora', async () => {
+      jest.useFakeTimers().setSystemTime(NOW);
+      repo.findById.mockResolvedValue({ id: 'org-1', aiTimezone: 'America/Sao_Paulo' } as any);
+
+      await service.updateOrganization('org-1', { aiHolidayDate: '2026-11-20' });
+
+      const data = repo.update.mock.calls[0][1] as any;
+      expect(data.aiHolidayUntil).toEqual(new Date('2026-11-21T03:00:00Z'));
+      expect(data.aiHolidayStartedAt).toEqual(NOW);
+      expect(data).not.toHaveProperty('aiHolidayDate');
+    });
+
+    it('prorrogar mantém o início do feriado em andamento', async () => {
+      jest.useFakeTimers().setSystemTime(NOW);
+      const startedAt = new Date('2026-11-20T11:00:00Z');
+      repo.findById.mockResolvedValue({
+        id: 'org-1',
+        aiTimezone: 'America/Sao_Paulo',
+        aiHolidayUntil: new Date('2026-11-21T03:00:00Z'),
+        aiHolidayStartedAt: startedAt,
+      } as any);
+
+      await service.updateOrganization('org-1', { aiHolidayDate: '2026-11-22' });
+
+      expect((repo.update.mock.calls[0][1] as any).aiHolidayStartedAt).toEqual(startedAt);
+    });
+
+    it('null desliga na hora', async () => {
+      await service.updateOrganization('org-1', { aiHolidayDate: null });
+
+      expect(repo.update).toHaveBeenCalledWith(
+        'org-1',
+        expect.objectContaining({ aiHolidayUntil: null, aiHolidayStartedAt: null }),
+      );
+    });
+
+    it('data no passado vira 400 com texto para o usuário', async () => {
+      jest.useFakeTimers().setSystemTime(NOW);
+      repo.findById.mockResolvedValue({ id: 'org-1', aiTimezone: 'America/Sao_Paulo' } as any);
+
+      await expect(
+        service.updateOrganization('org-1', { aiHolidayDate: '2026-11-19' }),
+      ).rejects.toThrow('já passou');
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+  });
+
   it('NotFound quando a org não existe', async () => {
     repo.findById.mockResolvedValue(null as any);
     await expect(

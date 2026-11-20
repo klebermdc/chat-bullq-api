@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { isWithinHours, nextOpenAt } from '../routing/availability/business-hours.util';
 import { businessMinutesBetween } from '../routing/availability/business-minutes.util';
+import { isHolidayActive } from '../routing/availability/holiday.util';
 import { ResponseSlaNotifier } from './response-sla.notifier';
 import { ResponseSlaRepository } from './response-sla.repository';
 import { ResponseSlaScheduler } from './response-sla.scheduler';
@@ -21,6 +22,7 @@ export type StageOutcome =
   | 'skip:already_done'
   | 'skip:not_waiting'
   | 'skip:sla_disabled'
+  | 'skip:holiday'
   | 'skip:no_hours';
 
 /**
@@ -86,6 +88,13 @@ export class ResponseSlaStageHandler {
       await this.repository.updatePlan(record.id, { agentId: ctx.assignedToId, dueAt: plan.dueAt });
       await this.scheduler.schedule(record, data.stage, target, now);
       return 'rescheduled';
+    }
+
+    // Feriado: a Aline está no comando e a equipe parada; a espera não conta
+    // contra o vendedor nem gera aviso.
+    if (isHolidayActive(ctx.holidayUntil, now)) {
+      await this.repository.closeEnded(record.id, 'holiday', now);
+      return 'skip:holiday';
     }
 
     // Job atrasado (fila parada) que caiu fora do expediente: espera abrir.

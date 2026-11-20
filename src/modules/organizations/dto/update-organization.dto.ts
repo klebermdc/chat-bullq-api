@@ -6,6 +6,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   Min,
   ValidateIf,
@@ -62,6 +63,17 @@ export class UpdateOrganizationDto {
   @IsOptional()
   @IsIn(['SILENT', 'MESSAGE', 'ATTEND'])
   aiOffHoursMode?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Feriado: último dia (AAAA-MM-DD, fuso da agência) em que a equipe está parada e a Aline fica no comando. Desliga sozinho à meia-noite seguinte. null = desliga agora.',
+    nullable: true,
+    example: '2026-11-20',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  aiHolidayDate?: string | null;
 
   @ApiPropertyOptional({
     description:

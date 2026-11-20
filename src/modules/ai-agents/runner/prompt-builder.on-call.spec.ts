@@ -91,4 +91,14 @@ describe('PromptBuilderService — Aline de plantão', () => {
 
     expect(cached(buildCtx({ sellerName: 'Pedro', returnAt: 'amanhã às 9h' }))).toBe(cached(buildCtx()));
   });
+
+  it('plantão de feriado diz que é feriado, não "fora do horário"', () => {
+    const text = volatilePart(
+      buildCtx({ sellerName: 'Pedro', returnAt: 'amanhã às 09h', isHoliday: true }),
+    );
+
+    expect(text).toContain('MODO PLANTÃO');
+    expect(text).toContain('feriado');
+    expect(text).not.toContain('FORA DO HORÁRIO');
+  });
 });

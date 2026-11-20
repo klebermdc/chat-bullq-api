@@ -10,6 +10,8 @@ export interface AlertOrg {
   settings: unknown;
   tz: string;
   orgHours: ReturnType<typeof toHoursConfig>;
+  /** Feriado da agência até este instante (null/passado = sem feriado). */
+  holidayUntil?: Date | null;
 }
 
 const ORG_SELECT = {
@@ -17,6 +19,7 @@ const ORG_SELECT = {
   settings: true,
   aiTimezone: true,
   aiBusinessHours: true,
+  aiHolidayUntil: true,
 } as const;
 
 /** Mesma regra da aba "Esperando" (isWaitingForHuman), em filtro do Prisma. */
@@ -122,11 +125,13 @@ function toAlertOrg(org: {
   settings: unknown;
   aiTimezone: string | null;
   aiBusinessHours: unknown;
+  aiHolidayUntil: Date | null;
 }): AlertOrg {
   return {
     id: org.id,
     settings: org.settings,
     tz: org.aiTimezone || DEFAULT_TIMEZONE,
     orgHours: toHoursConfig(org.aiBusinessHours),
+    holidayUntil: org.aiHolidayUntil,
   };
 }
