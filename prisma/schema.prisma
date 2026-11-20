@@ -202,6 +202,13 @@ model Organization {
   /// String (não enum Postgres) de propósito — enum + uso na mesma migração
   /// quebra `migrate deploy`.
   aiOffHoursMode          String   @default("SILENT") @map("ai_off_hours_mode")
+  /// Feriado: até este instante a equipe humana está parada e a Aline fica no
+  /// comando (atende leads novos e cobre em plantão as conversas com dono).
+  /// null ou no passado = sem feriado. Desliga sozinho ao passar.
+  aiHolidayUntil          DateTime? @map("ai_holiday_until")
+  /// Quando o feriado atual começou. Humano que responde depois disso retoma
+  /// a conversa e a Aline sai dela.
+  aiHolidayStartedAt      DateTime? @map("ai_holiday_started_at")
   /// Template do aviso enviado quando o cliente escreve fora do horário do
   /// atendente responsável. Placeholders: {atendente} e {proximo_horario}.
   /// NULL = usa o default do código (OFF_HOURS_DEFAULT_TEMPLATE).

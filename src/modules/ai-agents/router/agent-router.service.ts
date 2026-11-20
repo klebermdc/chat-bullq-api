@@ -12,6 +12,7 @@ import {
   isWithinHours,
   type BusinessHoursConfig,
 } from '../../routing/availability/business-hours.util';
+import { isHolidayActive } from '../../routing/availability/holiday.util';
 import { OnCallService, type OnCallContext } from '../on-call/on-call.service';
 
 export interface HandleDecision {
@@ -256,7 +257,9 @@ export class AgentRouterService {
       if (!org.aiEnabled) {
         return { handle: false, reason: 'org.aiEnabled=false' };
       }
-      if (!this.isWithinBusinessHours(org)) {
+      // Feriado: a Aline fica no comando o dia todo, dentro ou fora da grade.
+      const isHoliday = isHolidayActive(org.aiHolidayUntil, new Date());
+      if (!isHoliday && !this.isWithinBusinessHours(org)) {
         // ATTEND: Aline continua atendendo 24/7 e anuncia o horário no prompt.
         // SILENT/MESSAGE: fica muda (MESSAGE manda o texto fixo via
         // OrgOffHoursNoticeService, fora deste caminho).

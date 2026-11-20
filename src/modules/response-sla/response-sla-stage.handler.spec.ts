@@ -85,6 +85,31 @@ describe('ResponseSlaStageHandler.handle', () => {
     expect(notifier.breach).not.toHaveBeenCalled();
   });
 
+  it('no feriado encerra a espera sem avisar ninguém', async () => {
+    const { handler, repository, notifier } = setup();
+    repository.loadContext.mockResolvedValue(
+      ctx({ holidayUntil: sp('2026-11-10T00:00:00') }),
+    );
+
+    const out = await handler.handle(job('breach'), sp('2026-11-09T10:15:00'));
+
+    expect(out).toBe('skip:holiday');
+    expect(repository.closeEnded).toHaveBeenCalledWith('r1', 'holiday', sp('2026-11-09T10:15:00'));
+    expect(notifier.breach).not.toHaveBeenCalled();
+  });
+
+  it('feriado vencido não interfere', async () => {
+    const { handler, repository, notifier } = setup();
+    repository.loadContext.mockResolvedValue(
+      ctx({ holidayUntil: sp('2026-11-09T00:00:00') }),
+    );
+
+    const out = await handler.handle(job('breach'), sp('2026-11-09T10:15:00'));
+
+    expect(out).toBe('notified');
+    expect(notifier.breach).toHaveBeenCalled();
+  });
+
   it('no prazo dispara o estouro', async () => {
     const { handler, notifier } = setup();
 

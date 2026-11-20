@@ -16,6 +16,11 @@ import {
   formatHoursSummary,
   type BusinessHoursConfig,
 } from '../../routing/availability/business-hours.util';
+import {
+  formatHolidayReturn,
+  holidayReturnAt,
+  isHolidayActive,
+} from '../../routing/availability/holiday.util';
 import type { OnCallContext } from '../on-call/on-call.service';
 import { EMERGENCY_CONTACT_TOOL } from '../emergency/emergency-contact.util';
 import { catalogWithoutPrices } from '../outbound-guards/outbound-checks';
@@ -737,13 +742,19 @@ export class PromptBuilderService {
    * transferir do bloco fixo. Fica na parte volátil para não mudar o prefixo
    * cacheado das outras conversas.
    */
-  private formatOnCallBlock({ sellerName, returnAt }: OnCallContext): string {
+  private formatOnCallBlock({ sellerName, returnAt, isHoliday }: OnCallContext): string {
+    const absence = isHoliday
+      ? `de folga porque a agência está em feriado hoje, e volta ${returnAt}`
+      : `FORA DO HORÁRIO agora e volta ${returnAt}`;
+    const notice = isHoliday
+      ? `que hoje é feriado e ${sellerName} volta ${returnAt}`
+      : `que ${sellerName} está fora do horário e volta ${returnAt}`;
     return [
       '\n\n═══ MODO PLANTÃO (prioridade sobre tudo acima) ═══',
-      `\n- Este cliente é atendido por ${sellerName}, que está FORA DO HORÁRIO agora e volta ${returnAt}. A equipe não está operando neste momento.`,
+      `\n- Este cliente é atendido por ${sellerName}, que está ${absence}. A equipe não está operando neste momento.`,
       '\n- Seu papel aqui é só avisar isso e triar se é uma emergência de viagem.',
       `\n- NÃO tire dúvidas, NÃO consulte produtos ou pedidos, NÃO qualifique, NÃO venda, NÃO negocie, NÃO passe valores e NÃO transfira. Tudo isso é com ${sellerName}.`,
-      `\n- Se ainda não avisou nesta conversa, diga numa frase curta que ${sellerName} está fora do horário e volta ${returnAt}.`,
+      `\n- Se ainda não avisou nesta conversa, diga numa frase curta ${notice}.`,
       '\n- Triagem: se a mensagem mostra que é cotação, compra ou dúvida que pode esperar, não pergunte nada, só avise. Se houver sinal de urgência ou não der para saber, pergunte numa frase se o cliente já está em viagem e precisa de ajuda urgente agora.',
       `\n- Emergência confirmada (veja "Urgência em viagem" acima): use ${EMERGENCY_CONTACT_TOOL}. Quem está planejando, cotando ou com dúvida que pode esperar NÃO recebe o contato de emergência.`,
       '\n- Problema que precisa da equipe e pode esperar: abra o chamado com openSupportTicket (veja "Chamado de suporte" acima) e passe o número ao cliente.',
@@ -758,6 +769,9 @@ export class PromptBuilderService {
     const tz = org.aiTimezone || 'America/Sao_Paulo';
     const bh = (org.aiBusinessHours ?? null) as BusinessHoursConfig | null;
     const now = new Date();
+    if (org.aiHolidayUntil && isHolidayActive(org.aiHolidayUntil, now)) {
+      return this.formatHolidayBlock(bh, tz, org.aiHolidayUntil, now);
+    }
     if (isWithinHours(bh, tz, now)) return '';
     const parts = ['\n- ESTAMOS FORA DO HORÁRIO DE ATENDIMENTO HUMANO.'];
     const summary = formatHoursSummary(bh);
@@ -773,6 +787,24 @@ export class PromptBuilderService {
         'horários — use só os informados acima.',
     );
     return parts.join('');
+  }
+
+  /** Feriado: a Aline está no comando e avisa quando a equipe humana volta. */
+  private formatHolidayBlock(
+    bh: BusinessHoursConfig | null,
+    tz: string,
+    until: Date,
+    now: Date,
+  ): string {
+    const back = formatHolidayReturn(holidayReturnAt(bh, tz, until), tz, now);
+    return [
+      '\n- HOJE É FERIADO NA AGÊNCIA: a equipe humana não está trabalhando.',
+      `\n- A equipe humana volta a responder ${back}.`,
+      '\n- Você está no comando: atenda, tire dúvidas e qualifique o lead normalmente. ' +
+        'Em algum momento natural, avise que hoje é feriado e quando a equipe volta. ' +
+        'Ao transferir, deixe claro que um atendente dá sequência quando a equipe voltar. ' +
+        'Nunca invente horários — use só os informados acima.',
+    ].join('');
   }
 
   private formatNow(timezone: string): string {

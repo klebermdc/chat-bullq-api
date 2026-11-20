@@ -60,7 +60,12 @@ export class ResponseSlaRepository {
         isArchived: true,
         contact: { select: { name: true, phone: true } },
         organization: {
-          select: { settings: true, aiTimezone: true, aiBusinessHours: true },
+          select: {
+            settings: true,
+            aiTimezone: true,
+            aiBusinessHours: true,
+            aiHolidayUntil: true,
+          },
         },
       },
     });
@@ -79,6 +84,7 @@ export class ResponseSlaRepository {
       slaMinutes: parseResponseSlaMinutes(conv.organization.settings),
       tz: conv.organization.aiTimezone || DEFAULT_TIMEZONE,
       hours: resolveHours(agentHours, toHoursConfig(conv.organization.aiBusinessHours)),
+      holidayUntil: conv.organization.aiHolidayUntil,
     };
   }
 

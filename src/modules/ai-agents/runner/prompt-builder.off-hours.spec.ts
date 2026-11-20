@@ -89,4 +89,38 @@ describe('PromptBuilderService — fora do horário', () => {
     const systemText = JSON.stringify(msgs.find((m) => m.role === 'system'));
     expect(systemText).not.toContain('FORA DO HORÁRIO');
   });
+
+  it('feriado: avisa o feriado e quando a equipe volta, mesmo dentro da grade', () => {
+    // segunda 27/07 12h BRT => dentro da grade, mas a agência está em feriado
+    jest.useFakeTimers().setSystemTime(new Date('2026-07-27T15:00:00.000Z'));
+    const svc = new PromptBuilderService();
+    const msgs = svc.buildMessages(
+      buildCtx({
+        aiBusinessHours: {
+          monday: { enabled: true, windows: [['09:00', '18:00']] },
+          tuesday: { enabled: true, windows: [['09:00', '18:00']] },
+        },
+        aiTimezone: 'America/Sao_Paulo',
+        aiOffHoursMode: 'SILENT',
+        aiHolidayUntil: new Date('2026-07-28T03:00:00.000Z'),
+      }),
+    );
+    const systemText = JSON.stringify(msgs.find((m) => m.role === 'system'));
+    expect(systemText).toContain('FERIADO');
+    expect(systemText).toContain('amanhã às 09h');
+    expect(systemText).not.toContain('FORA DO HORÁRIO');
+  });
+
+  it('feriado vencido: volta ao comportamento normal', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-07-27T15:00:00.000Z'));
+    const svc = new PromptBuilderService();
+    const msgs = svc.buildMessages(
+      buildCtx({
+        aiBusinessHours: { monday: { enabled: true, windows: [['09:00', '18:00']] } },
+        aiHolidayUntil: new Date('2026-07-27T03:00:00.000Z'),
+      }),
+    );
+    const systemText = JSON.stringify(msgs.find((m) => m.role === 'system'));
+    expect(systemText).not.toContain('FERIADO');
+  });
 });

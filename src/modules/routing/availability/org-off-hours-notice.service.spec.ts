@@ -37,6 +37,14 @@ describe('OrgOffHoursNoticeService', () => {
       expect.objectContaining({ data: expect.objectContaining({ aiOffHoursMessageAt: now }) }),
     );
   });
+  it('feriado → no-op (a Aline está atendendo)', async () => {
+    prisma.conversation.findUnique.mockResolvedValue(makeConv());
+    prisma.organization.findUnique.mockResolvedValue(
+      makeOrg({ aiHolidayUntil: new Date(now.getTime() + 3_600_000) }),
+    );
+    await svc.onInboundReply('c1');
+    expect(prisma.message.create).not.toHaveBeenCalled();
+  });
   it('modo != MESSAGE → no-op', async () => {
     prisma.conversation.findUnique.mockResolvedValue(makeConv());
     prisma.organization.findUnique.mockResolvedValue(makeOrg({ aiOffHoursMode: 'ATTEND' }));

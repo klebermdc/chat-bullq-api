@@ -10,6 +10,7 @@ import {
   formatHoursSummary,
   type BusinessHoursConfig,
 } from '../../../routing/availability/business-hours.util';
+import { holidayReturnAt, isHolidayActive } from '../../../routing/availability/holiday.util';
 
 /**
  * Builds the Layer-4 context payload that the prompt composer (Agent 3)
@@ -49,7 +50,7 @@ export class ContextEnrichmentService {
         include: {
           channel: true,
           organization: {
-            select: { aiBusinessHours: true, aiTimezone: true },
+            select: { aiBusinessHours: true, aiTimezone: true, aiHolidayUntil: true },
           },
         },
       }),
@@ -74,8 +75,15 @@ export class ContextEnrichmentService {
         const tz = org?.aiTimezone || ContextEnrichmentService.DEFAULT_TZ;
         const bh = (org?.aiBusinessHours ?? null) as BusinessHoursConfig | null;
         const now = new Date();
-        const open = isWithinHours(bh, tz, now);
-        const next = open ? null : nextOpenAt(bh, tz, now);
+        // Feriado conta como fechado; volta na primeira abertura depois dele.
+        const holidayUntil = org?.aiHolidayUntil ?? null;
+        const isHoliday = isHolidayActive(holidayUntil, now);
+        const open = !isHoliday && isWithinHours(bh, tz, now);
+        const next = open
+          ? null
+          : isHoliday && holidayUntil
+            ? holidayReturnAt(bh, tz, holidayUntil)
+            : nextOpenAt(bh, tz, now);
         return {
           nowIso: now.toISOString(),
           timezone: tz,

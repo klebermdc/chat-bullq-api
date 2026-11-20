@@ -18,6 +18,7 @@ import {
   type ManagerAlertKind,
   type ManagerAlertSendReport,
 } from './manager-alerts.types';
+import { isHolidayActive } from '../../routing/availability/holiday.util';
 
 interface Target {
   org: AlertOrg;
@@ -67,6 +68,8 @@ export class ManagerAlertsService {
 
   private async tickDigest(target: Target, now: Date): Promise<void> {
     if (isQuietHours(now, target.org.tz)) return;
+    // Feriado: a equipe está parada de propósito; nada a cobrar da gestão.
+    if (isHolidayActive(target.org.holidayUntil, now)) return;
     const overdue = await this.overdue(target, now);
     if (overdue.length === 0) return;
     if (!(await this.throttle.claimDigest(target.org.id, target.config.digestIntervalMinutes))) return;

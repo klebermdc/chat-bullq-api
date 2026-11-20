@@ -15,6 +15,7 @@ import {
   formatReturn,
   type BusinessHoursConfig,
 } from './business-hours.util';
+import { isHolidayActive } from './holiday.util';
 
 /**
  * Modo MESSAGE de `aiOffHoursMode`: manda o texto fixo `aiOutOfHoursMessage`
@@ -56,6 +57,7 @@ export class OrgOffHoursNoticeService {
         aiBusinessHours: true,
         aiTimezone: true,
         aiOutOfHoursMessage: true,
+        aiHolidayUntil: true,
       },
     });
     if (org?.aiOffHoursMode !== 'MESSAGE') return;
@@ -65,6 +67,7 @@ export class OrgOffHoursNoticeService {
     const config = (org.aiBusinessHours ?? null) as BusinessHoursConfig | null;
     const tz = org.aiTimezone || 'America/Sao_Paulo';
     const now = this.clock();
+    if (isHolidayActive(org.aiHolidayUntil, now)) return; // feriado: a Aline atende
     if (isWithinHours(config, tz, now)) return; // dentro do horário
 
     const nextOpen = nextOpenAt(config, tz, now);
