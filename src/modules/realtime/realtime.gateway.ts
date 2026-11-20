@@ -14,6 +14,7 @@ import { Server, Socket } from 'socket.io';
 import { OrgRole } from '@prisma/client';
 import { PresenceService } from './presence.service';
 import type { SocketPresence } from '../team-presence/presence.util';
+import { RecentDisconnects } from '../team-presence/recent-disconnects';
 import { PrismaService } from '../../database/prisma.service';
 import { ChannelAccessService } from '../iam/channel-access/channel-access.service';
 
@@ -28,6 +29,8 @@ export class RealtimeGateway
   server: Server;
 
   private readonly logger = new Logger(RealtimeGateway.name);
+  // Celular derruba o socket ao sair do navegador: segura quem caiu há pouco.
+  private readonly recentDisconnects = new RecentDisconnects();
 
   constructor(
     private readonly jwtService: JwtService,
@@ -140,6 +143,13 @@ export class RealtimeGateway
   }
 
   async handleDisconnect(client: Socket) {
+    if (client.data.authReady) {
+      this.recentDisconnects.record({
+        organizationId: client.data.organizationId,
+        userId: client.data.userId,
+        lastActiveAt: client.data.lastActiveAt ?? new Date(0),
+      });
+    }
     if (client.data.userId) {
       await this.presence.setOffline(
         client.data.userId,
@@ -254,16 +264,21 @@ export class RealtimeGateway
     if (client.data.authReady) client.data.lastActiveAt = new Date();
   }
 
-  /** Conexões autenticadas agora, com a última atividade de cada uma. */
-  async listSocketPresence(): Promise<SocketPresence[]> {
+  /**
+   * Conexões autenticadas agora, com a última atividade de cada uma, mais as
+   * que caíram há pouco (ainda dentro da janela de ativo). Quem consome agrupa
+   * por atendente e fica com a atividade mais recente.
+   */
+  async listSocketPresence(now: Date = new Date()): Promise<SocketPresence[]> {
     const sockets = await this.server.fetchSockets();
-    return sockets
+    const connected = sockets
       .filter((s) => s.data.authReady)
       .map((s) => ({
         organizationId: s.data.organizationId,
         userId: s.data.userId,
         lastActiveAt: s.data.lastActiveAt ?? new Date(0),
       }));
+    return [...connected, ...this.recentDisconnects.list(now)];
   }
 
   @SubscribeMessage('typing')
