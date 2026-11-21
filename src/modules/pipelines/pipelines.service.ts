@@ -87,6 +87,11 @@ const DEFAULT_STAGES: UpsertStageDto[] = [
   { name: 'Perdido', color: 'red', type: 'LOST', order: 4 },
 ];
 
+export interface MoveCardOptions {
+  /** Não enfileira o Purchase da Meta CAPI ao fechar em WON. Padrão: enfileira. */
+  skipCapi?: boolean;
+}
+
 @Injectable()
 export class PipelinesService {
   private readonly logger = new Logger(PipelinesService.name);
@@ -850,6 +855,7 @@ export class PipelinesService {
     dto: MoveCardDto,
     role?: OrgRole,
     currentUserId?: string,
+    options: MoveCardOptions = {},
   ) {
     const card = await this.assertCardAccess(
       cardId,
@@ -966,7 +972,9 @@ export class PipelinesService {
     // Hook Meta CAPI: card fechou em GANHO → enfileira o evento Purchase pra
     // Conversions API (atribuição do anúncio CTWA). No-op se a org não tiver
     // config/enabled (o processor decide). Fire-and-forget: nunca trava o move.
-    if (newStatus === CardStatus.WON) {
+    // `skipCapi`: quem já mandou o Purchase por outro caminho (o OFP Hub manda o
+    // dele ao salvar o pedido) pula aqui pra Meta não contar a compra em dobro.
+    if (newStatus === CardStatus.WON && !options.skipCapi) {
       this.metaCapiQueue
         .enqueuePurchase({ cardId, organizationId })
         .catch((err) =>

@@ -11,6 +11,13 @@ export interface OrphanSuggestion {
   reasons: string[];
 }
 
+export interface LinkOptions {
+  /** false = só grava a correlação/valor, sem mexer na etapa. Padrão: true. */
+  moveToWon?: boolean;
+  /** Não enfileira o Purchase da Meta CAPI ao mover pra WON. Padrão: false. */
+  skipCapi?: boolean;
+}
+
 export interface OrphanEntry {
   order: {
     externalId: string;
@@ -126,7 +133,9 @@ export class ReconciliationService {
     orderExternalId: string,
     cardId: string,
     organizationId: string,
+    options: LinkOptions = {},
   ): Promise<{ linked: true; cardId: string; orderExternalId: string }> {
+    const { moveToWon = true, skipCapi = false } = options;
     const order = await this.prisma.ofpSalesOrder.findUnique({
       where: { externalId: orderExternalId },
     });
@@ -156,11 +165,15 @@ export class ReconciliationService {
       },
     });
 
-    if (wonStage && card.stageId !== wonStage.id) {
-      await this.pipelines.moveCard(card.id, organizationId, {
-        toStageId: wonStage.id,
-        toIndex: 0,
-      } as any);
+    if (moveToWon && wonStage && card.stageId !== wonStage.id) {
+      await this.pipelines.moveCard(
+        card.id,
+        organizationId,
+        { toStageId: wonStage.id, toIndex: 0 } as any,
+        undefined,
+        undefined,
+        { skipCapi },
+      );
     }
 
     this.logger.log(

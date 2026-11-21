@@ -95,7 +95,34 @@ describe('ReconciliationService', () => {
         'card-1',
         'org-1',
         expect.objectContaining({ toStageId: 'stage-won' }),
+        undefined,
+        undefined,
+        { skipCapi: false },
       );
+    });
+
+    it('skipCapi: move pra WON avisando o pipeline pra não mandar Purchase', async () => {
+      const { service, pipelines } = make();
+      await service.link('ext-9', 'card-1', 'org-1', { skipCapi: true });
+
+      expect(pipelines.moveCard).toHaveBeenCalledWith(
+        'card-1',
+        'org-1',
+        expect.objectContaining({ toStageId: 'stage-won' }),
+        undefined,
+        undefined,
+        { skipCapi: true },
+      );
+    });
+
+    it('moveToWon=false: grava a correlação sem mexer na etapa', async () => {
+      const { service, prisma, pipelines } = make();
+      await service.link('ext-9', 'card-1', 'org-1', { moveToWon: false });
+
+      expect(prisma.card.update.mock.calls[0][0].data.metadata).toMatchObject({
+        ofpOrderExternalId: 'ext-9',
+      });
+      expect(pipelines.moveCard).not.toHaveBeenCalled();
     });
 
     it('lança se o pedido não existe', async () => {
